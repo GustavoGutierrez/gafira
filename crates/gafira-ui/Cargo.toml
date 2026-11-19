@@ -16,6 +16,9 @@ gafira-ports.workspace = true
 gafira-theme.workspace = true
 gafira-i18n.workspace = true
 gafira-layout.workspace = true
+# Spec 054: shape paths are built with kurbo and drawn on the canvas with tiny-skia.
+kurbo.workspace = true
+tiny-skia.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_extras.workspace = true

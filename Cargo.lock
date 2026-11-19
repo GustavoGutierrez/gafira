@@ -1854,8 +1854,10 @@ dependencies = [
  "gafira-render-cpu",
  "gafira-theme",
  "image",
+ "kurbo 0.13.1",
  "proptest",
  "rfd",
+ "tiny-skia 0.12.0",
 ]
 
 [[package]]

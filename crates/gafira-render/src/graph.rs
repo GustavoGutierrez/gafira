@@ -427,8 +427,8 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 let mark = sub.ops.len();
                 sub.ops.push(RenderOp::PushLayer);
                 match record.kind {
-                    RecordKind::Shape(shape) => {
-                        let Some(drawn) = DrawnShape::of(&shape, &record.base.placement)? else {
+                    RecordKind::Shape(ref shape) => {
+                        let Some(drawn) = DrawnShape::of(shape, &record.base.placement)? else {
                             // A shape without a fill or an outline draws nothing.
                             sub.ops.truncate(mark);
                             continue;
@@ -438,7 +438,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             &[],
                             &record.base,
                             transform,
-                            &drawn.key_params(shape.geometry),
+                            &drawn.key_params(&shape.geometry),
                         );
                         let node = GraphNode {
                             id: GraphNodeId(sub.nodes.len() as u32),
@@ -673,7 +673,7 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
             node.base.id,
             Record {
                 base: node.base.clone(),
-                kind: RecordKind::Shape(*shape),
+                kind: RecordKind::Shape(shape.clone()),
             },
         );
         node.base.id
@@ -754,9 +754,9 @@ impl DrawnShape {
         let rect = Rect::new(0.0, 0.0, placement.w, placement.h).abs();
         let radius = match shape.geometry {
             ShapeGeometry::Rect => drawn_radius(shape.corner_radius, rect),
-            ShapeGeometry::Ellipse => 0.0,
+            ShapeGeometry::Ellipse | ShapeGeometry::Path(_) => 0.0,
         };
-        let outline = shape_path(shape.geometry, rect, radius);
+        let outline = shape_path(&shape.geometry, rect, radius);
         let stroke = shape
             .stroke
             .filter(|stroke| stroke.width > 0.0)
@@ -774,9 +774,9 @@ impl DrawnShape {
     /// The parameters of the content key that this shape draws. A shape with
     /// only a fill and square corners gives the parameters it had before
     /// spec 038, so its key does not move.
-    fn key_params(&self, geometry: ShapeGeometry) -> Vec<KeyParam> {
+    fn key_params(&self, geometry: &ShapeGeometry) -> Vec<KeyParam> {
         let mut params = vec![
-            KeyParam::Geometry(geometry),
+            KeyParam::Geometry(geometry.clone()),
             KeyParam::Fill(self.fill.as_ref().map(|(_, color)| *color)),
         ];
         if let Some((_, color, width)) = &self.stroke {
@@ -803,14 +803,36 @@ fn drawn_radius(radius: f64, rect: Rect) -> f64 {
 }
 
 /// The outline of a shape, in its own box.
-fn shape_path(geometry: ShapeGeometry, rect: Rect, radius: f64) -> BezPath {
+fn shape_path(geometry: &ShapeGeometry, rect: Rect, radius: f64) -> BezPath {
     match geometry {
+        ShapeGeometry::Path(path) => unit_path(path, rect),
         ShapeGeometry::Rect if radius > 0.0 => {
             RoundedRect::from_rect(rect, radius).to_path(SHAPE_TOLERANCE)
         }
         ShapeGeometry::Rect => rect.to_path(SHAPE_TOLERANCE),
         ShapeGeometry::Ellipse => Ellipse::from_rect(rect).to_path(SHAPE_TOLERANCE),
     }
+}
+
+/// A shape path (spec 054) in the box `rect`: each unit-box point scaled
+/// to the box. Its interior is the non-zero one, as the fill rule of every
+/// shape.
+pub fn unit_path(path: &gafira_doc::ShapePath, rect: Rect) -> BezPath {
+    use gafira_doc::PathCommand;
+    let at = |[x, y]: [f64; 2]| {
+        kurbo::Point::new(rect.x0 + x * rect.width(), rect.y0 + y * rect.height())
+    };
+    let mut out = BezPath::new();
+    for command in &path.commands {
+        match *command {
+            PathCommand::MoveTo(p) => out.move_to(at(p)),
+            PathCommand::LineTo(p) => out.line_to(at(p)),
+            PathCommand::QuadTo(c, p) => out.quad_to(at(c), at(p)),
+            PathCommand::CubicTo(c1, c2, p) => out.curve_to(at(c1), at(c2), at(p)),
+            PathCommand::Close => out.close_path(),
+        }
+    }
+    out
 }
 
 /// The area an outline of `width` covers along `outline`, centred on it,
@@ -936,6 +958,40 @@ mod tests {
 
     use super::*;
     use crate::pool::InlinePool;
+
+    // S54-03: a shape path is scaled into the shape's box, fills its inside
+    // and not the rest of the box, and two different paths key apart.
+    #[test]
+    fn s54_03_a_path_triangle_fills_its_inside() {
+        use gafira_doc::{PathCommand, ShapePath};
+        let triangle = ShapePath::new(vec![
+            PathCommand::MoveTo([0.5, 0.0]),
+            PathCommand::LineTo([1.0, 1.0]),
+            PathCommand::LineTo([0.0, 1.0]),
+            PathCommand::Close,
+        ]);
+        let rect = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let path = shape_path(&ShapeGeometry::Path(triangle.clone()), rect, 0.0);
+        assert!(path.contains(kurbo::Point::new(100.0, 70.0)), "inside");
+        assert!(
+            !path.contains(kurbo::Point::new(10.0, 10.0)),
+            "a corner of the box"
+        );
+        assert_eq!(path.bounding_box(), rect);
+        let mut other = triangle.clone();
+        other.commands[0] = PathCommand::MoveTo([0.4, 0.0]);
+        let bytes = |path: ShapePath| {
+            let mut out = Vec::new();
+            KeyParam::Geometry(ShapeGeometry::Path(path)).write_for_test(&mut out);
+            out
+        };
+        assert_eq!(bytes(triangle.clone()), bytes(triangle.clone()));
+        assert_ne!(bytes(triangle.clone()), bytes(other));
+        // The same points with other orders key apart too.
+        let mut moved = triangle.clone();
+        moved.commands[1] = PathCommand::MoveTo([1.0, 1.0]);
+        assert_ne!(bytes(triangle), bytes(moved));
+    }
 
     /// A page of 100 by 100 pixels.
     fn new_page() -> Page {
@@ -1786,7 +1842,7 @@ mod tests {
                 KeyParam::Blend(BlendMode::Normal),
             ],
         );
-        assert_eq!(key(plain), Some(before));
+        assert_eq!(key(plain.clone()), Some(before));
         let thin = key(outlined(ShapeGeometry::Rect, Some(RED), 1.0, 0.0));
         let thick = key(outlined(ShapeGeometry::Rect, Some(RED), 2.0, 0.0));
         assert_ne!(thin, Some(before));
@@ -1797,9 +1853,9 @@ mod tests {
             1.0,
         ));
         assert_ne!(key(green), thin);
-        let mut round = plain;
+        let mut round = plain.clone();
         round.corner_radius = 4.0;
-        assert_ne!(key(round), Some(before));
+        assert_ne!(key(round.clone()), Some(before));
         // Radii drawn the same give the same key.
         round.corner_radius = 10.0;
         let mut rounder = plain;

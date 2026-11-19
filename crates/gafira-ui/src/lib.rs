@@ -32,6 +32,7 @@ mod ruler;
 mod saving;
 mod selection;
 mod settings;
+mod shapes;
 mod shell;
 mod splash;
 mod style;

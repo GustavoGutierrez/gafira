@@ -65,9 +65,9 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
         let rect = ShapeNode::new(ShapeGeometry::Rect);
         let locked = held || node.base.locked;
         let drawn = match &node.kind {
-            NodeKind::Shape(shape) => Some((*shape, None, None)),
-            NodeKind::Text(text) => Some((rect, Some(text.clone()), None)),
-            NodeKind::Image(image) => Some((rect, None, Some(image.asset))),
+            NodeKind::Shape(shape) => Some((shape.clone(), None, None)),
+            NodeKind::Text(text) => Some((rect.clone(), Some(text.clone()), None)),
+            NodeKind::Image(image) => Some((rect.clone(), None, Some(image.asset))),
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
@@ -227,13 +227,18 @@ pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -
         let (w, h) = (shape.placement.w, shape.placement.h);
         let transform = rotation::to_screen(page_rect, zoom, &shape.placement);
         let local = rotation::local(transform, pointer)?;
-        let inside = match shape.geometry {
+        let inside = match &shape.geometry {
             ShapeGeometry::Rect => (0.0..=w).contains(&local.x) && (0.0..=h).contains(&local.y),
             ShapeGeometry::Ellipse => {
                 let (rx, ry) = (w / 2.0, h / 2.0);
                 rx > 0.0
                     && ry > 0.0
                     && ((local.x - rx) / rx).powi(2) + ((local.y - ry) / ry).powi(2) <= 1.0
+            }
+            // A path takes what its non-zero interior covers (S54-04).
+            ShapeGeometry::Path(path) => {
+                use kurbo::Shape as _;
+                crate::shapes::bez(path, w, h).contains(kurbo::Point::new(local.x, local.y))
             }
         };
         inside.then_some(shape.node)
@@ -418,62 +423,24 @@ fn resized_turned(origin: &Placement, handle: Handle, dx: f64, dy: f64) -> Place
     placement
 }
 
-/// A shape of the Formas panel (spec 053): what a tile draws and what a
-/// click or a drop adds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Piece {
-    Square,
-    RoundedSquare,
-    Circle,
-}
-
-impl Piece {
-    /// Its geometry in the document.
-    pub(crate) fn geometry(self) -> ShapeGeometry {
-        match self {
-            Self::Square | Self::RoundedSquare => ShapeGeometry::Rect,
-            Self::Circle => ShapeGeometry::Ellipse,
-        }
-    }
-
-    /// Its corner radius for a side of `side` px (S53-01).
-    pub(crate) fn corner_radius(self, side: f64) -> f64 {
-        match self {
-            Self::RoundedSquare => side / 8.0,
-            Self::Square | Self::Circle => 0.0,
-        }
-    }
-
-    /// The catalog key of its name.
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            Self::Square => "pieces.square",
-            Self::RoundedSquare => "pieces.rounded_square",
-            Self::Circle => "pieces.circle",
-        }
-    }
-}
-
-impl From<ShapeGeometry> for Piece {
-    fn from(geometry: ShapeGeometry) -> Self {
-        match geometry {
-            ShapeGeometry::Rect => Self::Square,
-            ShapeGeometry::Ellipse => Self::Circle,
-        }
-    }
-}
-
-/// The sections of the Formas panel, in order, each with the catalog key
-/// of its title and its shapes (S53-02). Only the shapes the document can
-/// draw are listed; a section without shapes is left out.
-pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[(
-    "pieces.basic",
-    &[Piece::Square, Piece::RoundedSquare, Piece::Circle],
-)];
+pub(crate) use crate::shapes::{PIECE_SECTIONS, Piece};
 
 /// `piece` as `new_piece` makes it, with its corner radius.
 pub(crate) fn new_shape(page_px: Vec2, piece: Piece, fill: Color) -> NodeSpec {
     let mut spec = new_piece(page_px, piece.geometry(), fill);
+    // A shape wider than high keeps the side as its width, and the other
+    // way round (spec 054), still in the middle of the page.
+    let aspect = piece.aspect();
+    let side = spec.placement.w;
+    let (w, h) = if aspect >= 1.0 {
+        (side, side / aspect)
+    } else {
+        (side * aspect, side)
+    };
+    spec.placement.x += (side - w) / 2.0;
+    spec.placement.y += (side - h) / 2.0;
+    spec.placement.w = w;
+    spec.placement.h = h;
     if let NodeKind::Shape(shape) = &mut spec.kind {
         shape.corner_radius = piece.corner_radius(spec.placement.w);
     }
@@ -618,7 +585,9 @@ pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
                     screen_color(stroke.color).gamma_multiply(opacity),
                 )
             });
-    match shape.geometry {
+    match &shape.geometry {
+        // A path is drawn from a texture (spec 054): see `path_image`.
+        ShapeGeometry::Path(_) => egui::Shape::Noop,
         ShapeGeometry::Rect => {
             let half = f64::from(at.width().min(at.height()).max(0.0)) / 2.0;
             let radius = (shape.corner_radius.max(0.0) * f64::from(zoom))
@@ -645,7 +614,7 @@ pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
 /// The outline of a shape of `w` × `h` local px with corners rounded by
 /// `radius` (a rectangle) or as an ellipse, clockwise from the top. Each
 /// quarter of a curve gets `segments` steps.
-fn outline(geometry: ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize) -> Vec<Point> {
+fn outline(geometry: &ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize) -> Vec<Point> {
     let quarter = std::f64::consts::FRAC_PI_2;
     // Each corner: its arc centre, its radii and the angle where it starts.
     let (corners, rx, ry) = match geometry {
@@ -653,9 +622,9 @@ fn outline(geometry: ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize
             let (rx, ry) = (w / 2.0, h / 2.0);
             ([(rx, ry); 4], rx, ry)
         }
-        ShapeGeometry::Rect => {
+        ShapeGeometry::Rect | ShapeGeometry::Path(_) => {
             let r = radius.max(0.0).min(w.min(h).max(0.0) / 2.0);
-            if r == 0.0 {
+            if r == 0.0 || matches!(geometry, ShapeGeometry::Path(_)) {
                 return vec![
                     Point::new(0.0, 0.0),
                     Point::new(w, 0.0),
@@ -699,6 +668,8 @@ pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egu
             });
     let (w, h) = (shape.placement.w, shape.placement.h);
     let curve = match shape.geometry {
+        // A path is drawn from a texture (spec 054): see `path_image`.
+        ShapeGeometry::Path(_) => return egui::Shape::Noop,
         ShapeGeometry::Rect => shape.corner_radius,
         ShapeGeometry::Ellipse => w.max(h) / 2.0,
     };
@@ -706,11 +677,114 @@ pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egu
     let segments = ((curve * f64::from(zoom)).abs() / 2.0)
         .ceil()
         .clamp(4.0, 64.0) as usize;
-    let points = outline(shape.geometry, w, h, shape.corner_radius, segments)
+    let points = outline(&shape.geometry, w, h, shape.corner_radius, segments)
         .into_iter()
         .map(|p| rotation::screen(transform, p.x, p.y))
         .collect();
     egui::Shape::convex_polygon(points, paint(shape), stroke)
+}
+
+/// The longest side, in px, of the texture a path shape is drawn from.
+const PATH_TEXTURE_MAX: f64 = 2048.0;
+
+/// The box the texture of a path shape covers (spec 054): its placement
+/// grown by half its outline and one screen px, so neither the outline nor
+/// the anti-aliased edge is cut. It turns and flips about the same centre.
+pub(crate) fn path_cover(shape: &Shape, zoom: f32) -> Placement {
+    let stroke = shape.stroke.filter(|stroke| stroke.width > 0.0);
+    let margin = stroke.map_or(0.0, |stroke| stroke.width / 2.0) + 1.0 / f64::from(zoom);
+    let mut covered = shape.placement;
+    covered.x -= margin;
+    covered.y -= margin;
+    covered.w += 2.0 * margin;
+    covered.h += 2.0 * margin;
+    covered
+}
+
+/// What the canvas draws for a path shape (spec 054): its fill and outline
+/// rasterised on a texture as large as the shape on screen, and the box the
+/// texture covers, the placement grown by half the outline and one screen
+/// px so neither is cut. `None` for a shape that is not a path or has no
+/// size.
+pub(crate) fn path_image(shape: &Shape, zoom: f32) -> Option<(egui::ColorImage, Placement)> {
+    let ShapeGeometry::Path(path) = &shape.geometry else {
+        return None;
+    };
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    let zoom = f64::from(zoom);
+    if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let stroke = shape.stroke.filter(|stroke| stroke.width > 0.0);
+    let covered = path_cover(shape, zoom as f32);
+    let margin = shape.placement.x - covered.x;
+    let scale = zoom.min(PATH_TEXTURE_MAX / covered.w.max(covered.h));
+    let side = |v: f64| (v * scale).round().max(1.0) as u32;
+    let (pw, ph) = (side(covered.w), side(covered.h));
+    let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
+    let mut builder = tiny_skia::PathBuilder::new();
+    let at = |p: kurbo::Point| {
+        (
+            ((p.x + margin) * scale) as f32,
+            ((p.y + margin) * scale) as f32,
+        )
+    };
+    for el in crate::shapes::bez(path, w, h).elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => {
+                let (x, y) = at(p);
+                builder.move_to(x, y);
+            }
+            kurbo::PathEl::LineTo(p) => {
+                let (x, y) = at(p);
+                builder.line_to(x, y);
+            }
+            kurbo::PathEl::QuadTo(c, p) => {
+                let ((cx, cy), (x, y)) = (at(c), at(p));
+                builder.quad_to(cx, cy, x, y);
+            }
+            kurbo::PathEl::CurveTo(c1, c2, p) => {
+                let ((ax, ay), (bx, by), (x, y)) = (at(c1), at(c2), at(p));
+                builder.cubic_to(ax, ay, bx, by, x, y);
+            }
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    let outline = builder.finish()?;
+    let paint = |color: Color32| {
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(color.r(), color.g(), color.b(), color.a());
+        paint.anti_alias = true;
+        paint
+    };
+    if let Some(fill) = shape.fill {
+        pixmap.fill_path(
+            &outline,
+            &paint(screen_color(fill)),
+            tiny_skia::FillRule::Winding,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    if let Some(stroke) = stroke {
+        // Centred on the edge with mitred corners, as the render draws it.
+        let style = tiny_skia::Stroke {
+            width: (stroke.width * scale) as f32,
+            line_join: tiny_skia::LineJoin::Miter,
+            line_cap: tiny_skia::LineCap::Butt,
+            ..tiny_skia::Stroke::default()
+        };
+        pixmap.stroke_path(
+            &outline,
+            &paint(screen_color(stroke.color)),
+            &style,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    let image =
+        egui::ColorImage::from_rgba_premultiplied([pw as usize, ph as usize], pixmap.data());
+    Some((image, covered))
 }
 
 /// An image on its box mapped by `transform`: one textured quad whose
@@ -1256,8 +1330,6 @@ mod s41_tests {
             assert_eq!(shape.geometry, geometry, "{piece:?}");
             assert_eq!(shape.corner_radius, radius, "{piece:?}");
         }
-        assert_eq!(Piece::from(ShapeGeometry::Rect), Piece::Square);
-        assert_eq!(Piece::from(ShapeGeometry::Ellipse), Piece::Circle);
     }
 
     // S53-04: a new shape is filled light grey, #CCD1D9.
@@ -1277,14 +1349,62 @@ mod s41_tests {
     // order, and no section is empty.
     #[test]
     fn s53_02_sections() {
+        let (title, pieces) = PIECE_SECTIONS[0];
+        assert_eq!(title, "pieces.basic");
         assert_eq!(
-            PIECE_SECTIONS[0],
-            (
-                "pieces.basic",
-                &[Piece::Square, Piece::RoundedSquare, Piece::Circle][..]
-            )
+            pieces[..3],
+            [Piece::Square, Piece::RoundedSquare, Piece::Circle],
+            "spec 054 adds more after them"
         );
         assert!(PIECE_SECTIONS.iter().all(|(_, pieces)| !pieces.is_empty()));
+    }
+
+    // S54-04: a path shape is drawn from a texture that fills its inside
+    // and leaves the rest of its box clear; a click inside the path takes
+    // it and one in the box but outside the path does not.
+    #[test]
+    fn s54_04_a_path_draws_and_hits_inside_only() {
+        use gafira_doc::{PathCommand, ShapePath};
+        let triangle = ShapePath::new(vec![
+            PathCommand::MoveTo([0.5, 0.0]),
+            PathCommand::LineTo([1.0, 1.0]),
+            PathCommand::LineTo([0.0, 1.0]),
+            PathCommand::Close,
+        ]);
+        let mut node = ShapeNode::new(ShapeGeometry::Path(triangle));
+        node.fill = Some(Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0)));
+        let shape = Shape {
+            page: PageId::new(1),
+            node: NodeId::new(2),
+            placement: Placement::new(0.0, 0.0, 100.0, 100.0),
+            geometry: node.geometry.clone(),
+            fill: node.fill,
+            stroke: None,
+            corner_radius: 0.0,
+            opacity: 1.0,
+            inherited: 1.0,
+            group: false,
+            text: None,
+            image: None,
+            locked: false,
+        };
+        let (image, covered) = path_image(&shape, 1.0).expect("a texture");
+        // One screen px of margin on each side.
+        assert_eq!(covered, Placement::new(-1.0, -1.0, 102.0, 102.0));
+        assert_eq!(image.size, [102, 102]);
+        let at = |x: usize, y: usize| image.pixels[(y + 1) * 102 + x + 1];
+        assert_eq!(at(50, 90), Color32::from_rgb(255, 0, 0), "inside");
+        assert_eq!(at(5, 5).a(), 0, "a corner of the box");
+        let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
+        let shapes = [shape];
+        assert_eq!(
+            hit(&shapes, page, 1.0, Pos2::new(50.0, 90.0)),
+            Some(NodeId::new(2))
+        );
+        assert_eq!(hit(&shapes, page, 1.0, Pos2::new(5.0, 5.0)), None);
+        let mut flat = shapes[0].clone();
+        flat.placement.h = 0.0;
+        assert!(path_image(&flat, 1.0).is_none());
     }
 
     // S52-02: a shape dropped on a page lands on the point under the

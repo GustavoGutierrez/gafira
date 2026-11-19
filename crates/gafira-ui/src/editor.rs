@@ -291,6 +291,9 @@ pub(crate) struct Editor {
     /// Each page's id and screen box in the last frame drawn: where a shape
     /// dragged from the panel lands (spec 052).
     page_rects: Vec<(PageId, Rect)>,
+    /// The textures path shapes are drawn from, on the canvas and in the
+    /// Formas panel, by what they show (spec 054).
+    path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -367,6 +370,7 @@ impl Default for Editor {
             row_drag: None,
             active: None,
             page_rects: Vec::new(),
+            path_textures: std::cell::RefCell::default(),
         }
     }
 }
@@ -1442,8 +1446,12 @@ impl Editor {
                             ui.horizontal_wrapped(|ui| {
                                 ui.spacing_mut().item_spacing = Vec2::splat(4.0);
                                 for piece in *pieces {
-                                    let tile =
-                                        piece_tile(ui, theme, *piece, plain(texts, piece.key()));
+                                    let tile = self.piece_tile(
+                                        ui,
+                                        theme,
+                                        *piece,
+                                        plain(texts, piece.key()),
+                                    );
                                     if tile.clicked() {
                                         asked.insert = Some(*piece);
                                     }
@@ -1859,6 +1867,128 @@ impl Editor {
         Some(name)
     }
 
+    /// The texture `key` names, made by `make` the first time; `None` when
+    /// it cannot be made. The cache is emptied when it grows past 256, so
+    /// a resize or a zoom does not keep every size it went through.
+    fn path_texture(
+        &self,
+        ctx: &egui::Context,
+        key: u64,
+        make: impl FnOnce() -> Option<egui::ColorImage>,
+    ) -> Option<egui::TextureId> {
+        let mut cache = self.path_textures.borrow_mut();
+        if let Some(texture) = cache.get(&key) {
+            return Some(texture.id());
+        }
+        if cache.len() > 256 {
+            cache.clear();
+        }
+        let texture = ctx.load_texture(
+            format!("path-{key:x}"),
+            make()?,
+            egui::TextureOptions::LINEAR,
+        );
+        let id = texture.id();
+        cache.insert(key, texture);
+        Some(id)
+    }
+
+    /// `piece` filling `rect` in `color`, at its own proportions (specs 053
+    /// and 054): what a tile of the Formas panel and the drag preview draw.
+    fn paint_piece(
+        &self,
+        ctx: &egui::Context,
+        painter: &egui::Painter,
+        piece: canvas::Piece,
+        rect: Rect,
+        color: Color32,
+    ) {
+        let aspect = piece.aspect() as f32;
+        let side = rect.width().min(rect.height());
+        let size = if aspect >= 1.0 {
+            Vec2::new(side, side / aspect)
+        } else {
+            Vec2::new(side * aspect, side)
+        };
+        let rect = Rect::from_center_size(rect.center(), size);
+        match piece.geometry() {
+            ShapeGeometry::Rect => {
+                let radius = piece.corner_radius(f64::from(rect.width())) as f32;
+                painter.rect_filled(rect, radius, color);
+            }
+            ShapeGeometry::Ellipse => {
+                painter.circle_filled(rect.center(), side / 2.0, color);
+            }
+            geometry @ ShapeGeometry::Path(_) => {
+                let shape = Shape {
+                    page: PageId::new(0),
+                    node: NodeId::new(0),
+                    placement: Placement::new(
+                        f64::from(rect.min.x),
+                        f64::from(rect.min.y),
+                        f64::from(rect.width()),
+                        f64::from(rect.height()),
+                    ),
+                    geometry,
+                    fill: Some(canvas::document_color(color)),
+                    stroke: None,
+                    corner_radius: 0.0,
+                    opacity: f32::from(color.a()) / 255.0,
+                    inherited: 1.0,
+                    group: false,
+                    text: None,
+                    image: None,
+                    locked: false,
+                };
+                let cover = canvas::path_cover(&shape, 1.0);
+                let key = path_key(&shape, 1.0);
+                if let Some(texture) =
+                    self.path_texture(ctx, key, || canvas::path_image(&shape, 1.0).map(|(i, _)| i))
+                {
+                    let at = Rect::from_min_size(
+                        Pos2::new(cover.x as f32, cover.y as f32),
+                        Vec2::new(cover.w as f32, cover.h as f32),
+                    );
+                    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    painter.image(
+                        texture,
+                        at,
+                        uv,
+                        Color32::WHITE.gamma_multiply(shape.opacity),
+                    );
+                }
+            }
+        }
+    }
+
+    /// A 56 px tile of the Formas panel that draws `piece` (S53-03), named
+    /// `name` for assistive technology and in its tooltip; it can be clicked
+    /// and dragged.
+    fn piece_tile(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        piece: canvas::Piece,
+        name: String,
+    ) -> egui::Response {
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::click_and_drag());
+        if response.hovered() || response.dragged() {
+            ui.painter()
+                .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        self.paint_piece(
+            ui.ctx(),
+            ui.painter(),
+            piece,
+            rect.shrink(6.0),
+            theme.c("text"),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+        response.on_hover_text(name)
+    }
+
     /// The shape being dragged from the panel, half transparent under the
     /// pointer, over everything, with the size it will take on the page
     /// under it (or the first page) at the zoom on display (S52-04).
@@ -1877,7 +2007,8 @@ impl Editor {
             egui::Order::Tooltip,
             egui::Id::new("editor.piece_ghost"),
         ));
-        paint_piece(
+        self.paint_piece(
+            ctx,
             &painter,
             piece,
             Rect::from_center_size(at, Vec2::splat(side)),
@@ -2147,6 +2278,25 @@ impl Editor {
                                                 let atlas = ctx.fonts(|f| f.font_image_size());
                                                 self.font_atlas = Some(atlas);
                                                 clip.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                            }
+                                        }
+                                        // A path is drawn from its texture, in
+                                        // its own axes (spec 054).
+                                        if let ShapeGeometry::Path(_) = &shape.geometry {
+                                            let cover = canvas::path_cover(shape, zoom);
+                                            let key = path_key(shape, zoom);
+                                            if let Some(texture) =
+                                                self.path_texture(ctx, key, || {
+                                                    canvas::path_image(shape, zoom)
+                                                        .map(|(image, _)| image)
+                                                })
+                                            {
+                                                clip.add(canvas::image_mesh(
+                                                    texture,
+                                                    rotation::to_screen(page, zoom, &cover),
+                                                    &cover,
+                                                    Color32::WHITE.gamma_multiply(shape.alpha()),
+                                                ));
                                             }
                                         }
                                         if upright {
@@ -3598,38 +3748,17 @@ fn current_page_id(
         .or_else(|| pages.first().copied())
 }
 
-/// `piece` filling `rect` in `color`: what a tile of the Formas panel
-/// and the drag preview draw (spec 053).
-fn paint_piece(painter: &egui::Painter, piece: canvas::Piece, rect: Rect, color: Color32) {
-    match piece.geometry() {
-        ShapeGeometry::Rect => {
-            let radius = piece.corner_radius(f64::from(rect.width())) as f32;
-            painter.rect_filled(rect, radius, color);
-        }
-        ShapeGeometry::Ellipse => {
-            painter.circle_filled(rect.center(), rect.width().min(rect.height()) / 2.0, color);
-        }
-    }
-}
-
-/// A 56 px tile of the Formas panel that draws `piece` (S53-03), named
-/// `name` for assistive technology and in its tooltip; it can be clicked
-/// and dragged.
-fn piece_tile(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    piece: canvas::Piece,
-    name: String,
-) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::click_and_drag());
-    if response.hovered() || response.dragged() {
-        ui.painter()
-            .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-    }
-    paint_piece(ui.painter(), piece, rect.shrink(6.0), theme.c("text"));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
-    response.on_hover_text(name)
+/// The key of the texture of a path shape: what it shows, its size and the
+/// zoom, but not where it is, so moving it draws the same texture.
+fn path_key(shape: &Shape, zoom: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!(
+        "{:?}{:?}{:?}{}{}{}",
+        shape.geometry, shape.fill, shape.stroke, shape.placement.w, shape.placement.h, zoom
+    )
+    .hash(&mut hasher);
+    hasher.finish()
 }
 
 /// What a move dropped wholly outside its page is deleted (S51-07,
@@ -4729,7 +4858,10 @@ pub(crate) mod tests {
                 &mut engine,
                 &snapshot,
                 &Asked {
-                    insert: Some(canvas::Piece::from(geometry)),
+                    insert: Some(match geometry {
+                        ShapeGeometry::Ellipse => canvas::Piece::Circle,
+                        _ => canvas::Piece::Square,
+                    }),
                     ..Asked::default()
                 },
                 &theme,
@@ -4955,7 +5087,10 @@ pub(crate) mod tests {
                 engine,
                 &snapshot,
                 &Asked {
-                    insert: Some(canvas::Piece::from(geometry)),
+                    insert: Some(match geometry {
+                        ShapeGeometry::Ellipse => canvas::Piece::Circle,
+                        _ => canvas::Piece::Square,
+                    }),
                     ..Asked::default()
                 },
                 &theme,
