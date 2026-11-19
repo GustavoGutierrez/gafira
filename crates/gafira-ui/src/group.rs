@@ -119,17 +119,42 @@ pub(crate) fn draws(page: &Page, id: NodeId) -> bool {
     false
 }
 
-/// The nodes of `scope` the canvas draws, back to front: its children
-/// with something visible below them. What Ctrl+A selects.
+/// Whether a click can pick something under `id` (itself included): a
+/// visible, free element that is not a group, below visible, free groups
+/// only (D-91).
+fn pickable(page: &Page, id: NodeId) -> bool {
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![id];
+    while let Some(id) = stack.pop() {
+        let Some(node) = page.node(id) else { continue };
+        if !node.base.visible || node.base.locked || !seen.insert(id) {
+            continue;
+        }
+        match node.kind {
+            NodeKind::Group(_) => stack.extend(node.children.iter().copied()),
+            NodeKind::Extension(_) => {}
+            _ => return true,
+        }
+    }
+    false
+}
+
+/// The nodes of `scope` the canvas draws and a click can pick, back to
+/// front: its children with something visible and free below them. What
+/// Ctrl+A selects; nothing inside a hidden or locked scope (D-91).
 pub(crate) fn items(page: &Page, scope: Option<NodeId>) -> Vec<NodeId> {
     let list = match scope {
         None => &page.roots,
+        Some(group) if crate::layers::locked(page, group) => return Vec::new(),
         Some(group) => match page.node(group) {
             Some(node) if node.base.visible => &node.children,
             _ => return Vec::new(),
         },
     };
-    list.iter().copied().filter(|id| draws(page, *id)).collect()
+    list.iter()
+        .copied()
+        .filter(|id| pickable(page, *id))
+        .collect()
 }
 
 /// The box of `id`: its own placement for an element, the upright box

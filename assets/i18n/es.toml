@@ -280,6 +280,10 @@ group = "Grupo"
 element = "Elemento"
 open = "Abrir grupo"
 close = "Cerrar grupo"
+hide = "Ocultar"
+show = "Mostrar"
+lock = "Bloquear"
+unlock = "Desbloquear"
 
 [inspector]
 position = "Posición"

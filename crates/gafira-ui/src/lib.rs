@@ -23,6 +23,7 @@ mod format;
 mod group;
 mod home;
 mod icons;
+mod layers;
 mod magnet;
 mod recent;
 mod resize;

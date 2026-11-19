@@ -433,6 +433,28 @@ fn s41_19_a_turned_flipped_element_round_trips_through_the_gaf() {
     assert_eq!(placement["flip"], json!({ "x": false, "y": false }));
 }
 
+// S48-08: a hidden, locked, renamed element survives the `.gaf` (spec 048,
+// FD-13); the fields have been in the format since spec 019.
+#[test]
+fn s48_08_a_hidden_locked_renamed_element_round_trips_through_the_gaf() {
+    let text = document().to_json().expect("json");
+    let mut json: Value = serde_json::from_str(&text).expect("json");
+    let base = &mut json["pages"][0]["nodes"][0]["base"];
+    base["visible"] = json!(false);
+    base["locked"] = json!(true);
+    base["name"] = json!("Fondo");
+    let changed = Document::from_json(&serde_json::to_vec(&json).expect("bytes"))
+        .expect("the document loads");
+    let loaded = read(gaf(&changed)).expect("reads");
+    assert_eq!(loaded.document, changed);
+    let back: Value =
+        serde_json::from_str(&loaded.document.to_json().expect("json")).expect("json");
+    let base = &back["pages"][0]["nodes"][0]["base"];
+    assert_eq!(base["visible"], json!(false));
+    assert_eq!(base["locked"], json!(true));
+    assert_eq!(base["name"], json!("Fondo"));
+}
+
 // S43-19: groups, nested and with a turned child, round-trip through the
 // `.gaf` with their children lists, in schema version 1: the format has
 // had `group` nodes since spec 019, so spec 043 needs no new version.
