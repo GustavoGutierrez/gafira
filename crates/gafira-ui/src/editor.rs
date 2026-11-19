@@ -2712,7 +2712,7 @@ impl Editor {
             && let Ok(size) = page.size.to_px(document.dpi())
         {
             let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let spec = canvas::new_shape(px, piece, canvas::document_color(theme.c("accent")));
+            let spec = canvas::new_shape(px, piece, canvas::default_fill());
             let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
             let next = NodeId::new(document.next_id());
             match engine.edit().execute(Box::new(command)) {
@@ -2728,7 +2728,7 @@ impl Editor {
             && let Ok(size) = on.size.to_px(document.dpi())
         {
             let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let fill = canvas::document_color(theme.c("accent"));
+            let fill = canvas::default_fill();
             let spec = canvas::piece_at(px, piece, fill, point);
             let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
             let next = NodeId::new(document.next_id());

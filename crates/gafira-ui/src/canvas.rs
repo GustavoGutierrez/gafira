@@ -741,6 +741,12 @@ pub(crate) fn image_mesh(
     mesh
 }
 
+/// The fill a new shape takes (spec 053): a light grey, #CCD1D9. It is
+/// document content, so it does not follow the light or dark theme.
+pub(crate) fn default_fill() -> Color {
+    Color::Srgb(Rgba::new(0.8, 0.82, 0.851, 1.0))
+}
+
 /// A theme colour as a document colour, for the default fill of a piece.
 pub(crate) fn document_color(color: Color32) -> Color {
     let channel = |v: u8| f32::from(v) / 255.0;
@@ -1252,6 +1258,19 @@ mod s41_tests {
         }
         assert_eq!(Piece::from(ShapeGeometry::Rect), Piece::Square);
         assert_eq!(Piece::from(ShapeGeometry::Ellipse), Piece::Circle);
+    }
+
+    // S53-04: a new shape is filled light grey, #CCD1D9.
+    #[test]
+    fn s53_04_default_fill_is_light_grey() {
+        let Color::Srgb(rgba) = default_fill() else {
+            panic!("an sRGB colour");
+        };
+        let byte = |v: f32| (v * 255.0).round() as u8;
+        assert_eq!(
+            (byte(rgba.r), byte(rgba.g), byte(rgba.b), rgba.a),
+            (0xCC, 0xD1, 0xD9, 1.0)
+        );
     }
 
     // S53-02: the panel lists «Formas básicas» with its three shapes in
