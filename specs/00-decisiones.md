@@ -891,3 +891,66 @@ Fecha: 19 de noviembre de 2026.
 
 - **Decisión** (titular, con capturas de referencia): el relleno de una forma es un color sólido o un degradado de dos o más colores, lineal en cualquier dirección o circular, elegido en el Inspector con las pestañas «Color sólido» y «Degradado».
 - **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.gradient`, que rellena en lugar de `fill` cuando existe): una forma sin degradado conserva sus bytes; una versión anterior no abre un archivo con degradados. El contrato del render gana `RenderOp::FillGradient`. Se aplica en la spec 063.
+
+## D-102 «Formas» pasa a llamarse «Elementos», con categorías
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): la pestaña del riel que el glosario llama «Formas» se llama «Elementos» («Elements» en inglés). Su panel muestra una cuadrícula de categorías (las de 03 §2.3: Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones); al pulsar una se entra en ella, con una flecha junto al título para volver. Volver a pulsar la pestaña activa del riel oculta el panel lateral, en todas las pestañas. Las tarjetas de categoría siguen la guía de marca: iconos de trazo simple en grafito sobre tarjetas claras apiladas (03 §13, P1); se descartaron iconos a color.
+- **Consecuencia**: cambia el nombre normativo de D-94 en el glosario de 03 (§2.3 y §2.8); «Formas» queda como categoría dentro de Elementos. Las claves internas no cambian. Se aplica en la spec 064.
+- Precisa D-94 y 03 §2.3, §2.8, §13. Aplicado a 03 (glosario).
+
+## D-103 «Luces y efectos»: Brillo y Destello de lente
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con una imagen de referencia): Elementos gana la categoría «Luces y efectos» («Lights & effects») con dos elementos personalizables: «Brillo» («Sparkle»), una estrella de luz con halo interior blanco, rayos (número, grosor, intensidad y ángulo) y halo exterior de color opcional; y «Destello de lente» («Lens flare»), el mismo brillo más el reflejo de una cámara que cruza la página desde la luz y se recalcula al moverla. Los nombres buscan que los entienda quien no es diseñador. Se descartó «Pasar por detrás» (reordenar objetos dentro de una forma): la categoría es solo de luces.
+- **Origen**: el comportamiento se tomó del manual público de un programa existente; su licencia prohíbe la ingeniería inversa, así que no se analizó su binario y la implementación es propia, con técnicas gráficas estándar.
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.effect`; una forma sin efecto conserva sus bytes; una versión anterior no abre un archivo que lo use). La luz se dibuja como imagen, así que el contrato del render no cambia. Se aplica en la spec 065.
+- Precisa D-102 y 03 §2.3.
+
+## D-104 Tres luces más: Destello de cine, Rayos de sol y Luces bokeh
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, pidiendo innovar sobre D-103): «Luces y efectos» gana «Destello de cine» («Cinematic streak»), la línea de luz de una lente anamórfica a lo largo de la página; «Rayos de sol» («Sun rays»), haces de luz que salen de la luz y cruzan la página; y «Luces bokeh» («Bokeh lights»), círculos de luz desenfocados repartidos por la caja de la forma. Usan los mismos ajustes que Brillo y Destello de lente (número, grosor o tamaño, intensidad, ángulo y color); el Inspector nombra cada ajuste según la luz.
+- **Consecuencia**: tres variantes más de `ShapeEffect` (aditivo, esquema 1). Se aplica en la spec 065.
+- Precisa D-103.
+
+## D-105 Todo lo que sale del panel Elementos se arrastra al lienzo
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): cada elemento del panel Elementos, de cualquier categoría presente o futura, se añade de dos formas, como las formas (spec 052): un clic lo pone en el centro de la página y un arrastre lo lleva al lienzo y lo deja centrado donde se suelta, seleccionado, en un solo paso de deshacer.
+- **Consecuencia**: una categoría nueva de Elementos no está terminada sin arrastrar y soltar. Aplicado a Formas (spec 052) y a «Luces y efectos» (spec 065).
+- Precisa D-102.
+
+## D-106 «Líneas» sale de Elementos; entra «Foto collage»
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): la categoría «Líneas» deja Elementos (las líneas siguen en la biblioteca de Formas) y su lugar lo ocupa «Foto collage» («Photo collage»): composiciones de varias fotos que funcionan como los Marcos (FD-18), cada hueco recibe una foto que queda recortada por él, pero con la estructura de un collage.
+- **Consecuencia**: cambia la lista de categorías de D-102 y del glosario de 03 (§2.3, §2.8). Foto collage depende del mecanismo de Marcos (FD-18), aún no implementado; hasta entonces su vista dice «Disponible pronto.».
+- Precisa D-102 y 03 §2.3.
+
+## D-107 La foto de un marco vive dentro del marco
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): el contenido de un marco (FD-18) es una referencia a la imagen guardada en el propio marco (`FrameContent { asset, natural }`), no un nodo hijo. Reemplazar la foto es un solo comando con un paso de deshacer, y la foto no aparece suelta en Capas ni se selecciona aparte del marco.
+- **Consecuencia**: precisa el `content: Option<NodeId>` de 02 §3.2. Se aplica en la spec 066.
+- Precisa 02 §3.2 y FD-18.
+
+## D-108 Fondo de la página
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): con la página o el lienzo seleccionados (nada seleccionado), el Inspector muestra solo «Fondo de la página»: un color (de una paleta, del selector, o buscado por nombre en español o inglés —«azul», «blue»— o por código hexadecimal —«#00c4cc»—), un degradado predefinido, un patrón (puntos, cuadrícula, rayas, cuadros, zigzag o cruces) con su color y su fondo, o una imagen subida que rellena, encaja o se repite en mosaico; y «Aplicar a todas las páginas».
+- **Consecuencia**: cambio aditivo del esquema 1 (`Page.background`; una página sin fondo conserva sus bytes; una versión anterior no abre un archivo que lo use). Se aplica en la spec 069.
+
+## D-109 Redimensionar una caja de texto
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura): una caja de texto tiene tiradores en sus cuatro esquinas y en el centro de sus lados, no en el centro de arriba ni de abajo. Una esquina escala la caja y el tamaño de letra en la misma proporción (la letra más pequeña no baja de 6 px); un lado cambia solo el ancho, nunca por debajo de lo que necesita una letra (1,2 veces la letra más grande).
+- **Consecuencia**: 03 DIS-89. Aplicado en `gafira-ui` (`textbox.rs`).

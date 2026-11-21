@@ -77,7 +77,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Nombre en Gafira | Pantalla | Qué contiene | Equivalente genérico |
 |---|---|---|---|
 | Plantillas | Diseño y Video | Búsqueda, plantillas empaquetadas y propias | Templates |
-| Formas (antes Piezas, D-94) | Diseño y Video | Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements / shapes library |
+| Elementos (antes Formas y Piezas, D-94, D-102) | Diseño y Video | Categorías: Formas, Foto collage (D-106), Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements library |
 | Texto | Diseño y Video | Estilos de texto, combinaciones, Efectos de texto | Text |
 | Marca (antes Identidad, D-97) | Diseño y Video | Colores, Tipografías, Logos y Estilos de la Marca activa | Brand panel |
 | Biblioteca | Diseño y Video | Archivos propios: imágenes, video, audio, diseños, Colecciones | Uploads / media library |
@@ -225,7 +225,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Nombre en Gafira (es, aprobado) | Nombre en inglés (PROPUESTA) | Contenido en inglés (PROPUESTA) |
 |---|---|---|
 | Plantillas | Templates | Search, bundled and own templates |
-| Formas (D-94) | Shapes | Shapes, Lines, Frames, Icons, QR codes, Tables, Charts, Illustrations |
+| Elementos (D-94, D-102) | Elements | Categories: Shapes, Photo collage (D-106), Frames, Icons, QR codes, Tables, Charts, Illustrations |
 | Texto | Text | Text styles, pairings, Text effects |
 | Marca (D-97) | Brand | Colors, Fonts, Logos and Styles of the active Brand |
 | Biblioteca | Library | Own files: images, video, audio, designs, Collections |
@@ -1169,6 +1169,8 @@ Clic derecho o tecla de menú sobre un objeto: Copiar, Pegar, Duplicar, Eliminar
 | DIS-33 | **El color nunca es la única señal**: errores con icono y texto, estados activos con forma (subrayado, relleno, marca), selección con borde + etiqueta. | Revisión por captura en escala de grises: todo estado sigue siendo distinguible. |
 | DIS-34 | **Contraste AA** de texto y componentes (DIS-10, DIS-11). | Prueba de `gafira-theme`. |
 | DIS-35 | **Tamaño de interfaz** 100–200 % sin pérdida de funciones; texto mínimo de 12 px a 100 %. | Capturas a 100, 150 y 200 %: 0 truncados sin tooltip. |
+| DIS-88 | **Margen interior de los campos de texto** (regla del titular, 2026-11-21): todo campo de una línea (búsquedas, nombres, valores) deja al menos 10 px a izquierda y derecha y 8 px arriba y abajo entre el texto, o su texto de ayuda, y el borde; se construye con el componente común (`widgets::field`). | Ningún campo de texto muestra el texto ni la ayuda pegados al borde; todos usan el componente común. |
+| DIS-89 | **Redimensionar una caja de texto** (D-109): tiradores en las cuatro esquinas y en el centro de los lados, no en el centro de arriba ni de abajo; una esquina escala la caja y la letra en proporción (mínimo 6 px de letra); un lado cambia solo el ancho, con un mínimo de 1,2 veces la letra más grande. | Seis tiradores en un texto; la letra crece con la caja en un paso de deshacer; un lado no deja la caja más estrecha que una letra. |
 | DIS-36 | **Reducción de movimiento** (§11) y alternativa estática de cualquier animación de interfaz. | ARQ-64. |
 | DIS-37 | **Orden de lectura accesible** al exportar PDF (spec 04) y texto alternativo editable por imagen. | Un PDF exportado pasa la validación de etiquetas (VERIFICAR herramienta). |
 | DIS-78 | **Idioma del texto accesible**: el nodo raíz del árbol de AccessKit declara el idioma activo (`es` o `en`) y cambia con él; las opciones «Español» y «English» del selector de idioma declaran el suyo propio; los nombres accesibles salen del mismo catálogo que el texto visible (02 ARQ-97). El texto de la persona en el Lienzo no recibe etiqueta de idioma salvo que se añada una propiedad de idioma al documento (PROPUESTA, PD-13). | Prueba con inspector de accesibilidad en los dos idiomas: idioma del nodo raíz correcto, 0 nombres en el otro idioma y 0 claves visibles. Que egui transmita la propiedad de idioma a AccessKit es VERIFICAR (02 §8.3). |
