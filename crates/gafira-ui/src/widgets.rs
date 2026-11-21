@@ -7,6 +7,17 @@ use egui::{
 use crate::icons::{self, Icon, Weight};
 use crate::style::{Theme, px};
 
+/// A one-line text field of the interface (03, DIS-88): 10 px of
+/// room left and right and 8 px above and below, so the text and its hint
+/// never touch the border, the width of its column. Every text field of the
+/// interface is built with it.
+pub(crate) fn field(text: &mut String, hint: String) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text)
+        .hint_text(hint)
+        .margin(Vec2::new(10.0, 8.0))
+        .desired_width(f32::INFINITY)
+}
+
 /// The coral button: one per view (DIS-15).
 pub(crate) fn primary(ui: &mut Ui, theme: &Theme, text: String) -> Response {
     let height = px(theme.tokens.size.control.lg);

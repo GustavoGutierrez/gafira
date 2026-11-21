@@ -1,6 +1,8 @@
-//! The Startup screen (03 §7.10, D-09), drawn inside the main window: the
-//! fallback §7.10.2 allows when a borderless, centred window is not
-//! available (Wayland places windows itself).
+//! The Startup screen (03 §7.10, D-09). The app opens as a borderless,
+//! centred window of `splash.window` (§7.10.2); when the screen ends, that
+//! same window takes decorations and grows into the main window, centred on
+//! where the splash was. Where the platform ignores the position (Wayland),
+//! the compositor places it.
 
 use egui::{Align2, Pos2, Rect, Vec2};
 
@@ -30,6 +32,21 @@ pub(crate) fn cover(window: Vec2, panel: f32, image: (f32, f32)) -> Rect {
     let visible = window.y - panel;
     let y = (visible / 2.0 - h / 2.0).clamp(window.y - h, 0.0);
     Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h))
+}
+
+/// The size of the main window (03 §7.1) once the splash ends: the default,
+/// reduced to 90 % of the monitor when it does not fit, never below the
+/// minimum. `monitor` is unknown on some platforms.
+pub(crate) fn main_size(default: Vec2, min: Vec2, monitor: Option<Vec2>) -> Vec2 {
+    match monitor {
+        Some(m) => default.min(m * 0.9).max(min),
+        None => default,
+    }
+}
+
+/// Where the main window goes so that it keeps the centre of the splash.
+pub(crate) fn grown_from(splash: Rect, size: Vec2) -> Pos2 {
+    splash.center() - size / 2.0
 }
 
 pub(crate) fn show(ctx: &egui::Context, theme: &Theme, texts: &Texts, version: &str, done: f32) {
@@ -93,6 +110,26 @@ pub(crate) fn show(ctx: &egui::Context, theme: &Theme, texts: &Texts, version: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_main_window_fits_the_monitor_without_going_below_the_minimum() {
+        let (default, min) = (Vec2::new(1440.0, 900.0), Vec2::new(1280.0, 720.0));
+        assert_eq!(main_size(default, min, None), default);
+        assert_eq!(
+            main_size(default, min, Some(Vec2::new(2560.0, 1440.0))),
+            default
+        );
+        let small = main_size(default, min, Some(Vec2::new(1500.0, 900.0)));
+        assert_eq!(small, Vec2::new(1350.0, 810.0));
+        assert_eq!(main_size(default, min, Some(Vec2::new(1024.0, 768.0))), min);
+    }
+
+    #[test]
+    fn the_main_window_keeps_the_centre_of_the_splash() {
+        let splash = Rect::from_min_size(Pos2::new(560.0, 315.0), Vec2::new(800.0, 450.0));
+        let at = grown_from(splash, Vec2::new(1440.0, 900.0));
+        assert_eq!(at, Pos2::new(240.0, 90.0));
+    }
 
     #[test]
     fn s17_01_the_bar_fills_over_the_minimum_visible_time() {

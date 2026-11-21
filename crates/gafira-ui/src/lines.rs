@@ -149,7 +149,7 @@ pub(crate) fn outline_point(page: &Page, node: NodeId, p: Point) -> Option<([f64
             }
             ShapeGeometry::Rect => box_point(local, w, h),
         },
-        NodeKind::Text(_) | NodeKind::Image(_) => box_point(local, w, h),
+        NodeKind::Text(_) | NodeKind::Image(_) | NodeKind::Frame(_) => box_point(local, w, h),
     };
     let unit = |v: f64, side: f64| if side > 0.0 { v / side } else { 0.5 };
     Some((
@@ -175,6 +175,18 @@ pub(crate) fn outline(page: &Page, node: NodeId) -> Vec<Vec<Point>> {
             ),
             ShapeGeometry::Path(path) => crate::shapes::bez(path, w, h),
             ShapeGeometry::Rect => kurbo::Shape::to_path(&kurbo::Rect::new(0.0, 0.0, w, h), 0.1),
+        },
+        // A frame is lit along its shape (spec 066).
+        NodeKind::Frame(frame) => match &frame.clip_shape {
+            ShapeGeometry::Ellipse => kurbo::Shape::to_path(
+                &kurbo::Ellipse::from_rect(kurbo::Rect::new(0.0, 0.0, w, h)),
+                0.1,
+            ),
+            ShapeGeometry::Path(path) => crate::shapes::bez(path, w, h),
+            ShapeGeometry::Rect => {
+                let r = frame.corner_radius.max(0.0).min(w.min(h) / 2.0);
+                kurbo::Shape::to_path(&kurbo::RoundedRect::new(0.0, 0.0, w, h, r), 0.1)
+            }
         },
         NodeKind::Text(_) | NodeKind::Image(_) => {
             kurbo::Shape::to_path(&kurbo::Rect::new(0.0, 0.0, w, h), 0.1)

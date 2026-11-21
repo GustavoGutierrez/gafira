@@ -16,6 +16,8 @@ gafira-ports.workspace = true
 gafira-theme.workspace = true
 gafira-i18n.workspace = true
 gafira-layout.workspace = true
+# Spec 065: the lights are drawn with the pixels of gafira-raster, as the export draws them.
+gafira-raster.workspace = true
 # Spec 054: shape paths are built with kurbo and drawn on the canvas with tiny-skia.
 kurbo.workspace = true
 tiny-skia.workspace = true
@@ -23,6 +25,9 @@ egui.workspace = true
 eframe.workspace = true
 egui_extras.workspace = true
 image.workspace = true
+arboard.workspace = true
+# Spec 066, S66-10: custom frames from SVG and PDF outlines.
+gafira-io-vector.workspace = true
 rfd.workspace = true
 
 [lints]

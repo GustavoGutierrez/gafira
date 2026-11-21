@@ -75,11 +75,29 @@ pub(crate) enum Icon {
     PageUp,
     PageCopy,
     PageAdd,
+    /// The cards of Elementos and its «Volver» arrow (spec 064).
+    CategoryShapes,
+    CategoryCollage,
+    CategoryFrames,
+    CategoryIcons,
+    CategoryQrCodes,
+    CategoryTables,
+    CategoryCharts,
+    CategoryIllustrations,
+    Back,
+    /// «Luces y efectos» and its elements (spec 065): the category, also
+    /// «Brillo», and «Destello de lente».
+    CategoryLights,
+    LensFlare,
+    /// «Destello de cine», «Rayos de sol» and «Luces bokeh» (D-104).
+    Streak,
+    SunRays,
+    Bokeh,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 41] = [
+    pub(crate) const ALL: [Self; 55] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -121,6 +139,20 @@ impl Icon {
         Self::PageUp,
         Self::PageCopy,
         Self::PageAdd,
+        Self::CategoryShapes,
+        Self::CategoryCollage,
+        Self::CategoryFrames,
+        Self::CategoryIcons,
+        Self::CategoryQrCodes,
+        Self::CategoryTables,
+        Self::CategoryCharts,
+        Self::CategoryIllustrations,
+        Self::Back,
+        Self::CategoryLights,
+        Self::LensFlare,
+        Self::Streak,
+        Self::SunRays,
+        Self::Bokeh,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -167,6 +199,20 @@ impl Icon {
             Self::PageUp => "caret-up",
             Self::PageCopy => "copy",
             Self::PageAdd => "file-plus",
+            Self::CategoryShapes => "polygon",
+            Self::CategoryCollage => "grid-four",
+            Self::CategoryFrames => "frame-corners",
+            Self::CategoryIcons => "smiley",
+            Self::CategoryQrCodes => "qr-code",
+            Self::CategoryTables => "table",
+            Self::CategoryCharts => "chart-bar",
+            Self::CategoryIllustrations => "paint-brush-broad",
+            Self::Back => "arrow-left",
+            Self::CategoryLights => "sparkle",
+            Self::LensFlare => "sun",
+            Self::Streak => "arrows-out-line-horizontal",
+            Self::SunRays => "sun-horizon",
+            Self::Bokeh => "circles-three",
         }
     }
 
@@ -347,6 +393,26 @@ pub(crate) fn paint(
     let texture = texture(ctx, icon, weight, side);
     let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
     painter.image(texture.id(), target, uv, color);
+}
+
+/// Draw `icon` as a square of `size` centred on `centre`, turned by `angle`
+/// radians (the cards of Elementos, spec 064).
+pub(crate) fn paint_turned(
+    painter: &egui::Painter,
+    centre: Pos2,
+    size: f32,
+    angle: f32,
+    icon: Icon,
+    weight: Weight,
+    color: Color32,
+) {
+    let ctx = painter.ctx();
+    let texture = texture(ctx, icon, weight, physical(ctx, size));
+    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+    let mut mesh = egui::Mesh::with_texture(texture.id());
+    mesh.add_rect_with_uv(Rect::from_center_size(centre, Vec2::splat(size)), uv, color);
+    mesh.rotate(egui::emath::Rot2::from_angle(angle), centre);
+    painter.add(mesh);
 }
 
 /// `icon` as an egui image of `size` points, for buttons with a label.

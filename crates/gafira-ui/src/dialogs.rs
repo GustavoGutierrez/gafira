@@ -120,3 +120,60 @@ pub(crate) fn leave(ctx: &egui::Context, theme: &Theme, texts: &Texts) -> LeaveC
     }
     choice
 }
+
+/// The answer to «¿Cómo quieres importarlo?» (spec 067).
+pub(crate) enum SvgImport {
+    Waiting,
+    Image,
+    Frame,
+    Cancel,
+}
+
+/// «¿Cómo quieres importarlo?»: an SVG comes in as it is, as an image, or
+/// as a frame of its outline (spec 067). One question for all the files.
+pub(crate) fn svg_import(
+    ctx: &egui::Context,
+    theme: &Theme,
+    texts: &Texts,
+    files: &[std::path::PathBuf],
+) -> SvgImport {
+    let mut choice = SvgImport::Waiting;
+    let response = egui::Modal::new(egui::Id::new("svg_import")).show(ctx, |ui| {
+        ui.set_width(460.0);
+        ui.label(
+            RichText::new(texts.t(&gafira_doc::msg!("svg_import.title"))).font(theme.font("h3")),
+        );
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|f| f.file_name().and_then(|n| n.to_str()).map(str::to_owned))
+            .collect();
+        ui.label(
+            RichText::new(names.join(", "))
+                .font(theme.font("body-sm"))
+                .color(theme.c("text.secondary")),
+        );
+        ui.add_space(8.0);
+        ui.label(texts.t(&gafira_doc::msg!("svg_import.body")));
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            if widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("svg_import.image"))).clicked()
+            {
+                choice = SvgImport::Image;
+            }
+            if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("svg_import.frame")))
+                .clicked()
+            {
+                choice = SvgImport::Frame;
+            }
+            if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("svg_import.cancel")))
+                .clicked()
+            {
+                choice = SvgImport::Cancel;
+            }
+        });
+    });
+    if response.should_close() && matches!(choice, SvgImport::Waiting) {
+        choice = SvgImport::Cancel;
+    }
+    choice
+}

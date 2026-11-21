@@ -46,6 +46,8 @@ pub struct UiConfig {
     pub engine: EngineFactory,
     /// The recent projects of Inicio (spec 025).
     pub recent: Box<dyn RecentStore>,
+    /// The imported files of Biblioteca (spec 068).
+    pub library: Box<dyn crate::LibraryStore>,
     /// «Mostrar en carpeta» after an export (spec 039).
     pub show_in_folder: ShowInFolder,
     /// The fonts installed on the system, filled in the background (spec
@@ -59,6 +61,24 @@ struct RepaintWaker(egui::Context);
 impl Waker for RepaintWaker {
     fn wake(&self) {
         self.0.request_repaint();
+    }
+}
+
+/// The default and minimum main window, in logical px (03 §7.1).
+const MAIN_WINDOW: egui::Vec2 = egui::Vec2::new(1440.0, 900.0);
+const MAIN_WINDOW_MIN: egui::Vec2 = egui::Vec2::new(1280.0, 720.0);
+
+/// Turn the borderless splash window into the main window, centred on where
+/// the splash was.
+fn grow_into_main_window(ctx: &egui::Context) {
+    let (outer, monitor) = ctx.input(|i| (i.viewport().outer_rect, i.viewport().monitor_size));
+    let size = splash::main_size(MAIN_WINDOW, MAIN_WINDOW_MIN, monitor);
+    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+    ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(MAIN_WINDOW_MIN));
+    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+    if let Some(outer) = outer {
+        let at = splash::grown_from(outer, size).max(egui::Pos2::ZERO);
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(at));
     }
 }
 
@@ -103,6 +123,8 @@ struct Shell {
     /// Ajustes, when open, drawn instead of the screen (spec 034).
     settings: Option<SettingsView>,
     recent: Box<dyn RecentStore>,
+    /// The imported files of Biblioteca, shared with every editor (spec 068).
+    library: std::rc::Rc<dyn crate::LibraryStore>,
     theme: Theme,
     texts: Texts,
     version: &'static str,
@@ -151,17 +173,24 @@ struct Shell {
 pub fn run(config: UiConfig) -> eframe::Result {
     crate::system_fonts::install(config.system_fonts.clone());
     let tokens = ThemeTokens::embedded().map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+    // The window opens as the Startup screen (03 §7.10.2) and grows into
+    // the main window when it ends (`Shell::grow_into_main_window`).
+    let (w, h) = tokens.splash.window;
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Gafira")
         .with_app_id(app_icon::APP_ID)
-        .with_inner_size([1440.0, 900.0])
-        .with_min_inner_size([1280.0, 720.0]);
+        .with_inner_size([w as f32, h as f32])
+        // Not `with_resizable(false)`: a borderless window has no handles to
+        // resize it, and on X11 a window born fixed keeps the maximize
+        // button disabled after it grows.
+        .with_decorations(false);
     // Spec 046: an icon that cannot be decoded leaves the system's default.
     if let Some(icon) = app_icon::window_icon() {
         viewport = viewport.with_icon(icon);
     }
     let options = eframe::NativeOptions {
         viewport,
+        centered: true,
         ..Default::default()
     };
     eframe::run_native(
@@ -196,6 +225,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 settings: None,
                 engine,
                 recent: config.recent,
+                library: std::rc::Rc::from(config.library),
                 theme,
                 texts: Texts::new(config.locale.unwrap_or(resolved.locale)),
                 version: config.version,
@@ -230,6 +260,13 @@ enum Leave {
 }
 
 impl Shell {
+    /// A new editor with the shared Biblioteca (spec 068).
+    fn new_editor(&self) -> Box<Editor> {
+        let mut editor = Box::<Editor>::default();
+        editor.library = Some(std::rc::Rc::clone(&self.library));
+        editor
+    }
+
     /// Pump the autosave (02 §7.2): hand the due job to a thread and account
     /// for it when it comes back. The engine schedules; the host runs (P13).
     fn pump_autosave(&mut self, ctx: &egui::Context) {
@@ -300,7 +337,7 @@ impl Shell {
         match self.engine.projects().open(path) {
             Ok(()) => {
                 self.remember();
-                self.screen = Screen::Editor(Box::default());
+                self.screen = Screen::Editor(self.new_editor());
             }
             Err(error) => {
                 eprintln!("open recent: {error}");
@@ -321,7 +358,7 @@ impl Shell {
             files::Plan::Cancelled | files::Plan::Opened(Outcome::Cancelled) => {}
             files::Plan::Opened(Outcome::Done) => {
                 self.remember();
-                self.screen = Screen::Editor(Box::default());
+                self.screen = Screen::Editor(self.new_editor());
             }
             files::Plan::Opened(Outcome::Failed(message, detail)) => {
                 eprintln!("{action:?}: {detail}");
@@ -549,7 +586,7 @@ impl Shell {
                     Ok(()) => {
                         self.remember();
                         self.recovery.clear();
-                        self.screen = Screen::Editor(Box::default());
+                        self.screen = Screen::Editor(self.new_editor());
                     }
                     Err(error) => {
                         eprintln!("recover: {error}");
@@ -566,7 +603,7 @@ impl Shell {
                             self.remember();
                             self.engine.projects().discard_recovery(entry.project_id);
                             self.recovery.clear();
-                            self.screen = Screen::Editor(Box::default());
+                            self.screen = Screen::Editor(self.new_editor());
                         }
                         Err(error) => {
                             eprintln!("open: {error}");
@@ -660,6 +697,7 @@ impl eframe::App for Shell {
                 let progress = splash::progress(self.elapsed);
                 splash::show(ctx, &self.theme, &self.texts, self.version, progress);
                 if progress >= 1.0 {
+                    grow_into_main_window(ctx);
                     Go::Home
                 } else {
                     ctx.request_repaint_after(Duration::from_millis(16));
@@ -730,7 +768,7 @@ impl eframe::App for Shell {
                 self.export = Some(export::Dialog::new(export::formats(&self.engine), page));
             }
             Go::Editor(format) => match start(&mut self.engine, format) {
-                Ok(()) => self.screen = Screen::Editor(Box::default()),
+                Ok(()) => self.screen = Screen::Editor(self.new_editor()),
                 Err(error) => eprintln!("new document: {error}"),
             },
         }
