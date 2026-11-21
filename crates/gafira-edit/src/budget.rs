@@ -73,6 +73,13 @@ fn node_bytes(node: &Node) -> usize {
                 .as_ref()
                 .map_or(0, |text| rich_bytes(&text.content))
         }
+        // A frame's path keeps its orders on the heap too (spec 066).
+        NodeKind::Frame(frame) => match &frame.clip_shape {
+            gafira_doc::ShapeGeometry::Path(path) => {
+                path.commands.len() * size_of::<gafira_doc::PathCommand>()
+            }
+            _ => 0,
+        },
         NodeKind::Group(_) | NodeKind::Image(_) | NodeKind::Line(_) => 0,
     };
     size_of::<Node>()

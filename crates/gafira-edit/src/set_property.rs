@@ -44,7 +44,19 @@ pub enum Property {
     /// The gradient fill of a shape; `None` fills it with its colour again
     /// (spec 063).
     Gradient(Option<gafira_doc::Gradient>),
+    /// The light of a shape (spec 065); `None` takes it off.
+    Effect(Option<gafira_doc::ShapeEffect>),
+    /// The photo of a frame (spec 066, D-107); `None` empties it. One
+    /// change, so putting, replacing or removing a photo is one undo step.
+    FrameContent(Option<gafira_doc::FrameContent>),
+    /// How the photo of a frame sits in it (spec 066).
+    FrameFit(gafira_doc::Fit),
+    /// Where the photo of a frame sits, how large and how turned:
+    /// `(offset, scale, degrees)` (S66-07: crop mode).
+    FrameCrop((f64, f64), f64, f64),
     PageName(String),
+    /// The background of a page (spec 069); `None` makes it white again.
+    PageBackground(Option<gafira_doc::PageBackground>),
     PageSize(PageSize),
     PageLocked(bool),
     PageHidden(bool),
@@ -76,8 +88,13 @@ impl Property {
             Self::ShapeText(_) => "set_property.shape_text",
             Self::Line(_) => "set_property.line",
             Self::Gradient(_) => "set_property.gradient",
+            Self::Effect(_) => "set_property.effect",
+            Self::FrameContent(_) => "set_property.frame_content",
+            Self::FrameFit(_) => "set_property.frame_fit",
+            Self::FrameCrop(..) => "set_property.frame_crop",
             Self::TextContent(_) => "set_property.text_content",
             Self::PageName(_) => "set_property.page_name",
+            Self::PageBackground(_) => "set_property.page_background",
             Self::PageSize(_) => "set_property.page_size",
             Self::PageLocked(_) => "set_property.page_locked",
             Self::PageHidden(_) => "set_property.page_hidden",
@@ -115,6 +132,20 @@ impl Property {
             Self::TextContent(text) => ("text_content", spans_valid(text)),
             Self::ShapeText(Some(text)) => ("shape_text", spans_valid(&text.content)),
             Self::Gradient(Some(gradient)) => ("gradient", gradient.problem().is_none()),
+            Self::Effect(Some(effect)) => ("effect", effect.problem().is_none()),
+            Self::PageBackground(Some(background)) => ("page_background", background.is_valid()),
+            Self::FrameCrop(offset, scale, degrees) => (
+                "frame_crop",
+                offset.0.is_finite()
+                    && offset.1.is_finite()
+                    && scale.is_finite()
+                    && *scale > 0.0
+                    && degrees.is_finite(),
+            ),
+            Self::FrameContent(Some(content)) => (
+                "frame_content",
+                content.natural.0 > 0 && content.natural.1 > 0,
+            ),
             Self::Line(line) => (
                 "line",
                 line.color.is_finite()
@@ -155,6 +186,14 @@ impl Property {
             (Self::ShapeText(_), NodeKind::Shape(s)) => Self::ShapeText(s.text.clone()),
             (Self::Line(_), NodeKind::Line(l)) => Self::Line(l.clone()),
             (Self::Gradient(_), NodeKind::Shape(s)) => Self::Gradient(s.gradient.clone()),
+            (Self::Effect(_), NodeKind::Shape(s)) => Self::Effect(s.effect.clone()),
+            (Self::FrameContent(_), NodeKind::Frame(f)) => Self::FrameContent(f.content),
+            (Self::FrameFit(_), NodeKind::Frame(f)) => Self::FrameFit(f.fit),
+            (Self::FrameCrop(..), NodeKind::Frame(f)) => {
+                Self::FrameCrop(f.content_offset, f.content_scale, f.content_rotation_deg)
+            }
+            (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
+            (Self::CornerRadius(_), NodeKind::Frame(f)) => Self::CornerRadius(f.corner_radius),
             _ => return None,
         })
     }
@@ -177,6 +216,16 @@ impl Property {
             (Self::ShapeText(v), NodeKind::Shape(s)) => s.text.clone_from(v),
             (Self::Line(v), NodeKind::Line(l)) => l.clone_from(v),
             (Self::Gradient(v), NodeKind::Shape(s)) => s.gradient.clone_from(v),
+            (Self::Effect(v), NodeKind::Shape(s)) => s.effect.clone_from(v),
+            (Self::FrameContent(v), NodeKind::Frame(f)) => f.content = *v,
+            (Self::FrameFit(v), NodeKind::Frame(f)) => f.fit = *v,
+            (Self::FrameCrop(offset, scale, degrees), NodeKind::Frame(f)) => {
+                f.content_offset = *offset;
+                f.content_scale = *scale;
+                f.content_rotation_deg = *degrees;
+            }
+            (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,
+            (Self::CornerRadius(v), NodeKind::Frame(f)) => f.corner_radius = *v,
             _ => {}
         }
     }
@@ -207,6 +256,7 @@ impl Property {
     fn scope(&self) -> Scope {
         match self {
             Self::PageName(_)
+            | Self::PageBackground(_)
             | Self::PageSize(_)
             | Self::PageLocked(_)
             | Self::PageHidden(_)
@@ -223,6 +273,7 @@ impl Property {
     fn read_page(&self, page: &Page) -> Option<Property> {
         Some(match self {
             Self::PageName(_) => Self::PageName(page.name.clone()),
+            Self::PageBackground(_) => Self::PageBackground(page.background.clone()),
             Self::PageSize(_) => Self::PageSize(page.size),
             Self::PageLocked(_) => Self::PageLocked(page.locked),
             Self::PageHidden(_) => Self::PageHidden(page.hidden),
@@ -238,6 +289,7 @@ impl Property {
     fn write_page(&self, page: &mut Page) {
         match self {
             Self::PageName(v) => page.name.clone_from(v),
+            Self::PageBackground(v) => page.background.clone_from(v),
             Self::PageSize(v) => page.size = *v,
             Self::PageLocked(v) => page.locked = *v,
             Self::PageHidden(v) => page.hidden = *v,
@@ -680,6 +732,97 @@ mod tests {
         broken.stops.truncate(1);
         let mut refused = set(&[A], Property::Gradient(Some(broken)));
         assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
+    #[test]
+    fn s65_01_the_effect_is_set_and_removed() {
+        use gafira_doc::{Light, ShapeEffect};
+        let original = fixture();
+        let mut doc = original.clone();
+        let effect = ShapeEffect::Sparkle(Light::SPARKLE);
+        let mut command = set(&[A], Property::Effect(Some(effect.clone())));
+        assert_eq!(apply(&mut command, &mut doc), Ok(Applied::Changed));
+        let NodeKind::Shape(shape) = &node(&doc, A).kind else {
+            panic!("a shape")
+        };
+        assert_eq!(shape.effect.as_ref(), Some(&effect));
+        let mut off = set(&[A], Property::Effect(None));
+        assert_eq!(apply(&mut off, &mut doc), Ok(Applied::Changed));
+        assert_eq!(doc, original);
+        revert(&mut off, &mut doc).unwrap();
+        revert(&mut command, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut broken = Light::SPARKLE;
+        broken.rays = 2;
+        let mut refused = set(&[A], Property::Effect(Some(ShapeEffect::Sparkle(broken))));
+        assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
+    // S66-02: putting, replacing and removing the photo of a frame are one
+    // change each, undone in one step; the fit changes alone.
+    #[test]
+    fn s66_02_set_replace_and_remove_are_one_undo_each() {
+        use gafira_doc::timeline::{AssetEntry, AssetRef, AssetStorage};
+        use gafira_doc::{ContentHash, Fit, FrameContent, FrameNode};
+        let photo = |byte: u8| FrameContent {
+            asset: AssetRef::new(ContentHash([byte; 32])),
+            natural: (40, 30),
+        };
+        let mut original = fixture();
+        {
+            let token = EditToken::__new_for_gafira_edit_only();
+            let mut edit = original.edit(&token);
+            for byte in [1, 2] {
+                edit.assets_mut().insert(
+                    photo(byte).asset,
+                    AssetEntry {
+                        name: format!("{byte}.png"),
+                        storage: AssetStorage::Embedded,
+                    },
+                );
+            }
+            let page = Arc::make_mut(&mut edit.pages_mut()[0]);
+            let node = Arc::make_mut(page.nodes.get_mut(&A).expect("A"));
+            node.kind = NodeKind::Frame(FrameNode::new(ShapeGeometry::Ellipse));
+        }
+        let frame = |doc: &Document| match &node(doc, A).kind {
+            NodeKind::Frame(frame) => frame.clone(),
+            _ => panic!("a frame"),
+        };
+        let mut doc = original.clone();
+        let mut put = set(&[A], Property::FrameContent(Some(photo(1))));
+        assert_eq!(apply(&mut put, &mut doc), Ok(Applied::Changed));
+        let mut replace = set(&[A], Property::FrameContent(Some(photo(2))));
+        assert_eq!(apply(&mut replace, &mut doc), Ok(Applied::Changed));
+        assert_eq!(frame(&doc).content, Some(photo(2)));
+        assert_eq!(
+            frame(&doc).clip_shape,
+            ShapeGeometry::Ellipse,
+            "the shape stays"
+        );
+        let mut fit = set(&[A], Property::FrameFit(Fit::Fit));
+        assert_eq!(apply(&mut fit, &mut doc), Ok(Applied::Changed));
+        let mut crop = set(&[A], Property::FrameCrop((0.1, -0.2), 1.5, 20.0));
+        assert_eq!(apply(&mut crop, &mut doc), Ok(Applied::Changed));
+        assert_eq!(frame(&doc).content_offset, (0.1, -0.2));
+        assert_eq!(frame(&doc).content_scale, 1.5);
+        assert_eq!(frame(&doc).content_rotation_deg, 20.0);
+        revert(&mut crop, &mut doc).unwrap();
+        assert_eq!(frame(&doc).content_scale, 1.0, "the crop is one step");
+        let mut bad = set(&[A], Property::FrameCrop((0.0, 0.0), 0.0, 0.0));
+        assert!(apply(&mut bad, &mut doc).is_err());
+        let mut remove = set(&[A], Property::FrameContent(None));
+        assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+        assert_eq!(frame(&doc).content, None);
+        assert_eq!(frame(&doc).fit, Fit::Fit);
+        revert(&mut remove, &mut doc).unwrap();
+        assert_eq!(frame(&doc).content, Some(photo(2)), "one step back");
+        revert(&mut fit, &mut doc).unwrap();
+        revert(&mut replace, &mut doc).unwrap();
+        assert_eq!(frame(&doc).content, Some(photo(1)));
+        revert(&mut put, &mut doc).unwrap();
         assert_eq!(doc, original);
     }
 
