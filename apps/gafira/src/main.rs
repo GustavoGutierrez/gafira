@@ -16,8 +16,8 @@ use gafira_engine::{
 use gafira_format::{GafRepository, Limits, read_thumbnail};
 use gafira_i18n::D08LocaleResolver;
 use gafira_platform::{
-    EnvLocale, JsonSettings, RandomIds, RecentProjects, StdFileSystem, StderrNotifier, SystemClock,
-    SystemProcesses,
+    EnvLocale, ImportedFiles, JsonSettings, RandomIds, RecentProjects, StdFileSystem,
+    StderrNotifier, SystemClock, SystemProcesses,
 };
 use gafira_ports::export::{Exporter, PageRenderers};
 use gafira_ports::i18n::{LanguagePreference, Locale, LocaleResolver};
@@ -32,6 +32,39 @@ use gafira_render_cpu::CpuBackend;
 struct Recent {
     file: RecentProjects,
     clock: SystemClock,
+}
+
+/// Biblioteca over `<data_dir>/library.json` (spec 068).
+struct Library {
+    file: ImportedFiles,
+}
+
+impl gafira_ui::LibraryStore for Library {
+    fn existing(&self) -> Vec<gafira_ui::LibraryEntry> {
+        let list = self.file.existing().unwrap_or_else(|error| {
+            eprintln!("library: {error}");
+            self.file.load()
+        });
+        list.into_iter()
+            .map(|entry| gafira_ui::LibraryEntry {
+                path: entry.path,
+                design: entry.design,
+                added: entry.added,
+            })
+            .collect()
+    }
+
+    fn record(&self, file: &std::path::Path, design: bool) {
+        if let Err(error) = self.file.record(file, design) {
+            eprintln!("library: {error}");
+        }
+    }
+
+    fn remove(&self, entries: &[(std::path::PathBuf, bool)]) {
+        if let Err(error) = self.file.remove(entries) {
+            eprintln!("library: {error}");
+        }
+    }
 }
 
 impl gafira_ui::RecentStore for Recent {
@@ -125,6 +158,9 @@ fn main() -> eframe::Result {
         recent: Box::new(Recent {
             file: RecentProjects::at(data_dir.join("recent.json")),
             clock: SystemClock::new(),
+        }),
+        library: Box::new(Library {
+            file: ImportedFiles::at(data_dir.join("library.json")),
         }),
         // Spec 039: «Mostrar en carpeta» opens the system file manager.
         show_in_folder: Box::new(gafira_platform::show_in_folder),
