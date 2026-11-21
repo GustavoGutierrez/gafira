@@ -175,10 +175,15 @@ impl GraphPageRenderer {
         cancel: &CancelToken,
     ) -> Result<RenderGraph, RenderError> {
         let view = PageView::new(page);
-        RenderGraphBuilder::new(&view, params, InlinePool)
+        let mut builder = RenderGraphBuilder::new(&view, params, InlinePool)
             .scaled(scale)
             .with_fonts(Arc::clone(&self.fonts))
-            .with_images(Arc::clone(&self.images))
+            .with_images(Arc::clone(&self.images));
+        // «Destello de lente» spreads over the page (spec 065).
+        if let Ok(px) = page.size.to_px(self.document.dpi()) {
+            builder = builder.with_page_px(px.width(), px.height());
+        }
+        builder
             .build(WalkOrder::PreOrder, cancel, &NoProgress)
             .map_err(graph_error)
     }
@@ -474,6 +479,7 @@ mod tests {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         });
         page.nodes.insert(node, Arc::new(Node::new(base, kind)));
         page.roots = vec![node];
@@ -513,6 +519,7 @@ mod tests {
         FillPath { color: Color, transform: Affine },
         FillGradient,
         DrawImage,
+        ClipPath,
         ApplyMask,
         ApplyEffect,
         ApplyTransition,
@@ -533,6 +540,7 @@ mod tests {
                 transform: *transform,
             },
             RenderOp::DrawImage { .. } => OpShape::DrawImage,
+            RenderOp::ClipPath { .. } => OpShape::ClipPath,
             RenderOp::FillGradient { .. } => OpShape::FillGradient,
             RenderOp::ApplyMask { .. } => OpShape::ApplyMask,
             RenderOp::ApplyEffect { .. } => OpShape::ApplyEffect,

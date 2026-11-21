@@ -68,6 +68,7 @@ fn page() -> Page {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         }),
     );
     let group = Node::new(
@@ -103,6 +104,7 @@ enum OpShape {
     PopLayer { blend: BlendMode, opacity: f32 },
     FillPath { color: Color, transform: Affine },
     DrawImage,
+    ClipPath,
     FillGradient,
     ApplyMask,
     ApplyEffect,
@@ -124,6 +126,7 @@ fn op_shape(op: &RenderOp) -> OpShape {
             transform: *transform,
         },
         RenderOp::DrawImage { .. } => OpShape::DrawImage,
+        RenderOp::ClipPath { .. } => OpShape::ClipPath,
         RenderOp::FillGradient { .. } => OpShape::FillGradient,
         RenderOp::ApplyMask { .. } => OpShape::ApplyMask,
         RenderOp::ApplyEffect { .. } => OpShape::ApplyEffect,

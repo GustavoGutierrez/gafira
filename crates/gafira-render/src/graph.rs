@@ -18,12 +18,13 @@ use gafira_doc::contract::{CancelToken, Cancelled, Progress, checkpoint};
 use gafira_doc::visit::{NodeVisitor, PageView, WalkOrder, walk};
 use gafira_doc::{
     AssetRef, BlendMode, ElementBase, ExtensionNode, GroupNode, ImageNode, Node, NodeId, Page,
-    Placement, ShapeGeometry, ShapeNode, TextAlign, TextNode,
+    Placement, ShapeEffect, ShapeGeometry, ShapeNode, TextAlign, TextNode,
 };
 use gafira_geom::Affine;
 use gafira_pathops::{Cap, FillRule, Join, StrokeStyle};
 use gafira_ports::export::ImagePixels;
 use gafira_ports::render::{ContentKey, RenderOp, RenderQuality};
+use gafira_raster::{ImageBuf, LightSpot};
 use gafira_time::Flicks;
 use kurbo::{BezPath, Ellipse, Rect, RoundedRect, Shape};
 
@@ -258,6 +259,8 @@ enum RecordKind {
     Image(AssetRef),
     /// A line: a stroke between its resolved ends, with its caps (spec 058).
     Line(gafira_doc::LineNode),
+    /// A frame: its photo cut out by its shape, and its outline (spec 066).
+    Frame(gafira_doc::FrameNode),
 }
 
 /// Builds the render graph of a page by walking it (02 §6.1).
@@ -287,6 +290,9 @@ pub struct RenderGraphBuilder<'a, P: WorkerPool> {
     scale: f64,
     fonts: Arc<FontBook>,
     images: Arc<ImagePixels>,
+    /// The size of the page in px, which «Destello de lente» spreads over
+    /// (spec 065); without it the flare draws its star alone.
+    page_px: Option<(f64, f64)>,
 }
 
 impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
@@ -300,7 +306,15 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
             scale: 1.0,
             fonts: Arc::new(FontBook::new()),
             images: Arc::new(ImagePixels::new()),
+            page_px: None,
         }
+    }
+
+    /// The builder that knows the size of the page in px (spec 065).
+    #[must_use]
+    pub fn with_page_px(mut self, width: f64, height: f64) -> Self {
+        self.page_px = Some((width, height));
+        self
     }
 
     /// The builder that draws the page `scale` times its size (FD-55): every
@@ -361,7 +375,11 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
         let built = self
             .pool
             .map(roots.len(), |at| self.subtree(roots[at], cancel));
-        let mut subgraphs: Vec<SubGraph> = Vec::with_capacity(roots.len());
+        let mut subgraphs: Vec<SubGraph> = Vec::with_capacity(roots.len() + 1);
+        // The background of the page, under everything (spec 069).
+        if let Some(background) = self.background()? {
+            subgraphs.push(background);
+        }
         for sub in built {
             subgraphs.push(sub?);
         }
@@ -402,6 +420,138 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
         })
     }
 
+    /// The background of the page as a subgraph of its own (spec 069): a
+    /// colour, a gradient, a pattern or an image over the page box. Needs the
+    /// size of the page; without it, or without a background, nothing.
+    fn background(&self) -> Result<Option<SubGraph>, GraphError> {
+        use gafira_doc::{BackgroundFit, PageBackground};
+        let (Some(background), Some((pw, ph))) = (&self.page.background, self.page_px) else {
+            return Ok(None);
+        };
+        let scale = Affine::scale(self.scale);
+        let rect = Rect::new(0.0, 0.0, pw, ph);
+        let base = ElementBase::new(NodeId::new(0), Placement::new(0.0, 0.0, pw, ph));
+        let mut ops = vec![RenderOp::PushLayer];
+        match background {
+            PageBackground::Solid(color) => {
+                check_color(color, "background")?;
+                ops.push(RenderOp::FillPath {
+                    path: Arc::new(rect.to_path(0.1)),
+                    color: *color,
+                    transform: scale,
+                });
+            }
+            PageBackground::Gradient(gradient) => ops.push(RenderOp::FillGradient {
+                path: Arc::new(rect.to_path(0.1)),
+                gradient: Arc::new(gradient.clone()),
+                size: (pw, ph),
+                transform: scale,
+            }),
+            PageBackground::Pattern { kind, color, back } => {
+                // Vector shapes over the background colour, cut to the page:
+                // sharp at any scale (spec 069).
+                check_color(color, "background")?;
+                check_color(back, "background")?;
+                ops.push(RenderOp::FillPath {
+                    path: Arc::new(rect.to_path(0.1)),
+                    color: *back,
+                    transform: scale,
+                });
+                ops.push(RenderOp::FillPath {
+                    path: Arc::new(gafira_raster::pattern_path(
+                        *kind,
+                        pw,
+                        ph,
+                        gafira_raster::PATTERN_CELL,
+                    )),
+                    color: *color,
+                    transform: scale,
+                });
+                ops.push(RenderOp::ClipPath {
+                    path: Arc::new(rect.to_path(0.1)),
+                    transform: scale,
+                });
+            }
+            PageBackground::Image {
+                asset,
+                natural,
+                fit,
+            } => {
+                let Some(image) = self.images.get(asset) else {
+                    return Ok(None);
+                };
+                let (nw, nh) = (f64::from(natural.0), f64::from(natural.1));
+                // Natural px to the pixels of the decoded image.
+                let pixels = Affine::scale_non_uniform(
+                    nw / f64::from(image.width().max(1)),
+                    nh / f64::from(image.height().max(1)),
+                );
+                let placed = |x: f64, y: f64, k: f64| {
+                    scale * Affine::translate((x, y)) * Affine::scale(k) * pixels
+                };
+                match fit {
+                    BackgroundFit::Fill | BackgroundFit::Fit => {
+                        let k = if *fit == BackgroundFit::Fill {
+                            (pw / nw).max(ph / nh)
+                        } else {
+                            (pw / nw).min(ph / nh)
+                        };
+                        ops.push(RenderOp::DrawImage {
+                            image: Arc::clone(image),
+                            transform: placed((pw - nw * k) / 2.0, (ph - nh * k) / 2.0, k),
+                        });
+                    }
+                    BackgroundFit::Tile => {
+                        // At its own size from the top left, at most 64
+                        // across and down.
+                        let across = (pw / nw).ceil().clamp(1.0, 64.0) as usize;
+                        let down = (ph / nh).ceil().clamp(1.0, 64.0) as usize;
+                        for row in 0..down {
+                            for column in 0..across {
+                                ops.push(RenderOp::DrawImage {
+                                    image: Arc::clone(image),
+                                    transform: placed(column as f64 * nw, row as f64 * nh, 1.0),
+                                });
+                            }
+                        }
+                    }
+                }
+                // What overflows the page is cut.
+                ops.push(RenderOp::ClipPath {
+                    path: Arc::new(rect.to_path(0.1)),
+                    transform: scale,
+                });
+            }
+        }
+        ops.push(RenderOp::PopLayer {
+            blend: base.blend,
+            opacity: 1.0,
+        });
+        let key = self.node_key(
+            NodeType::Image,
+            &[],
+            &base,
+            scale,
+            &[KeyParam::Text(format!(
+                "background {background:?} {pw}x{ph}"
+            ))],
+        );
+        let node = GraphNode {
+            id: GraphNodeId(0),
+            kind: GraphNodeKind::Source(SourceKind::Image),
+            origin: NodeId::new(0),
+            key,
+            inputs: Vec::new(),
+            transform: scale,
+            blend: base.blend,
+            opacity: 1.0,
+        };
+        Ok(Some(SubGraph {
+            nodes: vec![node],
+            ops,
+        }))
+    }
+
     /// The nodes and the operations of the subtree of `root`.
     fn subtree(&self, root: NodeId, cancel: &CancelToken) -> Result<SubGraph, GraphError> {
         let mut sub = SubGraph::default();
@@ -429,6 +579,52 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 let mark = sub.ops.len();
                 sub.ops.push(RenderOp::PushLayer);
                 match record.kind {
+                    RecordKind::Shape(ref shape) if shape.effect.is_some() => {
+                        // A light draws its picture instead of the shape
+                        // (spec 065).
+                        let Some((image, drawn)) = shape
+                            .effect
+                            .as_ref()
+                            .and_then(|effect| self.light(effect, &record.base.placement))
+                        else {
+                            sub.ops.truncate(mark);
+                            continue;
+                        };
+                        check_transform(&drawn)?;
+                        let key = self.node_key(
+                            NodeType::Image,
+                            &[],
+                            &record.base,
+                            transform,
+                            &[KeyParam::Text(format!(
+                                "effect {:?} page {:?}",
+                                shape.effect, self.page_px
+                            ))],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Image),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        sub.ops.push(RenderOp::DrawImage {
+                            image: Arc::new(image),
+                            transform: drawn,
+                        });
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
                     RecordKind::Shape(ref shape) => {
                         let Some(drawn) =
                             DrawnShape::of(shape, &record.base.placement, &self.fonts)?
@@ -573,6 +769,78 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             opacity: record.base.opacity,
                         });
                     }
+                    RecordKind::Frame(ref frame) => {
+                        // The photo, cut out by the shape, then the outline
+                        // over the cut edge (spec 066). An empty frame shows
+                        // only its outline: it is not exported as a hole
+                        // (FD-18 c).
+                        let placement = &record.base.placement;
+                        let rect = Rect::new(0.0, 0.0, placement.w, placement.h).abs();
+                        let radius = match frame.clip_shape {
+                            ShapeGeometry::Rect => drawn_radius(frame.corner_radius, rect),
+                            ShapeGeometry::Ellipse | ShapeGeometry::Path(_) => 0.0,
+                        };
+                        let mut edge_shape = ShapeNode::new(frame.clip_shape.clone());
+                        edge_shape.stroke = frame.stroke;
+                        edge_shape.corner_radius = frame.corner_radius;
+                        let edge = DrawnShape::of(&edge_shape, placement, &self.fonts)?;
+                        let photo = frame.content.and_then(|content| {
+                            let image = self.images.get(&content.asset)?;
+                            let at = frame.content_transform(placement.w, placement.h)?;
+                            Some((content, image, at))
+                        });
+                        if photo.is_none() && edge.is_none() {
+                            sub.ops.truncate(mark);
+                            continue;
+                        }
+                        let key = self.node_key(
+                            NodeType::Image,
+                            &[],
+                            &record.base,
+                            transform,
+                            &[KeyParam::Text(format!("frame {frame:?}"))],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Image),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        if let Some((content, image, at)) = photo {
+                            // The decoded pixels may be smaller than the
+                            // natural size (a preview): they span it anyway.
+                            let fit = Affine::scale_non_uniform(
+                                f64::from(content.natural.0) / f64::from(image.width().max(1)),
+                                f64::from(content.natural.1) / f64::from(image.height().max(1)),
+                            );
+                            let drawn = transform * at * fit;
+                            check_transform(&drawn)?;
+                            sub.ops.push(RenderOp::DrawImage {
+                                image: Arc::clone(image),
+                                transform: drawn,
+                            });
+                            sub.ops.push(RenderOp::ClipPath {
+                                path: Arc::new(shape_path(&frame.clip_shape, rect, radius)),
+                                transform,
+                            });
+                        }
+                        if let Some(edge) = edge {
+                            sub.ops.extend(edge.ops(transform));
+                        }
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
                     RecordKind::Image(asset) => {
                         let placement = &record.base.placement;
                         let Some(image) = self.images.get(&asset) else {
@@ -690,6 +958,59 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
     }
 
     /// The content key of a node (02 §6.1).
+    /// The picture of a light and the transform that lays it on the page
+    /// (spec 065): the lights that span the page cover it, the others the
+    /// box of the shape.
+    fn light(&self, effect: &ShapeEffect, placement: &Placement) -> Option<(ImageBuf, Affine)> {
+        /// The longest side of a light picture, in px: the light is soft,
+        /// so a larger one adds time and no detail.
+        const MAX_SIDE: f64 = 1024.0;
+        if !(placement.w > 0.0 && placement.h > 0.0) {
+            return None;
+        }
+        let fit = |w: f64, h: f64| {
+            let k = (self.scale).min(MAX_SIDE / w.max(h));
+            (Self::side_of(w * k), Self::side_of(h * k))
+        };
+        match self.page_px {
+            // The flare, the streak and the rays spread over the page
+            // (D-104); without its size they keep to the box.
+            Some((pw, ph)) if gafira_raster::spans_page(effect) => {
+                let (iw, ih) = fit(pw, ph);
+                let (kx, ky) = (f64::from(iw) / pw, f64::from(ih) / ph);
+                let centre = placement.to_transform()
+                    * kurbo::Point::new(placement.w / 2.0, placement.h / 2.0);
+                let spot = LightSpot {
+                    centre: (centre.x * kx, centre.y * ky),
+                    radius: placement.w.min(placement.h) / 2.0 * kx.min(ky),
+                };
+                let image = gafira_raster::light_picture(effect, iw, ih, spot);
+                let drawn =
+                    Affine::scale(self.scale) * Affine::scale_non_uniform(1.0 / kx, 1.0 / ky);
+                Some((image, drawn))
+            }
+            _ => {
+                let (iw, ih) = fit(placement.w, placement.h);
+                let spot = LightSpot {
+                    centre: (f64::from(iw) / 2.0, f64::from(ih) / 2.0),
+                    radius: f64::from(iw.min(ih)) / 2.0,
+                };
+                let image = gafira_raster::light_picture(effect, iw, ih, spot);
+                let to_box = Affine::scale_non_uniform(
+                    placement.w / f64::from(iw),
+                    placement.h / f64::from(ih),
+                );
+                Some((image, self.transform_of(placement) * to_box))
+            }
+        }
+    }
+
+    /// A side of a light picture in whole px, at least one.
+    fn side_of(v: f64) -> u32 {
+        // Clamped to 1..=1024 by the caller's fit: the cast is exact.
+        v.round().clamp(1.0, 4096.0) as u32
+    }
+
     fn node_key(
         &self,
         node_type: NodeType,
@@ -744,6 +1065,17 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
             Record {
                 base: node.base.clone(),
                 kind: RecordKind::Text(text.clone()),
+            },
+        );
+        node.base.id
+    }
+
+    fn visit_frame(&mut self, node: &Node, frame: &gafira_doc::FrameNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Frame(frame.clone()),
             },
         );
         node.base.id
@@ -1298,6 +1630,7 @@ mod tests {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         })
     }
 
@@ -1338,6 +1671,7 @@ mod tests {
             RenderOp::FillPath { .. } => "fill",
             RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
+            RenderOp::ClipPath { .. } => "clip",
             RenderOp::ApplyMask { .. } => "mask",
             RenderOp::ApplyEffect { .. } => "effect",
             RenderOp::ApplyTransition { .. } => "transition",
@@ -1867,6 +2201,99 @@ mod tests {
         assert_eq!(size, Some((80.0, 40.0)));
         let key = |angle| build(&page_with(angle), WalkOrder::PreOrder).key_of(NodeId::new(1));
         assert_ne!(key(0.0), key(90.0));
+    }
+
+    // S65-04: a light draws a picture instead of the shape: «Brillo» over
+    // the box of the shape, «Destello de lente» over the whole page; another
+    // light keys apart.
+    #[test]
+    fn s65_04_a_light_draws_a_picture_instead_of_the_shape() {
+        use gafira_doc::{Light, ShapeEffect};
+        let page_with = |effect: ShapeEffect| {
+            let mut page = new_page();
+            let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+            shape.fill = Some(RED);
+            shape.effect = Some(effect);
+            let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 80.0, 40.0));
+            page.nodes.insert(
+                NodeId::new(1),
+                Arc::new(Node::new(base, NodeKind::Shape(shape))),
+            );
+            page.roots = vec![NodeId::new(1)];
+            page
+        };
+        let built = |effect: ShapeEffect| {
+            let page = page_with(effect);
+            let view = PageView::new(&page);
+            RenderGraphBuilder::new(&view, params(RenderQuality::Preview), InlinePool)
+                .with_page_px(200.0, 100.0)
+                .build(WalkOrder::PreOrder, &CancelToken::new(), &NoProgress)
+                .expect("builds")
+        };
+        let picture = |graph: &RenderGraph| {
+            graph.ops().iter().find_map(|op| match op {
+                RenderOp::DrawImage { image, transform } => {
+                    Some((image.width(), image.height(), *transform))
+                }
+                _ => None,
+            })
+        };
+        let sparkle = built(ShapeEffect::Sparkle(Light::SPARKLE));
+        assert_eq!(op_kinds(&sparkle), ["push", "image", "pop"]);
+        let (w, h, at) = picture(&sparkle).expect("a picture");
+        assert_eq!((w, h), (80, 40), "the box of the shape at scale 1");
+        let corner = at * kurbo::Point::new(f64::from(w), f64::from(h));
+        assert!((corner.x - 90.0).abs() < 1e-9 && (corner.y - 60.0).abs() < 1e-9);
+        let flare = built(ShapeEffect::LensFlare(Light::LENS_FLARE));
+        let (w, h, _) = picture(&flare).expect("a picture");
+        assert_eq!((w, h), (200, 100), "the whole page");
+        let mut turned = Light::SPARKLE;
+        turned.angle_deg = 45.0;
+        assert_ne!(
+            sparkle.key_of(NodeId::new(1)),
+            built(ShapeEffect::Sparkle(turned)).key_of(NodeId::new(1))
+        );
+    }
+
+    // S66-04: a frame with its photo draws the photo and then cuts the
+    // layer to its shape; an empty frame without outline draws nothing.
+    #[test]
+    fn s66_04_a_frame_emits_a_clip_and_an_image() {
+        use gafira_doc::timeline::AssetRef;
+        use gafira_doc::{ContentHash, FrameContent, FrameNode};
+        let asset = AssetRef::new(ContentHash([3; 32]));
+        let page_with = |content: Option<FrameContent>| {
+            let mut page = new_page();
+            let mut frame = FrameNode::new(ShapeGeometry::Ellipse);
+            frame.content = content;
+            let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 80.0, 40.0));
+            page.nodes.insert(
+                NodeId::new(1),
+                Arc::new(Node::new(base, NodeKind::Frame(frame))),
+            );
+            page.roots = vec![NodeId::new(1)];
+            page
+        };
+        let pixels = gafira_raster::ImageBuf::new(
+            2,
+            2,
+            gafira_raster::PixelBuf::Rgba8([255, 0, 0, 255].repeat(4)),
+        )
+        .expect("image");
+        let images = Arc::new(ImagePixels::from([(asset, Arc::new(pixels))]));
+        let built = |page: &Page| {
+            let view = PageView::new(page);
+            RenderGraphBuilder::new(&view, params(RenderQuality::Preview), InlinePool)
+                .with_images(Arc::clone(&images))
+                .build(WalkOrder::PreOrder, &CancelToken::new(), &NoProgress)
+                .expect("builds")
+        };
+        let full = built(&page_with(Some(FrameContent {
+            asset,
+            natural: (200, 100),
+        })));
+        assert_eq!(op_kinds(&full), ["push", "image", "clip", "pop"]);
+        assert!(op_kinds(&built(&page_with(None))).is_empty());
     }
 
     // S62-03: a bold text is drawn with the bold face of its family; a

@@ -62,6 +62,7 @@ fn page() -> Page {
         corner_radius: 0.0,
         text: None,
         gradient: None,
+        effect: None,
     });
     page.nodes
         .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));

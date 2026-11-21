@@ -100,6 +100,7 @@ fn square_document(fill: Color) -> Document {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         }),
     ));
     let mut page = Page::new(
@@ -335,6 +336,7 @@ fn standing_bar() -> Document {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         }),
     ));
     let mut page = Page::new(

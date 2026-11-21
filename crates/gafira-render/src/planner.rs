@@ -384,6 +384,10 @@ fn copy_op(op: &RenderOp) -> RenderOp {
             image: Arc::clone(image),
             transform: *transform,
         },
+        RenderOp::ClipPath { path, transform } => RenderOp::ClipPath {
+            path: Arc::clone(path),
+            transform: *transform,
+        },
         RenderOp::ApplyMask { mask } => RenderOp::ApplyMask {
             mask: Arc::clone(mask),
         },
@@ -446,6 +450,7 @@ mod tests {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
@@ -463,6 +468,7 @@ mod tests {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         });
         page.nodes
             .insert(NodeId::new(id), Arc::new(Node::new(base, kind)));
@@ -589,6 +595,7 @@ mod tests {
             RenderOp::FillPath { .. } => "fill",
             RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
+            RenderOp::ClipPath { .. } => "clip",
             RenderOp::ApplyMask { .. } => "mask",
             RenderOp::ApplyEffect { .. } => "effect",
             RenderOp::ApplyTransition { .. } => "transition",

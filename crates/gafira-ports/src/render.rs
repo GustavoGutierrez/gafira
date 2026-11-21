@@ -84,6 +84,13 @@ pub enum RenderOp {
         image: Arc<ImageBuf>,
         transform: Affine,
     },
+    /// Cuts the open layer to `path`, which `transform` lays on the page:
+    /// each pixel keeps its share covered by the path, nothing outside it
+    /// (spec 066: the photo of a frame cut out by its shape).
+    ClipPath {
+        path: Arc<BezPath>,
+        transform: Affine,
+    },
     ApplyMask {
         mask: Arc<AlphaMask>,
     },

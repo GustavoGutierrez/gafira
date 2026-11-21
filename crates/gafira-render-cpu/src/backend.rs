@@ -407,6 +407,9 @@ fn render_tile(
                 }
             }
             RenderOp::ApplyMask { mask } => layers.apply_mask(mask, size, mask_origin)?,
+            RenderOp::ClipPath { path, transform } => {
+                clip_path(layers.target(&mut pixels), size, drawn, path, *transform);
+            }
             RenderOp::ApplyEffect {
                 effect,
                 params,
@@ -544,6 +547,30 @@ fn paint_gradient(
         pixels[at..at + 4].copy_from_slice(&blend_f32(BlendMode::Normal, backdrop, source)?);
     }
     Ok(())
+}
+
+/// Keeps of every pixel of the tile its share covered by `path` (spec 066);
+/// a path that covers nothing of the tile clears it.
+fn clip_path(
+    pixels: &mut [f32],
+    size: (u32, u32),
+    region: IRect,
+    path: &BezPath,
+    transform: Affine,
+) {
+    let Some(mask) = coverage::mask(path, transform, size, (region.x0, region.y0)) else {
+        pixels.fill(0.0);
+        return;
+    };
+    for (index, coverage) in mask.data().iter().enumerate() {
+        let keep = f32::from(*coverage) / 255.0;
+        let at = index * 4;
+        if let Some(pixel) = pixels.get_mut(at..at + 4) {
+            for channel in pixel {
+                *channel *= keep;
+            }
+        }
+    }
 }
 
 fn paint_fill(

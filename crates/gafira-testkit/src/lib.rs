@@ -391,6 +391,7 @@ fn build_node(id: NodeId, spec: &NodeSpec) -> Node {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         }),
         KindSpec::Extension(type_id, schema_version, payload) => {
             NodeKind::Extension(ExtensionNode {
@@ -746,6 +747,7 @@ pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
                     corner_radius: 0.0,
                     text: None,
                     gradient: None,
+                    effect: None,
                 });
                 let node = fresh(&mut edit, kind);
                 add_root(&mut edit, page, node);
@@ -993,6 +995,9 @@ mod guards {
                         }
                         NodeKind::Line(_) => {
                             seen.insert("line");
+                        }
+                        NodeKind::Frame(_) => {
+                            seen.insert("frame");
                         }
                         NodeKind::Extension(e) => {
                             seen.insert("extension");
