@@ -169,6 +169,10 @@ pub struct ShapeNode {
     /// Written only when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gradient: Option<crate::Gradient>,
+    /// A light drawn instead of the shape (spec 065, D-103). Written only
+    /// when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<crate::ShapeEffect>,
 }
 
 /// Whether `value` is `+0.0`, the default radius.
@@ -186,6 +190,7 @@ impl ShapeNode {
             corner_radius: 0.0,
             text: None,
             gradient: None,
+            effect: None,
         }
     }
 }
@@ -223,6 +228,8 @@ pub enum NodeKind {
     Image(ImageNode),
     /// A line between two ends, which may stick to shapes (spec 058).
     Line(crate::LineNode),
+    /// A photo cut out by a shape (spec 066, FD-18).
+    Frame(crate::FrameNode),
     /// An opaque extension node.
     Extension(ExtensionNode),
 }
@@ -271,6 +278,7 @@ mod tests {
             NodeKind::Text(_) => "text",
             NodeKind::Image(_) => "image",
             NodeKind::Line(_) => "line",
+            NodeKind::Frame(_) => "frame",
             NodeKind::Extension(_) => "extension",
         };
         let geometry_name = |g: ShapeGeometry| match g {

@@ -87,6 +87,15 @@ impl Document {
 
     /// P3: page sizes, then page layout data, then roots that do not exist, then repeated roots.
     fn check_pages(&self) -> Result<(), ValidationError> {
+        // The background draws, and its image is in the table (spec 069).
+        for page in &self.pages {
+            if let Some(background) = &page.background
+                && (!background.is_valid()
+                    || background.asset().is_some_and(|a| self.asset(&a).is_none()))
+            {
+                return Err(ValidationError::InvalidBackground { page: page.id });
+            }
+        }
         for page in &self.pages {
             let size = page.size.check(self.dpi);
             size.map_err(|error| ValidationError::PageSize {
@@ -192,6 +201,13 @@ impl Document {
                     && self.asset(&image.asset).is_none()
                 {
                     return Err(ValidationError::DanglingImage { node: *id });
+                }
+                // A frame's photo is an asset of the table too (spec 066).
+                if let NodeKind::Frame(frame) = &node.kind
+                    && let Some(content) = frame.content
+                    && self.asset(&content.asset).is_none()
+                {
+                    return Err(ValidationError::InvalidFrame { node: *id });
                 }
             }
         }
@@ -417,6 +433,23 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
         && let Some(problem) = shape.gradient.as_ref().and_then(crate::Gradient::problem)
     {
         return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
+    if let NodeKind::Frame(frame) = &node.kind
+        && !frame.is_valid()
+    {
+        return Err(ValidationError::InvalidFrame { node: id });
+    }
+    // The outline of a frame follows the rules of a shape path (spec 066).
+    if let NodeKind::Frame(frame) = &node.kind
+        && let crate::ShapeGeometry::Path(path) = &frame.clip_shape
+        && let Some(problem) = path_problem(path)
+    {
+        return Err(ValidationError::InvalidPath { node: id, problem });
+    }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let Some(problem) = shape.effect.as_ref().and_then(crate::ShapeEffect::problem)
+    {
+        return Err(ValidationError::InvalidEffect { node: id, problem });
     }
     if let NodeKind::Extension(ext) = &node.kind {
         if ext.type_id.is_empty() {

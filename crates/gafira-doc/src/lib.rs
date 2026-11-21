@@ -8,14 +8,17 @@
 #![forbid(unsafe_code)]
 
 mod arena;
+mod background;
 mod blend;
 mod content_hash;
 pub mod contract;
 mod document;
 mod dpi;
 mod edit;
+mod effect;
 mod element;
 mod error;
+mod frame;
 mod gradient;
 mod ids;
 mod image;
@@ -33,13 +36,16 @@ pub mod timeline;
 mod validate;
 pub mod visit;
 
+pub use background::{BackgroundFit, PageBackground, PatternKind};
 pub use blend::BlendMode;
 pub use content_hash::ContentHash;
 pub use document::Document;
 pub use dpi::Dpi;
 pub use edit::{DocMut, EditToken};
+pub use effect::{EffectProblem, Light, ShapeEffect};
 pub use element::ElementBase;
 pub use error::{NodeField, PathProblem, ValidationError};
+pub use frame::{Fit, FrameContent, FrameNode};
 pub use gradient::{Gradient, GradientKind, GradientProblem, GradientStop};
 pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
 pub use image::ImageNode;

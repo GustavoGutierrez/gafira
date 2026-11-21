@@ -53,6 +53,10 @@ pub struct Page {
     /// Whether the whole page is hidden.
     #[serde(default)]
     pub hidden: bool,
+    /// The background under every element (spec 069); `None` is white.
+    /// Written only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<crate::PageBackground>,
     /// Top-level node ids, back to front.
     #[serde(default)]
     pub roots: Vec<NodeId>,
@@ -97,6 +101,7 @@ impl Page {
             duration: None,
             locked: false,
             hidden: false,
+            background: None,
             roots: Vec::new(),
             nodes: BTreeMap::new(),
         }

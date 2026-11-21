@@ -154,6 +154,17 @@ pub enum ValidationError {
     ExtensionTooDeep { node: NodeId, depth: usize },
     /// P4: a shape path is not well formed (spec 054).
     InvalidPath { node: NodeId, problem: PathProblem },
+    /// P3/P7: a page background cannot be drawn or shows an image missing
+    /// from the asset table (spec 069).
+    InvalidBackground { page: PageId },
+    /// P4/P7: a frame has numbers it cannot draw or a photo missing from
+    /// the asset table (spec 066).
+    InvalidFrame { node: NodeId },
+    /// P4: an effect is not well formed (spec 065).
+    InvalidEffect {
+        node: NodeId,
+        problem: crate::EffectProblem,
+    },
     /// P4: a gradient fill is not well formed (spec 063).
     InvalidGradient {
         node: NodeId,
@@ -226,6 +237,15 @@ impl fmt::Display for ValidationError {
                 "node {node}: extension payload is {depth} levels deep, the limit is {MAX_EXTENSION_DEPTH}"
             ),
             Self::InvalidPath { node, problem } => write!(f, "node {node}: {problem}"),
+            Self::InvalidBackground { page } => {
+                write!(f, "page {page}: the background is not valid")
+            }
+            Self::InvalidFrame { node } => {
+                write!(f, "node {node}: the frame is not valid")
+            }
+            Self::InvalidEffect { node, problem } => {
+                write!(f, "node {node}: the effect is not valid ({problem:?})")
+            }
             Self::InvalidGradient { node, problem } => {
                 write!(f, "node {node}: the gradient is not valid ({problem:?})")
             }
