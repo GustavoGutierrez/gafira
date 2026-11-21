@@ -36,6 +36,7 @@ gafira-assets = { path = "crates/gafira-assets" }
 gafira-i18n = { path = "crates/gafira-i18n" }
 gafira-io-image = { path = "crates/gafira-io-image" }
 gafira-io-pdf = { path = "crates/gafira-io-pdf" }
+gafira-io-vector = { path = "crates/gafira-io-vector" }
 blake3 = "1"
 crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
@@ -63,6 +64,8 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "a
 zip = { version = "2", default-features = false, features = ["deflate"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Spec 067: images pasted from the system clipboard; the features egui-winit already uses.
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
 # Spec 033: the lossless WebP thumbnails of the `.gaf` (`thumbs/`, 02 §7.1); already in the tree through krilla.
 image-webp = "0.2"
 # FD-56, 02 §9.2: PDF export; only the feature that draws images (no text shaping).
