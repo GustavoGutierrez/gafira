@@ -979,3 +979,11 @@ Fecha: 21 de noviembre de 2026.
 
 - **Decisión** (titular): el PDF se escribe por defecto con vectores y texto real con su fuente incrustada; «Aplanar PDF» conserva el PDF de imagen. La contraseña cifra con AES-256 mediante `lopdf` 0.47 (MIT, sin sus funciones por defecto) sobre el PDF que escribe krilla, que no cifra; la clave del archivo sale de `getrandom`. El perfil CMYK es una conversión directa sin perfil ICC: los perfiles de imprenta (FOGRA, GRACoL) tienen licencias que no se han revisado.
 - **Consecuencia**: `RenderOp::Text` y `PageRenderer::vectors` en `gafira-ports`; `ParamKind::Text` en el contrato de opciones. Se aplica en la spec 073.
+
+## D-113 El código QR es un tipo de nodo propio
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un código QR es `NodeKind::Qr` (`QrNode`), como los marcos y las líneas, en lugar del nodo `Extension` con `type_id = "gafira.qr"` que pedía FD-20. Así el documento valida el logotipo, la exportación lo decodifica y editarlo es un paso de deshacer.
+- **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con códigos QR. La técnica y FD-20 (c) quedan sustituidas. Los Gráficos (FD-22) siguen como estaban. Se aplica en la spec 080.
+- Precisa ADR-02 y FD-20.

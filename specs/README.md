@@ -16,7 +16,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | Doc | Contenido | Estado |
 | --- | --- | --- |
-| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-101) |
+| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-113) |
 | [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) | Aprobado (D-83, 2026-11-16) |
 | [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) | Aprobado (D-83, 2026-11-16) |
 | [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` | Borrador para revisión |
@@ -56,6 +56,8 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 077 | [Añadir página bajo la última](077-anadir-pagina-bajo-la-ultima.md) | in-progress: botón con menú bajo la última página; fuera de la barra de estado |
 | 078 | [Paquetes de Linux](078-paquetes-linux.md) | in-progress: .deb, AppImage, icono y asociación de los .gaf |
 | 079 | [Dibujo a mano](079-dibujo-a-mano.md) | in-progress: 16 pinceles con estilo propio, trazo vectorial único, borrador de trazos y cursor por herramienta |
+| 080 | [Códigos QR](080-codigos-qr.md) | in-progress: once tipos, formas, colores, logotipo y exportación, 100 % sin red (FD-20); implementada y probada, faltan los teléfonos y «Guardar mi estilo»; D-113 |
+| 081 | [Tablas](081-tablas.md) | in-progress: plantillas por grupos, edición en el lienzo, PDF con texto, PowerPoint y Excel (FD-21); implementada y probada, pendiente del titular |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -123,4 +125,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
 
-Siguiente ID libre: **080**.
+Siguiente ID libre: **082**.

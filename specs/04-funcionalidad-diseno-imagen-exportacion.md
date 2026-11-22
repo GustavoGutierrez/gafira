@@ -234,9 +234,9 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: generar códigos QR sin conexión.
 - *Comportamiento y reglas*: se introduce un texto o URL; opciones: nivel de corrección (L, M, Q, H; por defecto M), color de primer plano y de fondo, margen. El código se dibuja como vectores y se regenera al editar el contenido. Advertencia si el contraste primer plano/fondo es < 3:1 («Este código puede no leerse bien.»). El contenido nunca sale del equipo.
 - *UI*: Piezas → Códigos QR.
-- *Técnica*: nodo `Extension` con `type_id = "gafira.qr"` (ADR-02, `NodeExtension` interno); generación con crate permisivo (p. ej. `qrcode` 0.14.1, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)) o implementación propia.
+- *Técnica*: `QrNode` (`NodeKind::Qr`, D-113); generación con crate permisivo (p. ej. `qrcode` 0.14.1, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)) o implementación propia.
 - *Presupuesto*: generar < 50 ms para 300 caracteres.
-- *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) el nodo sobrevive a abrir sin el registro (ARQ-11).
+- *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) sustituida por D-113.
 
 **FD-21 · Tablas** (RF-16)
 - *Propósito*: presentar datos tabulares dentro del diseño.
@@ -753,7 +753,8 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | `TextNode` | FD-45, FD-46, FD-47 | Incorporados: `columns: TextColumns`, `autofit: Autofit`, `type_lock: TypeLock` (§3.2) |
 | `manifest.json` | FD-16 | Incorporado: objeto opcional `template { tags, pageFormat, style, color }` (D-81, §7.1); un lector que no lo conoce lo ignora |
 | Almacén de Versiones | FD-60 | Incorporado: `versions/index.json` y `versions/<version_id>/` (§7.1) |
-| QR y Gráficos | FD-20, FD-22 | `NodeExtension` internos `gafira.qr` y `gafira.chart` registrados en el binario (ADR-02) |
+| QR | FD-20 | `NodeKind::Qr` (D-113, spec 080) |
+| Gráficos | FD-22 | `NodeExtension` interno `gafira.chart` registrado en el binario (ADR-02) |
 | `TextAssistant` | FD-64 | Incorporado: trait en `gafira-ports` (§4.15, Fase 3) |
 | Exportador PPTX | FD-62 | Incorporado: crate `gafira-io-pptx` (Fase 2, §11.2) |
 | Medios vinculados | FD-30 | Incorporados: `manifest.assets[...].linked` y evento `LinksMissing` (§7.1) |
