@@ -206,6 +206,11 @@ pub trait NodeVisitor {
         self.visit_node(n)
     }
 
+    /// Receives a chart (spec 083).
+    fn visit_chart(&mut self, n: &Node, _c: &crate::ChartNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
     /// Receives an extension node.
     fn visit_extension(&mut self, n: &Node, _e: &ExtensionNode) -> Self::Out {
         self.visit_node(n)
@@ -283,6 +288,7 @@ fn dispatch<V: NodeVisitor>(v: &mut V, node: &Node) -> V::Out {
         NodeKind::Frame(f) => v.visit_frame(node, f),
         NodeKind::Qr(q) => v.visit_qr(node, q),
         NodeKind::Table(t) => v.visit_table(node, t),
+        NodeKind::Chart(c) => v.visit_chart(node, c),
         NodeKind::Extension(e) => v.visit_extension(node, e),
     }
 }

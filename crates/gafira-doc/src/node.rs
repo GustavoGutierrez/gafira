@@ -243,6 +243,8 @@ pub enum NodeKind {
     Qr(Box<crate::QrNode>),
     /// A table (spec 081, FD-21).
     Table(Box<crate::TableNode>),
+    /// A chart (spec 083, FD-22, D-114).
+    Chart(Box<crate::ChartNode>),
     /// An opaque extension node.
     Extension(ExtensionNode),
 }
@@ -294,6 +296,7 @@ mod tests {
             NodeKind::Frame(_) => "frame",
             NodeKind::Qr(_) => "qr",
             NodeKind::Table(_) => "table",
+            NodeKind::Chart(_) => "chart",
             NodeKind::Extension(_) => "extension",
         };
         let geometry_name = |g: ShapeGeometry| match g {

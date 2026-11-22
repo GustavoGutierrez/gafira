@@ -50,8 +50,8 @@ impl Category {
         Self::Lights,
         Self::QrCodes,
         Self::Tables,
-        Self::Icons,
         Self::Charts,
+        Self::Icons,
     ];
 
     /// The catalogue key of its name.

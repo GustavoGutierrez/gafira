@@ -174,6 +174,8 @@ pub enum ValidationError {
     InvalidQr { node: NodeId },
     /// P4: a table whose sizes, cells and merges do not agree (spec 081).
     InvalidTable { node: NodeId },
+    /// P4: a chart whose data or numbers cannot be drawn (spec 083).
+    InvalidChart { node: NodeId },
     /// P4: an effect is not well formed (spec 065).
     InvalidEffect {
         node: NodeId,
@@ -259,6 +261,9 @@ impl fmt::Display for ValidationError {
             }
             Self::InvalidTable { node } => {
                 write!(f, "node {node}: the table is not valid")
+            }
+            Self::InvalidChart { node } => {
+                write!(f, "node {node}: the chart is not valid")
             }
             Self::InvalidFrame { node } => {
                 write!(f, "node {node}: the frame is not valid")

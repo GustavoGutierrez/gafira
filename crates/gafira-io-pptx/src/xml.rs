@@ -299,6 +299,14 @@ impl Writer<'_, '_, '_> {
                     self.node(out, &Node::new(base, part.kind));
                 }
             }
+            // A chart goes as its shapes and its words (spec 083).
+            NodeKind::Chart(chart) => {
+                for (kind, placement) in gafira_chart::parts(chart, &p) {
+                    let mut base = node.base.clone();
+                    base.placement = placement;
+                    self.node(out, &Node::new(base, kind));
+                }
+            }
             NodeKind::Table(table) => self.table(out, table, (&p, &name, opacity)),
             // A plug-in's element has no PowerPoint form.
             NodeKind::Extension(_) => self.skipped = true,

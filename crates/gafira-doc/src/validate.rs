@@ -469,6 +469,11 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     {
         return Err(ValidationError::InvalidTable { node: id });
     }
+    if let NodeKind::Chart(chart) = &node.kind
+        && !chart.is_valid()
+    {
+        return Err(ValidationError::InvalidChart { node: id });
+    }
     if let NodeKind::Frame(frame) = &node.kind
         && !frame.is_valid()
     {

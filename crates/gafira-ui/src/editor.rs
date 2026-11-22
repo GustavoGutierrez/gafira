@@ -20,6 +20,7 @@ use gafira_theme::Shadow;
 
 use crate::arrange::{self, Order};
 use crate::canvas::{self, Shape};
+use crate::charts;
 use crate::clipboard::{self, Clip};
 use crate::elements::{self, Category, Move, Rail};
 use crate::files::{FileAction, project_name};
@@ -358,6 +359,13 @@ pub(crate) struct Editor {
     /// SVG files waiting for «¿Cómo quieres importarlo?» (spec 067):
     /// the files and where they were dropped.
     pending_svg: Option<(Vec<std::path::PathBuf>, Option<Pos2>)>,
+    /// Elementos → Gráficos, the panel of the chart being edited, and its
+    /// undo step: the chart, the field, the gesture (spec 083).
+    chart_panel: std::cell::RefCell<crate::chart_templates::Panel>,
+    chart_edit: Option<charts::Editing>,
+    chart_gesture: Option<(NodeId, u64, GestureId)>,
+    /// Spreadsheets waiting for the sheet to insert (spec 082).
+    sheets: crate::sheets::Asks,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -519,6 +527,10 @@ impl Default for Editor {
             cropping: None,
             paste_seen: false,
             pending_svg: None,
+            sheets: crate::sheets::Asks::default(),
+            chart_panel: std::cell::RefCell::default(),
+            chart_edit: None,
+            chart_gesture: None,
             frame_target: None,
             line_view: None,
             fit_pending: None,
@@ -645,6 +657,19 @@ struct Asked {
     /// `Some(true)` as an image, `Some(false)` as a frame (spec 067).
     svg_as_image: Option<bool>,
     svg_cancel: bool,
+    /// What Elementos → Gráficos asks for (spec 083).
+    chart_chosen: Option<crate::chart_templates::Chosen>,
+    /// The panel «Gráfico» opens on this chart, or closes.
+    chart_open: Option<(PageId, NodeId)>,
+    chart_close: bool,
+    /// The selected chart changed, the field that changes it, and whether
+    /// the controls are at rest, so the next change is another undo step.
+    chart: Option<(PageId, NodeId, Box<gafira_doc::ChartNode>)>,
+    chart_field: u64,
+    chart_rest: bool,
+    chart_import: Option<(PageId, NodeId)>,
+    /// The answer about the first spreadsheet that waits (spec 082).
+    sheet: Option<crate::sheets::Answer>,
     /// A new empty frame of this outline in the middle of the page, and
     /// one dropped on a page at a point in px of page (spec 066, D-105).
     insert_frame: Option<canvas::Piece>,
@@ -904,6 +929,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         frame: None,
         qr: None,
         table: None,
+        chart: None,
     })
 }
 
@@ -995,6 +1021,11 @@ impl Editor {
                         table.cell(cells.from.0, cells.from.1).is_some()
                             && table.cell(cells.to.0, cells.to.1).is_some()
                     })
+        });
+        // The panel «Gráfico» stays while its chart is the one selected.
+        self.chart_edit = self.chart_edit.take().filter(|edit| {
+            single == Some((edit.page, edit.node))
+                && document.is_some_and(|d| chart_of(d, edit.page, edit.node).is_some())
         });
         self.scope = self.scope.filter(|(page, node)| {
             document
@@ -1109,7 +1140,7 @@ impl Editor {
                 .dropped_files
                 .iter()
                 .filter_map(|file| file.path.clone())
-                .filter(|path| is_image_path(path) || is_vector_path(path))
+                .filter(|path| is_importable(path))
                 .collect();
             asked.drop_at = i.pointer.latest_pos();
         });
@@ -1323,8 +1354,14 @@ impl Editor {
                 crate::dialogs::SvgImport::Cancel => asked.svg_cancel = true,
             }
         }
+        // «¿Qué hoja quieres insertar?» of the spreadsheets (spec 082).
+        if self.pending_svg.is_none() && !self.sheets.is_empty() {
+            asked.sheet = self.sheets.show(ctx, theme, texts);
+        }
         self.rail(ctx, theme, texts);
-        if let Some(step) = self.side_panel(ctx, theme, texts, &mut asked) {
+        let editing = !self.font_panel
+            && self.chart_panel_of(ctx, theme, texts, document.as_deref(), &mut asked);
+        if !editing && let Some(step) = self.side_panel(ctx, theme, texts, &mut asked) {
             self.rail.apply(step);
         }
         self.inspector(
@@ -1354,6 +1391,13 @@ impl Editor {
             }
             _ => {}
         }
+        // The fields of a chart: each one is an undo step.
+        let focused = ctx.memory(|m| m.focused());
+        asked.chart_field = focused.map_or(0, |id| id.value());
+        asked.chart_rest = asked.chart.is_none()
+            && focused.is_none()
+            && !ctx.input(|i| i.pointer.any_down())
+            && !egui::Popup::is_any_open(ctx);
         // The controls of a table are at rest: the next change is another
         // undo step.
         asked.table_rest |= self.table_gesture.is_some()
@@ -2167,6 +2211,22 @@ impl Editor {
                             });
                         return;
                     }
+                    if category == Category::Charts {
+                        // Spec 083: a chart is added with a click or a drag
+                        // (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let over = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.charts")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_max_width(ui.available_width() - 12.0);
+                                let mut panel = self.chart_panel.borrow_mut();
+                                asked.chart_chosen = panel.show(ui, theme, texts, &over);
+                            });
+                        return;
+                    }
                     if category == Category::QrCodes {
                         // Spec 080: the code is added with a click or
                         // dragged by its preview (D-105).
@@ -2297,6 +2357,16 @@ impl Editor {
                 .or_else(|| shape.inner.as_ref().and_then(|t| t.content.first_style()))
                 .cloned()
                 .or_else(|| {
+                    let text = &shape.chart.as_ref()?.text;
+                    Some(gafira_doc::SpanStyle {
+                        font: text.font.clone(),
+                        size: text.size,
+                        color: text.color,
+                        bold: text.bold,
+                        italic: text.italic,
+                    })
+                })
+                .or_else(|| {
                     let table = shape.table.as_ref()?;
                     let range = self.cell_range(shape.node, table);
                     Some(span_of(&table.cell(range.r0, range.c0)?.style))
@@ -2421,6 +2491,30 @@ impl Editor {
                                 asked.table_act = Some(act);
                             }
                             self.table_pen.set(pen);
+                            ui.add_space(16.0);
+                            position_fields(ui, theme, texts, shape, asked);
+                            ui.add_space(8.0);
+                            turn_buttons(ui, theme, texts, asked);
+                            ui.add_space(16.0);
+                            arrange_buttons(ui, theme, texts, can, asked);
+                            ui.add_space(8.0);
+                            opacity_field(ui, texts, shape, asked);
+                        });
+                    return;
+                }
+                // A chart: how it looks, then its box (spec 083).
+                if let Some(chart) = &shape.chart {
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.chart")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            let at = (shape.page, shape.node);
+                            let (edit, asks) = charts::inspector(ui, theme, texts, chart);
+                            if edit {
+                                asked.chart_open = Some(at);
+                            }
+                            take_chart(asked, at, asks);
                             ui.add_space(16.0);
                             position_fields(ui, theme, texts, shape, asked);
                             ui.add_space(8.0);
@@ -3198,6 +3292,7 @@ impl Editor {
                     frame: None,
                     qr: None,
                     table: None,
+                    chart: None,
                 };
                 let cover = canvas::path_cover(&shape, 1.0);
                 let key = path_key(&shape, 1.0);
@@ -3506,6 +3601,17 @@ impl Editor {
                                     page.node(node).map(|n| &n.kind)
                             {
                                 self.table_bar(ui, theme, texts, (node, table), asked);
+                                bar_separator(ui, theme);
+                            }
+                            if let Some(at) = self.selected.single()
+                                && let Some(gafira_doc::NodeKind::Chart(chart)) =
+                                    page.node(at.1).map(|n| &n.kind)
+                            {
+                                let (edit, asks) = charts::bar(ui, theme, texts, chart);
+                                if edit {
+                                    asked.chart_open = Some(at);
+                                }
+                                take_chart(asked, at, asks);
                                 bar_separator(ui, theme);
                             }
                             if self.can.ungroup && self.selected.len() == 1 {
@@ -4281,6 +4387,13 @@ impl Editor {
             return;
         }
         let property = match &found.kind {
+            gafira_doc::NodeKind::Chart(chart) => {
+                let mut chart = chart.clone();
+                family.clone_into(&mut chart.text.font);
+                chart.text.bold = bold;
+                chart.text.italic = italic;
+                Property::Chart(chart)
+            }
             gafira_doc::NodeKind::Text(text) => Property::TextContent(restyle(&text.content)),
             gafira_doc::NodeKind::Shape(shape) => match &shape.text {
                 Some(text) => {
@@ -5215,6 +5328,29 @@ impl Editor {
                                         }
                                         continue;
                                     }
+                                    // A chart is drawn from its picture
+                                    // (spec 083).
+                                    if let Some(chart) = &shape.chart {
+                                        let (w, h) = (shape.placement.w, shape.placement.h);
+                                        let key = charts::key(
+                                            chart,
+                                            (w.to_bits(), h.to_bits(), zoom.to_bits()),
+                                        );
+                                        let texture = self.path_texture(ctx, key, || {
+                                            charts::image(chart, (w, h), zoom)
+                                        });
+                                        let margin = charts::overhang(chart);
+                                        let cover = grown(&shape.placement, margin);
+                                        if let Some(texture) = texture {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
+                                    }
                                     // A QR code is drawn from its picture
                                     // (spec 080).
                                     if let Some(qr) = &shape.qr {
@@ -5344,6 +5480,15 @@ impl Editor {
                                         })
                                     {
                                         asked.begin_edit = Some((page_doc.id, node));
+                                    }
+                                    // A double click on a chart opens its
+                                    // panel (S83-07).
+                                    if response.double_clicked()
+                                        && page_doc.node(node).is_some_and(|n| {
+                                            matches!(n.kind, gafira_doc::NodeKind::Chart(_))
+                                        })
+                                    {
+                                        asked.chart_open = Some((page_doc.id, node));
                                     }
                                     // A double click on a frame with a photo
                                     // enters crop mode (S66-07).
@@ -6253,6 +6398,7 @@ impl Editor {
         }
         self.qr_codes(engine, asked);
         self.tables(engine, asked);
+        self.charts(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine);
         }
@@ -6430,6 +6576,11 @@ impl Editor {
         }
         if asked.svg_cancel {
             self.pending_svg = None;
+        }
+        if let Some(answer) = asked.sheet
+            && let Some((sheet, purpose, at)) = self.sheets.answer(answer)
+        {
+            self.bring_sheet(engine, sheet, purpose, at);
         }
         if asked.import_frame_shape {
             self.import_frame_shape(engine);
@@ -7470,6 +7621,12 @@ impl Editor {
             if is_svg_path(path) {
                 let waiting = self.pending_svg.get_or_insert_with(|| (Vec::new(), at));
                 waiting.0.push(path.clone());
+                continue;
+            }
+            // A spreadsheet is a table (spec 082).
+            if crate::sheets::is_sheet(path) {
+                let at = at.map(|at| at + Vec2::splat(step));
+                self.open_sheet(engine, path, crate::sheets::Purpose::Table, at);
                 continue;
             }
             // A PDF makes a custom frame of its outline (S66-10).
@@ -8960,6 +9117,8 @@ impl Editor {
                 }
             }
             Some(tables::Menu::Excel) => self.save_excel(engine),
+            // With the charts, and what the frame does.
+            Some(tables::Menu::Chart) => {}
             // These are done elsewhere, in the same frame.
             Some(
                 tables::Menu::Copy
@@ -9065,6 +9224,223 @@ impl Editor {
         template: crate::table_templates::Template,
         at: Option<Pos2>,
     ) {
+        let texts = Texts::new(engine.settings().locale().locale);
+        let name = plain(&texts, template.key());
+        self.put_table(engine, at, |page_px, _, point| {
+            crate::table_templates::spec(template.table(&texts), page_px, point, name)
+        });
+    }
+
+    /// Reads the spreadsheet at `path`: its only sheet comes in, or the
+    /// person is asked.
+    fn open_sheet(
+        &mut self,
+        engine: &mut Gafira,
+        path: &std::path::Path,
+        purpose: crate::sheets::Purpose,
+        at: Option<Pos2>,
+    ) {
+        let texts = Texts::new(engine.settings().locale().locale);
+        let found = crate::sheets::read(path, &texts);
+        if let Some(sheet) = self.sheets.take(path, (purpose, at), found) {
+            self.bring_sheet(engine, sheet, purpose, at);
+        }
+    }
+
+    /// A sheet as a table, as a new chart, or as the data of one.
+    fn bring_sheet(
+        &mut self,
+        engine: &mut Gafira,
+        sheet: gafira_io_xlsx::ReadSheet,
+        purpose: crate::sheets::Purpose,
+        at: Option<Pos2>,
+    ) {
+        use crate::sheets::Purpose;
+        match purpose {
+            Purpose::Table => self.insert_sheet(engine, sheet, at),
+            Purpose::Chart => self.chart_from(engine, &sheet.data, sheet.name),
+            Purpose::Data(page, node) => {
+                let document = engine.edit().document();
+                let chart = document.and_then(|d| chart_of(&d, page, node));
+                if let Some(mut chart) = chart
+                    && gafira_chart::from_grid(&mut chart, &sheet.data)
+                {
+                    self.end_chart_step(engine);
+                    set_chart(engine, (page, node), chart, None);
+                }
+            }
+        }
+    }
+
+    /// The file of a spreadsheet, picked.
+    fn pick_sheet() -> Option<std::path::PathBuf> {
+        rfd::FileDialog::new()
+            .add_filter("Excel, CSV", &["xlsx", "xlsm", "csv", "tsv"])
+            .pick_file()
+    }
+
+    /// A new chart of `data`, selected and with its panel open (S83-06).
+    fn chart_from(&mut self, engine: &mut Gafira, data: &[Vec<String>], name: String) {
+        let mut chart = crate::chart_templates::dressed(gafira_doc::ChartKind::GroupedColumns);
+        if !gafira_chart::from_grid(&mut chart, data) {
+            // An empty table: the sample shows what goes where.
+            let texts = Texts::new(engine.settings().locale().locale);
+            chart = crate::chart_templates::TEMPLATES[0].chart(&texts);
+        }
+        self.put_chart(engine, chart, name, None);
+        self.chart_edit = self
+            .selected
+            .single()
+            .map(|(page, node)| charts::Editing::new(page, node));
+    }
+
+    /// A new chart, centred where it was dropped or in the middle of the
+    /// current page, selected; one undo step.
+    fn put_chart(
+        &mut self,
+        engine: &mut Gafira,
+        chart: gafira_doc::ChartNode,
+        name: String,
+        at: Option<Pos2>,
+    ) {
+        self.put_table(engine, at, |page_px, _, point| {
+            crate::chart_templates::spec(chart, page_px, point, name)
+        });
+    }
+
+    /// The open undo step of a chart is over.
+    fn end_chart_step(&mut self, engine: &mut Gafira) {
+        if self.chart_gesture.take().is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
+    /// The charts of a frame (spec 083).
+    fn charts(&mut self, engine: &mut Gafira, asked: &Asked) {
+        use crate::chart_templates::Chosen;
+        // Another field, another chart, or the controls at rest.
+        if let Some((node, field, _)) = self.chart_gesture {
+            let same = asked
+                .chart
+                .as_ref()
+                .is_none_or(|(_, of, _)| *of == node && asked.chart_field == field);
+            if asked.chart_rest || !same {
+                self.end_chart_step(engine);
+            }
+        }
+        if let Some((page, node, chart)) = &asked.chart {
+            if self.chart_gesture.is_none() {
+                let gesture = engine.edit().begin_gesture().ok();
+                self.chart_gesture = gesture.map(|g| (*node, asked.chart_field, g));
+            }
+            let gesture = self.chart_gesture.map(|(_, _, gesture)| gesture);
+            set_chart(engine, (*page, *node), (**chart).clone(), gesture);
+        }
+        match &asked.chart_chosen {
+            Some(Chosen::Insert(template, at)) => {
+                let texts = Texts::new(engine.settings().locale().locale);
+                let name = plain(&texts, template.key);
+                self.put_chart(engine, template.chart(&texts), name, *at);
+            }
+            Some(Chosen::Data) => {
+                if let Some(path) = Self::pick_sheet() {
+                    let purpose = crate::sheets::Purpose::Chart;
+                    self.open_sheet(engine, &path, purpose, None);
+                }
+            }
+            None => {}
+        }
+        if asked.table_menu == Some(tables::Menu::Chart)
+            && let Some((page, node)) = self.selected.single()
+            && let Some(document) = engine.edit().document()
+            && let Some((table, _)) = table_of(&document, page, node)
+        {
+            let data: Vec<Vec<String>> = table
+                .cells
+                .chunks(table.columns.len().max(1))
+                .map(|row| row.iter().map(|cell| cell.text.clone()).collect())
+                .collect();
+            let name = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .and_then(|n| n.base.name.clone());
+            self.chart_from(engine, &data, name.unwrap_or_default());
+        }
+        if let Some((page, node)) = asked.chart_import
+            && let Some(path) = Self::pick_sheet()
+        {
+            let purpose = crate::sheets::Purpose::Data(page, node);
+            self.open_sheet(engine, &path, purpose, None);
+        }
+        if let Some((page, node)) = asked.chart_open {
+            self.chart_edit = Some(charts::Editing::new(page, node));
+        }
+        if asked.chart_close {
+            self.chart_edit = None;
+        }
+    }
+
+    /// The panel «Gráfico» in place of the one of the rail, and the wide
+    /// table of data; whether it is open (S83-07).
+    fn chart_panel_of(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) -> bool {
+        let Some(edit) = self.chart_edit.as_mut() else {
+            return false;
+        };
+        let at = (edit.page, edit.node);
+        let Some((chart, size)) = document.and_then(|d| {
+            let node = d.page(at.0)?.node(at.1)?;
+            let p = &node.base.placement;
+            Some((chart_of(d, at.0, at.1)?, (p.w, p.h)))
+        }) else {
+            return false;
+        };
+        let wide = edit.wide(ctx, theme, texts, (&chart, size));
+        take_chart(asked, at, wide);
+        egui::SidePanel::left("editor.chart")
+            .default_width(px(theme.tokens.size.panel_left).max(340.0))
+            .width_range(300.0..=520.0)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.c("bg"))
+                    .stroke(Stroke::new(1.0, theme.c("border")))
+                    .inner_margin(egui::Margin::same(16)),
+            )
+            .show(ctx, |ui| {
+                let asks = edit.panel(ui, theme, texts, &chart);
+                take_chart(asked, at, asks);
+            });
+        true
+    }
+
+    /// A sheet as a table, as [`Self::insert_table`] (S82-05).
+    fn insert_sheet(
+        &mut self,
+        engine: &mut Gafira,
+        sheet: gafira_io_xlsx::ReadSheet,
+        at: Option<Pos2>,
+    ) {
+        self.put_table(engine, at, |page_px, dpi, point| {
+            crate::table_templates::sheet_spec(sheet.table, page_px, dpi, point, sheet.name)
+        });
+    }
+
+    /// The table `spec` makes for the size of a page, its dpi and a point of
+    /// it, on that page.
+    fn put_table(
+        &mut self,
+        engine: &mut Gafira,
+        at: Option<Pos2>,
+        spec: impl FnOnce((f64, f64), f64, Option<(f64, f64)>) -> gafira_edit::NodeSpec,
+    ) {
         let Some(document) = engine.edit().document() else {
             return;
         };
@@ -9079,13 +9455,10 @@ impl Editor {
         let Ok(size) = on.size.to_px(document.dpi()) else {
             return;
         };
-        let texts = Texts::new(engine.settings().locale().locale);
-        let name = plain(&texts, template.key());
-        let spec = crate::table_templates::spec(
-            template.table(&texts),
+        let spec = spec(
             (size.width(), size.height()),
+            f64::from(document.dpi().get()),
             dropped.map(|(_, point)| point),
-            name,
         );
         let next = NodeId::new(document.next_id());
         let command = InsertNodes::new(on.id, None, on.roots.len(), vec![spec]);
@@ -9326,9 +9699,15 @@ impl Editor {
     }
 
     fn import_image(&mut self, engine: &mut Gafira, _document: &Document) {
-        // Images, and SVG or PDF outlines for custom frames (spec 068).
+        // Images, SVG or PDF outlines for custom frames (spec 068), and
+        // spreadsheets as tables (spec 082).
         let picked = rfd::FileDialog::new()
-            .add_filter("Imagen, SVG, PDF", &["png", "jpg", "jpeg", "svg", "pdf"])
+            .add_filter(
+                "Imagen, SVG, PDF, Excel, CSV",
+                &[
+                    "png", "jpg", "jpeg", "svg", "pdf", "xlsx", "xlsm", "csv", "tsv",
+                ],
+            )
             .pick_files();
         if let Some(paths) = picked {
             self.place_images(engine, &paths, None);
@@ -9931,6 +10310,12 @@ fn is_svg_path(path: &std::path::Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
 }
 
+/// Whether `path` names a file the canvas takes: an image, a vector file or
+/// a spreadsheet (specs 067 and 082).
+fn is_importable(path: &std::path::Path) -> bool {
+    is_image_path(path) || is_vector_path(path) || crate::sheets::is_sheet(path)
+}
+
 /// The outline of the vector file at `path` (spec 066, S66-10).
 fn vector_outline(path: &std::path::Path) -> Option<gafira_io_vector::Outline> {
     let bytes = std::fs::read(path).ok()?;
@@ -9969,10 +10354,7 @@ fn image_paths(text: &str) -> Vec<std::path::PathBuf> {
         .filter_map(|line| {
             let raw = line.strip_prefix("file://").unwrap_or(line);
             let path = std::path::PathBuf::from(percent_decode(raw));
-            (path.is_absolute()
-                && (is_image_path(&path) || is_vector_path(&path))
-                && path.is_file())
-            .then_some(path)
+            (path.is_absolute() && is_importable(&path) && path.is_file()).then_some(path)
         })
         .collect();
     if paths.len() == lines.len() {
@@ -10084,6 +10466,42 @@ fn table_of(
     let found = document.page(page)?.node(node)?;
     match &found.kind {
         gafira_doc::NodeKind::Table(table) => Some(((**table).clone(), found.base.placement)),
+        _ => None,
+    }
+}
+
+/// What the controls of the chart `at` asked for goes to `asked`.
+fn take_chart(asked: &mut Asked, at: (PageId, NodeId), asks: charts::Asks) {
+    if let Some(chart) = asks.chart {
+        asked.chart = Some((at.0, at.1, chart));
+    }
+    if asks.import {
+        asked.chart_import = Some(at);
+    }
+    if asks.font {
+        asked.font_panel = Some(true);
+    }
+    asked.chart_close |= asks.close;
+}
+
+/// Sets the chart at `at`.
+fn set_chart(
+    engine: &mut Gafira,
+    (page, node): (PageId, NodeId),
+    chart: gafira_doc::ChartNode,
+    gesture: Option<GestureId>,
+) {
+    let property = Property::Chart(Box::new(chart));
+    let command = SetProperty::new(page, vec![node], property, gesture);
+    if let Err(error) = engine.edit().execute(Box::new(command)) {
+        eprintln!("chart: {error}");
+    }
+}
+
+/// The chart `node` of `page`, if it is one.
+fn chart_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::ChartNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Chart(chart) => Some((**chart).clone()),
         _ => None,
     }
 }
@@ -10482,6 +10900,11 @@ fn document_fonts(document: &Document) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for page in document.pages() {
         for node in page.nodes.values() {
+            if let gafira_doc::NodeKind::Chart(chart) = &node.kind
+                && !out.contains(&chart.text.font)
+            {
+                out.push(chart.text.font.clone());
+            }
             let content = match &node.kind {
                 gafira_doc::NodeKind::Text(text) => Some(&text.content),
                 gafira_doc::NodeKind::Shape(shape) => shape.text.as_ref().map(|t| &t.content),
@@ -10824,6 +11247,7 @@ fn many_fields(
         shape.text.is_none()
             && shape.image.is_none()
             && shape.qr.is_none()
+            && shape.chart.is_none()
             && shape.table.is_none()
             && !shape.group
     }) {
@@ -11264,6 +11688,8 @@ fn position_fields(
 fn kind_title(shape: &Shape) -> &'static str {
     if shape.table.is_some() {
         "layers.table"
+    } else if shape.chart.is_some() {
+        "layers.chart"
     } else if shape.qr.is_some() {
         "layers.qr"
     } else if shape.frame.is_some() {
@@ -13196,6 +13622,122 @@ pub(crate) mod tests {
         assert!(!after.iter().any(|c| crate::recolor::same(*c, colors[0])));
         assert_eq!(undo_depth(&mut engine), depth + 1);
         std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // S82-05: a CSV dropped on a page is a table inside it, selected, one
+    // undo step; S82-06: a workbook of several sheets asks for one; S82-07:
+    // what cannot be read changes nothing.
+    #[test]
+    fn s82_05_a_dropped_spreadsheet_is_a_table() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-sheet-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let (csv, book, bad) = (dir.join("d.csv"), dir.join("l.xlsx"), dir.join("m.xlsx"));
+        std::fs::write(&csv, "Mes;Ventas\nEnero;12,5\n").expect("a csv");
+        std::fs::write(&bad, "nada").expect("a file");
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        let depth = undo_depth(&mut engine);
+        // Near the corner: it stays inside.
+        editor.place_images(&mut engine, &[csv], Some(Pos2::new(5.0, 5.0)));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let document = engine.edit().document().expect("doc");
+        let (on, id) = editor.selected.single().expect("the table");
+        let (table, placement) = table_of(&document, on, id).expect("a table");
+        assert_eq!(table.cells[3].text, "12,5");
+        assert!(placement.x >= 0.0 && placement.y >= 0.0);
+        let sheet = |name| gafira_io_xlsx::Sheet {
+            name,
+            table: &table,
+            size: (placement.w, placement.h),
+            dpi: 96.0,
+        };
+        let bytes = gafira_io_xlsx::workbook(&[sheet("Uno"), sheet("Dos")]).expect("a book");
+        std::fs::write(&book, bytes).expect("a book");
+        editor.place_images(&mut engine, &[book, bad], None);
+        assert_eq!(undo_depth(&mut engine), depth + 1, "it asks first");
+        let answer = |index| Asked {
+            sheet: Some(crate::sheets::Answer::Insert(index)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, answer(1));
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        let document = engine.edit().document().expect("doc");
+        let (on, id) = editor.selected.single().expect("the table");
+        let node = document.page(on).and_then(|p| p.node(id)).expect("a node");
+        assert_eq!(node.base.name.as_deref(), Some("Dos"));
+        assert!(!editor.sheets.is_empty(), "the one it could not read");
+        ask(&mut engine, &mut editor, answer(0));
+        assert!(editor.sheets.is_empty());
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // S83-06, S83-07: a chart inserted is selected, its field is one undo
+    // step, its panel closes with the selection, and a table makes one.
+    #[test]
+    fn s83_07_a_chart_is_inserted_and_edited() {
+        use crate::chart_templates::{Chosen, TEMPLATES};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        let insert = Asked {
+            chart_chosen: Some(Chosen::Insert(TEMPLATES[0], None)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, insert);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let at = editor.selected.single().expect("the chart");
+        assert_eq!(at.0, page);
+        let chart = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            chart_of(&document, at.0, at.1).expect("a chart")
+        };
+        let write = |engine: &mut Gafira, editor: &mut Editor, words: &str, field: u64| {
+            let mut next = chart(engine);
+            assert!(gafira_chart::set_cell(&mut next, 1, 1, words));
+            let asked = Asked {
+                chart: Some((at.0, at.1, Box::new(next))),
+                chart_field: field,
+                ..Asked::default()
+            };
+            ask(engine, editor, asked);
+        };
+        write(&mut engine, &mut editor, "2", 7);
+        write(&mut engine, &mut editor, "25", 7);
+        assert_eq!(undo_depth(&mut engine), depth + 2, "one field, one step");
+        write(&mut engine, &mut editor, "9", 8);
+        assert_eq!(undo_depth(&mut engine), depth + 3, "another field");
+        assert_eq!(chart(&mut engine).cell(1, 1), "9");
+        let rest = Asked {
+            chart_rest: true,
+            chart_open: Some(at),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, rest);
+        assert!(editor.chart_gesture.is_none() && editor.chart_edit.is_some());
+        engine.edit().undo().expect("an undo");
+        assert_eq!(chart(&mut engine).cell(1, 1), "25");
+        // S83-10: a table makes a chart of its data.
+        let texts = Texts::new(engine.settings().locale().locale);
+        let table = crate::table_templates::Template::ALL
+            .into_iter()
+            .find(|t| !t.table(&texts).cells[0].text.is_empty())
+            .expect("a table with words");
+        editor.insert_table(&mut engine, table, None);
+        let made = Asked {
+            table_menu: Some(tables::Menu::Chart),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, made);
+        let document = engine.edit().document().expect("doc");
+        let new = editor.selected.single().expect("the chart");
+        let made = chart_of(&document, new.0, new.1).expect("a chart");
+        assert_eq!(made.cell(0, 0), table.table(&texts).cells[0].text);
+        assert!(editor.chart_edit.is_some());
     }
 
     // S66-10: an SVG dropped on the canvas becomes an empty frame of its

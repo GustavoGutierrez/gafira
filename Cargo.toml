@@ -40,6 +40,7 @@ gafira-io-svg = { path = "crates/gafira-io-svg" }
 gafira-io-pptx = { path = "crates/gafira-io-pptx" }
 gafira-io-vector = { path = "crates/gafira-io-vector" }
 gafira-table = { path = "crates/gafira-table" }
+gafira-chart = { path = "crates/gafira-chart" }
 gafira-io-xlsx = { path = "crates/gafira-io-xlsx" }
 gafira-qr = { path = "crates/gafira-qr" }
 gafira-photos = { path = "crates/gafira-photos" }

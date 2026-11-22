@@ -265,6 +265,8 @@ enum RecordKind {
     Qr(Box<gafira_doc::QrNode>),
     /// A table: its cells, their borders and their words (spec 081).
     Table(Box<gafira_doc::TableNode>),
+    /// A chart: its shapes and its words (spec 083).
+    Chart(Box<gafira_doc::ChartNode>),
 }
 
 /// Builds the render graph of a page by walking it (02 §6.1).
@@ -935,6 +937,42 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             opacity: record.base.opacity,
                         });
                     }
+                    RecordKind::Chart(ref chart) => {
+                        let placement = &record.base.placement;
+                        let box_of = (placement.w, placement.h);
+                        let ops = chart_ops(chart, box_of, transform, &self.fonts);
+                        if ops.is_empty() {
+                            sub.ops.truncate(mark);
+                            continue;
+                        }
+                        let key = self.node_key(
+                            NodeType::Shape,
+                            &[],
+                            &record.base,
+                            transform,
+                            &[KeyParam::Text(format!("chart {box_of:?} {chart:?}"))],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Vector),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        sub.ops.extend(ops);
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
                     RecordKind::Image(asset) => {
                         let placement = &record.base.placement;
                         let Some(image) = self.images.get(&asset) else {
@@ -1197,6 +1235,17 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         node.base.id
     }
 
+    fn visit_chart(&mut self, node: &Node, chart: &gafira_doc::ChartNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Chart(Box::new(chart.clone())),
+            },
+        );
+        node.base.id
+    }
+
     fn visit_line(&mut self, node: &Node, line: &gafira_doc::LineNode) -> NodeId {
         self.records.insert(
             node.base.id,
@@ -1271,6 +1320,115 @@ fn table_ops(
         }
     }
     ops
+}
+
+/// A line of words of a chart laid out, once for all the times it is asked
+/// for: its measure, then its drawing.
+type ChartWords = BTreeMap<(String, u64, bool), Option<(LaidText, f64)>>;
+
+/// The pieces of `chart` in a box of `w` × `h` px with their words laid out
+/// (spec 083).
+fn chart_pieces(
+    chart: &gafira_doc::ChartNode,
+    size: (f64, f64),
+    fonts: &FontBook,
+) -> Vec<(gafira_chart::Piece, Option<LaidText>, kurbo::Vec2)> {
+    use gafira_chart::{Anchor, Piece};
+    // Wider than any line: a label does not wrap.
+    const WIDE: f64 = 1e5;
+    let laid = std::cell::RefCell::new(ChartWords::new());
+    let lay = |text: &str, size: f64, bold: bool| {
+        let key = (text.to_owned(), size.to_bits(), bold);
+        if let Some(found) = laid.borrow().get(&key) {
+            return found.clone();
+        }
+        let style = gafira_doc::SpanStyle {
+            font: chart.text.font.clone(),
+            size,
+            color: chart.text.color,
+            bold,
+            italic: chart.text.italic,
+        };
+        let content = gafira_doc::RichText::plain(text, &style);
+        let wide = gafira_geom::Size::new(WIDE, 1.0);
+        let found = laid_text(&content, Laid::plain(TextAlign::Left), wide, fonts).map(|text| {
+            let width = text.path.bounding_box().x1.max(0.0);
+            (text, width)
+        });
+        laid.borrow_mut().insert(key, found.clone());
+        found
+    };
+    let measure = |text: &str, size: f64, bold: bool| {
+        lay(text, size, bold).map_or((0.0, size), |(text, width)| (width, text.height))
+    };
+    gafira_chart::draw(chart, size, &measure)
+        .into_iter()
+        .map(|piece| {
+            let Piece::Words(words) = &piece else {
+                return (piece, None, kurbo::Vec2::ZERO);
+            };
+            let Some((text, width)) = lay(&words.text, words.size, words.bold) else {
+                return (piece, None, kurbo::Vec2::ZERO);
+            };
+            let x = match words.h {
+                Anchor::Start => 0.0,
+                Anchor::Middle => width / 2.0,
+                Anchor::End => width,
+            };
+            let y = match words.v {
+                Anchor::Start => 0.0,
+                Anchor::Middle => text.height / 2.0,
+                Anchor::End => text.height,
+            };
+            let at = words.at.to_vec2() - kurbo::Vec2::new(x, y);
+            (piece, Some(text), at)
+        })
+        .collect()
+}
+
+/// The operations of a chart in a box of `w` × `h` px, back to front (spec
+/// 083): its words stay words.
+fn chart_ops(
+    chart: &gafira_doc::ChartNode,
+    size: (f64, f64),
+    transform: Affine,
+    fonts: &FontBook,
+) -> Vec<RenderOp> {
+    chart_pieces(chart, size, fonts)
+        .into_iter()
+        .filter_map(|(piece, text, at)| match piece {
+            gafira_chart::Piece::Fill { path, color } => Some(RenderOp::FillPath {
+                path: Arc::new(path),
+                color,
+                transform,
+            }),
+            gafira_chart::Piece::Words(words) => text.map(|text| RenderOp::Text {
+                path: Arc::new(text.path),
+                color: words.color,
+                transform: transform * Affine::translate(at),
+                runs: Arc::new(text.runs),
+            }),
+        })
+        .collect()
+}
+
+/// The outlines that draw `chart` in a box of `w` × `h` px and their
+/// colours, back to front, as the export draws them (spec 083).
+#[must_use]
+pub fn chart_outlines(
+    chart: &gafira_doc::ChartNode,
+    size: (f64, f64),
+    fonts: &FontBook,
+) -> Vec<(BezPath, Color)> {
+    chart_pieces(chart, size, fonts)
+        .into_iter()
+        .filter_map(|(piece, text, at)| match piece {
+            gafira_chart::Piece::Fill { path, color } => Some((path, color)),
+            gafira_chart::Piece::Words(words) => {
+                text.map(|text| (Affine::translate(at) * text.path, words.color))
+            }
+        })
+        .collect()
 }
 
 /// The words of a cell laid out: their outline, where it goes in the cell
@@ -1701,6 +1859,7 @@ fn text_path(
 /// A text laid out: its outline, colour, the canonical string of its key,
 /// the height of its lines and its glyph runs (spec 073; none for a curved
 /// text, whose letters turn one by one).
+#[derive(Clone)]
 struct LaidText {
     path: BezPath,
     color: Color,
@@ -2573,6 +2732,54 @@ mod tests {
                 assert!(Rect::new(0.0, 0.0, 200.0, 80.0).contains_rect(bounds));
             }
         }
+    }
+
+    /// A chart of a pie with the labels and the shares.
+    fn pie_chart() -> gafira_doc::ChartNode {
+        use gafira_doc::{ChartKind, ChartLabels, ChartNode, ChartText};
+        let ink = Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let cells = ["Equipo", "Total", "Ventas", "75", "Otros", "25"];
+        let text = ChartText {
+            font: "Inter".to_owned(),
+            size: 14.0,
+            color: ink,
+            bold: false,
+            italic: false,
+        };
+        let data = (2, cells.map(str::to_owned).to_vec());
+        let mut chart = ChartNode::new(ChartKind::Pie, data, vec![ink], text);
+        chart.names = true;
+        chart.numbers = ChartLabels::Percent;
+        chart
+    }
+
+    // S83-09: a chart is paths and words, inside its box, and the canvas
+    // draws the same outlines.
+    #[test]
+    fn s83_09_a_chart_keeps_its_words_as_text() {
+        let chart = pie_chart();
+        let ops = chart_ops(&chart, (400.0, 300.0), Affine::IDENTITY, &fonts());
+        let mut words: Vec<String> = Vec::new();
+        for op in &ops {
+            match op {
+                RenderOp::Text {
+                    runs,
+                    path,
+                    transform,
+                    ..
+                } => {
+                    words.push(runs[0].text.to_string());
+                    let bounds = (*transform * (**path).clone()).bounding_box();
+                    assert!(Rect::new(0.0, 0.0, 400.0, 300.0).contains_rect(bounds));
+                }
+                RenderOp::FillPath { .. } => {}
+                _ => panic!("neither a path nor words"),
+            }
+        }
+        assert_eq!(words, ["Ventas", "75%", "Otros", "25%"]);
+        assert_eq!(ops.len(), 6);
+        let outlines = chart_outlines(&chart, (400.0, 300.0), &fonts());
+        assert_eq!(outlines.len(), ops.len());
     }
 
     /// A filled ellipse of 200 by 100 at (10, 20) with `words` inside it,

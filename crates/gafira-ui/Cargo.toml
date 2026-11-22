@@ -22,6 +22,8 @@ gafira-raster.workspace = true
 gafira-qr.workspace = true
 # Spec 081: the tables of the panel and the canvas, and their Excel file.
 gafira-table.workspace = true
+# Spec 083: charts.
+gafira-chart.workspace = true
 gafira-io-xlsx.workspace = true
 # FD-44: a curved text is drawn from the outline the export draws.
 gafira-render.workspace = true

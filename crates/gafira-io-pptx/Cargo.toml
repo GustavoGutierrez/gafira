@@ -15,6 +15,8 @@ gafira-raster.workspace = true
 gafira-qr.workspace = true
 # Spec 081: a table goes as a table.
 gafira-table.workspace = true
+# Spec 083: charts.
+gafira-chart.workspace = true
 # Decoding an image that is neither PNG nor JPEG (WebP) to re-encode it.
 gafira-io-image.workspace = true
 image.workspace = true

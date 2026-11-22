@@ -90,6 +90,19 @@ fn node_bytes(node: &Node) -> usize {
                     .map(|c| size_of::<gafira_doc::TableCell>() + c.text.len() + c.style.font.len())
                     .sum::<usize>()
         }
+        // A chart keeps its data and its colours (spec 083).
+        NodeKind::Chart(chart) => {
+            size_of::<gafira_doc::ChartNode>()
+                + chart.text.font.len()
+                + chart.title.len()
+                + chart.colors.len() * size_of::<gafira_color::Color>()
+                + chart.values.len() * size_of::<usize>()
+                + chart
+                    .cells
+                    .iter()
+                    .map(|c| size_of::<String>() + c.len())
+                    .sum::<usize>()
+        }
         // A code keeps the words it says on the heap (spec 080).
         NodeKind::Qr(qr) => qr.content.fields().iter().map(|f| f.len()).sum(),
         NodeKind::Group(_) | NodeKind::Image(_) | NodeKind::Line(_) => 0,

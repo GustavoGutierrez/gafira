@@ -512,7 +512,7 @@ pub(crate) fn image(
     ))
 }
 
-fn fill(pixmap: &mut tiny_skia::Pixmap, path: &tiny_skia::Path, color: Color) {
+pub(crate) fn fill(pixmap: &mut tiny_skia::Pixmap, path: &tiny_skia::Path, color: Color) {
     let [r, g, b, a] = canvas::picker_rgba(Some(color));
     let mut paint = tiny_skia::Paint {
         anti_alias: true,
@@ -850,6 +850,8 @@ pub(crate) enum Menu {
     Duplicate,
     Delete,
     Excel,
+    /// «Crear gráfico» (S83-10).
+    Chart,
     Lock,
     /// «Alinear a la página», by its place in the list.
     Align(usize),
@@ -970,6 +972,7 @@ pub(crate) fn menu(
         ],
     );
     ui.separator();
+    item(ui, "table.chart", "", true, Picked::Menu(Menu::Chart));
     item(ui, "table.excel", "", true, Picked::Menu(Menu::Excel));
     item(ui, "layers.lock", "", true, Picked::Menu(Menu::Lock));
     let button = egui::Button::new(plain(texts, "table.align_page"))

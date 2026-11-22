@@ -582,13 +582,53 @@ fn left(t: &mut TableNode, range: Range) {
 /// `t` on a page of `page_px`: two thirds of its width at most, and of its
 /// height, the words in proportion; centred on `at` or in the middle.
 pub(crate) fn spec(
-    mut t: TableNode,
+    t: TableNode,
     page_px: (f64, f64),
     at: Option<(f64, f64)>,
     name: String,
 ) -> NodeSpec {
     let (w, h) = size(&t);
     let k = (page_px.0 * 2.0 / 3.0 / w).min(page_px.1 * 2.0 / 3.0 / h);
+    scaled(t, k, page_px, at, name)
+}
+
+/// The most of a page a table of a spreadsheet takes.
+const SHEET_SHARE: f64 = 0.9;
+
+/// A table of a spreadsheet on a page of `page_px` at `dpi` (S82-05): at its
+/// own size, or smaller to fit; centred on `at`, or in the middle, and
+/// inside the page.
+pub(crate) fn sheet_spec(
+    t: TableNode,
+    page_px: (f64, f64),
+    dpi: f64,
+    at: Option<(f64, f64)>,
+    name: String,
+) -> NodeSpec {
+    // The height its words take, before it shrinks with them.
+    let (w, h) = size(&t);
+    let all = Range::all(&t);
+    let words = crate::tables::Act::Padding(t.padding);
+    let t = crate::tables::change(&t, &Placement::new(0.0, 0.0, w, h), all, &words)
+        .map_or(t, |(t, _, _)| t);
+    let (w, h) = size(&t);
+    let most = (page_px.0 * SHEET_SHARE / w).min(page_px.1 * SHEET_SHARE / h);
+    let mut spec = scaled(t, (dpi / 96.0).min(most), page_px, at, name);
+    let p = &mut spec.placement;
+    let inside = |at: f64, side: f64, page: f64| at.min(page - side).max(0.0);
+    p.x = inside(p.x, p.w, page_px.0);
+    p.y = inside(p.y, p.h, page_px.1);
+    spec
+}
+
+/// `t` by `k`, its words too, centred on `at` or in the middle of the page.
+fn scaled(
+    mut t: TableNode,
+    k: f64,
+    page_px: (f64, f64),
+    at: Option<(f64, f64)>,
+    name: String,
+) -> NodeSpec {
     for side in t.columns.iter_mut().chain(&mut t.rows) {
         *side *= k;
     }

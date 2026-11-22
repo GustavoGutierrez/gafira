@@ -68,6 +68,8 @@ pub enum Property {
     Qr(Box<gafira_doc::QrNode>),
     /// A whole table (spec 081).
     Table(Box<gafira_doc::TableNode>),
+    /// A whole chart (spec 083).
+    Chart(Box<gafira_doc::ChartNode>),
     PageName(String),
     /// The background of a page (spec 069); `None` makes it white again.
     PageBackground(Option<gafira_doc::PageBackground>),
@@ -108,6 +110,7 @@ impl Property {
             Self::FrameCrop(..) => "set_property.frame_crop",
             Self::Qr(_) => "set_property.qr",
             Self::Table(_) => "set_property.table",
+            Self::Chart(_) => "set_property.chart",
             Self::TextContent(_) => "set_property.text_content",
             Self::TextCurve(_) => "set_property.text_curve",
             Self::TextAlign(_) => "set_property.text_align",
@@ -174,6 +177,7 @@ impl Property {
             ),
             Self::Qr(qr) => ("qr", qr.is_valid()),
             Self::Table(table) => ("table", table.is_valid()),
+            Self::Chart(chart) => ("chart", chart.is_valid()),
             Self::FrameContent(Some(content)) => (
                 "frame_content",
                 content.natural.0 > 0 && content.natural.1 > 0,
@@ -231,6 +235,7 @@ impl Property {
                 Self::FrameCrop(f.content_offset, f.content_scale, f.content_rotation_deg)
             }
             (Self::Table(_), NodeKind::Table(t)) => Self::Table(t.clone()),
+            (Self::Chart(_), NodeKind::Chart(c)) => Self::Chart(c.clone()),
             (Self::Qr(_), NodeKind::Qr(q)) => Self::Qr(q.clone()),
             (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
             (Self::CornerRadius(_), NodeKind::Frame(f)) => Self::CornerRadius(f.corner_radius),
@@ -272,6 +277,7 @@ impl Property {
                 f.content_rotation_deg = *degrees;
             }
             (Self::Table(v), NodeKind::Table(t)) => t.clone_from(v),
+            (Self::Chart(v), NodeKind::Chart(c)) => c.clone_from(v),
             (Self::Qr(v), NodeKind::Qr(q)) => q.clone_from(v),
             (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,
             (Self::CornerRadius(v), NodeKind::Frame(f)) => f.corner_radius = *v,
@@ -811,6 +817,42 @@ mod tests {
 
     // S81-01: a table is changed as a whole and undone in one step; one that
     // a document does not hold is refused.
+    // S83-01: a chart is changed whole and undone; a wrong one is refused.
+    #[test]
+    fn s83_01_the_chart_is_changed_and_undone() {
+        use gafira_doc::{ChartKind, ChartNode, ChartText};
+        let ink = Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let text = ChartText {
+            font: "Inter".to_owned(),
+            size: 9.0,
+            color: ink,
+            bold: false,
+            italic: false,
+        };
+        let chart = |kind, columns| {
+            let data = (columns, vec!["1".to_owned(); 4]);
+            ChartNode::new(kind, data, vec![ink], text.clone())
+        };
+        let mut original = fixture();
+        {
+            let token = EditToken::__new_for_gafira_edit_only();
+            let mut edit = original.edit(&token);
+            let page = Arc::make_mut(&mut edit.pages_mut()[0]);
+            let node = Arc::make_mut(page.nodes.get_mut(&A).expect("A"));
+            node.kind = NodeKind::Chart(Box::new(chart(ChartKind::Pie, 2)));
+        }
+        let mut doc = original.clone();
+        let next = chart(ChartKind::Radar, 4);
+        let mut change = set(&[A], Property::Chart(Box::new(next.clone())));
+        assert_eq!(apply(&mut change, &mut doc), Ok(Applied::Changed));
+        assert_eq!(node(&doc, A).kind, NodeKind::Chart(Box::new(next)));
+        revert(&mut change, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut refused = set(&[A], Property::Chart(Box::new(chart(ChartKind::Pie, 3))));
+        assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
     #[test]
     fn s81_01_the_table_is_changed_and_undone() {
         use gafira_doc::{CellStyle, TableNode};

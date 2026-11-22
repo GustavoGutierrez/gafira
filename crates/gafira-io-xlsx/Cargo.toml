@@ -13,9 +13,11 @@ gafira-color.workspace = true
 gafira-table.workspace = true
 # The OPC package is a ZIP (already in the tree for .gaf).
 zip.workspace = true
+# Spec 082: reading a workbook; already in the tree through usvg.
+roxmltree.workspace = true
 
 [dev-dependencies]
-roxmltree.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

@@ -10,6 +10,7 @@
 mod arena;
 mod background;
 mod blend;
+mod chart;
 mod content_hash;
 pub mod contract;
 mod document;
@@ -40,6 +41,7 @@ pub mod visit;
 
 pub use background::{BackgroundFit, PageBackground, PatternKind};
 pub use blend::BlendMode;
+pub use chart::{ChartCombine, ChartKind, ChartLabels, ChartNode, ChartText, MAX_CHART_COLORS};
 pub use content_hash::ContentHash;
 pub use document::Document;
 pub use dpi::Dpi;

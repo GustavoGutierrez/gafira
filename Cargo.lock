@@ -1713,6 +1713,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-chart"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "gafira-table",
+ "kurbo 0.13.1",
+ "proptest",
+]
+
+[[package]]
 name = "gafira-cli"
 version = "0.1.0-beta.2"
 
@@ -1844,6 +1855,7 @@ dependencies = [
 name = "gafira-io-pptx"
 version = "0.1.0-beta.2"
 dependencies = [
+ "gafira-chart",
  "gafira-color",
  "gafira-doc",
  "gafira-geom",
@@ -1896,6 +1908,7 @@ dependencies = [
  "gafira-doc",
  "gafira-ports",
  "gafira-table",
+ "proptest",
  "roxmltree",
  "zip",
 ]
@@ -2004,6 +2017,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "blake3",
  "gafira-anim",
+ "gafira-chart",
  "gafira-color",
  "gafira-doc",
  "gafira-geom",
@@ -2122,6 +2136,7 @@ dependencies = [
  "egui",
  "egui_extras",
  "gafira-assets",
+ "gafira-chart",
  "gafira-color",
  "gafira-doc",
  "gafira-edit",

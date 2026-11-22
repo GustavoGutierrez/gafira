@@ -22,6 +22,8 @@ gafira-pathops.workspace = true
 gafira-qr.workspace = true
 # Spec 081: where the cells of a table lie, and their borders.
 gafira-table.workspace = true
+# Spec 083: charts.
+gafira-chart.workspace = true
 blake3.workspace = true
 kurbo.workspace = true
 

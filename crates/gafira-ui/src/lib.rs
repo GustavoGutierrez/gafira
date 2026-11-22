@@ -14,6 +14,8 @@
 mod app_icon;
 mod arrange;
 mod canvas;
+mod chart_templates;
+mod charts;
 mod clipboard;
 mod collage;
 mod colors;
@@ -48,6 +50,7 @@ mod saving;
 mod selection;
 mod settings;
 mod shapes;
+mod sheets;
 mod shell;
 mod splash;
 mod style;

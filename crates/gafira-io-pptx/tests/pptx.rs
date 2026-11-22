@@ -338,3 +338,42 @@ fn s81_13_a_table_goes_as_a_table() {
     );
     assert!(!slide.contains("<p:txBody>"), "the text is of the table");
 }
+
+// S83-09: a chart goes as shapes and texts that can be edited.
+#[test]
+fn s83_09_a_chart_goes_as_shapes_and_texts() {
+    use gafira_doc::{ChartKind, ChartNode, ChartText};
+    let ink = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
+    let cells = ["Equipo", "Total", "Ventas & más", "75", "Otros", "25"];
+    let text = ChartText {
+        font: "Inter".to_owned(),
+        size: 14.0,
+        color: ink,
+        bold: false,
+        italic: false,
+    };
+    let data = (2, cells.map(str::to_owned).to_vec());
+    let mut chart = ChartNode::new(ChartKind::Pie, data, vec![ink], text);
+    chart.names = true;
+    let base = document();
+    let mut page = (*base.pages()[0]).clone();
+    let code = node(
+        20,
+        Placement::new(100.0, 100.0, 400.0, 300.0),
+        NodeKind::Chart(Box::new(chart)),
+    );
+    page.nodes.clear();
+    page.roots = vec![code.base.id];
+    page.nodes.insert(code.base.id, Arc::new(code));
+    let document = Document::from_parts(21, Dpi::default(), vec![Arc::new(page)]).expect("valid");
+    let mut zip = zip::ZipArchive::new(Cursor::new(pptx_of(&document))).expect("a zip");
+    let mut slide = String::new();
+    zip.by_name("ppt/slides/slide1.xml")
+        .expect("the slide")
+        .read_to_string(&mut slide)
+        .expect("utf-8");
+    roxmltree::Document::parse(&slide).expect("XML");
+    assert_eq!(slide.matches("<a:custGeom>").count(), 2, "two slices");
+    assert!(slide.contains("<a:t>Ventas &amp; más</a:t>"), "{slide}");
+    assert!(!slide.contains("<p:pic>"), "nothing is pixels");
+}

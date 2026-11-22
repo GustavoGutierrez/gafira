@@ -1386,7 +1386,7 @@ pub(crate) mod tests {
                 vec![spec],
             )))
             .expect("the code");
-        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx"] {
+        for id in ["png", "pdf", "svg", "pptx"] {
             let dialog = dialog_on(&engine, id, None);
             let path = dir.join(format!("code.{id}"));
             export_to(&mut engine, &dialog, &path).expect(id);
@@ -1473,6 +1473,68 @@ pub(crate) mod tests {
         for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"] {
             let dialog = dialog_on(&engine, id, None);
             let path = dir.join(format!("table.{id}"));
+            export_to(&mut engine, &dialog, &path).expect(id);
+            let bytes = std::fs::read(&path).expect("the file");
+            match id {
+                "svg" => {
+                    let svg = String::from_utf8(bytes).expect("utf-8");
+                    assert!(svg.contains("<text"), "the words are text");
+                    assert!(!svg.contains("<image"), "nothing is pixels");
+                }
+                "pdf" => {
+                    let has = |what: &[u8]| bytes.windows(what.len()).any(|w| w == what);
+                    assert!(has(b"/ToUnicode"), "the words can be copied");
+                    assert!(!has(b"/Subtype /Image") && !has(b"/Subtype/Image"));
+                }
+                _ => assert!(bytes.len() > 500, "{id}"),
+            }
+        }
+        if std::env::var_os("GAFIRA_KEEP_EXPORTS").is_none() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    // S83-09: every kind of chart goes out in every format from the engine:
+    // in the PDF and the SVG, paths and words, no pixels.
+    #[test]
+    fn s83_09_charts_export_in_every_format() {
+        let mut engine = document_engine(1);
+        let dir = std::env::temp_dir().join(format!("gafira-s83-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let (w, h) = (size.width() / 6.0, size.height() / 6.0);
+        let specs = crate::chart_templates::TEMPLATES
+            .iter()
+            .enumerate()
+            .map(|(i, template)| {
+                let chart = template.chart(&texts);
+                let name = template.key.to_owned();
+                let room = (size.width(), size.height());
+                let mut spec = crate::chart_templates::spec(chart, room, None, name);
+                // A grid of six by six, the words in proportion.
+                let (col, row) = (f64::from(i as u32 % 6), f64::from(i as u32 / 6));
+                let k = w * 0.9 / spec.placement.w;
+                spec.placement = gafira_doc::Placement::new(
+                    (col + 0.05) * w,
+                    (row + 0.05) * h,
+                    w * 0.9,
+                    h * 0.9,
+                );
+                if let gafira_doc::NodeKind::Chart(chart) = &mut spec.kind {
+                    chart.text.size = (chart.text.size * k).max(1.0);
+                    chart.weight *= k;
+                }
+                spec
+            })
+            .collect();
+        let insert = gafira_edit::InsertNodes::new(page.id, None, 0, specs);
+        engine.edit().execute(Box::new(insert)).expect("the charts");
+        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx"] {
+            let dialog = dialog_on(&engine, id, None);
+            let path = dir.join(format!("charts.{id}"));
             export_to(&mut engine, &dialog, &path).expect(id);
             let bytes = std::fs::read(&path).expect("the file");
             match id {

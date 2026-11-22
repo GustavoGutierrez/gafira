@@ -1008,6 +1008,9 @@ mod guards {
                         NodeKind::Table(_) => {
                             seen.insert("table");
                         }
+                        NodeKind::Chart(_) => {
+                            seen.insert("chart");
+                        }
                         NodeKind::Extension(e) => {
                             seen.insert("extension");
                             note_text(&mut seen, &e.type_id);

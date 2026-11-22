@@ -36,6 +36,8 @@ pub(crate) struct Shape {
     pub(crate) qr: Option<Box<gafira_doc::QrNode>>,
     /// A table: it is drawn from its picture (spec 081).
     pub(crate) table: Option<Box<gafira_doc::TableNode>>,
+    /// A chart: it is drawn from its picture (spec 083).
+    pub(crate) chart: Option<Box<gafira_doc::ChartNode>>,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
     /// The opacity of the groups above it, multiplied (spec 043); the
@@ -92,7 +94,9 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 shape.stroke = frame.stroke;
                 Some((shape, None, None))
             }
-            NodeKind::Qr(_) | NodeKind::Table(_) => Some((rect.clone(), None, None)),
+            NodeKind::Qr(_) | NodeKind::Table(_) | NodeKind::Chart(_) => {
+                Some((rect.clone(), None, None))
+            }
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
@@ -118,6 +122,10 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                     NodeKind::Line(line) => {
                         Some((line.clone(), line.ends(page, &node.base.placement)))
                     }
+                    _ => None,
+                },
+                chart: match &node.kind {
+                    NodeKind::Chart(chart) => Some(chart.clone()),
                     _ => None,
                 },
                 table: match &node.kind {
@@ -256,6 +264,7 @@ pub(crate) fn kind_key(kind: &NodeKind) -> &'static str {
         NodeKind::Frame(_) => "layers.frame",
         NodeKind::Qr(_) => "layers.qr",
         NodeKind::Table(_) => "layers.table",
+        NodeKind::Chart(_) => "layers.chart",
         _ => "layers.element",
     }
 }
@@ -2269,6 +2278,7 @@ mod s41_tests {
             frame: None,
             qr: None,
             table: None,
+            chart: None,
         };
         let (image, covered) = path_image(&shape, 1.0).expect("a texture");
         // One screen px of margin on each side.
