@@ -822,6 +822,7 @@ error_io = "No se pudo leer o guardar un archivo. Comprueba el espacio en disco 
 error_model = "El modelo no pudo procesar la imagen. Prueba con otro en «Modelos…»."
 
 [eraser]
+image_size = "{width} × {height} px"
 title = "Borrador de píxeles"
 kind = "Tipo"
 erase = "Borrar"

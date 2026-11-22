@@ -7,9 +7,11 @@ use gafira_doc::{ImageNode, NodeId, PageId};
 use gafira_ports::vision::Pixels;
 
 use crate::charts::plain;
-use crate::style::Theme;
+use crate::editor::{bar_separator, zoom_controls};
+use crate::style::{Theme, px};
 use crate::text::Texts;
 use crate::widgets;
+use crate::zoom::{self, Zoom, ZoomAsk};
 
 /// What the brush does.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -248,11 +250,62 @@ pub(crate) struct Eraser {
     step: u32,
     texture: Option<egui::TextureHandle>,
     whole: Option<egui::TextureHandle>,
-    /// The px of screen of a px of the image; 0 until it is known.
-    zoom: f32,
-    /// The middle of the image, from the one of the view.
-    offset: Vec2,
+    sight: Sight,
+    /// The px of the image under the pointer.
+    over: Option<(u32, u32)>,
     last: Option<(f32, f32)>,
+}
+
+/// Where the image is seen from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Sight {
+    /// How the scale was chosen, and the px of screen of a px of the image.
+    view: Zoom,
+    zoom: f32,
+    /// The middle of the image, from the one of the room.
+    offset: Vec2,
+}
+
+impl Default for Sight {
+    fn default() -> Self {
+        Self {
+            view: Zoom::Fit,
+            zoom: 1.0,
+            offset: Vec2::ZERO,
+        }
+    }
+}
+
+/// The room left around an image that fits.
+const AROUND: f32 = 64.0;
+
+impl Sight {
+    /// The scale an image of `size` fits in `room` at follows the room.
+    fn settle(&mut self, size: Vec2, room: Vec2) {
+        if self.view == Zoom::Fit {
+            let room = (room - Vec2::splat(AROUND)).max(Vec2::splat(1.0));
+            let fit = (room.x / size.x.max(1.0)).min(room.y / size.y.max(1.0));
+            self.zoom = self.view.resolve(fit);
+            self.offset = Vec2::ZERO;
+        }
+    }
+
+    /// The image goes along; it no longer fits by itself.
+    fn drag(&mut self, by: Vec2) {
+        self.view = Zoom::Fixed(self.zoom);
+        self.offset += by;
+    }
+
+    /// What `ask` says, about `at` from the middle of the room: what is there
+    /// stays there.
+    fn ask(&mut self, ask: ZoomAsk, at: Vec2) {
+        self.view = ask.apply(self.zoom);
+        // «Ajustar» waits for the room.
+        if let Zoom::Fixed(zoom) = self.view {
+            self.offset = at + (self.offset - at) * (zoom / self.zoom);
+            self.zoom = zoom;
+        }
+    }
 }
 
 /// What the person asked for.
@@ -285,8 +338,8 @@ impl Eraser {
             step: size.0.max(size.1).div_ceil(SHOWN).max(1),
             texture: None,
             whole: None,
-            zoom: 0.0,
-            offset: Vec2::ZERO,
+            sight: Sight::default(),
+            over: None,
             last: None,
         })
     }
@@ -375,6 +428,18 @@ impl Eraser {
         if escape {
             answer = Some(Answer::Cancel);
         }
+        // Ctrl with +, −, 0 and 1, as on the canvas; about the middle.
+        let ask = ctx.input(|i| {
+            use egui::Key;
+            [Key::Equals, Key::Plus, Key::Minus, Key::Num0, Key::Num1]
+                .into_iter()
+                .filter(|key| i.key_pressed(*key))
+                .find_map(|key| ZoomAsk::from_shortcut(i.modifiers.command, key))
+        });
+        let ask = self.status_bar(ctx, theme, texts).or(ask);
+        if let Some(ask) = ask {
+            self.sight.ask(ask, Vec2::ZERO);
+        }
         egui::SidePanel::left("eraser.side")
             .exact_width(300.0)
             .resizable(false)
@@ -385,6 +450,26 @@ impl Eraser {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                // Away from the edge, whatever the height of the window.
+                let frame = egui::Frame::NONE.inner_margin(egui::Margin {
+                    top: 12,
+                    bottom: 12,
+                    ..egui::Margin::ZERO
+                });
+                egui::TopBottomPanel::bottom("eraser.actions")
+                    .show_separator_line(false)
+                    .frame(frame)
+                    .show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            if widgets::primary(ui, theme, plain(texts, "eraser.done")).clicked() {
+                                answer = Some(Answer::Done);
+                            }
+                            let text = plain(texts, "eraser.cancel");
+                            if widgets::secondary(ui, theme, text).clicked() {
+                                answer = Some(Answer::Cancel);
+                            }
+                        });
+                    });
                 ui.label(RichText::new(plain(texts, "eraser.title")).font(theme.font("h3")));
                 ui.add_space(14.0);
                 ui.label(plain(texts, "eraser.kind"));
@@ -436,17 +521,6 @@ impl Eraser {
                     .font(theme.font("caption"))
                     .color(theme.c("text.secondary"));
                 ui.label(hint);
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    ui.horizontal(|ui| {
-                        if widgets::primary(ui, theme, plain(texts, "eraser.done")).clicked() {
-                            answer = Some(Answer::Done);
-                        }
-                        let text = plain(texts, "eraser.cancel");
-                        if widgets::secondary(ui, theme, text).clicked() {
-                            answer = Some(Answer::Cancel);
-                        }
-                    });
-                });
             });
         if let Some(bounds) = changed {
             self.refresh(bounds);
@@ -455,6 +529,45 @@ impl Eraser {
             .frame(egui::Frame::NONE.fill(theme.c("workspace")))
             .show(ctx, |ui| self.view(ui, theme));
         answer
+    }
+
+    /// The bar along the bottom: the size of the image, the pixel under the
+    /// pointer, and the zoom, as on the canvas. The zoom asked for.
+    fn status_bar(&self, ctx: &egui::Context, theme: &Theme, texts: &Texts) -> Option<ZoomAsk> {
+        egui::TopBottomPanel::bottom("eraser.status")
+            .exact_height(px(theme.tokens.size.bottombar))
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.c("bg"))
+                    .stroke(Stroke::new(1.0, theme.c("border")))
+                    .inner_margin(egui::Margin::symmetric(12, 0)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    let label = |text: String| {
+                        RichText::new(text)
+                            .font(theme.font("ui-label"))
+                            .color(theme.c("text.secondary"))
+                    };
+                    let (w, h) = self.base.size();
+                    ui.label(label(texts.t(&gafira_doc::msg!(
+                        "eraser.image_size",
+                        width = Text(w.to_string()),
+                        height = Text(h.to_string()),
+                    ))));
+                    if let Some((x, y)) = self.over {
+                        bar_separator(ui, theme);
+                        ui.label(label(format!("X {x}  Y {y}")));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let now = (self.sight.zoom, self.sight.view);
+                        zoom_controls(ui, theme, texts, now)
+                    })
+                    .inner
+                })
+                .inner
+            })
+            .inner
     }
 
     fn view(&mut self, ui: &mut egui::Ui, theme: &Theme) {
@@ -471,12 +584,10 @@ impl Eraser {
         let (w, h) = self.base.size();
         // Sizes of images: the casts lose nothing seen.
         let size = Vec2::new(w as f32, h as f32);
-        if self.zoom <= 0.0 {
-            let room = rect.size() - Vec2::splat(64.0);
-            self.zoom = (room.x / size.x).min(room.y / size.y).max(0.01);
-        }
+        self.sight.settle(size, rect.size());
         self.scroll(ui, rect, &response);
-        let place = Rect::from_center_size(rect.center() + self.offset, size * self.zoom);
+        let place =
+            Rect::from_center_size(rect.center() + self.sight.offset, size * self.sight.zoom);
         let painter = ui.painter_at(rect);
         checkers(&painter, place.intersect(rect));
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
@@ -491,17 +602,22 @@ impl Eraser {
         let panning = ui.input(|i| i.pointer.middle_down() || i.key_down(egui::Key::Space));
         let Some(at) = response.hover_pos().or(response.interact_pointer_pos()) else {
             self.stop();
+            self.over = None;
             return;
         };
         let to_image = |p: Pos2| {
             (
-                (p.x - place.min.x) / self.zoom,
-                (p.y - place.min.y) / self.zoom,
+                (p.x - place.min.x) / self.sight.zoom,
+                (p.y - place.min.y) / self.sight.zoom,
             )
         };
+        let (x, y) = to_image(at);
+        let on = x >= 0.0 && y >= 0.0 && x < size.x && y < size.y;
+        // Inside the image: the casts drop the fraction alone.
+        self.over = on.then_some((x as u32, y as u32));
         if panning {
             self.stop();
-            self.offset += response.drag_delta();
+            self.sight.drag(response.drag_delta());
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
             return;
         }
@@ -524,7 +640,7 @@ impl Eraser {
         }
         // The brush: a light ring in a dark one, seen on any image.
         ui.ctx().set_cursor_icon(egui::CursorIcon::None);
-        let radius = (self.size / 2.0 * self.zoom).max(1.5);
+        let radius = (self.size / 2.0 * self.sight.zoom).max(1.5);
         painter.circle_stroke(at, radius + 1.0, Stroke::new(1.0, Color32::BLACK));
         let color = match self.mode {
             Mode::Erase => Color32::WHITE,
@@ -545,14 +661,12 @@ impl Eraser {
         let Some(at) = response.hover_pos() else {
             return;
         };
-        let (zoom, scroll) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta));
-        if zoom != 1.0 {
-            let next = (self.zoom * zoom).clamp(0.01, 32.0);
-            let from = at - rect.center() - self.offset;
-            self.offset -= from * (next / self.zoom - 1.0);
-            self.zoom = next;
-        } else {
-            self.offset += scroll;
+        let (factor, scroll) = ui.input(|i| (i.zoom_delta(), i.smooth_scroll_delta));
+        if factor != 1.0 {
+            let to = zoom::by_factor(self.sight.zoom, factor);
+            self.sight.ask(ZoomAsk::To(to), at - rect.center());
+        } else if scroll != Vec2::ZERO {
+            self.sight.drag(scroll);
         }
     }
 }
@@ -653,6 +767,42 @@ mod tests {
         p.line(Mode::Erase, (20.0, 20.0), (20.0, 20.0), 4.0);
         p.end();
         assert!(!p.can_redo(), "another way");
+    }
+
+    // S84-08: it fits until a scale is asked for; then the point zoomed at
+    // stays, within the scales of the canvas.
+    #[test]
+    fn s84_08_the_zoom() {
+        let (size, room) = (Vec2::new(1000.0, 500.0), Vec2::new(564.0, 464.0));
+        let mut s = Sight::default();
+        s.settle(size, room);
+        assert_eq!((s.zoom, s.offset), (0.5, Vec2::ZERO));
+        s.ask(ZoomAsk::In, Vec2::ZERO);
+        assert_eq!((s.zoom, s.view), (0.67, Zoom::Fixed(0.67)));
+        s.settle(size, room * 2.0);
+        assert_eq!(s.zoom, 0.67, "no longer follows the room");
+        // The px of the image under the pointer is the same one after.
+        let at = Vec2::new(90.0, -40.0);
+        let under = |s: &Sight| (at - s.offset) / s.zoom;
+        let before = under(&s);
+        for ask in [
+            ZoomAsk::To(3.0),
+            ZoomAsk::Out,
+            ZoomAsk::In,
+            ZoomAsk::To(0.4),
+        ] {
+            s.ask(ask, at);
+            assert!((under(&s) - before).length() < 1e-2, "{ask:?}");
+        }
+        s.ask(ZoomAsk::To(900.0), at);
+        assert_eq!(s.zoom, zoom::MAX);
+        s.ask(ZoomAsk::To(0.0), at);
+        assert_eq!(s.zoom, zoom::MIN);
+        s.ask(ZoomAsk::Fit, at);
+        s.settle(size, room);
+        assert_eq!((s.zoom, s.offset), (0.5, Vec2::ZERO));
+        s.settle(size, Vec2::ZERO);
+        assert!(s.zoom >= zoom::MIN && s.zoom.is_finite());
     }
 
     // S84-08: outside the image, or with odd numbers, nothing breaks.

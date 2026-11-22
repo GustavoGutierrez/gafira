@@ -822,6 +822,7 @@ error_io = "A file could not be read or saved. Check the disk space and try agai
 error_model = "The model could not process the image. Try another in «Models…»."
 
 [eraser]
+image_size = "{width} × {height} px"
 title = "Pixel eraser"
 kind = "Type"
 erase = "Erase"

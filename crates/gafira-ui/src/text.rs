@@ -746,6 +746,7 @@ mod tests {
         "vision.error_too_large",
         "vision.error_io",
         "vision.error_model",
+        "eraser.image_size",
         "eraser.title",
         "eraser.kind",
         "eraser.erase",

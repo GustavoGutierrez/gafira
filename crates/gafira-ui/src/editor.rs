@@ -1771,7 +1771,8 @@ impl Editor {
                         ui.label(label(texts.t(&gafira_doc::msg!("bottom.pages"))));
                         bar_icon(ui, theme, Icon::Pages, theme.c("text"));
                         bar_separator(ui, theme);
-                        asked.zoom = self.zoom_controls(ui, theme, texts).or(asked.zoom);
+                        asked.zoom =
+                            zoom_controls(ui, theme, texts, (self.zoom, self.view)).or(asked.zoom);
                         bar_separator(ui, theme);
                         // Imán on or off (03 §2.6, FD-06, spec 044).
                         let name = plain(texts, "view.magnet");
@@ -1790,109 +1791,6 @@ impl Editor {
                     });
                 });
             });
-    }
-
-    /// Alejar, Acercar and the zoom menu (Ajustar, 50, 100, 200 %) of the
-    /// bottom bar (03 §7.3), laid out right to left.
-    fn zoom_controls(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts) -> Option<ZoomAsk> {
-        let mut ask = None;
-        let percent = |scale: f32| {
-            texts.t(&gafira_doc::msg!(
-                "format.percent",
-                value = Text(format!("{:.0}", scale * 100.0))
-            ))
-        };
-        let caret = icons::image(
-            ui.ctx(),
-            Icon::Expand,
-            Weight::Regular,
-            px(theme.tokens.size.icon.sm),
-            theme.c("text"),
-        );
-        let label = RichText::new(percent(self.zoom)).font(theme.font("ui-label"));
-        let menu = ui.menu_button((label, caret), |ui| {
-            ui.set_min_width(120.0);
-            let fit = ui.selectable_label(
-                self.view == Zoom::Fit,
-                texts.t(&gafira_doc::msg!("zoom.fit")),
-            );
-            if fit
-                .on_hover_text(with_keys(
-                    ui.ctx(),
-                    texts,
-                    texts.t(&gafira_doc::msg!("zoom.fit")),
-                    ZOOM_FIT,
-                ))
-                .clicked()
-            {
-                ask = Some(ZoomAsk::Fit);
-                ui.close();
-            }
-            for scale in zoom::PRESETS {
-                if ui
-                    .selectable_label(self.view == Zoom::Fixed(scale), percent(scale))
-                    .clicked()
-                {
-                    ask = Some(ZoomAsk::To(scale));
-                    ui.close();
-                }
-            }
-        });
-        // Named «Zoom», with the scale on display as its value.
-        let name = texts.t(&gafira_doc::msg!("zoom.menu"));
-        let value = percent(self.zoom);
-        menu.response.widget_info(|| egui::WidgetInfo {
-            current_text_value: Some(value.clone()),
-            ..egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &name)
-        });
-        // Right to left: Acercar, the slider, Alejar (03 §7.3, FD-08).
-        for (icon, key, shortcut, step) in [
-            (
-                Icon::ZoomIn,
-                gafira_doc::msg!("zoom.in"),
-                ZOOM_IN,
-                ZoomAsk::In,
-            ),
-            (
-                Icon::ZoomOut,
-                gafira_doc::msg!("zoom.out"),
-                ZOOM_OUT,
-                ZoomAsk::Out,
-            ),
-        ] {
-            if step == ZoomAsk::Out {
-                // 5 to 3200 %, logarithmic, so each doubling is as long.
-                let mut value = self.zoom;
-                ui.spacing_mut().slider_width = 120.0;
-                let slider = ui.add(
-                    egui::Slider::new(&mut value, zoom::MIN..=zoom::MAX)
-                        .logarithmic(true)
-                        .show_value(false),
-                );
-                slider.widget_info(|| {
-                    egui::WidgetInfo::slider(true, f64::from(value), name.as_str())
-                });
-                if slider.changed() {
-                    ask = Some(ZoomAsk::To(value));
-                }
-            }
-            let name = texts.t(&key);
-            let tooltip = with_keys(ui.ctx(), texts, name.clone(), shortcut);
-            let limit = match step {
-                ZoomAsk::In => self.zoom < zoom::MAX,
-                _ => self.zoom > zoom::MIN,
-            };
-            let button = ui.add_enabled_ui(limit, |ui| {
-                IconButton::new(icon, name)
-                    .tooltip(tooltip)
-                    .small()
-                    .show(ui, theme)
-            });
-            if button.inner.clicked() {
-                ask = Some(step);
-            }
-        }
-        ask
     }
 
     fn rail(&mut self, ctx: &egui::Context, theme: &Theme, texts: &Texts) {
@@ -10359,7 +10257,7 @@ fn bar_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, color: Color32) {
 }
 
 /// A thin upright line between groups of the bottom bar.
-fn bar_separator(ui: &mut egui::Ui, theme: &Theme) {
+pub(crate) fn bar_separator(ui: &mut egui::Ui, theme: &Theme) {
     ui.add_space(8.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 20.0), egui::Sense::hover());
     ui.painter().vline(
@@ -10574,6 +10472,110 @@ fn table_of(
         gafira_doc::NodeKind::Table(table) => Some(((**table).clone(), found.base.placement)),
         _ => None,
     }
+}
+
+/// Alejar, Acercar and the zoom menu (Ajustar, 50, 100, 200 %) of the
+/// bottom bar (03 §7.3), laid out right to left; `scale_now` is the scale on
+/// display and `view` how it was chosen.
+pub(crate) fn zoom_controls(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    (scale_now, view): (f32, Zoom),
+) -> Option<ZoomAsk> {
+    let mut ask = None;
+    let percent = |scale: f32| {
+        texts.t(&gafira_doc::msg!(
+            "format.percent",
+            value = Text(format!("{:.0}", scale * 100.0))
+        ))
+    };
+    let caret = icons::image(
+        ui.ctx(),
+        Icon::Expand,
+        Weight::Regular,
+        px(theme.tokens.size.icon.sm),
+        theme.c("text"),
+    );
+    let label = RichText::new(percent(scale_now)).font(theme.font("ui-label"));
+    let menu = ui.menu_button((label, caret), |ui| {
+        ui.set_min_width(120.0);
+        let fit = ui.selectable_label(view == Zoom::Fit, texts.t(&gafira_doc::msg!("zoom.fit")));
+        if fit
+            .on_hover_text(with_keys(
+                ui.ctx(),
+                texts,
+                texts.t(&gafira_doc::msg!("zoom.fit")),
+                ZOOM_FIT,
+            ))
+            .clicked()
+        {
+            ask = Some(ZoomAsk::Fit);
+            ui.close();
+        }
+        for scale in zoom::PRESETS {
+            if ui
+                .selectable_label(view == Zoom::Fixed(scale), percent(scale))
+                .clicked()
+            {
+                ask = Some(ZoomAsk::To(scale));
+                ui.close();
+            }
+        }
+    });
+    // Named «Zoom», with the scale on display as its value.
+    let name = texts.t(&gafira_doc::msg!("zoom.menu"));
+    let value = percent(scale_now);
+    menu.response.widget_info(|| egui::WidgetInfo {
+        current_text_value: Some(value.clone()),
+        ..egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &name)
+    });
+    // Right to left: Acercar, the slider, Alejar (03 §7.3, FD-08).
+    for (icon, key, shortcut, step) in [
+        (
+            Icon::ZoomIn,
+            gafira_doc::msg!("zoom.in"),
+            ZOOM_IN,
+            ZoomAsk::In,
+        ),
+        (
+            Icon::ZoomOut,
+            gafira_doc::msg!("zoom.out"),
+            ZOOM_OUT,
+            ZoomAsk::Out,
+        ),
+    ] {
+        if step == ZoomAsk::Out {
+            // 5 to 3200 %, logarithmic, so each doubling is as long.
+            let mut value = scale_now;
+            ui.spacing_mut().slider_width = 120.0;
+            let slider = ui.add(
+                egui::Slider::new(&mut value, zoom::MIN..=zoom::MAX)
+                    .logarithmic(true)
+                    .show_value(false),
+            );
+            slider.widget_info(|| egui::WidgetInfo::slider(true, f64::from(value), name.as_str()));
+            if slider.changed() {
+                ask = Some(ZoomAsk::To(value));
+            }
+        }
+        let name = texts.t(&key);
+        let tooltip = with_keys(ui.ctx(), texts, name.clone(), shortcut);
+        let limit = match step {
+            ZoomAsk::In => scale_now < zoom::MAX,
+            _ => scale_now > zoom::MIN,
+        };
+        let button = ui.add_enabled_ui(limit, |ui| {
+            IconButton::new(icon, name)
+                .tooltip(tooltip)
+                .small()
+                .show(ui, theme)
+        });
+        if button.inner.clicked() {
+            ask = Some(step);
+        }
+    }
+    ask
 }
 
 /// What the controls of the chart `at` asked for goes to `asked`.
