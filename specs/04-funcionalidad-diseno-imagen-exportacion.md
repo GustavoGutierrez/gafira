@@ -455,7 +455,8 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *UI*: Ajustes → Funciones locales opcionales.
 - *Técnica*: `Segmenter`, `Registry<dyn Segmenter>` (02 §4.7, §11.1).
 - *Presupuesto*: la misma cifra que FD-38 si se activa un segmentador por GPU.
-- *Aceptación*: (a) el instalador no contiene `.onnx` (ARQ-76); (b) sin modelo instalado, la función no aparece activa; (c) cada paquete de modelo muestra su licencia antes de activarse.
+- *Precisado por D-115 (spec 084)*: «Quitar fondo» y «Mejorar resolución» con modelos incluidos (menos de 10 MB) y descargables.
+- *Aceptación*: (a) el instalador no contiene más `.onnx` que los de D-115 (ARQ-76); (b) sin modelo instalado, la función no aparece activa; (c) cada paquete de modelo muestra su licencia antes de activarse.
 
 ---
 

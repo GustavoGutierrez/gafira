@@ -995,3 +995,10 @@ Fecha: 22 de noviembre de 2026.
 - **Decisión** (titular): un gráfico es `NodeKind::Chart` (`ChartNode`), como los QR (D-113) y las tablas, en lugar del nodo `Extension` con `type_id = "gafira.chart"` de FD-22: la infraestructura de extensiones no existe y el nodo propio se valida, se deshace y se exporta como vectores.
 - **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con gráficos. La técnica y FD-22 (c) quedan sustituidas. Se aplica en la spec 083.
 - Precisa ADR-02, FD-22 y D-113.
+
+## D-115 Modelos de imagen integrados y descargables
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): «Mejorar resolución» y «Quitar fondo» usan modelos locales. El paquete incluye los dos más ligeros (`u2netp` y `realesr-general-x4v3`, menos de 10 MB entre ambos); los mayores y la aceleración por GPU se descargan solo cuando la persona lo pide y acepta, con su peso y su licencia a la vista.
+- **Consecuencia**: precisa ARQ-76, RNF-04 y FD-40 («sin modelos en el instalador» pasa a «sin modelos de más de 10 MB en total»), y ARQ-04 y D-111: es la tercera conexión de red, acotada al botón de descargar del panel de modelos, tras la feature `online`. Las imágenes no salen nunca de la máquina. Solo modelos con licencia permisiva y procedencia comprobada. Se aplica en la spec 084.
