@@ -255,8 +255,9 @@ enum RecordKind {
     Shape(ShapeNode),
     /// A text: it fills the outlines of its glyphs (spec 030).
     Text(TextNode),
-    /// An image: it draws the pixels of its asset into its box (spec 032).
-    Image(AssetRef),
+    /// An image: it draws the pixels it shows into its box (spec 032), and
+    /// its shadow around it (spec 085).
+    Image(AssetRef, Option<gafira_doc::ImageShadow>),
     /// A line: a stroke between its resolved ends, with its caps (spec 058).
     Line(gafira_doc::LineNode),
     /// A frame: its photo cut out by its shape, and its outline (spec 066).
@@ -973,7 +974,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             opacity: record.base.opacity,
                         });
                     }
-                    RecordKind::Image(asset) => {
+                    RecordKind::Image(asset, shadow) => {
                         let placement = &record.base.placement;
                         let Some(image) = self.images.get(&asset) else {
                             // No pixels for the asset (the preview): nothing.
@@ -987,10 +988,16 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         }
                         // The image space maps onto the box of the node:
                         // its pixels are stretched to the box (spec 032).
-                        let fit = Affine::scale_non_uniform(
-                            placement.w / f64::from(image.width()),
-                            placement.h / f64::from(image.height()),
-                        );
+                        // A shadow reaches past it (spec 085).
+                        let size = (image.width(), image.height());
+                        let (bx, by) = shadow.map_or((0.0, 0.0), |shadow| {
+                            shadow.bleed(size, (placement.w, placement.h))
+                        });
+                        let fit = Affine::translate((-bx, -by))
+                            * Affine::scale_non_uniform(
+                                (placement.w + 2.0 * bx) / f64::from(size.0),
+                                (placement.h + 2.0 * by) / f64::from(size.1),
+                            );
                         let drawn = transform * fit;
                         check_transform(&drawn)?;
                         let key = content_key(
@@ -1262,7 +1269,10 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
             node.base.id,
             Record {
                 base: node.base.clone(),
-                kind: RecordKind::Image(image.asset),
+                kind: RecordKind::Image(
+                    image.shown(),
+                    image.look.as_ref().and_then(|look| look.shadow),
+                ),
             },
         );
         node.base.id
@@ -3387,6 +3397,37 @@ mod tests {
             .expect("the image is a node");
         assert_eq!(node.kind(), GraphNodeKind::Source(SourceKind::Image));
         assert_eq!(node.opacity(), 0.5);
+    }
+
+    // S85-04: an image with a shadow keeps its box; its picture reaches past
+    // it by the margin of the shadow.
+    #[test]
+    fn s85_04_a_shadow_reaches_past_the_box() {
+        let mut shadow = gafira_doc::ImageShadow::new(gafira_doc::ShadowKind::Drop);
+        (shadow.blur, shadow.distance) = (0.0, 0.195);
+        let image = gafira_doc::ImageNode::new(asset(7)).looking(gafira_doc::ImageLook {
+            shadow: Some(shadow),
+            ..gafira_doc::ImageLook::default()
+        });
+        let mut page = image_page(asset(7));
+        let mut node = (*page.nodes[&NodeId::new(1)]).clone();
+        node.kind = NodeKind::Image(image.clone());
+        page.nodes.insert(NodeId::new(1), Arc::new(node));
+        // An image of 20 by 10 with its margin of 2, under its own key.
+        let pixels = gafira_raster::ImageBuf::new(
+            24,
+            14,
+            gafira_raster::PixelBuf::Rgba8(vec![255; 24 * 14 * 4]),
+        )
+        .expect("an image");
+        let images = ImagePixels::from([(image.shown(), Arc::new(pixels))]);
+        let graph = build_image(&page, 1.0, Some(Arc::new(images)));
+        let [(_, transform)] = draws(&graph)[..] else {
+            panic!("one image draw");
+        };
+        // Its box is 40 by 20 at (10, 30).
+        assert_eq!(mapped(transform, 2.0, 2.0), (10.0, 30.0));
+        assert_eq!(mapped(transform, 22.0, 12.0), (50.0, 50.0));
     }
 
     // S32-01, S30-02: the export scale goes in front of the placement of an

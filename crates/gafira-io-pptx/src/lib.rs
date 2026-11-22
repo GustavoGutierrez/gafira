@@ -20,13 +20,13 @@ use std::io::{self, Read, Write};
 use gafira_doc::contract::{CancelToken, ParamSchema, Progress};
 use gafira_doc::msg;
 use gafira_doc::msg::ToMessage;
-use gafira_doc::{AssetRef, Document, Page, PageId};
+use gafira_doc::{AssetRef, Document, ImageNode, Page, PageId};
 use gafira_ports::common::LegalClass;
-use gafira_ports::export::ImageDecoder;
 use gafira_ports::export::{
     ExportCaps, ExportError, ExportIssue, ExportJob, ExportReport, ExportRequest, ExportScope,
     ExportSink, ExportedFile, Exporter, IssueSeverity,
 };
+use gafira_ports::export::{ImageDecoder, decode_image};
 use gafira_ports::format::{ByteSignature, FormatDescriptor, FormatKind};
 use gafira_ports::store::ContentStore;
 
@@ -157,12 +157,24 @@ impl Exporter for PptxExporter {
     }
 }
 
+/// `image` as a PNG.
+fn png_of(image: &gafira_raster::ImageBuf) -> Option<Vec<u8>> {
+    let pixels = gafira_raster::straight_srgb8(image)?;
+    let rgba = image::RgbaImage::from_raw(image.width(), image.height(), pixels)?;
+    let mut png = Vec::new();
+    rgba.write_to(&mut io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .ok()?;
+    Some(png)
+}
+
 /// The pictures of the presentation: each asset once, as PNG or JPEG.
 pub(crate) struct Media<'a> {
     store: &'a dyn ContentStore,
     /// Each asset: its file name in `ppt/media/` and its bytes.
     files: Vec<(String, Vec<u8>)>,
     by_asset: HashMap<AssetRef, Option<usize>>,
+    /// The size of the picture of each image with a look (spec 085).
+    pub(crate) looked: HashMap<AssetRef, (u32, u32)>,
 }
 
 impl<'a> Media<'a> {
@@ -171,7 +183,30 @@ impl<'a> Media<'a> {
             store,
             files: Vec::new(),
             by_asset: HashMap::new(),
+            looked: HashMap::new(),
         }
+    }
+
+    /// Draws `image` with its look, the first time, as the PNG [`Self::name`]
+    /// gives for what it shows; `None` when it cannot be drawn.
+    pub(crate) fn look(&mut self, image: &ImageNode) -> Option<()> {
+        let shown = image.shown();
+        if self.by_asset.contains_key(&shown) {
+            return Some(());
+        }
+        let drawn = decode_image(
+            image,
+            self.store,
+            &gafira_io_image::RasterDecoder::new(),
+            None,
+        )
+        .ok()?;
+        let png = png_of(&drawn)?;
+        self.looked.insert(shown, (drawn.width(), drawn.height()));
+        self.files
+            .push((format!("image{}.png", self.files.len() + 1), png));
+        self.by_asset.insert(shown, Some(self.files.len() - 1));
+        Some(())
     }
 
     /// The file name of `asset` in `ppt/media/`, reading it the first time;
@@ -205,12 +240,7 @@ impl<'a> Media<'a> {
         }
         // Another format (WebP…): decoded and written as PNG.
         let decoded = gafira_io_image::RasterDecoder::new().decode(&bytes).ok()?;
-        let pixels = gafira_raster::straight_srgb8(&decoded)?;
-        let rgba = image::RgbaImage::from_raw(decoded.width(), decoded.height(), pixels)?;
-        let mut png = Vec::new();
-        rgba.write_to(&mut io::Cursor::new(&mut png), image::ImageFormat::Png)
-            .ok()?;
-        Some(("png", png))
+        Some(("png", png_of(&decoded)?))
     }
 }
 

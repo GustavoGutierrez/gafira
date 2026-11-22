@@ -377,3 +377,71 @@ fn s83_09_a_chart_goes_as_shapes_and_texts() {
     assert!(slide.contains("<a:t>Ventas &amp; más</a:t>"), "{slide}");
     assert!(!slide.contains("<p:pic>"), "nothing is pixels");
 }
+
+// S85-08: an image with a look goes as a picture of it, its box grown by
+// what its shadow takes.
+#[test]
+fn s85_08_an_image_goes_with_its_look() {
+    let mut shadow = gafira_doc::ImageShadow::new(gafira_doc::ShadowKind::Outline);
+    shadow.size = 0.16;
+    let look = gafira_doc::ImageLook {
+        adjust: gafira_doc::ImageAdjust {
+            saturation: -100.0,
+            ..gafira_doc::ImageAdjust::default()
+        },
+        shadow: Some(shadow),
+        ..gafira_doc::ImageLook::default()
+    };
+    let plain = document();
+    let mut page = (*plain.pages()[0]).clone();
+    let mut photo = (*page.nodes[&NodeId::new(4)]).clone();
+    photo.kind = NodeKind::Image(ImageNode::new(PHOTO).looking(look));
+    page.nodes.insert(NodeId::new(4), Arc::new(photo));
+    let mut assets = AssetTable::new();
+    assets.insert(
+        PHOTO,
+        AssetEntry {
+            name: "foto.png".to_owned(),
+            storage: AssetStorage::Embedded,
+        },
+    );
+    let document =
+        Document::from_parts_with_assets(7, Dpi::default(), vec![Arc::new(page)], assets)
+            .expect("valid");
+    let mut zip = zip::ZipArchive::new(Cursor::new(pptx_of(&document))).expect("a zip");
+    let mut png = Vec::new();
+    zip.by_name("ppt/media/image1.png")
+        .expect("the picture")
+        .read_to_end(&mut png)
+        .expect("read");
+    let picture = image::load_from_memory(&png).expect("png").into_rgba8();
+    // 8 by 6 and a margin of one pixel.
+    assert_eq!(picture.dimensions(), (10, 8));
+    let p = picture.get_pixel(5, 4).0;
+    assert!(p[0] == p[1] && p[1] == p[2] && p[3] == 255, "{p:?}");
+    let mut slide = String::new();
+    zip.by_name("ppt/slides/slide1.xml")
+        .expect("the slide")
+        .read_to_string(&mut slide)
+        .expect("utf-8");
+    let slide = roxmltree::Document::parse(&slide).expect("xml");
+    let picture = slide
+        .descendants()
+        .find(|n| n.has_tag_name("pic") || n.tag_name().name() == "pic")
+        .expect("the picture");
+    let number = |tag: &str, key: &str| -> f64 {
+        picture
+            .descendants()
+            .find(|n| n.tag_name().name() == tag)
+            .and_then(|n| n.attribute(key))
+            .and_then(|v| v.parse().ok())
+            .expect("a number")
+    };
+    // The box is 300 by 200: a pixel of margin is 37.5 by 33.3.
+    let (cx, cy) = (number("ext", "cx"), number("ext", "cy"));
+    assert!(
+        (cx / cy - 375.0 / (200.0 * 8.0 / 6.0)).abs() < 1e-3,
+        "{cx} {cy}"
+    );
+    assert!((number("off", "x") / cx - 762.5 / 375.0).abs() < 1e-3);
+}

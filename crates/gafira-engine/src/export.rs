@@ -31,7 +31,7 @@ use gafira_doc::{AssetRef, Document, NodeKind, PageId};
 use gafira_geom::IRect;
 use gafira_ports::export::{
     ExportError, ExportJob, ExportReport, ExportRequest, ExportScope, ExportSink, Exporter,
-    ImageDecoder, ImagePixels, PageRenderRequest, PageRenderers,
+    ImageDecoder, ImagePixels, PageRenderRequest, PageRenderers, decode_image,
 };
 use gafira_ports::format::FormatRegistry;
 use gafira_ports::store::ContentStore;
@@ -269,9 +269,14 @@ impl PreparedExport {
             ExportScope::Pages(pages) => pages.clone(),
             ExportScope::Nodes { page, .. } => vec![*page],
         };
-        let images =
-            decode_images_until(&self.document, &pages, &*self.store, &*self.images, cancel)
-                .map_err(EngineError::Export)?;
+        let images = decode_images_until(
+            &self.document,
+            &pages,
+            (&*self.store, &*self.images),
+            None,
+            cancel,
+        )
+        .map_err(EngineError::Export)?;
         let renderer = self.pages.for_document(&self.document, images);
         let job = ExportJob {
             request: &self.request,
@@ -306,15 +311,21 @@ pub(crate) fn decode_images(
     store: &dyn ContentStore,
     images: &dyn ImageDecoder,
 ) -> Result<ImagePixels, ExportError> {
-    decode_images_until(document, pages, store, images, &CancelToken::new())
+    let cancel = CancelToken::new();
+    decode_images_until(document, pages, (store, images), Some(SEEN_SMALL), &cancel)
 }
 
-/// [`decode_images`], looking at `cancel` before each asset (spec 035).
+/// The longest side of an image with a look in a thumbnail or a preview: a
+/// save does not wait for all its pixels (spec 085).
+const SEEN_SMALL: u32 = 1024;
+
+/// [`decode_images`], looking at `cancel` before each asset (spec 035); an
+/// image with a look no longer than `most`.
 fn decode_images_until(
     document: &Document,
     pages: &[PageId],
-    store: &dyn ContentStore,
-    images: &dyn ImageDecoder,
+    (store, images): (&dyn ContentStore, &dyn ImageDecoder),
+    most: Option<u32>,
     cancel: &CancelToken,
 ) -> Result<ImagePixels, ExportError> {
     cancel.check()?;
@@ -328,7 +339,7 @@ fn decode_images_until(
                 .and_then(gafira_doc::PageBackground::asset)
                 .into_iter()
                 .chain(page.nodes.values().filter_map(|node| match &node.kind {
-                    NodeKind::Image(image) => Some(image.asset),
+                    NodeKind::Image(image) if image.look.is_none() => Some(image.asset),
                     NodeKind::Frame(frame) => frame.content.map(|content| content.asset),
                     NodeKind::Qr(qr) => qr.logo.map(|logo| logo.asset),
                     _ => None,
@@ -342,6 +353,22 @@ fn decode_images_until(
         store.open(asset.as_hash())?.read_to_end(&mut bytes)?;
         let pixels = images.decode(&bytes)?;
         decoded.insert(asset, Arc::new(pixels));
+    }
+    // An image with a look is kept as it looks (spec 085).
+    for node in pages
+        .iter()
+        .filter_map(|page| document.page(*page))
+        .flat_map(|page| page.nodes.values())
+    {
+        let NodeKind::Image(image) = &node.kind else {
+            continue;
+        };
+        let shown = image.shown();
+        if image.look.is_none() || decoded.contains_key(&shown) {
+            continue;
+        }
+        cancel.check()?;
+        decoded.insert(shown, Arc::new(decode_image(image, store, images, most)?));
     }
     Ok(decoded)
 }
@@ -478,6 +505,7 @@ mod tests {
     use gafira_doc::{
         AssetEntry, AssetRef, AssetStorage, Document, ImageNode, NodeKind, PageId, Placement,
     };
+    use gafira_doc::{ImageAdjust, ImageLook, ImageShadow, ImageZone, ShadowKind, ZoneKind};
     use gafira_edit::{InsertAsset, InsertNodes, NodeSpec};
     use gafira_geom::IRect;
     use gafira_ports::common::LegalClass;
@@ -946,6 +974,107 @@ mod tests {
         assert_eq!(sizes, expected);
         assert_eq!(*decoder.calls.lock().unwrap(), 2, "once per asset");
         assert!(setup.fs.file("/out/poster.fake").is_some());
+    }
+
+    // S85-02, S85-08: an image with a look goes with its look, its shadow
+    // around it, and the same asset without one goes as it is; a mask that is
+    // not there fails like an image.
+    #[test]
+    fn s85_08_the_export_draws_the_look_of_an_image() {
+        let store = Arc::new(MemoryStore::default());
+        let photo = stored(&store, &[7; 40]);
+        let mask = stored(&store, b"mask");
+        let look = |mask| ImageLook {
+            zones: vec![ImageZone {
+                kind: ZoneKind::Area,
+                mask,
+                inverted: false,
+                adjust: ImageAdjust {
+                    invert: true,
+                    ..ImageAdjust::default()
+                },
+            }],
+            shadow: Some(ImageShadow::new(ShadowKind::Outline)),
+            ..ImageLook::default()
+        };
+        let run = |mask: AssetRef| {
+            let (mut setup, _, page) = image_setup(&store, &[photo]);
+            let _ = setup.engine.edit().execute(Box::new(InsertAsset::new(
+                mask,
+                AssetEntry {
+                    name: "mask.png".to_owned(),
+                    storage: AssetStorage::Embedded,
+                },
+            )));
+            let image = ImageNode::new(photo).looking(look(mask));
+            let shown = image.shown();
+            setup
+                .engine
+                .edit()
+                .execute(Box::new(InsertNodes::new(
+                    page,
+                    None,
+                    0,
+                    vec![NodeSpec::new(
+                        NodeKind::Image(image),
+                        Placement::new(0.0, 0.0, 4.0, 4.0),
+                    )],
+                )))
+                .expect("the image goes in");
+            (export(&setup, &request("fake", page)), setup, shown)
+        };
+        let (done, setup, shown) = run(mask);
+        done.expect("the export runs");
+        let given = setup.pages.images.lock().unwrap();
+        let [images] = &given[..] else {
+            panic!("one snapshot");
+        };
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[&photo].width(), 40);
+        let with = &images[&shown];
+        assert_eq!((with.width(), with.height()), (42, 3));
+        let PixelBuf::Rgba8(bytes) = with.data() else {
+            panic!("8 bits");
+        };
+        // The second row, past the margin: white turned black.
+        assert_eq!(bytes[(42 + 1) * 4..][..4], [0, 0, 0, 255]);
+        let lost = AssetRef::new(gafira_doc::ContentHash([9; 32]));
+        assert!(matches!(
+            run(lost).0,
+            Err(EngineError::Export(ExportError::Store(_)))
+        ));
+    }
+
+    // S85-07: the thumbnail of a save works out a look on a small image; the
+    // export, on the whole one.
+    #[test]
+    fn s85_07_a_look_seen_small_is_worked_out_small() {
+        let store = Arc::new(MemoryStore::default());
+        let photo = stored(&store, &[7; 4000]);
+        let (mut setup, decoder, page) = image_setup(&store, &[photo]);
+        let mut look = ImageLook::default();
+        look.adjust.contrast = 20.0;
+        let image = ImageNode::new(photo).looking(look);
+        let shown = image.shown();
+        setup
+            .engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(
+                page,
+                None,
+                0,
+                vec![NodeSpec::new(
+                    NodeKind::Image(image),
+                    Placement::new(0.0, 0.0, 4.0, 4.0),
+                )],
+            )))
+            .expect("the image goes in");
+        let document = setup.engine.edit().document().expect("a document");
+        let small = super::decode_images(&document, &[page], &*store, &*decoder).expect("images");
+        assert_eq!((small[&shown].width(), small[&photo].width()), (1000, 4000));
+        export(&setup, &request("fake", page)).expect("the export runs");
+        let given = setup.pages.images.lock().unwrap();
+        assert_eq!(given[0][&shown].width(), 4000);
     }
 
     // S32-04: an image whose bytes are not in the store fails the export with

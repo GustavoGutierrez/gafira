@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 
 use gafira_color::Color;
 use gafira_doc::{
-    BackgroundFit, Document, FrameNode, Gradient, GradientKind, LineCap, Node, NodeKind, Page,
-    PageBackground, PatternKind, Placement, RichText, ShapeGeometry, ShapePath, ShapeStroke,
+    BackgroundFit, Document, FrameNode, Gradient, GradientKind, ImageNode, LineCap, Node, NodeKind,
+    Page, PageBackground, PatternKind, Placement, RichText, ShapeGeometry, ShapePath, ShapeStroke,
     TextAlign, VerticalAlign,
 };
 use gafira_doc::{PathCommand, timeline::AssetRef};
@@ -106,6 +106,24 @@ impl Writer<'_, '_, '_> {
         let rid = format!("rId{}", self.pictures.len() + 2);
         self.pictures.push((rid.clone(), file));
         Some(rid)
+    }
+
+    /// [`Self::picture`] of an image with a look (spec 085).
+    fn looked(&mut self, image: &ImageNode) -> Option<String> {
+        self.media.look(image)?;
+        self.picture(image.shown())
+    }
+
+    /// `p` grown by what the shadow of `image` takes around it.
+    fn with_shadow(&self, image: &ImageNode, mut p: Placement) -> Placement {
+        let shadow = image.look.as_ref().and_then(|look| look.shadow);
+        let size = self.media.looked.get(&image.shown());
+        if let (Some(shadow), Some(size)) = (shadow, size) {
+            let (bx, by) = shadow.bleed(*size, (p.w, p.h));
+            (p.x, p.y) = (p.x - bx, p.y - by);
+            (p.w, p.h) = (p.w + 2.0 * bx, p.h + 2.0 * by);
+        }
+        p
     }
 
     /// `<a:xfrm>` of `placement`: its box, turn and flips.
@@ -277,10 +295,15 @@ impl Writer<'_, '_, '_> {
                 );
             }
             NodeKind::Image(image) => {
-                let Some(rid) = self.picture(image.asset) else {
+                let found = match &image.look {
+                    None => self.picture(image.asset),
+                    Some(_) => self.looked(image),
+                };
+                let Some(rid) = found else {
                     self.skipped = true;
                     return;
                 };
+                let p = self.with_shadow(image, p);
                 let id = self.id();
                 let _ = write!(
                     out,

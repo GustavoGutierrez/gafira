@@ -8,6 +8,7 @@ mod dhash;
 pub mod effects;
 mod error;
 mod light;
+pub mod look;
 mod mip;
 mod palette;
 mod pattern;
