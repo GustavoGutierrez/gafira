@@ -1377,25 +1377,4 @@ mod tests {
         let stars = search("estrella");
         assert!(stars.len() >= 5);
     }
-
-    #[test]
-    fn tmp_dump_previews() {
-        let kinds = [
-            Kind::Glyph('I'),
-            Kind::Holder(Holder::Phone),
-            Kind::Holder(Holder::Polaroid),
-            Kind::Holder(Holder::FilmStrip),
-            Kind::Piece(Piece::Heart),
-        ];
-        for (n, kind) in kinds.into_iter().enumerate() {
-            let s = spec(kind, (120.0, 120.0), (60.0, 60.0)).expect("spec");
-            let image = crate::canvas::spec_preview(&s, 120.0, 1.0).expect("preview");
-            let [w, h] = image.size;
-            let bytes: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_array()).collect();
-            image::RgbaImage::from_raw(w as u32, h as u32, bytes)
-                .expect("image")
-                .save(format!("/tmp/claude-1000/-home-meridian-Documentos-Proyectos-Personal-gafira/179540d4-f7d5-47ef-8ec2-5ebfe63ee702/scratchpad/pv-{n}.png"))
-                .expect("saved");
-        }
-    }
 }
