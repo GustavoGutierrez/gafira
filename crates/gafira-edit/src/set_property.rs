@@ -238,7 +238,7 @@ impl Property {
                 Self::FrameCrop(f.content_offset, f.content_scale, f.content_rotation_deg)
             }
             (Self::Table(_), NodeKind::Table(t)) => Self::Table(t.clone()),
-            (Self::Image(_), NodeKind::Image(i)) => Self::Image(*i),
+            (Self::Image(_), NodeKind::Image(i)) => Self::Image(i.clone()),
             (Self::Chart(_), NodeKind::Chart(c)) => Self::Chart(c.clone()),
             (Self::Qr(_), NodeKind::Qr(q)) => Self::Qr(q.clone()),
             (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
@@ -281,7 +281,7 @@ impl Property {
                 f.content_rotation_deg = *degrees;
             }
             (Self::Table(v), NodeKind::Table(t)) => t.clone_from(v),
-            (Self::Image(v), NodeKind::Image(i)) => *i = *v,
+            (Self::Image(v), NodeKind::Image(i)) => i.clone_from(v),
             (Self::Chart(v), NodeKind::Chart(c)) => c.clone_from(v),
             (Self::Qr(v), NodeKind::Qr(q)) => q.clone_from(v),
             (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,

@@ -23,6 +23,7 @@ mod frame;
 mod gradient;
 mod ids;
 mod image;
+mod image_look;
 mod json;
 mod layout;
 mod line;
@@ -53,6 +54,9 @@ pub use frame::{Fit, FrameContent, FrameNode};
 pub use gradient::{Gradient, GradientKind, GradientProblem, GradientStop};
 pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
 pub use image::{ImageEdit, ImageNode};
+pub use image_look::{
+    ColorShift, ImageAdjust, ImageFilter, ImageLook, ImageShadow, ImageZone, ShadowKind, ZoneKind,
+};
 pub use json::LoadError;
 pub use layout::{
     GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,

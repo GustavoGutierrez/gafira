@@ -30,7 +30,7 @@ pub(crate) enum Work {
 }
 
 /// The image worked on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Target {
     pub page: PageId,
     pub node: NodeId,
@@ -237,7 +237,7 @@ impl Studio {
     /// The share of the work on `node`, if there is one to show on it.
     pub fn scanning(&self, node: NodeId) -> Option<f32> {
         let job = self.job.as_ref().filter(|job| job.scan)?;
-        (job.target?.node == node).then(|| job.progress.share())
+        (job.target.as_ref()?.node == node).then(|| job.progress.share())
     }
 
     pub fn cancel(&self) {
@@ -286,9 +286,9 @@ impl Studio {
         let ctx = self.ctx.clone();
         self.start(
             ctx.as_ref(),
-            (Some(target), true),
+            (Some(target.clone()), true),
             move |progress, cancel| {
-                let image = target.image;
+                let image = target.image.clone();
                 let result = worked(&*models, &*store, image, work, progress, cancel);
                 Message::Made { target, result }
             },
@@ -299,7 +299,7 @@ impl Studio {
     pub fn open(&mut self, store: &Arc<dyn ContentStore>, target: Target) {
         let store = Arc::clone(store);
         let ctx = self.ctx.clone();
-        self.start(ctx.as_ref(), (Some(target), false), move |_, _| {
+        self.start(ctx.as_ref(), (Some(target.clone()), false), move |_, _| {
             let result = decoded(&*store, target.image.base()).and_then(|base| {
                 let cut = decoded(&*store, target.image.asset)?;
                 let alpha = cut.rgba().chunks_exact(4).map(|p| p[3]).collect();
@@ -313,8 +313,8 @@ impl Studio {
     pub fn keep(&mut self, store: &Arc<dyn ContentStore>, target: Target, made: Pixels) {
         let store = Arc::clone(store);
         let ctx = self.ctx.clone();
-        self.start(ctx.as_ref(), (Some(target), false), move |_, _| {
-            let image = target.image;
+        self.start(ctx.as_ref(), (Some(target.clone()), false), move |_, _| {
+            let image = target.image.clone();
             let result = stored(&*store, made).map(|made| image.edited(made, image.base()));
             Message::Made { target, result }
         });
@@ -424,7 +424,7 @@ fn message(error: &VisionError) -> &'static str {
 }
 
 /// What the person asked for in Propiedades.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Ask {
     Work(Target, Work),
     Erase(Target),
@@ -465,7 +465,7 @@ pub(crate) fn buttons(
         "vision.cut"
     };
     if button(ui, free, key, "vision.cut_hint") {
-        ask = Some(Ask::Work(target, Work::Cut));
+        ask = Some(Ask::Work(target.clone(), Work::Cut));
     }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -477,20 +477,20 @@ pub(crate) fn buttons(
                 .add_enabled(free, button)
                 .on_hover_text(plain(texts, "vision.enhance_hint"));
             if pressed.clicked() {
-                ask = Some(Ask::Work(target, Work::Enhance(factor)));
+                ask = Some(Ask::Work(target.clone(), Work::Enhance(factor)));
             }
         }
     });
     if target.image.is_cut() {
         if button(ui, free, "vision.erase", "vision.erase_hint") {
-            ask = Some(Ask::Erase(target));
+            ask = Some(Ask::Erase(target.clone()));
         }
         if button(ui, free, "vision.background", "vision.background_hint") {
-            ask = Some(Ask::Background(target));
+            ask = Some(Ask::Background(target.clone()));
         }
     }
     if target.image.edit.is_some() && button(ui, free, "vision.original", "vision.original_hint") {
-        ask = Some(Ask::Original(target));
+        ask = Some(Ask::Original(target.clone()));
     }
     if let Some(job) = studio.job.as_ref().filter(|job| job.target.is_some()) {
         ui.add_space(6.0);
@@ -959,7 +959,7 @@ mod tests {
         };
         let photo = Pixels::new(200, 100, [9, 8, 7, 255].repeat(20_000)).unwrap();
         let start = ImageNode::new(stored(&store, photo.clone()).unwrap());
-        let cut = run(start, Work::Cut);
+        let cut = run(start.clone(), Work::Cut);
         assert!(cut.is_cut() && cut.is_enhanced());
         assert_eq!(cut.original(), start.asset);
         assert_eq!(decoded(&store, cut.original()).unwrap(), photo);
@@ -968,12 +968,12 @@ mod tests {
         assert_eq!((made.rgba()[3], made.rgba()[799 * 4 + 3]), (255, 0));
         assert_eq!(made.rgba()[799 * 4], 1, "its colour is kept");
         // Better still: what was cut stays cut.
-        let better = run(cut, Work::Enhance(2));
+        let better = run(cut.clone(), Work::Enhance(2));
         let made = decoded(&store, better.asset).unwrap();
         assert_eq!(made.size(), (1600, 800));
         assert_eq!((made.rgba()[3], made.rgba()[1599 * 4 + 3]), (255, 0));
         assert_eq!(better.original(), start.asset);
-        let whole = run(start, Work::Enhance(2));
+        let whole = run(start.clone(), Work::Enhance(2));
         assert!(whole.is_enhanced() && !whole.is_cut());
     }
 

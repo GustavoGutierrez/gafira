@@ -9258,16 +9258,16 @@ impl Editor {
     fn images(&mut self, engine: &mut Gafira, asked: &Asked) {
         use crate::vision::Ask;
         let store = Arc::clone(&engine.ports().store);
-        match asked.vision {
+        match asked.vision.clone() {
             Some(Ask::Work(target, work)) => self.studio.work(&store, target, work),
             Some(Ask::Erase(target)) => self.studio.open(&store, target),
             Some(Ask::Background(target)) => {
                 let base = target.image.base();
-                set_image(engine, target, target.image.edited(base, base));
+                set_image(engine, &target, target.image.edited(base, base));
             }
             Some(Ask::Original(target)) => {
                 let original = target.image.original();
-                set_image(engine, target, gafira_doc::ImageNode::new(original));
+                set_image(engine, &target, target.image.edited(original, original));
             }
             Some(Ask::Cancel) => self.studio.cancel(),
             Some(Ask::Models) => self.studio.open_models(),
@@ -9292,20 +9292,26 @@ impl Editor {
         use crate::vision::Arrived;
         for arrived in self.studio.pump(ctx) {
             let target = match &arrived {
-                Arrived::Image(target, _) | Arrived::Erase(target, _) => *target,
+                Arrived::Image(target, _) | Arrived::Erase(target, _) => target.clone(),
             };
             let now = engine
                 .edit()
                 .document()
                 .and_then(|d| image_of(&d, target.page, target.node));
-            if now != Some(target.image) {
+            // Its look may have changed meanwhile; its pixels may not.
+            let Some(now) =
+                now.filter(|now| (now.asset, now.edit) == (target.image.asset, target.image.edit))
+            else {
                 continue;
-            }
+            };
             match arrived {
-                Arrived::Image(target, image) => set_image(engine, target, image),
+                Arrived::Image(target, image) => {
+                    let made = now.edited(image.asset, image.base());
+                    set_image(engine, &target, made);
+                }
                 Arrived::Erase(target, opened) => {
-                    let at = (target.page, target.node, target.image);
                     let (base, cut) = *opened;
+                    let at = (target.page, target.node, now);
                     self.eraser = crate::eraser::Eraser::new(at, base, &cut);
                 }
             }
@@ -10594,7 +10600,7 @@ fn take_chart(asked: &mut Asked, at: (PageId, NodeId), asks: charts::Asks) {
 
 /// Makes the image of `target` be `image`, its new assets in the document;
 /// one undo step.
-fn set_image(engine: &mut Gafira, target: crate::vision::Target, image: gafira_doc::ImageNode) {
+fn set_image(engine: &mut Gafira, target: &crate::vision::Target, image: gafira_doc::ImageNode) {
     let Some(document) = engine.edit().document() else {
         return;
     };
@@ -10662,7 +10668,7 @@ fn chart_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_do
 /// The image `node` of `page`, if it is one.
 fn image_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::ImageNode> {
     match &document.page(page)?.node(node)?.kind {
-        gafira_doc::NodeKind::Image(image) => Some(*image),
+        gafira_doc::NodeKind::Image(image) => Some(image.clone()),
         _ => None,
     }
 }
@@ -13933,10 +13939,10 @@ pub(crate) mod tests {
         let target = Target {
             page,
             node,
-            image: before,
+            image: before.clone(),
         };
         let asset = |n: u8| AssetRef::new(ContentHash([n; 32]));
-        set_image(&mut engine, target, before.edited(asset(8), asset(9)));
+        set_image(&mut engine, &target, before.edited(asset(8), asset(9)));
         assert_eq!(undo_depth(&mut engine), depth + 1);
         let cut = image(&mut engine);
         assert!(cut.is_cut() && cut.is_enhanced() && cut.original() == original);
@@ -13949,10 +13955,13 @@ pub(crate) mod tests {
         let target = Target {
             page,
             node,
-            image: cut,
+            image: cut.clone(),
         };
         for (vision, want) in [
-            (Ask::Background(target), cut.edited(asset(9), asset(9))),
+            (
+                Ask::Background(target.clone()),
+                cut.edited(asset(9), asset(9)),
+            ),
             (Ask::Original(target), ImageNode::new(original)),
         ] {
             let asked = Asked {

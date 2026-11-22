@@ -7,13 +7,16 @@ use serde::{Deserialize, Serialize};
 use crate::timeline::AssetRef;
 
 /// An image element: an embedded or linked asset drawn in the element's box.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImageNode {
     /// The asset table entry the image shows; it must exist (P7).
     pub asset: AssetRef,
     /// What the asset was made from (spec 084). Additive to schema 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edit: Option<ImageEdit>,
+    /// How it is made to look (spec 085). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<Box<crate::ImageLook>>,
 }
 
 /// What an image was before it was changed (spec 084): nothing is lost, so
@@ -31,7 +34,11 @@ impl ImageNode {
     /// An image as it was brought in.
     #[must_use]
     pub const fn new(asset: AssetRef) -> Self {
-        Self { asset, edit: None }
+        Self {
+            asset,
+            edit: None,
+            look: None,
+        }
     }
 
     /// The image as it was brought in.
@@ -64,13 +71,40 @@ impl ImageNode {
     pub fn edited(&self, asset: AssetRef, base: AssetRef) -> Self {
         let original = self.original();
         let edit = (asset != original || base != original).then_some(ImageEdit { original, base });
-        Self { asset, edit }
+        Self {
+            asset,
+            edit,
+            look: self.look.clone(),
+        }
     }
 
     /// Every asset it needs.
-    pub fn assets(&self) -> impl Iterator<Item = AssetRef> {
+    pub fn assets(&self) -> impl Iterator<Item = AssetRef> + '_ {
         let edit = self.edit.map(|edit| [edit.original, edit.base]);
-        std::iter::once(self.asset).chain(edit.into_iter().flatten())
+        let masks = self.look.iter().flat_map(|look| &look.zones);
+        std::iter::once(self.asset)
+            .chain(edit.into_iter().flatten())
+            .chain(masks.map(|zone| zone.mask))
+    }
+
+    /// The image with `look`; none when there is nothing to it.
+    #[must_use]
+    pub fn looking(&self, look: crate::ImageLook) -> Self {
+        Self {
+            asset: self.asset,
+            edit: self.edit,
+            look: (!look.is_plain()).then(|| Box::new(look)),
+        }
+    }
+
+    /// What its pixels are kept under once decoded: its asset, or, with a
+    /// look, one of that asset and that look.
+    #[must_use]
+    pub fn shown(&self) -> AssetRef {
+        match &self.look {
+            None => self.asset,
+            Some(look) => look.key(self.asset),
+        }
     }
 }
 

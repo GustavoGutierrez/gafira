@@ -465,6 +465,11 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     {
         return Err(ValidationError::InvalidQr { node: id });
     }
+    if let NodeKind::Image(image) = &node.kind
+        && image.look.as_ref().is_some_and(|look| !look.is_valid())
+    {
+        return Err(ValidationError::InvalidImage { node: id });
+    }
     if let NodeKind::Table(table) = &node.kind
         && !table.is_valid()
     {
