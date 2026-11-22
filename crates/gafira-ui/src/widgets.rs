@@ -259,10 +259,31 @@ pub(crate) fn rail_tab(
     label: &str,
     active: bool,
 ) -> Response {
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(ui.available_width(), RAIL_TAB), Sense::click());
+    tab_of(ui, theme, (icon, label), active, true)
+}
+
+/// A tab of the rail that is still to come: faint, and nothing to press.
+pub(crate) fn rail_tab_off(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str) -> Response {
+    tab_of(ui, theme, (icon, label), false, false)
+}
+
+fn tab_of(
+    ui: &mut Ui,
+    theme: &Theme,
+    (icon, label): (Icon, &str),
+    active: bool,
+    enabled: bool,
+) -> Response {
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), RAIL_TAB),
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
     let painter = ui.painter();
-    if response.hovered() {
+    if response.hovered() && enabled {
         painter.rect_filled(rect, 0.0, theme.c("topbar.hover"));
     }
     let (color, weight) = if active {
@@ -271,6 +292,11 @@ pub(crate) fn rail_tab(
         (theme.c("topbar.fg"), Weight::Fill)
     } else {
         (theme.c("topbar.fg.muted"), Weight::Regular)
+    };
+    let color = if enabled {
+        color
+    } else {
+        color.gamma_multiply(0.45)
     };
     let size = px(theme.tokens.size.icon.lg);
     let glyph = Rect::from_center_size(
@@ -293,7 +319,7 @@ pub(crate) fn rail_tab(
     if response.has_focus() {
         focus_ring(painter, theme, rect.shrink(4.0));
     }
-    response.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, active, label));
+    response.widget_info(|| WidgetInfo::selected(WidgetType::Button, enabled, active, label));
     response
 }
 

@@ -36,10 +36,8 @@ pub(crate) enum Tab {
 /// Whether Biblioteca shows `file` at all, by its extension.
 pub(crate) fn known(file: &Path) -> bool {
     file.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-        matches!(
-            e.to_ascii_lowercase().as_str(),
-            "png" | "jpg" | "jpeg" | "svg" | "pdf"
-        )
+        let e = e.to_ascii_lowercase();
+        crate::files::IMAGES.contains(&e.as_str()) || matches!(e.as_str(), "svg" | "pdf")
     })
 }
 

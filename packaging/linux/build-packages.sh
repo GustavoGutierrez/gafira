@@ -12,6 +12,8 @@
 # MIME and icon caches. The AppImage is packed with appimagetool (see
 # appimagetool_path).
 #
+# APPIMAGE_RUNTIME is the runtime of the AppImage; without it, appimagetool
+# fetches the current one.
 # GAFIRA_MAINTAINER overrides the Maintainer field of the .deb.
 set -eu
 
@@ -118,7 +120,7 @@ RUN
     out=$dist/Gafira-$version-x86_64.AppImage
     # Extract-and-run: no FUSE needed to run the tool itself.
     ARCH=x86_64 VERSION=$version "$tool" --appimage-extract-and-run \
-        "$appdir" "$out" >"$work/appimagetool.log" 2>&1 || {
+        ${APPIMAGE_RUNTIME:+--runtime-file "$APPIMAGE_RUNTIME"} "$appdir" "$out" >"$work/appimagetool.log" 2>&1 || {
         echo "build-packages.sh: appimagetool failed; see $work/appimagetool.log" >&2
         exit 1
     }

@@ -79,7 +79,7 @@ fn s84_01_the_original_is_kept() {
 #[test]
 fn s84_01_the_document_keeps_it() {
     let cut = ImageNode::new(asset(1)).edited(asset(3), asset(2));
-    let doc = document(cut, &[1, 2, 3]).expect("valid");
+    let doc = document(cut.clone(), &[1, 2, 3]).expect("valid");
     let json = doc.to_json().expect("json");
     assert_eq!(Document::from_json(json.as_bytes()).expect("loads"), doc);
     let plain = document(ImageNode::new(asset(1)), &[1])
@@ -89,7 +89,7 @@ fn s84_01_the_document_keeps_it() {
     assert!(!plain.contains("\"edit\""), "{plain}");
     for known in [&[1, 2][..], &[1, 3], &[2, 3]] {
         assert_eq!(
-            document(cut, known),
+            document(cut.clone(), known),
             Err(ValidationError::DanglingImage { node: NODE }),
             "{known:?}"
         );

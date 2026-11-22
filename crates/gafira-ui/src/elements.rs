@@ -27,7 +27,6 @@ pub(crate) enum Category {
     /// «Foto collage» (D-106): photos placed in a collage layout.
     Collage,
     Frames,
-    Icons,
     QrCodes,
     Tables,
     Charts,
@@ -41,7 +40,7 @@ pub(crate) enum Category {
 impl Category {
     /// The categories in the order of the grid: those that work first,
     /// those still to come last (owner request).
-    pub(crate) const ALL: [Self; 10] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Shapes,
         Self::Collage,
         Self::Frames,
@@ -51,7 +50,6 @@ impl Category {
         Self::QrCodes,
         Self::Tables,
         Self::Charts,
-        Self::Icons,
     ];
 
     /// The catalogue key of its name.
@@ -60,7 +58,6 @@ impl Category {
             Self::Shapes => "elements.shapes",
             Self::Collage => "elements.collage",
             Self::Frames => "elements.frames",
-            Self::Icons => "elements.icons",
             Self::QrCodes => "elements.qr_codes",
             Self::Tables => "elements.tables",
             Self::Charts => "elements.charts",
@@ -75,7 +72,6 @@ impl Category {
             Self::Shapes => Icon::CategoryShapes,
             Self::Collage => Icon::CategoryCollage,
             Self::Frames => Icon::CategoryFrames,
-            Self::Icons => Icon::CategoryIcons,
             Self::QrCodes => Icon::CategoryQrCodes,
             Self::Tables => Icon::CategoryTables,
             Self::Charts => Icon::CategoryCharts,

@@ -17,6 +17,7 @@ use gafira_doc::contract::{Describe, ParamSchema, ParamValues};
 use gafira_geom::IRect;
 
 pub use auto_adjust::{AutoAdjust, auto_adjust};
+pub(crate) use blur::blur_plane;
 pub use color_adjust::ColorAdjust;
 pub use detected::{DETECTED_SLOTS, DetectedColors};
 pub use filter::{

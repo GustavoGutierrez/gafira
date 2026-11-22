@@ -3,6 +3,8 @@
 
 use gafira_ports::vision::{Machine, VisionTask};
 
+use crate::runtime::Input;
+
 /// How a model takes its image and what it gives.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape {
@@ -15,15 +17,32 @@ pub enum Shape {
     },
     /// Pieces of `tile` × `tile`, 0 to 1; they come out `scale` times larger.
     Upscale { tile: usize, scale: u32 },
+    /// Pieces of `side` × `side` and what to fill of them.
+    Inpaint { side: usize, kind: Filling },
+}
+
+/// How a model that fills takes its piece.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Filling {
+    /// Bytes; the mask is 255 on what is kept.
+    Bytes,
+    /// Numbers from 0 to 1; the mask is 1 on what is filled.
+    Numbers,
 }
 
 impl Shape {
-    /// The shape of what goes in.
+    /// What goes in.
     #[must_use]
-    pub fn input(self) -> [usize; 4] {
+    pub fn inputs(self) -> Vec<Input> {
         match self {
-            Self::Cutout { side, .. } => [1, 3, side, side],
-            Self::Upscale { tile, .. } => [1, 3, tile, tile],
+            Self::Cutout { side, .. } => vec![Input::numbers([1, 3, side, side])],
+            Self::Upscale { tile, .. } => vec![Input::numbers([1, 3, tile, tile])],
+            Self::Inpaint { side, kind } => [3, 1]
+                .map(|channels| Input {
+                    shape: [1, channels, side, side],
+                    bytes: kind == Filling::Bytes,
+                })
+                .to_vec(),
         }
     }
 }
@@ -51,6 +70,7 @@ impl Model {
         match self.shape {
             Shape::Cutout { .. } => VisionTask::Cutout,
             Shape::Upscale { .. } => VisionTask::Upscale,
+            Shape::Inpaint { .. } => VisionTask::Inpaint,
         }
     }
 }
@@ -59,7 +79,7 @@ impl Model {
 const PHOTOS: ([f32; 3], [f32; 3]) = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]);
 
 /// The models, by task, the lightest first.
-pub const MODELS: [Model; 6] = [
+pub const MODELS: [Model; 8] = [
     Model {
         id: "u2netp",
         name: "U²-Net P",
@@ -156,6 +176,36 @@ pub const MODELS: [Model; 6] = [
             scale: 4,
         },
     },
+    Model {
+        id: "migan",
+        name: "MI-GAN",
+        about: "vision.about_migan",
+        license: "MIT",
+        source: "github.com/Picsart-AI-Research/MI-GAN",
+        bytes: 29_546_882,
+        hash: "0666f41bb92884ff439acaca5a72d2cbc197b770f1c465c44dab8fc0183d51b5",
+        url: "https://huggingface.co/andraniksargsyan/migan/resolve/406830d0fa60666da0071c342ad2fbc8f30c5c64/migan.onnx",
+        bundled: None,
+        shape: Shape::Inpaint {
+            side: 512,
+            kind: Filling::Bytes,
+        },
+    },
+    Model {
+        id: "lama",
+        name: "LaMa",
+        about: "vision.about_lama",
+        license: "Apache-2.0",
+        source: "github.com/advimman/lama",
+        bytes: 208_044_816,
+        hash: "ce4b55cc81ddacf2aaf0bbf676d0a497c8cd30aac7b4c85d85227a77c2b52d3d",
+        url: "https://huggingface.co/Carve/LaMa-ONNX/resolve/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx",
+        bundled: None,
+        shape: Shape::Inpaint {
+            side: 512,
+            kind: Filling::Numbers,
+        },
+    },
 ];
 
 /// A library that runs models, in a ZIP.
@@ -240,12 +290,14 @@ pub fn model(id: &str) -> Option<&'static Model> {
     MODELS.iter().find(|m| m.id == id)
 }
 
-/// The model a task starts with: the one that comes with Gafira.
+/// The model a task starts with: the one that comes with Gafira, or the
+/// lightest.
 #[must_use]
 pub fn default_of(task: VisionTask) -> &'static Model {
     MODELS
         .iter()
         .find(|m| m.task() == task && m.bundled.is_some())
+        .or_else(|| MODELS.iter().find(|m| m.task() == task))
         .unwrap_or(&MODELS[0])
 }
 
@@ -270,6 +322,7 @@ pub fn right_for(task: VisionTask, machine: &Machine) -> &'static Model {
         VisionTask::Cutout if dedicated && room => "isnet-general",
         VisionTask::Cutout if able => "u2net",
         VisionTask::Upscale if dedicated && room => "realesrgan-x4plus",
+        VisionTask::Inpaint if able || (dedicated && room) => "lama",
         _ => return default_of(task),
     };
     model(id).unwrap_or_else(|| default_of(task))
@@ -308,11 +361,34 @@ mod tests {
             .map(|m| m.bytes)
             .sum();
         assert!(bundled < 10_000_000);
-        for task in [VisionTask::Cutout, VisionTask::Upscale] {
+        for task in [VisionTask::Cutout, VisionTask::Upscale, VisionTask::Inpaint] {
             assert_eq!(default_of(task).task(), task);
         }
         if let Some(library) = ONNX_RUNTIME {
             assert!(library.url.starts_with("https://") && !library.files.is_empty());
+        }
+    }
+
+    // S86-03: what fills is never bundled; the right one for a machine.
+    #[test]
+    fn s86_03_what_fills() {
+        let of = |threads, memory_bytes| {
+            let machine = Machine {
+                threads,
+                memory_bytes,
+                gpu: None,
+            };
+            right_for(VisionTask::Inpaint, &machine).id
+        };
+        assert_eq!(default_of(VisionTask::Inpaint).id, "migan");
+        assert_eq!(
+            (of(4, 16 * GB), of(8, 16 * GB), of(16, 4 * GB)),
+            ("migan", "lama", "migan")
+        );
+        for id in ["migan", "lama"] {
+            let inputs = model(id).expect(id).shape.inputs();
+            let shapes: Vec<usize> = inputs.iter().map(|i| i.shape[1]).collect();
+            assert_eq!(shapes, [3, 1], "{id}");
         }
     }
 

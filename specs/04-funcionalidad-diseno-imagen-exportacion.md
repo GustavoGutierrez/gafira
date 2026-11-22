@@ -344,6 +344,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 **FD-32 · Zona de edición** (RF-20)
 - *Propósito*: decidir en qué parte de la imagen actúa un ajuste.
 - *Comportamiento y reglas*: selector con seis opciones: **Todo**, **Elemento** (el objeto detectado), **Mano alzada** (se pinta el área con un pincel), **Primer plano**, **Fondo** y **Texto** (detecta regiones de texto raster). Todas generan una máscara que modula el ajuste y es editable. «Elemento», «Primer plano» y «Fondo» usan el `ClassicSegmenter` (FD-38); «Elemento» añade una pista de prioridad central (D-23). Si el resultado no es fiable (02 ARQ-131), la opción se atenúa con el motivo «No se detectó un resultado fiable en esta imagen.». Esta atenuación solo afecta a las zonas que segmentan, «Elemento», «Primer plano» y «Fondo»: «Todo» nunca se atenúa por baja fiabilidad, y `reliable` se mantiene tal como lo calcula ARQ-131. **Texto** pasa a Fase 2 (D-23): se muestra atenuada con el motivo «Disponible en una versión futura.».
+- *Precisado por D-116 (spec 085)*: se entregan Todo, Elemento (un clic sobre el objeto), Área (la Mano alzada, con pincel sumar y restar y detección automática opcional), Primer plano y Fondo (con el modelo de quitar fondo). Hasta 8 zonas por imagen, cada una con sus ajustes.
 - *UI*: Inspector → Imagen → Zona de edición.
 - *Técnica*: `Mask::Alpha` / `Painted`, `Segmenter`, `EffectInstance` con máscara.
 - *Presupuesto*: la máscara aproximada < 5 s en CPU para 4000 px (CAL-06), refinamiento en segundo plano; el efecto con máscara ya calculada < 300 ms (CAL-04).
@@ -400,6 +401,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
   - **Preset**: id estable, nombre (`MessageKey`) y lista ordenada de pares (id de efecto, `ParamValues`). Los efectos se aplican en ese orden. Un parámetro que el preset no nombra queda en su valor por defecto. El preset se valida con el `ParamSchema` de cada efecto. El formato con que se guarda un filtro propio va con el criterio (c).
   - **Intensidad** (D-40): con `i` en 0–100, extremos incluidos, un parámetro `Float` vale `d × (1 − i/100) + p × i/100`, con `d` su valor por defecto y `p` el del preset. Un `Int` usa esa fórmula, evaluada en `f64`, y redondea al entero más cercano; medio se aleja de 0. Un `Color` se interpola en luz lineal con la regla de `Color` de 02 §3.4, con `t = i/100`. `Bool` y `Choice` valen `d` con `i = 0` y `p` con `i > 0` (D-41). Una intensidad NaN, `±∞` o fuera de rango da `Err` antes de escribir en destino (ARQ-110).
   - **Miniatura**: es el mismo filtro aplicado a una copia reducida, con `scale` igual a la razón de reducción (ARQ-120).
+  - *Precisado por D-116 (spec 085)*: catálogo de 36 filtros con nombres propios en seis grupos (Natural, Cálido, Frío, Vívido, Suave y Clásico).
 - *UI*: Inspector → Imagen → Filtros.
 - *Técnica*: `Effect` con presets en datos; `LutTransform` (Fase 2).
 - *Presupuesto*: generar la rejilla de 12 miniaturas < 300 ms (CAL-04); aplicar < 300 ms.
@@ -408,6 +410,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 **FD-35 · Sombras** (RF-21)
 - *Propósito*: dar profundidad a imágenes, formas y texto.
 - *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos confirmados, D-71); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. El desplazamiento escala con la imagen y se redondea a píxeles enteros, también según ARQ-120. El elemento se pinta sobre su sombra con el modo `Normal` de ARQ-119, con la sombra como fondo y el elemento como fuente, en luz lineal también en 8 bits (D-56). **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27). **Brillo** y **Contorno** salen del primer corte hasta que se aprueben sus fórmulas (D-42).
+- *Precisado por D-116 (spec 085)*: en imágenes, Brillo, Paralela, Contorno, Curva, Página flotante, En ángulo y Suelo; sus longitudes son proporciones del lado menor. La caja de la imagen no cambia.
 - *UI*: Inspector → Imagen → Sombras; Efectos de texto.
 - *Técnica*: `Effect` de sombra en `gafira-raster` (desenfoque gaussiano separable).
 - *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p (02 §6.7, `bench_shadow_1080`).
@@ -500,6 +503,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 **FD-43 · Efectos de texto** (RF-25)
 - *Propósito*: dar carácter gráfico al texto.
 - *Comportamiento y reglas*: **Contorno** (grosor, color, posición exterior/interior), **Sombra** (FD-35), brillo, eco, fondo (cuadro de color con relleno y radio), «sin relleno» (solo contorno), desalineado y neón (presets). Se combinan con degradado. Los efectos son estilos con datos y no destruyen el texto: el texto sigue siendo editable y seleccionable.
+- *Precisado por D-120 (spec 089)*: Paralela, Brillo, Eco, Contorno, Fondo, Desalineado, Sin relleno, Neón y Distorsión, con sus parámetros como proporción del tamaño de la letra, hasta cuatro a la vez, y doce estilos listos.
 - *UI*: Panel lateral → Texto → Efectos de texto; Inspector → Texto.
 - *Técnica*: `gafira-text` (contornos), `gafira-pathops` (trazo), `Effect`.
 - *Presupuesto*: aplicar < 100 ms (CAL-05).

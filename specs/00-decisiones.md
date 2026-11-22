@@ -1002,3 +1002,45 @@ Fecha: 22 de noviembre de 2026.
 
 - **Decisión** (titular): «Mejorar resolución» y «Quitar fondo» usan modelos locales. El paquete incluye los dos más ligeros (`u2netp` y `realesr-general-x4v3`, menos de 10 MB entre ambos); los mayores y la aceleración por GPU se descargan solo cuando la persona lo pide y acepta, con su peso y su licencia a la vista.
 - **Consecuencia**: precisa ARQ-76, RNF-04 y FD-40 («sin modelos en el instalador» pasa a «sin modelos de más de 10 MB en total»), y ARQ-04 y D-111: es la tercera conexión de red, acotada al botón de descargar del panel de modelos, tras la feature `online`. Las imágenes no salen nunca de la máquina. Solo modelos con licencia permisiva y procedencia comprobada. Se aplica en la spec 084.
+
+## D-116 Edición de imagen completa
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): «Editar imagen» reúne ajustes, zonas, filtros y sombras. Se entregan el catálogo de filtros con nombres propios (D-40 lo aplazaba), y las sombras Brillo, Contorno y Curva (D-42 y D-27 las aplazaban) más Página flotante, En ángulo y Suelo. Primer plano y Fondo usan el modelo de quitar fondo (D-115) en lugar del `ClassicSegmenter`; Elemento se elige con un clic.
+- **Consecuencia**: precisa FD-32, FD-34, FD-35, D-27, D-40 y D-42; sus fórmulas y valores quedan sujetos a la revisión visual del titular. Cambio aditivo del esquema 1. Se aplica en la spec 085.
+
+## D-117 Modelos para reconstruir el fondo
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular, que pidió elegir por licencia): se usan los dos modelos propuestos, porque ambos tienen licencia permisiva verificada en su origen: MI-GAN (código y pesos MIT, `LICENSE-WEIGHTS` de su repositorio) como ligero y LaMa (Apache-2.0) como el de calidad. Son descargas opcionales: no entran en el límite de 10 MB integrados de D-115.
+- **Consecuencia**: precisa D-115 con una tarea nueva. Se aplica en la spec 086.
+
+## D-118 AVIF sin código nativo
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular, que pidió importar y exportar AVIF): se decodifica con `re_rav1d` (BSD-2-Clause, sin ensamblador, para no exigir `nasm`) y se codifica con `ravif` (BSD-3-Clause). El contenedor se lee con código propio: las alternativas son MPL-2.0 (`avif-parse`) o AGPL (`rav1d-safe`), fuera de la lista de licencias permitidas. AV1 es libre de regalías.
+- **Consecuencia**: dos dependencias nuevas de la capa 4; WebP se importa con `image-webp`, ya en el árbol. Se aplica en la spec 087.
+
+## D-119 Recorte de imágenes y Elementos sin «Iconos»
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): una imagen se recorta sin destruirla, en rectángulo, redondeado, círculo o a mano, libre o con proporción. La categoría «Iconos», que no tenía contenido, sale de Elementos. Marca y Plantillas van al final de la barra, apagadas hasta que se implementen.
+- **Consecuencia**: cambio aditivo del esquema 1. Se aplica en la spec 088.
+
+## D-120 Efectos de texto
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un texto seleccionado tiene «Efectos»: Paralela, Brillo, Eco, Contorno, Fondo, Desalineado, Sin relleno, Neón y Distorsión, cada uno con sus parámetros; Curvar; y estilos listos con nombres propios.
+- **Consecuencia**: precisa FD-43 y FD-35 (en texto); cambio aditivo del esquema 1. Se aplica en la spec 089.
+
+## D-121 Publicación de binarios y coste de Actions
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): cada versión se publica con binarios de Linux y Windows, con instalador de Windows que registra `.gaf` y su icono; macOS cuando se pueda. Actions gasta lo mínimo.
+- **Consecuencia**: una etiqueta compila y publica sin repetir pruebas; CI corre en el PR a `main`, con pruebas en Linux y solo clippy en Windows; las de Windows y macOS, a petición. Se aplica en la spec 090.

@@ -1,17 +1,12 @@
 name: CI
 
-# Cost control: the only pull request this repo opens is `develop` -> `main`
-# (ADR 0003), and a commit that touches only specs, docs or markdown cannot
-# break a Rust gate. Runs are the expensive part of this workflow — four jobs,
-# the Windows one takes about twenty minutes — so a push to `develop` costs
-# nothing while it has no open PR, and a docs-only change costs nothing at all.
+# Cost control (D-121): the only pull request this repo opens is `develop` ->
+# `main` (ADR 0003), and it is the one gate: the push of its merge has the same
+# tree, so it is not run again, and a docs-only change costs nothing at all.
+# A Windows minute costs two of Linux and a macOS minute ten, so a pull request
+# tests on Linux and only lints on Windows; the tests of Windows and of macOS
+# run when asked for by hand. The binaries are built in release.yml.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "specs/**"
-      - "docs/**"
-      - "**/*.md"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -19,6 +14,15 @@ on:
       - "docs/**"
       - "**/*.md"
   workflow_dispatch:
+    inputs:
+      windows:
+        description: "Test on Windows too"
+        type: boolean
+        default: true
+      macos:
+        description: "Test on macOS too"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,27 +40,61 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
-  test:
-    name: test (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-pc-windows-msvc
-            os: windows-2022
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-24.04
-          - target: aarch64-apple-darwin
-            os: macos-14
+  linux:
+    name: linux (x86_64-unknown-linux-gnu)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TARGET: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      - name: Check host matches matrix target
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Check host matches the target
         run: |
-          host="$(rustc -vV | sed -n 's/^host: //p')"
-          test "$host" = "${{ matrix.target }}"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "$TARGET"
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+
+  windows:
+    name: windows (x86_64-pc-windows-msvc)
+    if: github.event_name == 'pull_request' || inputs.windows
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Check host matches the target
+        run: |
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "$TARGET"
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo test --workspace --locked
+
+  macos:
+    name: macos (aarch64-apple-darwin)
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      TARGET: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Check host matches the target
+        run: |
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "$TARGET"
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
@@ -318,11 +356,11 @@ jobs:
         run: |
           set -euo pipefail
           # The `ports` feature of the testkit is off by default (ADR 0013, decision 4), so the
-          # default suite of the `test` matrix compiles neither the nine port doubles nor the
+          # default suite of the test jobs compiles neither the nine port doubles nor the
           # `#[cfg(feature = "ports")]` test of tests/ports_feature.rs. This job runs on a single
           # target, so the step checks the host before compiling: the feature is compiled here on
-          # Linux (x86_64-unknown-linux-gnu, the Linux entry of the `test` matrix). The three
-          # product targets (Windows, Linux, macOS) are covered by that matrix through the default
+          # Linux (x86_64-unknown-linux-gnu, the Linux job). The three
+          # product targets (Windows, Linux, macOS) are covered by those jobs through the default
           # suite, whose tree carries neither gafira-ports nor gafira-raster.
           host="$(rustc -vV | sed -n 's/^host: //p')"
           [ "$host" = x86_64-unknown-linux-gnu ] || { echo "::error::unexpected host: $host (expected x86_64-unknown-linux-gnu)" >&2; exit 1; }

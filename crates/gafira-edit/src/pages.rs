@@ -326,6 +326,7 @@ impl Command for DuplicatePage {
         dirty.pages.insert(self.page);
         if let Some(record) = &self.record {
             dirty.pages.insert(record.page.id);
+            dirty.nodes.extend(record.page.nodes.keys().copied());
         }
         dirty
     }

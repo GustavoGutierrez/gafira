@@ -45,6 +45,11 @@ fn kernel(radius_px: f64, k: usize) -> Vec<f32> {
     raw.iter().map(|w| (w / total) as f32).collect()
 }
 
+/// Blurs `src` (`w` × `h`, zero outside) where it is.
+pub(crate) fn blur_plane(src: &[f32], w: usize, h: usize, radius_px: f64) -> Vec<f32> {
+    blur_shifted(src, w, h, 0, 0, radius_px)
+}
+
 /// Blurs `src` (`w` × `h`, zero outside) and returns the plane whose pixel `(i, j)` is the
 /// blur at `(i + ox, j + oy)` of `src`. `radius_px` is the CSS radius, already scaled.
 ///

@@ -20,6 +20,7 @@ mod page;
 mod planner;
 mod pool;
 mod scope;
+mod text_effects;
 
 pub use budget::{FRAME, FrameBudget, GRAPH_READY, MARGIN, Stage, VISIBLE_DONE};
 pub use cache::ContentTileCache;
@@ -27,7 +28,7 @@ pub use fonts::{FontBook, FontLoader};
 pub use frame::{BackendSelector, Degradation, FrameLoop, FrameOutcome, FrameRequest};
 pub use graph::{
     GraphError, GraphNode, GraphNodeId, GraphNodeKind, GraphParams, RenderGraph,
-    RenderGraphBuilder, SourceKind, cell_outline, chart_outlines, text_outline,
+    RenderGraphBuilder, SourceKind, cell_outline, chart_outlines, text_outline, text_pieces,
 };
 pub use key::{DOMAIN, KeyParam, NodeType, canonical_description, content_key};
 pub use page::{BackendFactory, GraphPageRenderer, GraphPageRenderers, PAGE_BACKGROUND};
@@ -37,3 +38,4 @@ pub use planner::{
 };
 pub use pool::{InlinePool, WorkerPool};
 pub use scope::{PageScope, ScopeError};
+pub use text_effects::{TextPiece, pieces_bounds};

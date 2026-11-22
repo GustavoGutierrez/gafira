@@ -56,6 +56,7 @@ FD-38, FD-39, FD-40; D-115 (esta spec), D-111 (precedente de red); ARQ-08, ARQ-7
 - El `.onnx` integrado se reproduce byte a byte con `tools/export_realesr.py`.
 - Probado en la app (Linux, datos temporales): quitar fondo con mejora previa, efecto, borrador (borrar, restaurar, deshacer, Listo), restaurar original, panel de modelos, descarga real de 271 MB y proceso por GPU. No probado: Windows y macOS.
 - La prueba en la app encontró y corrigió que Ctrl+Z en el borrador deshacía el documento (`s84_08_undo_is_of_the_strokes`).
+- Corrección pedida por el titular (2026-11-22): los botones Listo y Cancelar del borrador tienen margen, y la ventana muestra una barra de estado con el tamaño, la posición del puntero y el control de zoom (`s84_08_the_zoom`).
 
 ## Riesgos y decisiones abiertas
 

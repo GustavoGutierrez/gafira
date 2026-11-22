@@ -18,10 +18,14 @@ png.workspace = true
 image.workspace = true
 # Spec 039, FD-55: the lossless WebP export; already in the tree (spec 033).
 image-webp.workspace = true
+# Spec 087, D-118: AVIF, read and written.
+re_rav1d.workspace = true
+ravif.workspace = true
 
 # The pipeline tests draw real pages: the graph of gafira-render on the CPU
 # backend. Dev-only, so they are not layer edges (ARQ-06).
 [dev-dependencies]
+proptest.workspace = true
 gafira-render.workspace = true
 gafira-render-cpu.workspace = true
 gafira-testkit.workspace = true

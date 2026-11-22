@@ -12,9 +12,10 @@ use std::sync::Arc;
 use gafira_doc::contract::{CancelToken, Cancelled, ParamSchema, ParamValues, Progress};
 use gafira_doc::msg;
 use gafira_doc::msg::{Message, ToMessage};
-use gafira_doc::{AssetRef, Document, NodeId, PageId};
+use gafira_doc::{AssetRef, Document, ImageNode, NodeId, PageId};
 use gafira_geom::IRect;
 use gafira_raster::ImageBuf;
+use gafira_raster::look::{apply_look, cropped, cropped_mask, mask_of, reduced};
 use gafira_time::Flicks;
 
 use crate::format::FormatDescriptor;
@@ -192,6 +193,44 @@ pub trait ImageDecoder: Send + Sync {
     /// [`MediaError::Corrupt`] when the bytes are not an image this decoder
     /// reads.
     fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, MediaError>;
+}
+
+/// The pixels `image` shows: those of its asset, the part of them it is
+/// cropped to (spec 088), with its look when it has one (spec 085). A look drawn to be seen small is worked out on an image
+/// no longer than `most`, which takes a share of the time.
+///
+/// # Errors
+/// [`ExportError::Store`] when the asset, or the mask of a zone, is not in
+/// the store, [`ExportError::Media`] when one does not decode and
+/// [`ExportError::Render`] when the look cannot be drawn.
+pub fn decode_image(
+    image: &ImageNode,
+    store: &dyn ContentStore,
+    images: &dyn ImageDecoder,
+    most: Option<u32>,
+) -> Result<ImageBuf, ExportError> {
+    let read = |asset: AssetRef| -> Result<ImageBuf, ExportError> {
+        let mut bytes = Vec::new();
+        io::Read::read_to_end(&mut store.open(asset.as_hash())?, &mut bytes)?;
+        Ok(images.decode(&bytes)?)
+    };
+    let pixels = read(image.asset)?;
+    let part = image.part();
+    let pixels = cropped(&pixels, &part);
+    let Some(look) = &image.look else {
+        return Ok(pixels);
+    };
+    let mut masks = BTreeMap::new();
+    for zone in &look.zones {
+        if let Some(mask) = mask_of(&read(zone.mask)?) {
+            masks.insert(zone.mask, cropped_mask(&mask, &part));
+        }
+    }
+    let (pixels, scale) = most
+        .and_then(|most| reduced(&pixels, most))
+        .unwrap_or((pixels, 1.0));
+    apply_look(look, &pixels, &|asset| masks.get(&asset).cloned(), scale)
+        .map_err(|error| ExportError::Render(error.into()))
 }
 
 /// Why an export failed.

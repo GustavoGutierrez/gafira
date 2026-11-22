@@ -38,6 +38,8 @@ pub enum Property {
     TextContent(RichText),
     /// How much a text element bends (FD-44), in `[-100, 100]`.
     TextCurve(f64),
+    /// The effects of a text (spec 089).
+    TextEffects(Vec<gafira_doc::TextEffect>),
     /// Where the lines of a text element sit across its box.
     TextAlign(gafira_doc::TextAlign),
     /// The letter spacing (thousandths of an em) and line height (`None`
@@ -116,6 +118,7 @@ impl Property {
             Self::Image(_) => "set_property.image",
             Self::TextContent(_) => "set_property.text_content",
             Self::TextCurve(_) => "set_property.text_curve",
+            Self::TextEffects(_) => "set_property.text_effects",
             Self::TextAlign(_) => "set_property.text_align",
             Self::TextSpacing(..) => "set_property.text_spacing",
             Self::TextGradient(_) => "set_property.text_gradient",
@@ -165,6 +168,11 @@ impl Property {
             Self::TextCurve(curve) => (
                 "text_curve",
                 (-TextNode::MAX_CURVE..=TextNode::MAX_CURVE).contains(curve),
+            ),
+            Self::TextEffects(effects) => (
+                "text_effects",
+                effects.len() <= gafira_doc::TextEffect::MAX
+                    && effects.iter().all(gafira_doc::TextEffect::is_valid),
             ),
             Self::ShapeText(Some(text)) => ("shape_text", spans_valid(&text.content)),
             Self::Gradient(Some(gradient)) => ("gradient", gradient.problem().is_none()),
@@ -223,6 +231,7 @@ impl Property {
             (Self::CornerRadius(_), NodeKind::Shape(s)) => Self::CornerRadius(s.corner_radius),
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
             (Self::TextCurve(_), NodeKind::Text(t)) => Self::TextCurve(t.curve),
+            (Self::TextEffects(_), NodeKind::Text(t)) => Self::TextEffects(t.effects.clone()),
             (Self::TextAlign(_), NodeKind::Text(t)) => Self::TextAlign(t.align),
             (Self::TextSpacing(..), NodeKind::Text(t)) => {
                 Self::TextSpacing(t.letter_spacing, t.line_height)
@@ -238,7 +247,7 @@ impl Property {
                 Self::FrameCrop(f.content_offset, f.content_scale, f.content_rotation_deg)
             }
             (Self::Table(_), NodeKind::Table(t)) => Self::Table(t.clone()),
-            (Self::Image(_), NodeKind::Image(i)) => Self::Image(*i),
+            (Self::Image(_), NodeKind::Image(i)) => Self::Image(i.clone()),
             (Self::Chart(_), NodeKind::Chart(c)) => Self::Chart(c.clone()),
             (Self::Qr(_), NodeKind::Qr(q)) => Self::Qr(q.clone()),
             (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
@@ -263,6 +272,7 @@ impl Property {
             (Self::CornerRadius(v), NodeKind::Shape(s)) => s.corner_radius = *v,
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
             (Self::TextCurve(v), NodeKind::Text(t)) => t.curve = *v,
+            (Self::TextEffects(v), NodeKind::Text(t)) => t.effects.clone_from(v),
             (Self::TextAlign(v), NodeKind::Text(t)) => t.align = *v,
             (Self::TextSpacing(letters, lines), NodeKind::Text(t)) => {
                 t.letter_spacing = *letters;
@@ -281,7 +291,7 @@ impl Property {
                 f.content_rotation_deg = *degrees;
             }
             (Self::Table(v), NodeKind::Table(t)) => t.clone_from(v),
-            (Self::Image(v), NodeKind::Image(i)) => *i = *v,
+            (Self::Image(v), NodeKind::Image(i)) => i.clone_from(v),
             (Self::Chart(v), NodeKind::Chart(c)) => c.clone_from(v),
             (Self::Qr(v), NodeKind::Qr(q)) => q.clone_from(v),
             (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,

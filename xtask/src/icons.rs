@@ -20,6 +20,22 @@ pub const SYMBOL_SOURCE: &str = "assets/gafira-logo-symbol.svg";
 pub const DOCUMENT_SOURCE: &str = "docs/manuals/marca/assets/gafira-gaf-icon.svg";
 /// Where the generated `hicolor` tree lives, relative to the repository root.
 pub const OUT_DIR: &str = "assets/app-icon/hicolor";
+/// The Windows and macOS icons, relative to the repository root: of the
+/// application, and of a `.gaf` file (spec 090).
+pub const WINDOWS_APP: &str = "assets/app-icon/windows/gafira.ico";
+pub const WINDOWS_DOCUMENT: &str = "assets/app-icon/windows/gafira-project.ico";
+pub const MACOS_APP: &str = "assets/app-icon/macos/gafira.icns";
+pub const MACOS_DOCUMENT: &str = "assets/app-icon/macos/gafira-project.icns";
+/// The sizes of an `.ico`, in pixels.
+pub const ICO_SIZES: [u32; 7] = [16, 24, 32, 48, 64, 128, 256];
+/// The sizes of an `.icns`, in pixels, and the kind of each.
+const ICNS_SIZES: [(u32, &[u8; 4]); 5] = [
+    (128, b"ic07"),
+    (256, b"ic08"),
+    (512, b"ic09"),
+    (1024, b"ic10"),
+    (64, b"ic12"),
+];
 /// The icon name of the application (`Icon=` of the desktop entry).
 pub const APP_ICON: &str = "gafira";
 /// The icon name of the `.gaf` MIME type `application/vnd.gafira.project+zip`
@@ -53,6 +69,21 @@ pub fn generate(root: &Path) -> Result<Vec<Output>, String> {
     let tile = tile_svg(&symbol)?;
     let document = read(root, DOCUMENT_SOURCE)?;
     let mut out = Vec::new();
+    for (svg, windows, macos) in [
+        (&tile, WINDOWS_APP, MACOS_APP),
+        (&document, WINDOWS_DOCUMENT, MACOS_DOCUMENT),
+    ] {
+        let tree = usvg::Tree::from_data(svg.as_bytes(), &usvg::Options::default())
+            .map_err(|e| format!("{windows}: {e}"))?;
+        out.push(Output {
+            path: windows.to_owned(),
+            bytes: ico(&tree)?,
+        });
+        out.push(Output {
+            path: macos.to_owned(),
+            bytes: icns(&tree)?,
+        });
+    }
     push_theme(&mut out, "apps", APP_ICON, tile.into_bytes())?;
     push_theme(&mut out, "mimetypes", DOCUMENT_ICON, document.into_bytes())?;
     Ok(out)
@@ -84,16 +115,86 @@ fn push_theme(
     Ok(())
 }
 
+/// `tree` as an `.ico`: the small sizes as bitmaps, which every tool reads,
+/// and the largest as a PNG.
+fn ico(tree: &usvg::Tree) -> Result<Vec<u8>, String> {
+    let images = ICO_SIZES
+        .iter()
+        .map(|size| match size {
+            256 => render(tree, *size),
+            _ => Ok(bitmap(&pixels(tree, *size)?)),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let count = u16::try_from(images.len()).map_err(|e| e.to_string())?;
+    let mut out = vec![0, 0, 1, 0];
+    out.extend(count.to_le_bytes());
+    let mut at = 6 + 16 * images.len();
+    for (size, image) in ICO_SIZES.iter().zip(&images) {
+        // 256 is written as 0.
+        let side = u8::try_from(*size).unwrap_or(0);
+        out.extend([side, side, 0, 0, 1, 0, 32, 0]);
+        for number in [image.len(), at] {
+            let number = u32::try_from(number).map_err(|e| e.to_string())?;
+            out.extend(number.to_le_bytes());
+        }
+        at += image.len();
+    }
+    out.extend(images.concat());
+    Ok(out)
+}
+
+/// The bitmap of an `.ico`: its header, its straight pixels from the bottom
+/// row up and a mask of nothing, as the opacity says it all.
+fn bitmap(pixmap: &Pixmap) -> Vec<u8> {
+    let (w, h) = (pixmap.width(), pixmap.height());
+    let mask = (w.div_ceil(32) * 4 * h) as usize;
+    let mut out = Vec::new();
+    for number in [40, w, h * 2] {
+        out.extend(number.to_le_bytes());
+    }
+    out.extend([1, 0, 32, 0]);
+    out.extend([0; 24]);
+    for y in (0..h).rev() {
+        for x in 0..w {
+            let p = pixmap.pixel(x, y).map(|p| p.demultiply());
+            out.extend(p.map_or([0; 4], |p| [p.blue(), p.green(), p.red(), p.alpha()]));
+        }
+    }
+    out.extend(vec![0; mask]);
+    out
+}
+
+/// `tree` as an `.icns`.
+fn icns(tree: &usvg::Tree) -> Result<Vec<u8>, String> {
+    let mut body = Vec::new();
+    let length = |n: usize| u32::try_from(n + 8).map_err(|e| e.to_string());
+    for (size, kind) in ICNS_SIZES {
+        let png = render(tree, size)?;
+        body.extend(kind);
+        body.extend(length(png.len())?.to_be_bytes());
+        body.extend(png);
+    }
+    let mut out = b"icns".to_vec();
+    out.extend(length(body.len())?.to_be_bytes());
+    out.extend(body);
+    Ok(out)
+}
+
 /// Rasterize `tree` into a `size` × `size` PNG.
 fn render(tree: &usvg::Tree, size: u32) -> Result<Vec<u8>, String> {
+    pixels(tree, size)?
+        .encode_png()
+        .map_err(|e| format!("png of {size} px: {e}"))
+}
+
+/// Rasterize `tree` into `size` × `size` pixels.
+fn pixels(tree: &usvg::Tree, size: u32) -> Result<Pixmap, String> {
     let mut pixmap = Pixmap::new(size, size).ok_or_else(|| format!("no pixmap of {size} px"))?;
     let scale = size as f32;
     let transform =
         Transform::from_scale(scale / tree.size().width(), scale / tree.size().height());
     resvg::render(tree, transform, &mut pixmap.as_mut());
-    pixmap
-        .encode_png()
-        .map_err(|e| format!("png of {size} px: {e}"))
+    Ok(pixmap)
 }
 
 /// The application tile (03 §5.3): a rounded `#FAFAF7` square with the
@@ -210,7 +311,8 @@ mod tests {
     #[test]
     fn dis_13_pngs_have_the_hicolor_sizes() {
         let out = generate(&root()).expect("generate");
-        assert_eq!(out.len(), 2 * (SIZES.len() + 1));
+        // And the Windows and macOS ones.
+        assert_eq!(out.len(), 2 * (SIZES.len() + 1) + 4);
         for (context, name) in [("apps", APP_ICON), ("mimetypes", DOCUMENT_ICON)] {
             for size in SIZES {
                 let png = file(
@@ -226,6 +328,53 @@ mod tests {
                 );
             }
             file(&out, &format!("{OUT_DIR}/scalable/{context}/{name}.svg"));
+        }
+    }
+
+    // S90-02: an .ico has every size where it says, the small ones as bitmaps
+    // with the pixels of the PNG, and an .icns every piece.
+    #[test]
+    fn s90_02_the_windows_and_macos_icons() {
+        let out = generate(&root()).expect("generate");
+        for (windows, macos, context, name) in [
+            (WINDOWS_APP, MACOS_APP, "apps", APP_ICON),
+            (WINDOWS_DOCUMENT, MACOS_DOCUMENT, "mimetypes", DOCUMENT_ICON),
+        ] {
+            let ico = &file(&out, windows).bytes;
+            let number = |at: usize, n: usize| -> usize {
+                let bytes = &ico[at..at + n];
+                bytes.iter().rev().fold(0, |v, b| v << 8 | usize::from(*b))
+            };
+            assert_eq!(
+                (number(0, 2), number(2, 2), number(4, 2)),
+                (0, 1, ICO_SIZES.len())
+            );
+            let mut end = 6 + 16 * ICO_SIZES.len();
+            for (i, size) in ICO_SIZES.iter().enumerate() {
+                let entry = 6 + 16 * i;
+                assert_eq!(number(entry, 1), *size as usize % 256);
+                let (length, at) = (number(entry + 8, 4), number(entry + 12, 4));
+                assert_eq!(at, end);
+                end += length;
+                if *size == 256 {
+                    assert!(ico[at..].starts_with(b"\x89PNG"));
+                    continue;
+                }
+                assert_eq!((number(at, 4), number(at + 8, 4)), (40, 2 * *size as usize));
+                if *size == 48 {
+                    let path = format!("{OUT_DIR}/48x48/{context}/{name}.png");
+                    let png = Pixmap::decode_png(&file(&out, &path).bytes).expect("decode");
+                    let want = png.pixel(24, 10).expect("pixel").demultiply();
+                    let pixel = at + 40 + ((47 - 10) * 48 + 24) * 4;
+                    let got = &ico[pixel..pixel + 4];
+                    assert_eq!(got, [want.blue(), want.green(), want.red(), want.alpha()]);
+                }
+            }
+            assert_eq!(end, ico.len());
+            let icns = &file(&out, macos).bytes;
+            assert!(icns.starts_with(b"icns"));
+            let told = u32::from_be_bytes([icns[4], icns[5], icns[6], icns[7]]);
+            assert_eq!(told as usize, icns.len());
         }
     }
 

@@ -16,7 +16,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | Doc | Contenido | Estado |
 | --- | --- | --- |
-| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-115) |
+| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-121) |
 | [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) | Aprobado (D-83, 2026-11-16) |
 | [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) | Aprobado (D-83, 2026-11-16) |
 | [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` | Borrador para revisión |
@@ -61,6 +61,12 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 082 | [Importar Excel y CSV como tabla](082-importar-excel.md) | in-progress: soltar, pegar o importar un `.xlsx` o un `.csv` crea una tabla; con varias hojas se elige cuál; implementada y probada, pendiente del titular |
 | 083 | [Gráficos](083-graficos.md) | in-progress: gráficos prediseñados, editor de datos, colores y exportación vectorial (FD-22, D-114); implementada y probada, pendiente del titular |
 | 084 | [Mejorar la resolución, quitar el fondo y borrar píxeles](084-mejorar-y-quitar-fondo.md) | in-progress: modelos locales integrados y descargables, CPU o GPU, sin destruir la imagen (D-115); implementada y probada en Linux, pendiente del titular |
+| 085 | [Editar imagen: ajustes, zonas, filtros y sombras](085-editar-imagen.md) | in-progress: panel con parámetros no destructivos (FD-32 a FD-37, D-116); implementada y probada en Linux, pendiente del titular |
+| 086 | [Borrador mágico y quitar marca de agua](086-borrador-magico.md) | in-progress: modelos locales que reconstruyen el fondo (D-117); implementada y probada en Linux, pendiente del titular |
+| 087 | [Importar WebP y AVIF, exportar AVIF](087-avif-y-webp.md) | in-progress: formatos de imagen nuevos (FD-55, D-118); implementada y probada en Linux, pendiente del titular |
+| 088 | [Recortar imagen y Propiedades de imagen](088-recortar-imagen.md) | in-progress: recorte no destructivo con formas y proporciones (D-119); implementada y probada en Linux, pendiente del titular |
+| 089 | [Efectos de texto](089-efectos-de-texto.md) | in-progress: panel Efectos con parámetros y estilos (FD-43, D-120); implementada y probada en Linux, pendiente del titular |
+| 090 | [Instalador de Windows y publicación de binarios](090-instalador-windows-y-release.md) | in-progress: instalador NSIS con `.gaf` y su icono, flujo de publicación de Linux y Windows, CI más barata (D-121); pendiente de la primera publicación y del titular |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -128,4 +134,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
 
-Siguiente ID libre: **085**.
+Siguiente ID libre: **091**.

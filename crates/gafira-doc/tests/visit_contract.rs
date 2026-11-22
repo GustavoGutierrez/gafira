@@ -88,6 +88,7 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "error.rs",
     "ids.rs",
     "image.rs",
+    "image_look.rs",
     "json.rs",
     "background.rs",
     "chart.rs",
@@ -111,6 +112,7 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "qr.rs",
     "table.rs",
     "text.rs",
+    "text_effect.rs",
     "validate.rs",
     "visit.rs",
 ];
