@@ -100,7 +100,15 @@ impl ProjectService {
     /// [`EngineError::InvalidDocument`] when `size` is outside the page
     /// limits; the old session stays.
     pub fn new_document_with(&self, size: PageSize) -> Result<(), EngineError> {
-        let page = Page::new(PageId::new(1), String::new(), size);
+        self.new_document_from(Page::new(PageId::new(1), String::new(), size))
+    }
+
+    /// A new document whose one page is `page` (its size, guides, margins),
+    /// for «Crear un diseño» (spec 076). The page takes id 1 and no nodes.
+    pub fn new_document_from(&self, mut page: Page) -> Result<(), EngineError> {
+        page.id = PageId::new(1);
+        page.nodes.clear();
+        page.roots.clear();
         let document = Document::from_parts(2, Dpi::DEFAULT, vec![Arc::new(page)])?;
         self.install(document, None, false, Vec::new())
     }

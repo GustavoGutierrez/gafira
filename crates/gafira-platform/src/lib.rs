@@ -15,9 +15,12 @@ compile_error!("Gafira targets only x86_64 Windows, x86_64 Linux and aarch64 mac
 
 mod clock;
 mod dirs;
+mod fonts;
 mod fs;
 mod ids;
+mod library;
 mod locale;
+mod monitor;
 mod notify;
 mod processes;
 mod recent;
@@ -26,9 +29,12 @@ mod settings;
 
 pub use clock::SystemClock;
 pub use dirs::data_dir;
+pub use fonts::{SystemFace, face_of, font_dirs, scan_fonts, system_fonts};
 pub use fs::StdFileSystem;
 pub use ids::RandomIds;
+pub use library::{ImportedFile, ImportedFiles, MAX_IMPORTED};
 pub use locale::EnvLocale;
+pub use monitor::{MonitorBox, pointer_monitor};
 pub use notify::StderrNotifier;
 pub use processes::SystemProcesses;
 pub use recent::{MAX_RECENT, RecentProject, RecentProjects, push};

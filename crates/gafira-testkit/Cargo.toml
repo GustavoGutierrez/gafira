@@ -20,6 +20,8 @@ gafira-time = { path = "../gafira-time", optional = true }
 proptest.workspace = true
 serde_json.workspace = true
 png.workspace = true
+# Spec 080: the reader the tests of the QR codes use.
+rqrr.workspace = true
 
 [dev-dependencies]
 assert_no_alloc.workspace = true

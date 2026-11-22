@@ -196,3 +196,65 @@ fn s49_04_selection_band() {
     assert_eq!(band(&boxes, GuideAxis::Vertical), Some((5.0, 60.0)));
     assert_eq!(band(&[], GuideAxis::Vertical), None);
 }
+
+// Spec 076: a ruler counts in the page's unit. At 100 % an inch is 96
+// screen px: numbered every inch; zoomed in, every tenth; a centimetre
+// ruler reads its decimals.
+#[test]
+fn s76_rulers_count_in_the_page_unit() {
+    let inch = 96.0;
+    let whole = ticks_in(0.0, inch, (0.0, 300.0), finest(Unit::In));
+    assert_eq!(
+        whole.iter().map(|t| t.1).collect::<Vec<_>>(),
+        vec![0.0, 1.0, 2.0, 3.0]
+    );
+    let fine = ticks_in(0.0, inch * 8.0, (0.0, 400.0), finest(Unit::In));
+    assert!((fine[1].1 - 0.1).abs() < 1e-9, "{fine:?}");
+    assert_eq!(tick_label(fine[1].1), "0.1");
+    assert_eq!(tick_label(2.5), "2.5");
+    assert_eq!(tick_label(3.0), "3");
+    assert_eq!(finest(Unit::Px), 1.0);
+    assert!(!minor_ticks_in(0.0, inch, (0.0, 300.0), finest(Unit::In)).is_empty());
+}
+
+// A guide let go on its ruler or past it (an overshoot over the top bar)
+// goes; anywhere on the canvas it stays.
+#[test]
+fn a_guide_past_its_ruler_is_deleted() {
+    let area = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(800.0, 600.0));
+    assert!(back_to_ruler(
+        GuideAxis::Horizontal,
+        area,
+        Pos2::new(400.0, 60.0)
+    ));
+    assert!(back_to_ruler(
+        GuideAxis::Horizontal,
+        area,
+        Pos2::new(400.0, 10.0)
+    ));
+    assert!(!back_to_ruler(
+        GuideAxis::Horizontal,
+        area,
+        Pos2::new(400.0, 200.0)
+    ));
+    assert!(back_to_ruler(
+        GuideAxis::Vertical,
+        area,
+        Pos2::new(40.0, 300.0)
+    ));
+    assert!(!back_to_ruler(
+        GuideAxis::Vertical,
+        area,
+        Pos2::new(300.0, 300.0)
+    ));
+}
+
+// Spec 076: a dragged guide tells where it is in the page's unit.
+#[test]
+fn a_dragged_guide_tells_its_position() {
+    assert_eq!(position_label(1.666_4, Unit::In), "1.666");
+    assert_eq!(position_label(2.0, Unit::In), "2");
+    assert_eq!(position_label(120.4, Unit::Px), "120");
+    assert_eq!(position_label(10.25, Unit::Mm), "10.2");
+    assert_eq!(position_label(-0.0001, Unit::Cm), "0");
+}

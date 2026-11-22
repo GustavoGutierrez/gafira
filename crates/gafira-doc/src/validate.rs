@@ -87,6 +87,15 @@ impl Document {
 
     /// P3: page sizes, then page layout data, then roots that do not exist, then repeated roots.
     fn check_pages(&self) -> Result<(), ValidationError> {
+        // The background draws, and its image is in the table (spec 069).
+        for page in &self.pages {
+            if let Some(background) = &page.background
+                && (!background.is_valid()
+                    || background.asset().is_some_and(|a| self.asset(&a).is_none()))
+            {
+                return Err(ValidationError::InvalidBackground { page: page.id });
+            }
+        }
         for page in &self.pages {
             let size = page.size.check(self.dpi);
             size.map_err(|error| ValidationError::PageSize {
@@ -188,10 +197,25 @@ impl Document {
     fn check_image_sources(&self) -> Result<(), ValidationError> {
         for page in &self.pages {
             for (id, node) in &page.nodes {
+                // What it can go back to is there too (spec 084).
                 if let NodeKind::Image(image) = &node.kind
-                    && self.asset(&image.asset).is_none()
+                    && image.assets().any(|asset| self.asset(&asset).is_none())
                 {
                     return Err(ValidationError::DanglingImage { node: *id });
+                }
+                // The logo of a QR code is one too (spec 080).
+                if let NodeKind::Qr(qr) = &node.kind
+                    && let Some(logo) = qr.logo
+                    && self.asset(&logo.asset).is_none()
+                {
+                    return Err(ValidationError::InvalidQr { node: *id });
+                }
+                // A frame's photo is an asset of the table too (spec 066).
+                if let NodeKind::Frame(frame) = &node.kind
+                    && let Some(content) = frame.content
+                    && self.asset(&content.asset).is_none()
+                {
+                    return Err(ValidationError::InvalidFrame { node: *id });
                 }
             }
         }
@@ -285,6 +309,29 @@ fn stroke_width(v: f64) -> bool {
     (0.0..=crate::ShapeStroke::MAX_WIDTH).contains(&v)
 }
 
+fn path_coordinate(v: f64) -> bool {
+    (crate::ShapePath::MIN_COORDINATE..=crate::ShapePath::MAX_COORDINATE).contains(&v)
+}
+
+/// What is wrong with the orders of a shape path, if anything (spec 054).
+fn path_problem(path: &crate::ShapePath) -> Option<crate::PathProblem> {
+    use crate::{PathCommand, PathProblem};
+    match path.commands.first() {
+        None => Some(PathProblem::Empty),
+        Some(PathCommand::MoveTo(_)) if path.commands.len() > crate::ShapePath::MAX_COMMANDS => {
+            Some(PathProblem::TooLong {
+                len: path.commands.len(),
+            })
+        }
+        Some(PathCommand::MoveTo(_)) => None,
+        Some(_) => Some(PathProblem::NoStart),
+    }
+}
+
+fn text_curve(v: f64) -> bool {
+    (-crate::TextNode::MAX_CURVE..=crate::TextNode::MAX_CURVE).contains(&v)
+}
+
 fn font_size(v: f64) -> bool {
     v > 0.0 && v <= crate::TextNode::MAX_SIZE
 }
@@ -333,9 +380,47 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
             out.push((NodeField::StrokeWidth, stroke.width, stroke_width));
         }
         out.push((NodeField::CornerRadius, shape.corner_radius, non_negative));
+        if let crate::ShapeGeometry::Path(path) = &shape.geometry {
+            for v in path.coordinates() {
+                out.push((NodeField::PathCoordinate, v, path_coordinate));
+            }
+        }
     }
+    // A line: its colour, its width and its points in the box (spec 058).
+    if let NodeKind::Line(line) = &node.kind {
+        let [r, g, b, a] = channels(line.color);
+        for channel in [r, g, b] {
+            out.push((NodeField::StrokeChannel, f64::from(channel), any));
+        }
+        out.push((NodeField::StrokeAlpha, f64::from(a), unit_interval));
+        out.push((NodeField::StrokeWidth, line.width, stroke_width));
+        let attached = [line.start.attached, line.end.attached]
+            .into_iter()
+            .flatten()
+            .flat_map(|a| a.at);
+        for v in line.start.at.into_iter().chain(line.end.at).chain(attached) {
+            out.push((NodeField::PathCoordinate, v, path_coordinate));
+        }
+    }
+    // The words of a text element or of a shape's text (spec 055).
+    let content = match &node.kind {
+        NodeKind::Text(text) => Some(&text.content),
+        NodeKind::Shape(shape) => shape.text.as_ref().map(|text| &text.content),
+        _ => None,
+    };
     if let NodeKind::Text(text) = &node.kind {
-        for span in text.content.spans() {
+        out.push((NodeField::TextCurve, text.curve, text_curve));
+        out.push((NodeField::LetterSpacing, text.letter_spacing, |v| {
+            crate::TextNode::LETTER_SPACING.contains(&v)
+        }));
+        if let Some(height) = text.line_height {
+            out.push((NodeField::LineHeight, height, |v| {
+                crate::TextNode::LINE_HEIGHT.contains(&v)
+            }));
+        }
+    }
+    if let Some(content) = content {
+        for span in content.spans() {
             out.push((NodeField::FontSize, span.style.size, font_size));
             let [r, g, b, a] = channels(span.style.color);
             for channel in [r, g, b] {
@@ -360,6 +445,52 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
             field,
             value,
         });
+    }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let crate::ShapeGeometry::Path(path) = &shape.geometry
+        && let Some(problem) = path_problem(path)
+    {
+        return Err(ValidationError::InvalidPath { node: id, problem });
+    }
+    let gradient = match &node.kind {
+        NodeKind::Shape(shape) => shape.gradient.as_ref(),
+        NodeKind::Text(text) => text.gradient.as_ref(),
+        _ => None,
+    };
+    if let Some(problem) = gradient.and_then(crate::Gradient::problem) {
+        return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
+    if let NodeKind::Qr(qr) = &node.kind
+        && !qr.is_valid()
+    {
+        return Err(ValidationError::InvalidQr { node: id });
+    }
+    if let NodeKind::Table(table) = &node.kind
+        && !table.is_valid()
+    {
+        return Err(ValidationError::InvalidTable { node: id });
+    }
+    if let NodeKind::Chart(chart) = &node.kind
+        && !chart.is_valid()
+    {
+        return Err(ValidationError::InvalidChart { node: id });
+    }
+    if let NodeKind::Frame(frame) = &node.kind
+        && !frame.is_valid()
+    {
+        return Err(ValidationError::InvalidFrame { node: id });
+    }
+    // The outline of a frame follows the rules of a shape path (spec 066).
+    if let NodeKind::Frame(frame) = &node.kind
+        && let crate::ShapeGeometry::Path(path) = &frame.clip_shape
+        && let Some(problem) = path_problem(path)
+    {
+        return Err(ValidationError::InvalidPath { node: id, problem });
+    }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let Some(problem) = shape.effect.as_ref().and_then(crate::ShapeEffect::problem)
+    {
+        return Err(ValidationError::InvalidEffect { node: id, problem });
     }
     if let NodeKind::Extension(ext) = &node.kind {
         if ext.type_id.is_empty() {
@@ -1311,6 +1442,8 @@ mod tests {
             font: "Inter".to_owned(),
             size,
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a)),
+            bold: false,
+            italic: false,
         };
         let check = |size: f64, a: f32| {
             let mut page = page(1, &[]);
@@ -1350,7 +1483,7 @@ mod tests {
         let mut page = page(1, &[]);
         page.nodes.insert(
             NodeId::new(2),
-            node(2, NodeKind::Image(ImageNode { asset })),
+            node(2, NodeKind::Image(ImageNode::new(asset))),
         );
         page.roots.push(NodeId::new(2));
         let mut doc =

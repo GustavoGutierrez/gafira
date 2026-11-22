@@ -381,6 +381,41 @@ fn render_tile(
                     )?;
                 }
             }
+            // Text is filled from its outline, as a path (spec 073).
+            RenderOp::Text {
+                path,
+                color,
+                transform,
+                ..
+            } => {
+                if coverage::meets(coverage::page_bounds(path, *transform), drawn) {
+                    paint_fill(
+                        layers.target(&mut pixels),
+                        size,
+                        drawn,
+                        path,
+                        *color,
+                        *transform,
+                    )?;
+                }
+            }
+            RenderOp::FillGradient {
+                path,
+                gradient,
+                size: box_size,
+                transform,
+            } => {
+                if coverage::meets(coverage::page_bounds(path, *transform), drawn) {
+                    paint_gradient(
+                        layers.target(&mut pixels),
+                        size,
+                        drawn,
+                        path,
+                        (gradient, *box_size),
+                        *transform,
+                    )?;
+                }
+            }
             RenderOp::DrawImage { image, transform } => {
                 // D6: an image whose page bounds miss the drawn rectangle
                 // contributes no pixel, so it is dropped before a texel is
@@ -390,6 +425,9 @@ fn render_tile(
                 }
             }
             RenderOp::ApplyMask { mask } => layers.apply_mask(mask, size, mask_origin)?,
+            RenderOp::ClipPath { path, transform } => {
+                clip_path(layers.target(&mut pixels), size, drawn, path, *transform);
+            }
             RenderOp::ApplyEffect {
                 effect,
                 params,
@@ -492,6 +530,67 @@ fn crop(
 /// premultiplied by the colour's alpha times the coverage, and `blend_f32`
 /// composites it over the tile's backdrop. The blend is `gafira-raster`'s and
 /// is never redefined here (ARQ-119).
+/// `path` filled with `gradient` laid in its local box of `box_size` (spec
+/// 063): each covered pixel takes the colour of its centre, carried back to
+/// the box by the inverse of `transform`.
+fn paint_gradient(
+    pixels: &mut [f32],
+    size: (u32, u32),
+    region: IRect,
+    path: &BezPath,
+    (gradient, box_size): (&gafira_doc::Gradient, (f64, f64)),
+    transform: Affine,
+) -> Result<(), RenderError> {
+    let Some(mask) = coverage::mask(path, transform, size, (region.x0, region.y0)) else {
+        return Ok(());
+    };
+    let inverse = transform.inverse();
+    let width = size.0.max(1) as usize;
+    for (index, coverage) in mask.data().iter().enumerate() {
+        if *coverage == 0 {
+            continue;
+        }
+        let (x, y) = (index % width, index / width);
+        let device = kurbo::Point::new(
+            f64::from(region.x0) + x as f64 + 0.5,
+            f64::from(region.y0) + y as f64 + 0.5,
+        );
+        let local = inverse * device;
+        let rgba = gradient.color_at(local.x, local.y, box_size.0, box_size.1);
+        let linear = Color::Srgb(rgba).to_linear_srgb();
+        let alpha = (linear.a * (f32::from(*coverage) / 255.0)).clamp(0.0, 1.0);
+        let source = [linear.r * alpha, linear.g * alpha, linear.b * alpha, alpha];
+        let at = index * 4;
+        let backdrop = [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]];
+        pixels[at..at + 4].copy_from_slice(&blend_f32(BlendMode::Normal, backdrop, source)?);
+    }
+    Ok(())
+}
+
+/// Keeps of every pixel of the tile its share covered by `path` (spec 066);
+/// a path that covers nothing of the tile clears it.
+fn clip_path(
+    pixels: &mut [f32],
+    size: (u32, u32),
+    region: IRect,
+    path: &BezPath,
+    transform: Affine,
+) {
+    let Some(mask) = coverage::mask(path, transform, size, (region.x0, region.y0)) else {
+        pixels.fill(0.0);
+        return;
+    };
+    for (index, coverage) in mask.data().iter().enumerate() {
+        let keep = f32::from(*coverage) / 255.0;
+        let at = index * 4;
+        if let Some(pixel) = pixels.get_mut(at..at + 4) {
+            for channel in pixel {
+                *channel *= keep;
+            }
+        }
+    }
+}
+
 fn paint_fill(
     pixels: &mut [f32],
     size: (u32, u32),

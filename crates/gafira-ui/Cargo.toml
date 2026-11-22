@@ -16,10 +16,27 @@ gafira-ports.workspace = true
 gafira-theme.workspace = true
 gafira-i18n.workspace = true
 gafira-layout.workspace = true
+# Spec 065: the lights are drawn with the pixels of gafira-raster, as the export draws them.
+gafira-raster.workspace = true
+# Spec 080: the QR codes of the panel and the canvas.
+gafira-qr.workspace = true
+# Spec 081: the tables of the panel and the canvas, and their Excel file.
+gafira-table.workspace = true
+# Spec 083: charts.
+gafira-chart.workspace = true
+gafira-io-xlsx.workspace = true
+# FD-44: a curved text is drawn from the outline the export draws.
+gafira-render.workspace = true
+# Spec 054: shape paths are built with kurbo and drawn on the canvas with tiny-skia.
+kurbo.workspace = true
+tiny-skia.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_extras.workspace = true
 image.workspace = true
+arboard.workspace = true
+# Spec 066, S66-10: custom frames from SVG and PDF outlines.
+gafira-io-vector.workspace = true
 rfd.workspace = true
 
 [lints]
@@ -33,7 +50,11 @@ gafira-assets.workspace = true
 gafira-platform.workspace = true
 gafira-format.workspace = true
 # Spec 030: the export tests compose the engine as the app does.
-gafira-render.workspace = true
 gafira-render-cpu.workspace = true
 gafira-io-image.workspace = true
 gafira-io-pdf.workspace = true
+# Spec 080: every format of the app, read back by a QR reader.
+gafira-io-svg.workspace = true
+gafira-io-pptx.workspace = true
+resvg.workspace = true
+gafira-testkit.workspace = true

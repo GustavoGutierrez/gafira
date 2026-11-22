@@ -18,6 +18,7 @@ use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
 use crate::editor::Editor;
 use crate::export;
 use crate::files::{self, FileAction, Outcome};
+#[cfg(test)]
 use crate::format::StartFormat;
 use crate::home::{Home, Thumbs};
 use crate::recent::{self, RecentStore};
@@ -46,8 +47,29 @@ pub struct UiConfig {
     pub engine: EngineFactory,
     /// The recent projects of Inicio (spec 025).
     pub recent: Box<dyn RecentStore>,
+    /// The imported files of Biblioteca (spec 068).
+    pub library: Box<dyn crate::LibraryStore>,
     /// «Mostrar en carpeta» after an export (spec 039).
     pub show_in_folder: ShowInFolder,
+    /// The fonts installed on the system, filled in the background (spec
+    /// 062).
+    pub system_fonts: crate::SystemFonts,
+    /// The export settings kept per format (spec 074).
+    pub export_presets: Box<dyn crate::ExportPresets>,
+    /// The remote photo catalogues of Elementos → Fotos (spec 071, D-111);
+    /// `None` when the build has no network.
+    pub photos: Option<std::sync::Arc<dyn gafira_ports::photos::PhotoCatalog>>,
+    /// The vector illustrations of Elementos → Ilustraciones (spec 072).
+    pub illustrations: Option<std::sync::Arc<dyn gafira_ports::photos::IllustrationCatalog>>,
+    /// The models that work on images (spec 084); none without them.
+    pub vision: Option<std::sync::Arc<dyn gafira_ports::vision::VisionModels>>,
+    /// A project to open once the splash ends: the `.gaf` the system
+    /// passed (a double click on a file, spec 078).
+    pub open: Option<PathBuf>,
+    /// The monitor the app opens on, `(x, y, width, height)` in desktop
+    /// px: the one under the pointer (spec 078). The splash is centred on
+    /// it; `None` leaves the centring to the windowing library.
+    pub start_monitor: Option<(i32, i32, u32, u32)>,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -56,6 +78,24 @@ struct RepaintWaker(egui::Context);
 impl Waker for RepaintWaker {
     fn wake(&self) {
         self.0.request_repaint();
+    }
+}
+
+/// The default and minimum main window, in logical px (03 §7.1).
+const MAIN_WINDOW: egui::Vec2 = egui::Vec2::new(1440.0, 900.0);
+const MAIN_WINDOW_MIN: egui::Vec2 = egui::Vec2::new(1280.0, 720.0);
+
+/// Turn the borderless splash window into the main window, centred on where
+/// the splash was.
+fn grow_into_main_window(ctx: &egui::Context) {
+    let (outer, monitor) = ctx.input(|i| (i.viewport().outer_rect, i.viewport().monitor_size));
+    let size = splash::main_size(MAIN_WINDOW, MAIN_WINDOW_MIN, monitor);
+    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+    ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(MAIN_WINDOW_MIN));
+    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+    if let Some(outer) = outer {
+        let at = splash::grown_from(outer, size).max(egui::Pos2::ZERO);
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(at));
     }
 }
 
@@ -71,7 +111,8 @@ enum Screen {
 pub(crate) enum Go {
     Stay,
     Home,
-    Editor(StartFormat),
+    /// A new document on this page: its size and guides (spec 076).
+    Create(Box<gafira_doc::Page>),
     File(FileAction),
     /// Open a project of «Recientes».
     OpenRecent(PathBuf),
@@ -100,12 +141,21 @@ struct Shell {
     /// Ajustes, when open, drawn instead of the screen (spec 034).
     settings: Option<SettingsView>,
     recent: Box<dyn RecentStore>,
+    /// The imported files of Biblioteca, shared with every editor (spec 068).
+    library: std::rc::Rc<dyn crate::LibraryStore>,
+    /// The photo catalogues, shared with every editor (spec 071).
+    vision: Option<std::sync::Arc<dyn gafira_ports::vision::VisionModels>>,
+    photos: Option<std::sync::Arc<dyn gafira_ports::photos::PhotoCatalog>>,
+    illustrations: Option<std::sync::Arc<dyn gafira_ports::photos::IllustrationCatalog>>,
+    export_presets: Box<dyn crate::ExportPresets>,
     theme: Theme,
     texts: Texts,
     version: &'static str,
     screen: Screen,
     /// How long the Startup screen has been up, in seconds.
     elapsed: f32,
+    /// The project to open when the splash ends (spec 078).
+    open_at_start: Option<PathBuf>,
     /// The last failure, shown in the editor's status line until the next
     /// action.
     notice: Option<String>,
@@ -146,18 +196,34 @@ struct Shell {
 /// # Errors
 /// When the window or its graphics context cannot be created.
 pub fn run(config: UiConfig) -> eframe::Result {
+    crate::system_fonts::install(config.system_fonts.clone());
     let tokens = ThemeTokens::embedded().map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+    // The window opens as the Startup screen (03 §7.10.2) and grows into
+    // the main window when it ends (`Shell::grow_into_main_window`).
+    let (w, h) = tokens.splash.window;
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Gafira")
         .with_app_id(app_icon::APP_ID)
-        .with_inner_size([1440.0, 900.0])
-        .with_min_inner_size([1280.0, 720.0]);
+        .with_inner_size([w as f32, h as f32])
+        // Not `with_resizable(false)`: a borderless window has no handles to
+        // resize it, and on X11 a window born fixed keeps the maximize
+        // button disabled after it grows.
+        .with_decorations(false);
     // Spec 046: an icon that cannot be decoded leaves the system's default.
     if let Some(icon) = app_icon::window_icon() {
         viewport = viewport.with_icon(icon);
     }
+    // In the middle of the monitor the app opens on, both ways; the main
+    // window then grows from the splash's centre.
+    let at = config
+        .start_monitor
+        .map(|(x, y, mw, mh)| splash::centred_on((x, y, mw, mh), (w, h)));
+    if let Some(at) = at {
+        viewport = viewport.with_position(at);
+    }
     let options = eframe::NativeOptions {
         viewport,
+        centered: at.is_none(),
         ..Default::default()
     };
     eframe::run_native(
@@ -192,11 +258,17 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 settings: None,
                 engine,
                 recent: config.recent,
+                library: std::rc::Rc::from(config.library),
+                photos: config.photos,
+                export_presets: config.export_presets,
+                illustrations: config.illustrations,
+                vision: config.vision,
                 theme,
                 texts: Texts::new(config.locale.unwrap_or(resolved.locale)),
                 version: config.version,
                 screen: Screen::Splash,
                 elapsed: 0.0,
+                open_at_start: config.open,
                 notice: None,
                 autosave: None,
                 scanned: false,
@@ -226,6 +298,26 @@ enum Leave {
 }
 
 impl Shell {
+    /// A new editor with the shared Biblioteca (spec 068).
+    fn new_editor(&self) -> Box<Editor> {
+        let mut editor = Box::<Editor>::default();
+        editor.library = Some(std::rc::Rc::clone(&self.library));
+        editor
+            .photo_panel
+            .get_mut()
+            .set_catalog(self.photos.clone());
+        editor
+            .illustration_panel
+            .get_mut()
+            .set_catalog(self.illustrations.clone());
+        editor.studio.set_models(self.vision.clone());
+        editor
+            .illustration_panel
+            .get_mut()
+            .set_photos(self.photos.clone());
+        editor
+    }
+
     /// Pump the autosave (02 §7.2): hand the due job to a thread and account
     /// for it when it comes back. The engine schedules; the host runs (P13).
     fn pump_autosave(&mut self, ctx: &egui::Context) {
@@ -296,7 +388,7 @@ impl Shell {
         match self.engine.projects().open(path) {
             Ok(()) => {
                 self.remember();
-                self.screen = Screen::Editor(Box::default());
+                self.screen = Screen::Editor(self.new_editor());
             }
             Err(error) => {
                 eprintln!("open recent: {error}");
@@ -317,7 +409,7 @@ impl Shell {
             files::Plan::Cancelled | files::Plan::Opened(Outcome::Cancelled) => {}
             files::Plan::Opened(Outcome::Done) => {
                 self.remember();
-                self.screen = Screen::Editor(Box::default());
+                self.screen = Screen::Editor(self.new_editor());
             }
             files::Plan::Opened(Outcome::Failed(message, detail)) => {
                 eprintln!("{action:?}: {detail}");
@@ -418,7 +510,7 @@ impl Shell {
     }
 
     /// The export dialog, then the save dialog and the export (spec 030).
-    fn export(&mut self, ctx: &egui::Context) {
+    fn export(&mut self, ctx: &egui::Context, window: &eframe::Frame) {
         let Some(dialog) = self.export.as_mut() else {
             return;
         };
@@ -429,11 +521,15 @@ impl Shell {
                 let Some(dialog) = self.export.take() else {
                     return;
                 };
+                // Keep or forget this format's settings (spec 074).
+                if let Some((format, kept)) = dialog.preset() {
+                    self.export_presets.save(&format, kept);
+                }
                 if self.exporting.is_some() {
                     self.notice = Some(self.texts.t(&gafira_doc::msg!("export.busy")));
                     return;
                 }
-                match export::start(&mut self.engine, &dialog, ctx) {
+                match export::start(&mut self.engine, &dialog, ctx, window) {
                     export::Start::Cancelled => {}
                     export::Start::Running(running) => {
                         self.notice = None;
@@ -498,9 +594,9 @@ impl Shell {
     }
 
     /// The dialogs over the screen; `true` when one is open.
-    fn dialogs(&mut self, ctx: &egui::Context) -> bool {
+    fn dialogs(&mut self, ctx: &egui::Context, window: &eframe::Frame) -> bool {
         if self.export.is_some() {
-            self.export(ctx);
+            self.export(ctx, window);
             return true;
         }
         if let Some(to) = self.leaving.clone() {
@@ -545,7 +641,7 @@ impl Shell {
                     Ok(()) => {
                         self.remember();
                         self.recovery.clear();
-                        self.screen = Screen::Editor(Box::default());
+                        self.screen = Screen::Editor(self.new_editor());
                     }
                     Err(error) => {
                         eprintln!("recover: {error}");
@@ -562,7 +658,7 @@ impl Shell {
                             self.remember();
                             self.engine.projects().discard_recovery(entry.project_id);
                             self.recovery.clear();
-                            self.screen = Screen::Editor(Box::default());
+                            self.screen = Screen::Editor(self.new_editor());
                         }
                         Err(error) => {
                             eprintln!("open: {error}");
@@ -641,7 +737,7 @@ impl eframe::App for Shell {
         }
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // The window reads the document from snapshots each frame; the events
         // only wake it (02 §5.2), so the queue is drained and dropped.
         while self.engine.events().try_recv().is_ok() {}
@@ -656,7 +752,11 @@ impl eframe::App for Shell {
                 let progress = splash::progress(self.elapsed);
                 splash::show(ctx, &self.theme, &self.texts, self.version, progress);
                 if progress >= 1.0 {
-                    Go::Home
+                    grow_into_main_window(ctx);
+                    match self.open_at_start.take() {
+                        Some(path) => Go::OpenRecent(path),
+                        None => Go::Home,
+                    }
                 } else {
                     ctx.request_repaint_after(Duration::from_millis(16));
                     Go::Stay
@@ -674,7 +774,7 @@ impl eframe::App for Shell {
                 &mut self.clipboard,
             ),
         };
-        let blocked = self.dialogs(ctx);
+        let blocked = self.dialogs(ctx, frame);
         self.pump_export(ctx);
         self.pump_save(ctx);
         let go = if blocked { Go::Stay } else { go };
@@ -723,10 +823,13 @@ impl eframe::App for Shell {
             }
             Go::Export(page) => {
                 self.notice = None;
-                self.export = Some(export::Dialog::new(export::formats(&self.engine), page));
+                self.export = Some(
+                    export::Dialog::new(export::formats(&self.engine), page)
+                        .with_presets(self.export_presets.as_ref()),
+                );
             }
-            Go::Editor(format) => match start(&mut self.engine, format) {
-                Ok(()) => self.screen = Screen::Editor(Box::default()),
+            Go::Create(page) => match self.engine.projects().new_document_from(*page) {
+                Ok(()) => self.screen = Screen::Editor(self.new_editor()),
                 Err(error) => eprintln!("new document: {error}"),
             },
         }
@@ -735,6 +838,7 @@ impl eframe::App for Shell {
 
 /// A new document whose first page has the size of `format` (03 §6.2,
 /// «Elegir»); the page is part of the document, so undo keeps it (spec 016).
+#[cfg(test)]
 pub(crate) fn start(engine: &mut Gafira, format: StartFormat) -> Result<(), EngineError> {
     engine.projects().new_document_with(format.page_size())
 }

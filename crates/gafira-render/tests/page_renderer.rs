@@ -66,6 +66,10 @@ fn page() -> Page {
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         }),
     );
     let group = Node::new(
@@ -101,6 +105,8 @@ enum OpShape {
     PopLayer { blend: BlendMode, opacity: f32 },
     FillPath { color: Color, transform: Affine },
     DrawImage,
+    ClipPath,
+    FillGradient,
     ApplyMask,
     ApplyEffect,
     ApplyTransition,
@@ -120,7 +126,16 @@ fn op_shape(op: &RenderOp) -> OpShape {
             color: *color,
             transform: *transform,
         },
+        // Text draws as its outline, a filled path (spec 073).
+        RenderOp::Text {
+            color, transform, ..
+        } => OpShape::FillPath {
+            color: *color,
+            transform: *transform,
+        },
         RenderOp::DrawImage { .. } => OpShape::DrawImage,
+        RenderOp::ClipPath { .. } => OpShape::ClipPath,
+        RenderOp::FillGradient { .. } => OpShape::FillGradient,
         RenderOp::ApplyMask { .. } => OpShape::ApplyMask,
         RenderOp::ApplyEffect { .. } => OpShape::ApplyEffect,
         RenderOp::ApplyTransition { .. } => OpShape::ApplyTransition,

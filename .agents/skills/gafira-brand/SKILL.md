@@ -40,6 +40,7 @@ Authority, in order: `docs/manuals/marca/manual-gafira.md` (the brand manual), t
 ## Layout and shape
 - 4 px spacing grid, prefer 8 px between usual elements. Radius 8 / 12 / 20 px. Web grid 12 columns (4 on mobile).
 - Rectangles with moderate corners, straight cuts, layers; simple stroke icons with consistent weight; tooltip or label when meaning is not obvious.
+- Text fields: at least 10 px of inner room left and right and 8 px above and below; text and hint never touch the border. Build every one-line field with `widgets::field` (spec 03 DIS-88, owner rule).
 - The user's content is the protagonist: no permanent watermarks, no big logos in the editor.
 
 ## Motion

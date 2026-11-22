@@ -51,11 +51,29 @@ impl AssetService {
             return Err(EngineError::NoSession);
         }
         let mut file = self.filesystem.open(path)?;
-        let reference = AssetRef::new(self.store.put(&mut file)?);
         let name = path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
+        self.add(&mut file, name)
+    }
+
+    /// Like [`Self::import`], for content that has no file: an image pasted
+    /// from the system clipboard (spec 067), stored as `name`.
+    ///
+    /// # Errors
+    /// [`EngineError::NoSession`] with no open document; [`EngineError::Store`]
+    /// when the store fails. Nothing changes then.
+    pub fn import_bytes(&self, name: &str, bytes: &[u8]) -> Result<AssetRef, EngineError> {
+        if self.shared.lock().is_none() {
+            return Err(EngineError::NoSession);
+        }
+        self.add(&mut std::io::Cursor::new(bytes), name.to_owned())
+    }
+
+    /// Put `content` in the store and add it to the document as `name`.
+    fn add(&self, content: &mut dyn std::io::Read, name: String) -> Result<AssetRef, EngineError> {
+        let reference = AssetRef::new(self.store.put(content)?);
         let entry = AssetEntry {
             name,
             storage: AssetStorage::Embedded,
@@ -129,6 +147,20 @@ mod tests {
         );
         assert_eq!(changes(&drain(&engine)), 1);
         assert!(engine.projects().is_modified());
+    }
+
+    // Spec 067: content without a file (a pasted image) is stored the same
+    // way, under the name given.
+    #[test]
+    fn s67_import_bytes_stores_them_under_a_name() {
+        let (mut engine, _fs, store) = opened();
+        let reference = engine
+            .assets()
+            .import_bytes("pasted.png", BYTES)
+            .expect("imports");
+        assert_eq!(reference, AssetRef::new(MemoryStore::hash_of(BYTES)));
+        assert_eq!(store.get(reference.as_hash()).as_deref(), Some(BYTES));
+        assert_eq!(assets_of(&mut engine)[0].1.name, "pasted.png");
     }
 
     #[test]

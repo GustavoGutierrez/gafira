@@ -58,6 +58,8 @@ fn document() -> Document {
         font: "Inter".to_owned(),
         size: 20.0,
         color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        bold: false,
+        italic: false,
     };
     let text = TextNode::plain("Hola", &style);
     page.nodes = [
@@ -65,7 +67,7 @@ fn document() -> Document {
         node(
             2,
             place(100.0, 100.0, 40.0, 30.0),
-            NodeKind::Image(ImageNode { asset: asset() }),
+            NodeKind::Image(ImageNode::new(asset())),
             &[],
         ),
         node(

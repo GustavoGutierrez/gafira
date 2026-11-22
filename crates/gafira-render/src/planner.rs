@@ -353,7 +353,7 @@ fn centre(rect: IRect) -> (i32, i32) {
 /// `RenderOp` is not `Clone` (the port is closed on purpose), so the copy is
 /// built field by field. A new variant of the port breaks this function, and
 /// that is the point.
-fn copy_op(op: &RenderOp) -> RenderOp {
+pub(crate) fn copy_op(op: &RenderOp) -> RenderOp {
     match op {
         RenderOp::PushLayer => RenderOp::PushLayer,
         RenderOp::PopLayer { blend, opacity } => RenderOp::PopLayer {
@@ -369,8 +369,34 @@ fn copy_op(op: &RenderOp) -> RenderOp {
             color: *color,
             transform: *transform,
         },
+        RenderOp::Text {
+            path,
+            color,
+            transform,
+            runs,
+        } => RenderOp::Text {
+            path: Arc::clone(path),
+            color: *color,
+            transform: *transform,
+            runs: Arc::clone(runs),
+        },
+        RenderOp::FillGradient {
+            path,
+            gradient,
+            size,
+            transform,
+        } => RenderOp::FillGradient {
+            path: Arc::clone(path),
+            gradient: Arc::clone(gradient),
+            size: *size,
+            transform: *transform,
+        },
         RenderOp::DrawImage { image, transform } => RenderOp::DrawImage {
             image: Arc::clone(image),
+            transform: *transform,
+        },
+        RenderOp::ClipPath { path, transform } => RenderOp::ClipPath {
+            path: Arc::clone(path),
             transform: *transform,
         },
         RenderOp::ApplyMask { mask } => RenderOp::ApplyMask {
@@ -433,6 +459,10 @@ mod tests {
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
@@ -448,6 +478,10 @@ mod tests {
             fill: Some(fill),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(id), Arc::new(Node::new(base, kind)));
@@ -572,7 +606,11 @@ mod tests {
             RenderOp::PushLayer => "push",
             RenderOp::PopLayer { .. } => "pop",
             RenderOp::FillPath { .. } => "fill",
+            // Text draws as its outline (spec 073).
+            RenderOp::Text { .. } => "fill",
+            RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
+            RenderOp::ClipPath { .. } => "clip",
             RenderOp::ApplyMask { .. } => "mask",
             RenderOp::ApplyEffect { .. } => "effect",
             RenderOp::ApplyTransition { .. } => "transition",

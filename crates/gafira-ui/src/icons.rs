@@ -41,8 +41,6 @@ pub(crate) enum Icon {
     Identity,
     Library,
     Drawing,
-    Rect,
-    Ellipse,
     BringForward,
     SendBackward,
     Delete,
@@ -73,11 +71,35 @@ pub(crate) enum Icon {
     /// Notas and Páginas in the bottom bar (spec 049).
     Notes,
     Pages,
+    /// The page header (spec 056): Subir, Duplicar and Añadir página.
+    PageUp,
+    PageCopy,
+    PageAdd,
+    /// The cards of Elementos and its «Volver» arrow (spec 064).
+    CategoryShapes,
+    CategoryCollage,
+    CategoryFrames,
+    CategoryIcons,
+    CategoryQrCodes,
+    CategoryTables,
+    CategoryCharts,
+    CategoryIllustrations,
+    Back,
+    /// «Luces y efectos» and its elements (spec 065): the category, also
+    /// «Brillo», and «Destello de lente».
+    CategoryLights,
+    /// Elementos → Fotos (spec 071).
+    CategoryPhotos,
+    LensFlare,
+    /// «Destello de cine», «Rayos de sol» and «Luces bokeh» (D-104).
+    Streak,
+    SunRays,
+    Bokeh,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 40] = [
+    pub(crate) const ALL: [Self; 56] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -89,8 +111,6 @@ impl Icon {
         Self::Identity,
         Self::Library,
         Self::Drawing,
-        Self::Rect,
-        Self::Ellipse,
         Self::BringForward,
         Self::SendBackward,
         Self::Delete,
@@ -118,6 +138,24 @@ impl Icon {
         Self::Unlocked,
         Self::Notes,
         Self::Pages,
+        Self::PageUp,
+        Self::PageCopy,
+        Self::PageAdd,
+        Self::CategoryShapes,
+        Self::CategoryCollage,
+        Self::CategoryFrames,
+        Self::CategoryIcons,
+        Self::CategoryQrCodes,
+        Self::CategoryTables,
+        Self::CategoryCharts,
+        Self::CategoryIllustrations,
+        Self::Back,
+        Self::CategoryLights,
+        Self::CategoryPhotos,
+        Self::LensFlare,
+        Self::Streak,
+        Self::SunRays,
+        Self::Bokeh,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -134,8 +172,6 @@ impl Icon {
             Self::Identity => "palette",
             Self::Library => "images",
             Self::Drawing => "pencil-simple",
-            Self::Rect => "square",
-            Self::Ellipse => "circle",
             Self::BringForward => "arrow-up",
             Self::SendBackward => "arrow-down",
             Self::Delete => "trash",
@@ -163,6 +199,24 @@ impl Icon {
             Self::Unlocked => "lock-simple-open",
             Self::Notes => "note-pencil",
             Self::Pages => "squares-four",
+            Self::PageUp => "caret-up",
+            Self::PageCopy => "copy",
+            Self::PageAdd => "file-plus",
+            Self::CategoryShapes => "polygon",
+            Self::CategoryCollage => "grid-four",
+            Self::CategoryFrames => "frame-corners",
+            Self::CategoryIcons => "smiley",
+            Self::CategoryQrCodes => "qr-code",
+            Self::CategoryTables => "table",
+            Self::CategoryCharts => "chart-bar",
+            Self::CategoryIllustrations => "paint-brush-broad",
+            Self::Back => "arrow-left",
+            Self::CategoryLights => "sparkle",
+            Self::CategoryPhotos => "camera",
+            Self::LensFlare => "sun",
+            Self::Streak => "arrows-out-line-horizontal",
+            Self::SunRays => "sun-horizon",
+            Self::Bokeh => "circles-three",
         }
     }
 
@@ -345,6 +399,26 @@ pub(crate) fn paint(
     painter.image(texture.id(), target, uv, color);
 }
 
+/// Draw `icon` as a square of `size` centred on `centre`, turned by `angle`
+/// radians (the cards of Elementos, spec 064).
+pub(crate) fn paint_turned(
+    painter: &egui::Painter,
+    centre: Pos2,
+    size: f32,
+    angle: f32,
+    icon: Icon,
+    weight: Weight,
+    color: Color32,
+) {
+    let ctx = painter.ctx();
+    let texture = texture(ctx, icon, weight, physical(ctx, size));
+    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+    let mut mesh = egui::Mesh::with_texture(texture.id());
+    mesh.add_rect_with_uv(Rect::from_center_size(centre, Vec2::splat(size)), uv, color);
+    mesh.rotate(egui::emath::Rot2::from_angle(angle), centre);
+    painter.add(mesh);
+}
+
 /// `icon` as an egui image of `size` points, for buttons with a label.
 pub(crate) fn image(
     ctx: &egui::Context,
@@ -452,9 +526,22 @@ mod tests {
 
     #[test]
     fn s37_03_a_square_outline_is_hollow_and_its_stroke_is_solid() {
-        // Phosphor «square»: a 16-unit stroke around 32..224.
+        // A 16-unit stroke around 32..224, as Phosphor draws one: the
+        // outer square one way round, the inner one the other.
+        let outer: &[[i16; 2]] = &[
+            [2_400, 2_400],
+            [23_200, 2_400],
+            [23_200, 23_200],
+            [2_400, 23_200],
+        ];
+        let inner: &[[i16; 2]] = &[
+            [4_000, 4_000],
+            [4_000, 21_600],
+            [21_600, 21_600],
+            [21_600, 4_000],
+        ];
         let side = 64;
-        let alpha = coverage(Icon::Rect.geometry(Weight::Regular), side);
+        let alpha = coverage(&[outer, inner], side);
         let at = |x: usize, y: usize| alpha[y * side + x];
         assert!(at(32, 32) < 0.01, "the centre is empty: {}", at(32, 32));
         assert!(at(9, 32) > 0.99, "the stroke is covered: {}", at(9, 32));

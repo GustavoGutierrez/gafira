@@ -61,7 +61,7 @@
 
 **FD-03 · Reglas y Guías** (RF-07)
 - *Propósito*: alinear con precisión usando referencias visuales.
-- *Comportamiento y reglas*: **Reglas** horizontal y vertical en la unidad del proyecto, con el origen en la esquina de la página activa. Las **Guías** se arrastran desde la regla; un doble clic sobre la guía permite escribir su posición numérica; se pueden bloquear y borrar arrastrándolas fuera. Las guías son por página y se guardan en el documento (`Page.guides`). Una guía tiene eje (vertical u horizontal), posición y bloqueo. La posición se mide desde la esquina superior izquierda de la página, en la unidad en que se escribió, y se guarda sin redondear. Puede quedar fuera de la página, como un nodo (02 §3.2). No se exportan. Visibilidad con `Ctrl+Shift+R` (Reglas) y `Ctrl+;` (Guías).
+- *Comportamiento y reglas*: **Reglas** horizontal y vertical en la unidad del proyecto, con el origen en la esquina de la página activa. Las **Guías** se arrastran desde la regla; un doble clic sobre la guía permite escribir su posición numérica; se pueden bloquear y borrar arrastrándolas fuera. Las guías son comunes a todas las páginas (D-99): cada página las guarda en `Page.guides` y la interfaz las mantiene iguales en todas. Una guía tiene eje (vertical u horizontal), posición y bloqueo. La posición se mide desde la esquina superior izquierda de la página, en la unidad en que se escribió, y se guarda sin redondear. Puede quedar fuera de la página, como un nodo (02 §3.2). No se exportan. Visibilidad con `Ctrl+Shift+R` (Reglas) y `Ctrl+;` (Guías).
 - *UI*: Ver → Reglas, Guías; arrastre desde las reglas.
 - *Técnica*: `gafira-layout` (operaciones sobre guías), overlay de `Tool::overlay` (02 §6.1: no invalida tiles). Los datos están en `Page.guides` (02 §3.1). `Guide` y `GuideSet` se definen en `gafira-doc` (ADR 0008).
 - *Presupuesto*: arrastrar una guía a 60 fps (CAL-02).
@@ -234,9 +234,9 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: generar códigos QR sin conexión.
 - *Comportamiento y reglas*: se introduce un texto o URL; opciones: nivel de corrección (L, M, Q, H; por defecto M), color de primer plano y de fondo, margen. El código se dibuja como vectores y se regenera al editar el contenido. Advertencia si el contraste primer plano/fondo es < 3:1 («Este código puede no leerse bien.»). El contenido nunca sale del equipo.
 - *UI*: Piezas → Códigos QR.
-- *Técnica*: nodo `Extension` con `type_id = "gafira.qr"` (ADR-02, `NodeExtension` interno); generación con crate permisivo (p. ej. `qrcode` 0.14.1, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)) o implementación propia.
+- *Técnica*: `QrNode` (`NodeKind::Qr`, D-113); generación con crate permisivo (p. ej. `qrcode` 0.14.1, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)) o implementación propia.
 - *Presupuesto*: generar < 50 ms para 300 caracteres.
-- *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) el nodo sobrevive a abrir sin el registro (ARQ-11).
+- *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) sustituida por D-113.
 
 **FD-21 · Tablas** (RF-16)
 - *Propósito*: presentar datos tabulares dentro del diseño.
@@ -250,9 +250,9 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: visualizar datos simples.
 - *Comportamiento y reglas*: barras, líneas, circular y anillo; editor de datos en una tabla; títulos, etiquetas, leyenda y paleta de la Identidad; los gráficos se redibujan al editar datos. Todos los colores llevan etiqueta o patrón además del color (DIS-33).
 - *UI*: Piezas → Gráficos.
-- *Técnica*: nodo `Extension` `type_id = "gafira.chart"`; `gafira-text`, `gafira-geom`.
+- *Técnica*: `ChartNode` (`NodeKind::Chart`, D-114); `gafira-chart`, `gafira-text`, `gafira-geom`.
 - *Presupuesto*: redibujar < 100 ms con 100 puntos.
-- *Aceptación*: (a) editar un valor actualiza el gráfico; (b) la exportación vectorial conserva la etiqueta de cada serie; (c) un gráfico abierto sin el registro se conserva intacto (ARQ-11).
+- *Aceptación*: (a) editar un valor actualiza el gráfico; (b) la exportación vectorial conserva la etiqueta de cada serie; (c) sustituida por D-114.
 
 **FD-23 · Nota adhesiva** (RF-16)
 - *Propósito*: anotar sobre el diseño sin que forme parte del resultado.
@@ -455,7 +455,8 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *UI*: Ajustes → Funciones locales opcionales.
 - *Técnica*: `Segmenter`, `Registry<dyn Segmenter>` (02 §4.7, §11.1).
 - *Presupuesto*: la misma cifra que FD-38 si se activa un segmentador por GPU.
-- *Aceptación*: (a) el instalador no contiene `.onnx` (ARQ-76); (b) sin modelo instalado, la función no aparece activa; (c) cada paquete de modelo muestra su licencia antes de activarse.
+- *Precisado por D-115 (spec 084)*: «Quitar fondo» y «Mejorar resolución» con modelos incluidos (menos de 10 MB) y descargables.
+- *Aceptación*: (a) el instalador no contiene más `.onnx` que los de D-115 (ARQ-76); (b) sin modelo instalado, la función no aparece activa; (c) cada paquete de modelo muestra su licencia antes de activarse.
 
 ---
 
@@ -753,7 +754,8 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | `TextNode` | FD-45, FD-46, FD-47 | Incorporados: `columns: TextColumns`, `autofit: Autofit`, `type_lock: TypeLock` (§3.2) |
 | `manifest.json` | FD-16 | Incorporado: objeto opcional `template { tags, pageFormat, style, color }` (D-81, §7.1); un lector que no lo conoce lo ignora |
 | Almacén de Versiones | FD-60 | Incorporado: `versions/index.json` y `versions/<version_id>/` (§7.1) |
-| QR y Gráficos | FD-20, FD-22 | `NodeExtension` internos `gafira.qr` y `gafira.chart` registrados en el binario (ADR-02) |
+| QR | FD-20 | `NodeKind::Qr` (D-113, spec 080) |
+| Gráficos | FD-22 | `NodeKind::Chart` (D-114, spec 083) |
 | `TextAssistant` | FD-64 | Incorporado: trait en `gafira-ports` (§4.15, Fase 3) |
 | Exportador PPTX | FD-62 | Incorporado: crate `gafira-io-pptx` (Fase 2, §11.2) |
 | Medios vinculados | FD-30 | Incorporados: `manifest.assets[...].linked` y evento `LinksMissing` (§7.1) |

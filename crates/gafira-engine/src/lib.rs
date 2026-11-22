@@ -32,6 +32,7 @@ mod session;
 mod settings;
 mod thumbnail;
 mod versions;
+pub mod vision;
 
 pub use assets::AssetService;
 pub use autosave::{AutosaveJob, AutosaveOutcome};

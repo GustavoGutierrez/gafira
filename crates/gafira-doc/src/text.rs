@@ -7,7 +7,8 @@
 use gafira_color::Color;
 use serde::{Deserialize, Serialize};
 
-/// The style of a span: font family, size in px and colour.
+/// The style of a span: font family, size in px, colour, and its bold and
+/// italic faces (spec 062).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SpanStyle {
     /// The font family name, for example `"Inter"`.
@@ -16,6 +17,43 @@ pub struct SpanStyle {
     pub size: f64,
     /// The text colour.
     pub color: Color,
+    /// The bold face of the family (spec 062). Written only when set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
+    /// The italic face of the family (spec 062). Written only when set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub italic: bool,
+}
+
+/// The name a face is registered under for the render and the canvas (spec 062):
+/// the family, then «Bold», «Italic» or «Bold Italic».
+#[must_use]
+pub fn face_key(family: &str, bold: bool, italic: bool) -> String {
+    match (bold, italic) {
+        (false, false) => family.to_owned(),
+        (true, false) => format!("{family} Bold"),
+        (false, true) => format!("{family} Italic"),
+        (true, true) => format!("{family} Bold Italic"),
+    }
+}
+
+/// The face to use for `family` with `bold` and `italic` when `has` tells
+/// which faces exist: the one asked for, else without italic, else without
+/// bold, else the regular one. `None` when the family has no face at all.
+#[must_use]
+pub fn nearest_face(
+    has: impl Fn(bool, bool) -> bool,
+    bold: bool,
+    italic: bool,
+) -> Option<(bool, bool)> {
+    [
+        (bold, italic),
+        (bold, false),
+        (false, italic),
+        (false, false),
+    ]
+    .into_iter()
+    .find(|(b, i)| has(*b, *i))
 }
 
 /// A run of text with one style.
@@ -112,11 +150,50 @@ pub struct TextNode {
     pub sizing: TextSizing,
     #[serde(default)]
     pub align: TextAlign,
+    /// How much the lines bend (FD-44, D-26), in `[-100, 100]`: positive
+    /// is an arch, negative a cup, 0 straight. Additive to schema 1.
+    #[serde(default, skip_serializing_if = "is_straight")]
+    pub curve: f64,
+    /// Room between letters, in thousandths of an em, in `[-100, 500]`
+    /// (FD-41). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "is_straight")]
+    pub letter_spacing: f64,
+    /// Line height as a multiple of the size, in `[0.5, 4]` (FD-41); none
+    /// is the font's own. Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<f64>,
+    /// A gradient the letters are filled with instead of their colour, over
+    /// the box (spec 070). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<crate::Gradient>,
+}
+
+fn is_straight(curve: &f64) -> bool {
+    *curve == 0.0
 }
 
 impl TextNode {
     /// The largest font size, in px.
     pub const MAX_SIZE: f64 = 4096.0;
+
+    /// The most a text bends, either way (FD-44).
+    pub const MAX_CURVE: f64 = 100.0;
+
+    /// The letter spacing range, in thousandths of an em (FD-41).
+    pub const LETTER_SPACING: std::ops::RangeInclusive<f64> = -100.0..=500.0;
+
+    /// The line height range, as a multiple of the size (FD-41).
+    pub const LINE_HEIGHT: std::ops::RangeInclusive<f64> = 0.5..=4.0;
+
+    /// Whether it is drawn from its outline (curve, spacing, line height or
+    /// gradient) rather than as plain lines of words.
+    #[must_use]
+    pub fn styled(&self) -> bool {
+        self.curve != 0.0
+            || self.letter_spacing != 0.0
+            || self.line_height.is_some()
+            || self.gradient.is_some()
+    }
 
     /// `text` in one style, left aligned, growing downwards.
     #[must_use]
@@ -125,6 +202,10 @@ impl TextNode {
             content: RichText::plain(text, style),
             sizing: TextSizing::AutoHeight,
             align: TextAlign::Left,
+            curve: 0.0,
+            letter_spacing: 0.0,
+            line_height: None,
+            gradient: None,
         }
     }
 }
@@ -140,6 +221,8 @@ mod tests {
             font: "Inter".to_owned(),
             size: 32.0,
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
         }
     }
 

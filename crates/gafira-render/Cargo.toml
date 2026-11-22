@@ -18,6 +18,12 @@ gafira-anim.workspace = true
 gafira-text.workspace = true
 # Spec 038: the outline of a shape is the stroke outline of gafira-pathops, filled.
 gafira-pathops.workspace = true
+# Spec 080: the outlines of a QR code.
+gafira-qr.workspace = true
+# Spec 081: where the cells of a table lie, and their borders.
+gafira-table.workspace = true
+# Spec 083: charts.
+gafira-chart.workspace = true
 blake3.workspace = true
 kurbo.workspace = true
 

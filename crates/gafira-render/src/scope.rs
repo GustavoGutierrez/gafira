@@ -124,6 +124,10 @@ mod tests {
             fill: None,
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes.insert(node, Arc::new(Node::new(base, kind)));
         page.roots = vec![node];

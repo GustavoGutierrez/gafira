@@ -48,15 +48,64 @@ fn page_bytes(page: &Page, newer: Option<&Page>) -> usize {
     record + nodes
 }
 
+/// The heap bytes of the words and fonts of `text`.
+fn rich_bytes(text: &gafira_doc::RichText) -> usize {
+    text.spans()
+        .map(|span| span.text.len() + span.style.font.len() + size_of::<gafira_doc::Span>())
+        .sum()
+}
+
 fn node_bytes(node: &Node) -> usize {
     let heap = match &node.kind {
         NodeKind::Extension(ext) => ext.type_id.len() + value_bytes(&ext.payload),
-        NodeKind::Text(text) => text
-            .content
-            .spans()
-            .map(|span| span.text.len() + span.style.font.len() + size_of::<gafira_doc::Span>())
-            .sum(),
-        NodeKind::Group(_) | NodeKind::Shape(_) | NodeKind::Image(_) => 0,
+        NodeKind::Text(text) => rich_bytes(&text.content),
+        // A path keeps its orders on the heap (spec 054), and a shape's
+        // text its words (spec 055).
+        NodeKind::Shape(shape) => {
+            let path = match &shape.geometry {
+                gafira_doc::ShapeGeometry::Path(path) => {
+                    path.commands.len() * size_of::<gafira_doc::PathCommand>()
+                }
+                _ => 0,
+            };
+            path + shape
+                .text
+                .as_ref()
+                .map_or(0, |text| rich_bytes(&text.content))
+        }
+        // A frame's path keeps its orders on the heap too (spec 066).
+        NodeKind::Frame(frame) => match &frame.clip_shape {
+            gafira_doc::ShapeGeometry::Path(path) => {
+                path.commands.len() * size_of::<gafira_doc::PathCommand>()
+            }
+            _ => 0,
+        },
+        // A table keeps its sizes, cells and words (spec 081).
+        NodeKind::Table(table) => {
+            size_of::<gafira_doc::TableNode>()
+                + (table.columns.len() + table.rows.len()) * size_of::<f64>()
+                + table
+                    .cells
+                    .iter()
+                    .map(|c| size_of::<gafira_doc::TableCell>() + c.text.len() + c.style.font.len())
+                    .sum::<usize>()
+        }
+        // A chart keeps its data and its colours (spec 083).
+        NodeKind::Chart(chart) => {
+            size_of::<gafira_doc::ChartNode>()
+                + chart.text.font.len()
+                + chart.title.len()
+                + chart.colors.len() * size_of::<gafira_color::Color>()
+                + chart.values.len() * size_of::<usize>()
+                + chart
+                    .cells
+                    .iter()
+                    .map(|c| size_of::<String>() + c.len())
+                    .sum::<usize>()
+        }
+        // A code keeps the words it says on the heap (spec 080).
+        NodeKind::Qr(qr) => qr.content.fields().iter().map(|f| f.len()).sum(),
+        NodeKind::Group(_) | NodeKind::Image(_) | NodeKind::Line(_) => 0,
     };
     size_of::<Node>()
         + node.base.name.as_deref().map_or(0, str::len)
@@ -181,7 +230,7 @@ mod tests {
         use gafira_color::{Color, Rgba};
         use gafira_doc::{ShapeGeometry, ShapeNode, ShapeStroke};
         let bare = ShapeNode::new(ShapeGeometry::Rect);
-        let mut stroked = bare;
+        let mut stroked = bare.clone();
         stroked.stroke = Some(ShapeStroke::new(
             Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             4.0,
@@ -189,8 +238,25 @@ mod tests {
         stroked.corner_radius = 8.0;
         let newer = Document::default();
         let cost = |shape| unshared_bytes(&document(1, None, Some(NodeKind::Shape(shape))), &newer);
-        assert_eq!(cost(stroked), cost(bare));
+        assert_eq!(cost(stroked), cost(bare.clone()));
         assert_eq!(cost(bare), unshared_bytes(&plain(1), &newer));
+    }
+
+    // S54-01: a shape path counts its orders in the estimate.
+    #[test]
+    fn s54_01_a_path_counts_its_orders() {
+        use gafira_doc::{PathCommand, ShapeGeometry, ShapeNode, ShapePath};
+        let newer = Document::default();
+        let cost = |shape| unshared_bytes(&document(1, None, Some(NodeKind::Shape(shape))), &newer);
+        let path = |n: usize| {
+            let mut commands = vec![PathCommand::MoveTo([0.0, 0.0])];
+            commands.extend(std::iter::repeat_n(PathCommand::LineTo([1.0, 1.0]), n));
+            ShapeNode::new(ShapeGeometry::Path(ShapePath::new(commands)))
+        };
+        assert_eq!(
+            cost(path(10)) - cost(path(0)),
+            10 * size_of::<PathCommand>()
+        );
     }
 
     #[test]

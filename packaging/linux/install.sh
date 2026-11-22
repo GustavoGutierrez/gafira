@@ -77,7 +77,7 @@ install_all() {
     # The entry runs the installed binary by its full path, so the menu works
     # even when ~/.local/bin is not in the session's PATH.
     mkdir -p "$data/applications"
-    sed "s|^Exec=$app$|Exec=$bin_dir/$app|" "$here/gafira.desktop" >"$data/applications/$app.desktop"
+    sed "s|^Exec=$app |Exec=$bin_dir/$app |" "$here/gafira.desktop" >"$data/applications/$app.desktop"
     chmod 644 "$data/applications/$app.desktop"
     install -D -m 644 "$here/gafira-mime.xml" "$data/mime/packages/$app.xml"
     refresh

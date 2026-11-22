@@ -103,14 +103,75 @@ pub(crate) fn step_out(current: f32) -> f32 {
         .unwrap_or(MIN)
 }
 
-/// The scale after a Ctrl + wheel of `scroll` points: smooth, never past the limits.
-pub(crate) fn wheel(current: f32, scroll: f32) -> f32 {
-    clamp(current * (scroll / 400.0).exp())
+/// The zoom after a pinch or Ctrl + wheel of `factor` (S59-01): the
+/// current one times it, within the limits.
+pub(crate) fn by_factor(current: f32, factor: f32) -> f32 {
+    clamp(current * factor)
+}
+
+/// Where page `index` of pages `sizes` (px of page) sits in the content of
+/// the canvas at `zoom`, with `view` the size of the canvas on screen: the
+/// pages stack top to bottom `gap` apart, centred across, after a `margin`,
+/// and the whole stack is centred down when it is shorter than the view.
+/// The canvas draws them there and the zoom keeps a point under the
+/// pointer with it (spec 059).
+pub(crate) fn page_origin(
+    sizes: &[egui::Vec2],
+    index: usize,
+    zoom: f32,
+    view: egui::Vec2,
+    (margin, gap): (f32, f32),
+) -> egui::Vec2 {
+    let widest = sizes.iter().map(|s| s.x).fold(0.0, f32::max);
+    let content_w = (widest * zoom + 2.0 * margin).max(view.x);
+    let height: f32 = sizes.iter().map(|s| s.y * zoom + gap).sum::<f32>() + margin;
+    let top = margin.max((view.y - height).max(0.0) / 2.0);
+    let above: f32 = sizes.iter().take(index).map(|s| s.y * zoom + gap).sum();
+    let size = sizes.get(index).copied().unwrap_or_default();
+    egui::Vec2::new(content_w / 2.0 - size.x * zoom / 2.0, top + above)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // S59-02: the pages are centred across the content, stacked down from
+    // the margin with the gap between them, and centred down when short.
+    #[test]
+    fn s59_02_page_origin() {
+        let sizes = [egui::Vec2::new(100.0, 50.0), egui::Vec2::new(200.0, 100.0)];
+        let view = egui::Vec2::new(1000.0, 100.0);
+        // Content 1000 wide (the view is wider than 200 * 2 + 2 * 48).
+        assert_eq!(
+            page_origin(&sizes, 0, 2.0, view, (48.0, 56.0)),
+            egui::Vec2::new(400.0, 48.0)
+        );
+        assert_eq!(
+            page_origin(&sizes, 1, 2.0, view, (48.0, 56.0)),
+            egui::Vec2::new(300.0, 48.0 + 100.0 + 56.0)
+        );
+        // A tall view centres the stack down: height 50 + 56 + 100 + 56 + 48 = 310.
+        let tall = egui::Vec2::new(1000.0, 1000.0);
+        assert_eq!(
+            page_origin(&sizes, 0, 1.0, tall, (48.0, 56.0)).y,
+            (1000.0 - 310.0) / 2.0
+        );
+        // A narrow view: the content is as wide as the widest page plus margins.
+        let narrow = egui::Vec2::new(100.0, 100.0);
+        assert_eq!(
+            page_origin(&sizes, 0, 1.0, narrow, (48.0, 56.0)).x,
+            (296.0 - 100.0) / 2.0
+        );
+    }
+
+    // S59-01: a pinch or Ctrl + wheel multiplies the zoom, within 5-3200 %.
+    #[test]
+    fn s59_01_zoom_by_factor() {
+        assert_eq!(by_factor(1.0, 1.1), 1.1);
+        assert_eq!(by_factor(2.0, 0.5), 1.0);
+        assert_eq!(by_factor(MAX, 2.0), MAX);
+        assert_eq!(by_factor(MIN, 0.5), MIN);
+    }
 
     #[test]
     fn s37_06_steps_go_to_the_next_stop_and_stop_at_the_limits() {
@@ -147,9 +208,9 @@ mod tests {
             }
         }
         assert_eq!(clamp(f32::NAN), 1.0);
-        assert_eq!(wheel(1.0, 1.0e6), MAX);
-        assert_eq!(wheel(1.0, -1.0e6), MIN);
-        assert!(wheel(1.0, 40.0) > 1.0 && wheel(1.0, -40.0) < 1.0);
+        assert_eq!(by_factor(1.0, 1.0e6), MAX);
+        assert_eq!(by_factor(1.0, 1.0e-6), MIN);
+        assert!(by_factor(1.0, 1.1) > 1.0 && by_factor(1.0, 0.9) < 1.0);
     }
 
     #[test]

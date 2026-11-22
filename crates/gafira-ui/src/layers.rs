@@ -12,8 +12,9 @@ use crate::group;
 /// Whether `id` is locked on `page`: itself, or a group above it (D-91).
 /// A locked element is not picked on the canvas and does not move.
 pub(crate) fn locked(page: &Page, id: NodeId) -> bool {
+    // A locked page locks everything on it (spec 056).
     let own = |id: NodeId| page.node(id).is_some_and(|node| node.base.locked);
-    own(id) || ancestors(page, id).into_iter().any(own)
+    page.locked || own(id) || ancestors(page, id).into_iter().any(own)
 }
 
 /// Whether `id` is hidden on `page`: itself, or a group above it. Its
@@ -21,6 +22,20 @@ pub(crate) fn locked(page: &Page, id: NodeId) -> bool {
 pub(crate) fn hidden(page: &Page, id: NodeId) -> bool {
     let own = |id: NodeId| page.node(id).is_some_and(|node| !node.base.visible);
     own(id) || ancestors(page, id).into_iter().any(own)
+}
+
+/// What a click selects on a locked `leaf` of `page` (D-110): the outermost
+/// locked element among it and the groups above it, so it can be unlocked
+/// from the bar over it. `None` when nothing there is locked, or when the
+/// whole page is (it is unlocked from the page bar).
+pub(crate) fn locked_pick(page: &Page, leaf: NodeId) -> Option<NodeId> {
+    if page.locked {
+        return None;
+    }
+    let own = |id: &NodeId| page.node(*id).is_some_and(|node| node.base.locked);
+    std::iter::once(leaf)
+        .chain(ancestors(page, leaf))
+        .rfind(own)
 }
 
 /// The nodes of `nodes` that a move, a nudge or a resize may change: the
@@ -186,6 +201,18 @@ mod tests {
         assert_eq!(shapes.len(), 3, "locked elements are still drawn");
     }
 
+    // D-110: a click on a locked element selects it (or the locked group
+    // above it), for the bar to unlock it; nothing locked, nothing picked.
+    #[test]
+    fn a_click_selects_what_is_locked() {
+        let mut page = page();
+        assert_eq!(locked_pick(&page, n(2)), None);
+        lock(&mut page, 2);
+        assert_eq!(locked_pick(&page, n(2)), Some(n(2)));
+        lock(&mut page, 9);
+        assert_eq!(locked_pick(&page, n(3)), Some(n(9)), "the locked group");
+    }
+
     // S48-04 (D-91): the marquee and Ctrl+A leave out what is locked and
     // what is below a locked group.
     #[test]
@@ -204,6 +231,22 @@ mod tests {
         assert_eq!(canvas::in_marquee(&shapes, at(&page), 1.0, all), [n(2)]);
         assert_eq!(group::items(&page, None), [n(2)]);
         assert!(group::items(&page, Some(n(9))).is_empty());
+    }
+
+    // S56-05: on a locked page every element is locked: not picked, not
+    // in Ctrl+A, not moved.
+    #[test]
+    fn s56_05_a_locked_page_locks_its_elements() {
+        let mut page = page();
+        page.locked = true;
+        assert!(locked(&page, n(2)) && locked(&page, n(3)));
+        assert!(movable(&page, &[n(1), n(2)]).is_empty());
+        let shapes = canvas::shapes(&page);
+        assert_eq!(
+            canvas::hit(&shapes, at(&page), 1.0, egui::Pos2::new(50.0, 50.0)),
+            None
+        );
+        assert!(group::items(&page, None).is_empty());
     }
 
     // S48-04 (D-91): a selection that mixes locked and free elements only

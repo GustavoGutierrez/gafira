@@ -145,6 +145,20 @@ pub trait PageRenderer: Send + Sync {
         req: &PageRenderRequest,
         cancel: &CancelToken,
     ) -> Result<ImageBuf, RenderError>;
+
+    /// The drawing of `page` as its operations, in order, in page px (spec
+    /// 073): what a vector writer (PDF) keeps as vectors and text. `None`
+    /// when this renderer has no such drawing; the writer then draws pixels.
+    ///
+    /// # Errors
+    /// [`RenderError`]; [`RenderError::Cancelled`] when `cancel` fires.
+    fn vectors(
+        &self,
+        _page: gafira_doc::PageId,
+        _cancel: &CancelToken,
+    ) -> Result<Option<Vec<crate::render::RenderOp>>, RenderError> {
+        Ok(None)
+    }
 }
 
 /// The decoded pixels of the image assets an export draws, by asset

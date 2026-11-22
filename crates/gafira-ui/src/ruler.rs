@@ -101,6 +101,17 @@ pub(crate) fn strip(axis: GuideAxis, area: Rect) -> Rect {
     Rect::from_min_size(area.min, size)
 }
 
+/// Whether a guide of `axis` let go at `at` goes back to its ruler: on
+/// the ruler or past it, out of the canvas `area` (above the top ruler for
+/// a horizontal guide, left of the left one for a vertical guide), so an
+/// overshoot deletes it too instead of leaving it off the page.
+pub(crate) fn back_to_ruler(axis: GuideAxis, area: Rect, at: Pos2) -> bool {
+    match axis {
+        GuideAxis::Horizontal => at.y <= area.min.y + RULER,
+        GuideAxis::Vertical => at.x <= area.min.x + RULER,
+    }
+}
+
 /// The page whose row holds `y` (the pages stack vertically), else the
 /// nearest one.
 pub(crate) fn page_at(pages: &[(PageId, Rect)], y: f32) -> Option<PageId> {
@@ -117,13 +128,13 @@ pub(crate) fn page_at(pages: &[(PageId, Rect)], y: f32) -> Option<PageId> {
         .map(|(page, _)| *page)
 }
 
-/// The ruler step in px of page at `zoom`: 1, 2 or 5 times a power of
-/// ten, the smallest at least [`TICK_SPACING`] screen px long.
-fn step(zoom: f64) -> f64 {
-    let least = TICK_SPACING / zoom;
-    let mut decade = 1.0_f64;
-    // At the smallest zoom (5 %) this ends at 2000; the bound keeps a
-    // broken zoom from spinning.
+/// The ruler step in units of the ruler when one unit is `scale` screen
+/// px: 1, 2 or 5 times a power of ten, at least `finest`, the smallest at
+/// least [`TICK_SPACING`] screen px long.
+fn step(scale: f64, finest: f64) -> f64 {
+    let least = TICK_SPACING / scale;
+    let mut decade = finest;
+    // The bound keeps a broken zoom from spinning.
     for _ in 0..32 {
         if let Some(factor) = [1.0, 2.0, 5.0].into_iter().find(|f| f * decade >= least) {
             return factor * decade;
@@ -137,19 +148,34 @@ fn step(zoom: f64) -> f64 {
 /// page)` for each multiple of the step between `from` and `to` (screen
 /// px), with the page's corner at `origin`. The step is 1, 2 or 5 times a
 /// power of ten, the smallest at least [`TICK_SPACING`] apart on screen.
+#[cfg(test)]
 pub(crate) fn ticks(origin: f32, zoom: f32, from: f32, to: f32) -> Vec<(f32, i64)> {
-    let zoom = f64::from(zoom);
-    if !(zoom.is_finite() && zoom > 0.0) {
+    ticks_in(origin, f64::from(zoom), (from, to), 1.0)
+        .into_iter()
+        .map(|(at, value)| (at, value.round() as i64))
+        .collect()
+}
+
+/// The numbered ticks of a ruler that counts in a unit `scale` screen px
+/// long (spec 076: the page's own unit, px, in, mm or cm), steps of at
+/// least `finest` units: `(screen position, value in units)`.
+pub(crate) fn ticks_in(
+    origin: f32,
+    scale: f64,
+    (from, to): (f32, f32),
+    finest: f64,
+) -> Vec<(f32, f64)> {
+    if !(scale.is_finite() && scale > 0.0) {
         return Vec::new();
     }
-    let step = step(zoom);
-    let value = |screen: f32| f64::from(screen - origin) / zoom;
+    let step = step(scale, finest);
+    let value = |screen: f32| f64::from(screen - origin) / scale;
     let first = (value(from) / step).ceil() as i64;
     let last = (value(to) / step).floor() as i64;
     (first..=last)
         .map(|k| {
             let at = k as f64 * step;
-            (origin + (at * zoom) as f32, at as i64)
+            (origin + (at * scale) as f32, at)
         })
         .collect()
 }
@@ -162,20 +188,30 @@ const MINOR_SPACING: f64 = 5.0;
 /// 5 or 2, the most that keeps [`MINOR_SPACING`] between ticks. Each one
 /// with whether it is the middle of its step (drawn longer). None falls on
 /// a numbered tick.
+#[cfg(test)]
 pub(crate) fn minor_ticks(origin: f32, zoom: f32, from: f32, to: f32) -> Vec<(f32, bool)> {
-    let zoom = f64::from(zoom);
-    if !(zoom.is_finite() && zoom > 0.0) {
+    minor_ticks_in(origin, f64::from(zoom), (from, to), 1.0)
+}
+
+/// [`minor_ticks`] of a ruler that counts in a unit `scale` screen px long.
+pub(crate) fn minor_ticks_in(
+    origin: f32,
+    scale: f64,
+    (from, to): (f32, f32),
+    finest: f64,
+) -> Vec<(f32, bool)> {
+    if !(scale.is_finite() && scale > 0.0) {
         return Vec::new();
     }
-    let major = step(zoom);
+    let major = step(scale, finest);
     let Some(parts) = [10_i64, 5, 2]
         .into_iter()
-        .find(|n| major / *n as f64 * zoom >= MINOR_SPACING)
+        .find(|n| major / *n as f64 * scale >= MINOR_SPACING)
     else {
         return Vec::new();
     };
     let minor = major / parts as f64;
-    let value = |screen: f32| f64::from(screen - origin) / zoom;
+    let value = |screen: f32| f64::from(screen - origin) / scale;
     let first = (value(from) / minor).ceil() as i64;
     let last = (value(to) / minor).floor() as i64;
     (first..=last)
@@ -183,9 +219,48 @@ pub(crate) fn minor_ticks(origin: f32, zoom: f32, from: f32, to: f32) -> Vec<(f3
         .map(|k| {
             let at = k as f64 * minor;
             let middle = parts % 2 == 0 && k.rem_euclid(parts) == parts / 2;
-            (origin + (at * zoom) as f32, middle)
+            (origin + (at * scale) as f32, middle)
         })
         .collect()
+}
+
+/// The finest step of a ruler in `unit`: whole px and points, tenths of
+/// the rest (half a millimetre is too fine to read, so mm also steps by
+/// whole units).
+pub(crate) fn finest(unit: Unit) -> f64 {
+    match unit {
+        Unit::Px | Unit::Pt | Unit::Mm => 1.0,
+        Unit::Cm | Unit::In => 0.1,
+    }
+}
+
+/// Where a guide is, in `unit`, for its label while it is dragged: whole
+/// px and points, a tenth of a millimetre, thousandths of an inch or a
+/// centimetre («1.666»).
+pub(crate) fn position_label(value: f64, unit: Unit) -> String {
+    let decimals = match unit {
+        Unit::Px | Unit::Pt => 0,
+        Unit::Mm => 1,
+        Unit::Cm | Unit::In => 3,
+    };
+    let text = format!("{value:.decimals$}");
+    let text = if decimals > 0 {
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    } else {
+        text
+    };
+    if text == "-0" { "0".to_owned() } else { text }
+}
+
+/// A ruler's number: whole, or with the decimals the step needs.
+pub(crate) fn tick_label(value: f64) -> String {
+    let text = format!("{:.2}", value);
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".to_owned()
+    } else {
+        text.to_owned()
+    }
 }
 
 /// The extent of `boxes` along a ruler (S49-04): from the least to the

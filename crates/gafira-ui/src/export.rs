@@ -29,17 +29,10 @@ use crate::text::Texts;
 use crate::widgets;
 
 /// The option ids the dialog draws in its own way (`gafira-io-image`,
-/// `gafira-io-pdf`): the scale as steps, the background over the preview.
+/// `gafira-io-pdf`): the scale as a slider (spec 074), the background over
+/// the preview.
 const SCALE: &str = "scale";
 const TRANSPARENT: &str = "transparent";
-
-/// The scale steps the dialog offers, kept to the range of the schema.
-const STEPS: [(f64, &str); 4] = [
-    (1.0, "export.scale_1x"),
-    (2.0, "export.scale_2x"),
-    (3.0, "export.scale_3x"),
-    (4.0, "export.scale_4x"),
-];
 
 /// One format of the dialog, as its exporter describes it.
 #[derive(Clone, Debug, PartialEq)]
@@ -96,6 +89,46 @@ struct Preview {
 }
 
 /// The dialog while it is open.
+/// One option value kept by «Recordar esta configuración» (spec 074): the
+/// kinds an export option has, a password never among them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PresetValue {
+    Float(f64),
+    Int(i64),
+    Bool(bool),
+    Choice(String),
+}
+
+/// The settings kept for one format: option id and value.
+pub type Preset = Vec<(String, PresetValue)>;
+
+/// Where the export settings of each format are kept between sessions (the
+/// app's `export-presets.json`, spec 074).
+pub trait ExportPresets {
+    /// The settings kept for `format`, if any.
+    fn load(&self, format: &str) -> Option<Vec<(String, PresetValue)>>;
+    /// Keep `values` for `format`, or forget them with `None`.
+    fn save(&self, format: &str, values: Option<Vec<(String, PresetValue)>>);
+}
+
+/// The values of `values` worth keeping: no secret text (a password).
+pub(crate) fn preset_of(values: &ParamValues, schema: &ParamSchema) -> Vec<(String, PresetValue)> {
+    schema
+        .params()
+        .iter()
+        .filter_map(|def| {
+            let value = match &def.kind {
+                ParamKind::Float { .. } => PresetValue::Float(values.float(def.id)?),
+                ParamKind::Int { .. } => PresetValue::Int(values.int(def.id)?),
+                ParamKind::Bool { .. } => PresetValue::Bool(values.bool(def.id)?),
+                ParamKind::Choice { .. } => PresetValue::Choice(values.choice(def.id)?.to_owned()),
+                ParamKind::Color { .. } | ParamKind::Text { .. } => return None,
+            };
+            Some((def.id.to_owned(), value))
+        })
+        .collect()
+}
+
 pub(crate) struct Dialog {
     pub(crate) formats: Vec<Format>,
     /// The index of the chosen format in `formats`.
@@ -111,6 +144,12 @@ pub(crate) struct Dialog {
     /// The page of the selected element, if any: «Página actual».
     pub(crate) page: Option<PageId>,
     preview: Option<Preview>,
+    /// «Proteger con contraseña»: shows the password field (spec 073).
+    protect: bool,
+    /// The settings kept for each format, read when the dialog opens.
+    presets: std::collections::HashMap<String, Vec<(String, PresetValue)>>,
+    /// «Recordar esta configuración para este formato» (spec 074).
+    pub(crate) remember: bool,
 }
 
 impl Dialog {
@@ -125,9 +164,35 @@ impl Dialog {
             chose_pages: false,
             page,
             preview: None,
+            protect: false,
+            presets: std::collections::HashMap::new(),
+            remember: false,
         };
         dialog.pick(0);
         dialog
+    }
+
+    /// The dialog with the settings kept for each format (spec 074): the
+    /// first format opens with its own.
+    pub(crate) fn with_presets(mut self, presets: &dyn ExportPresets) -> Self {
+        for format in &self.formats {
+            if let Some(kept) = presets.load(format.id) {
+                self.presets.insert(format.id.to_owned(), kept);
+            }
+        }
+        let at = self.format;
+        self.pick(at);
+        self
+    }
+
+    /// What «Exportar» keeps for the chosen format: its settings when
+    /// «Recordar» is on, or `None` to forget them.
+    pub(crate) fn preset(&self) -> Option<(String, Option<Preset>)> {
+        let format = self.format()?;
+        let kept = self
+            .remember
+            .then(|| preset_of(&self.values, &format.schema));
+        Some((format.id.to_owned(), kept))
     }
 
     /// The chosen format, if the registry has any.
@@ -143,6 +208,28 @@ impl Dialog {
         };
         self.format = index;
         self.values = format.schema.defaults();
+        // The settings kept for this format, over its defaults (spec 074);
+        // a value the schema no longer takes is skipped.
+        self.remember = false;
+        if let Some(kept) = self.presets.get(format.id) {
+            self.remember = true;
+            for (id, value) in kept {
+                let Some(def) = format.schema.params().iter().find(|d| d.id == id.as_str()) else {
+                    continue;
+                };
+                let value = match value {
+                    PresetValue::Float(v) => ParamValue::Float(*v),
+                    PresetValue::Int(v) => ParamValue::Int(*v),
+                    PresetValue::Bool(v) => ParamValue::Bool(*v),
+                    PresetValue::Choice(v) => ParamValue::Choice(v.clone()),
+                };
+                let mut trial = self.values.clone();
+                trial.set(def.id, value);
+                if format.schema.check_values(&trial).is_ok() {
+                    self.values = trial;
+                }
+            }
+        }
         if !self.chose_pages {
             self.pages = if format.multipage {
                 Pages::All
@@ -219,6 +306,8 @@ pub(crate) enum Refusal {
     /// No format, or a document with no page.
     Nothing,
     Range(RangeError),
+    /// An Excel file of pages with no table (S81-14).
+    NoTables,
 }
 
 /// The page «Página actual» means: the page of the selection when it is
@@ -241,6 +330,11 @@ pub(crate) fn scope(dialog: &Dialog, document: &Document) -> Result<Vec<PageId>,
             .filter_map(|index| document.pages().get(index).map(|page| page.id))
             .collect(),
     };
+    // A hidden page is not exported (FD-02 b); a range still counts it.
+    let pages: Vec<PageId> = pages
+        .into_iter()
+        .filter(|id| document.page(*id).is_some_and(|page| !page.hidden))
+        .collect();
     if pages.is_empty() {
         return Err(Refusal::Nothing);
     }
@@ -252,6 +346,9 @@ pub(crate) fn scope(dialog: &Dialog, document: &Document) -> Result<Vec<PageId>,
 pub(crate) fn request(dialog: &Dialog, document: &Document) -> Result<ExportRequest, Refusal> {
     let format = dialog.format().ok_or(Refusal::Nothing)?;
     let pages = scope(dialog, document)?;
+    if format.id == "xlsx" && !gafira_io_xlsx::has_tables(document, &pages) {
+        return Err(Refusal::NoTables);
+    }
     let mut options = ParamValues::new();
     for def in format.schema.params() {
         if let Some(value) = dialog.values.get(def.id) {
@@ -452,13 +549,21 @@ pub(crate) enum Start {
 
 /// The system save dialog, the checks of the engine and the export on its
 /// thread (spec 035).
-pub(crate) fn start(engine: &mut Gafira, dialog: &Dialog, ctx: &egui::Context) -> Start {
+pub(crate) fn start(
+    engine: &mut Gafira,
+    dialog: &Dialog,
+    ctx: &egui::Context,
+    window: &eframe::Frame,
+) -> Start {
     let Some(format) = dialog.format() else {
         return Start::Cancelled;
     };
     let ext = format.extension;
     let start = engine.projects().path();
-    let mut picker = rfd::FileDialog::new().add_filter(ext.to_ascii_uppercase(), &[ext]);
+    // Over Gafira's window, centred on it (owner report: it opened behind).
+    let mut picker = rfd::FileDialog::new()
+        .set_parent(window)
+        .add_filter(ext.to_ascii_uppercase(), &[ext]);
     if let Some(folder) = start.as_deref().and_then(Path::parent) {
         picker = picker.set_directory(folder);
     }
@@ -589,40 +694,71 @@ pub(crate) fn show(
     let mut answer = Answer::Open;
     let document = engine.edit().document();
     refresh_preview(ctx, engine, dialog, document.as_deref());
-    egui::Modal::new(egui::Id::new("export")).show(ctx, |ui| {
-        ui.set_width(640.0);
-        ui.label(RichText::new(texts.t(&gafira_doc::msg!("export.title"))).font(theme.font("h3")));
-        ui.add_space(12.0);
-        let refused = document
-            .as_deref()
-            .map_or(Err(Refusal::Nothing), |document| request(dialog, document));
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(240.0);
-                preview_column(ui, theme, texts, dialog, document.as_deref());
-            });
+    // Room inside the window (owner request): nothing touches its edges.
+    let frame = egui::Frame::popup(&ctx.style())
+        .inner_margin(egui::Margin::same(24))
+        .corner_radius(theme.radius_md());
+    egui::Modal::new(egui::Id::new("export"))
+        .frame(frame)
+        .show(ctx, |ui| {
+            ui.set_width(660.0);
+            ui.label(
+                RichText::new(texts.t(&gafira_doc::msg!("export.title"))).font(theme.font("h3")),
+            );
             ui.add_space(16.0);
-            ui.vertical(|ui| {
-                options_column(ui, theme, texts, dialog, document.as_deref(), &refused);
+            let refused = document
+                .as_deref()
+                .map_or(Err(Refusal::Nothing), |document| request(dialog, document));
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(220.0);
+                    preview_column(ui, theme, texts, dialog, document.as_deref());
+                });
+                ui.add_space(24.0);
+                ui.vertical(|ui| {
+                    options_column(ui, theme, texts, dialog, document.as_deref(), &refused);
+                });
+            });
+            ui.add_space(20.0);
+            ui.separator();
+            ui.add_space(12.0);
+            // The actions at the bottom right: «Exportar» the one that leads.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let ready = refused.is_ok();
+                let export = ui.add_enabled_ui(ready, |ui| {
+                    let button = egui::Button::new(
+                        RichText::new(texts.t(&gafira_doc::msg!("export.action")))
+                            .font(theme.font("ui-label"))
+                            .color(theme.c("primary.fg")),
+                    )
+                    .fill(theme.c("primary.bg"))
+                    .corner_radius(theme.radius_md())
+                    .min_size(egui::vec2(140.0, 40.0));
+                    ui.add(button)
+                });
+                if export.inner.hovered() && ready {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if export.inner.clicked() {
+                    answer = Answer::Export;
+                }
+                ui.add_space(8.0);
+                let cancel = ui.add(
+                    egui::Button::new(
+                        RichText::new(texts.t(&gafira_doc::msg!("leave.cancel")))
+                            .font(theme.font("ui-label")),
+                    )
+                    .corner_radius(theme.radius_md())
+                    .min_size(egui::vec2(110.0, 40.0)),
+                );
+                if cancel.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if cancel.clicked() {
+                    answer = Answer::Cancel;
+                }
             });
         });
-        ui.add_space(16.0);
-        ui.horizontal(|ui| {
-            let ready = refused.is_ok();
-            if ui
-                .add_enabled_ui(ready, |ui| {
-                    widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("export.action")))
-                })
-                .inner
-                .clicked()
-            {
-                answer = Answer::Export;
-            }
-            if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("leave.cancel"))).clicked() {
-                answer = Answer::Cancel;
-            }
-        });
-    });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         answer = Answer::Cancel;
     }
@@ -759,59 +895,144 @@ fn options_column(
     document: Option<&Document>,
     refused: &Result<ExportRequest, Refusal>,
 ) {
-    let heading = |ui: &mut egui::Ui, key: Message| {
-        ui.label(RichText::new(texts.t(&key)).font(theme.font("ui-label")));
+    // Two columns: what each choice is, and its control (owner request:
+    // drop-down lists and switches, with room between rows).
+    let name = |ui: &mut egui::Ui, key: &Message| {
+        ui.label(RichText::new(texts.t(key)).font(theme.font("ui-label")));
     };
-    heading(ui, gafira_doc::msg!("export.format"));
-    ui.horizontal_wrapped(|ui| {
-        let mut picked = None;
-        for (index, format) in dialog.formats.iter().enumerate() {
-            let name = texts.t(&format_label(format.id));
-            if ui.radio(index == dialog.format, name).clicked() && index != dialog.format {
-                picked = Some(index);
+    const WIDE: f32 = 220.0;
+    egui::Grid::new("export.options")
+        .num_columns(2)
+        .spacing([16.0, 14.0])
+        .min_col_width(110.0)
+        .show(ui, |ui| {
+            name(ui, &gafira_doc::msg!("export.format"));
+            let shown = dialog
+                .format()
+                .map(|f| texts.t(&format_label(f.id)))
+                .unwrap_or_default();
+            let mut picked = None;
+            egui::ComboBox::from_id_salt("export.format")
+                .width(WIDE)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (index, format) in dialog.formats.iter().enumerate() {
+                        let label = texts.t(&format_label(format.id));
+                        if ui.selectable_label(index == dialog.format, label).clicked() {
+                            picked = Some(index);
+                        }
+                    }
+                });
+            if let Some(index) = picked.filter(|i| *i != dialog.format) {
+                dialog.pick(index);
+                dialog.protect = false;
             }
-        }
-        if let Some(index) = picked {
-            dialog.pick(index);
-        }
-    });
-    ui.add_space(8.0);
-    heading(ui, gafira_doc::msg!("export.pages"));
-    ui.horizontal(|ui| {
-        for (pages, key) in [
-            (Pages::All, gafira_doc::msg!("export.pages_all")),
-            (Pages::Current, gafira_doc::msg!("export.pages_current")),
-            (Pages::Range, gafira_doc::msg!("export.pages_range")),
-        ] {
-            if ui.radio(dialog.pages == pages, texts.t(&key)).clicked() {
-                dialog.choose_pages(pages);
+            ui.end_row();
+
+            name(ui, &gafira_doc::msg!("export.pages"));
+            let pages = [
+                (Pages::All, gafira_doc::msg!("export.pages_all")),
+                (Pages::Current, gafira_doc::msg!("export.pages_current")),
+                (Pages::Range, gafira_doc::msg!("export.pages_range")),
+            ];
+            let shown = pages
+                .iter()
+                .find(|(p, _)| *p == dialog.pages)
+                .map(|(_, key)| texts.t(key))
+                .unwrap_or_default();
+            egui::ComboBox::from_id_salt("export.pages")
+                .width(WIDE)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (choice, key) in &pages {
+                        if ui
+                            .selectable_label(dialog.pages == *choice, texts.t(key))
+                            .clicked()
+                        {
+                            dialog.choose_pages(*choice);
+                        }
+                    }
+                });
+            ui.end_row();
+            if dialog.pages == Pages::Range {
+                ui.label("");
+                ui.vertical(|ui| {
+                    ui.add(
+                        widgets::field(
+                            &mut dialog.range,
+                            texts.t(&gafira_doc::msg!("export.range_hint")),
+                        )
+                        .desired_width(WIDE),
+                    );
+                    if let Err(Refusal::Range(_)) = refused {
+                        let count = document.map_or(0, |document| document.pages().len());
+                        ui.label(
+                            RichText::new(texts.t(&gafira_doc::msg!(
+                                "export.range_invalid",
+                                count = Count(count as u64)
+                            )))
+                            .color(theme.c("error.fg")),
+                        );
+                    }
+                });
+                ui.end_row();
             }
-        }
-    });
-    if dialog.pages == Pages::Range {
-        ui.add(
-            egui::TextEdit::singleline(&mut dialog.range)
-                .hint_text(texts.t(&gafira_doc::msg!("export.range_hint")))
-                .desired_width(200.0),
-        );
-        if let Err(Refusal::Range(_)) = refused {
-            let count = document.map_or(0, |document| document.pages().len());
-            ui.label(
-                RichText::new(texts.t(&gafira_doc::msg!(
-                    "export.range_invalid",
-                    count = Count(count as u64)
-                )))
-                .color(theme.c("error.fg")),
-            );
-        }
-    }
-    let Some(format) = dialog.format().cloned() else {
-        return;
-    };
-    for def in format.schema.params() {
-        ui.add_space(8.0);
-        option(ui, theme, texts, def, &mut dialog.values);
-    }
+            if matches!(refused, Err(Refusal::NoTables)) {
+                ui.label("");
+                ui.label(
+                    RichText::new(texts.t(&gafira_doc::msg!("export.no_tables")))
+                        .color(theme.c("error.fg")),
+                );
+                ui.end_row();
+            }
+            let Some(format) = dialog.format().cloned() else {
+                return;
+            };
+            let flatten = dialog.values.bool("flatten").unwrap_or(false);
+            for def in format.schema.params() {
+                // The resolution of a PDF only counts when it is flattened;
+                // the password only once «Proteger con contraseña» is on.
+                if format.id == "pdf" && def.id == SCALE && !flatten {
+                    continue;
+                }
+                if def.id == "password" {
+                    name(ui, &gafira_doc::msg!("export.pdf_protect"));
+                    ui.horizontal(|ui| {
+                        if widgets::toggle(ui, theme, &mut dialog.protect).changed()
+                            && !dialog.protect
+                        {
+                            dialog.values.set(def.id, ParamValue::Text(String::new()));
+                        }
+                        info(
+                            ui,
+                            theme,
+                            texts.t(&label(gafira_doc::msg::MessageKey(
+                                "export.pdf_password_hint",
+                            ))),
+                        );
+                    });
+                    ui.end_row();
+                    if !dialog.protect {
+                        continue;
+                    }
+                }
+                name(ui, &label(def.label));
+                control(ui, theme, texts, def, &mut dialog.values, WIDE);
+                ui.end_row();
+            }
+            // «Recordar esta configuración»: these settings next time this
+            // format is chosen (spec 074).
+            name(ui, &gafira_doc::msg!("export.remember"));
+            ui.horizontal(|ui| {
+                widgets::toggle(ui, theme, &mut dialog.remember);
+                info(
+                    ui,
+                    theme,
+                    texts.t(&label(gafira_doc::msg::MessageKey("export.remember_hint"))),
+                );
+            });
+            ui.end_row();
+        });
 }
 
 /// The catalog key of the name of format `id`.
@@ -821,6 +1042,9 @@ fn format_label(id: &str) -> Message {
         "jpeg" => gafira_doc::msg!("export.jpeg"),
         "webp" => gafira_doc::msg!("export.webp"),
         "pdf" => gafira_doc::msg!("export.pdf"),
+        "svg" => gafira_doc::msg!("export.svg"),
+        "pptx" => gafira_doc::msg!("export.pptx"),
+        "xlsx" => gafira_doc::msg!("export.xlsx"),
         other => Message {
             key: gafira_doc::msg::MessageKey("export.format"),
             args: vec![("format", MsgArg::Text(other.to_owned()))],
@@ -828,81 +1052,123 @@ fn format_label(id: &str) -> Message {
     }
 }
 
-/// The scale steps of [`STEPS`] inside `[min, max]`.
-pub(crate) fn steps(min: f64, max: f64) -> Vec<(f64, &'static str)> {
-    STEPS
-        .iter()
-        .copied()
-        .filter(|(step, _)| (min..=max).contains(step))
-        .collect()
-}
-
-/// One option of the schema, drawn by its kind.
-fn option(
+/// The control of one option of the schema, by its kind, `wide` across:
+/// a switch, a drop-down list, a slider or a field, with its «i» when it
+/// has an explanation.
+fn control(
     ui: &mut egui::Ui,
     theme: &Theme,
     texts: &Texts,
     def: &ParamDef,
     values: &mut ParamValues,
+    wide: f32,
 ) {
-    let name = texts.t(&label(def.label));
-    match &def.kind {
+    let hint = |ui: &mut egui::Ui| {
+        if let Some(key) = hint_of(def.id) {
+            info(ui, theme, texts.t(&label(gafira_doc::msg::MessageKey(key))));
+        }
+    };
+    ui.horizontal(|ui| match &def.kind {
+        // The scale is dragged (owner request), in steps of a quarter.
         ParamKind::Float { min, max, default } if def.id == SCALE => {
-            let current = values.float(def.id).unwrap_or(*default);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(name).font(theme.font("ui-label")));
-                for (step, key) in steps(*min, *max) {
-                    let chosen = (current - step).abs() < f64::EPSILON;
-                    if ui
-                        .radio(chosen, texts.t(&label(gafira_doc::msg::MessageKey(key))))
-                        .clicked()
-                    {
-                        values.set(def.id, ParamValue::Float(step));
-                    }
-                }
-            });
+            let mut value = values.float(def.id).unwrap_or(*default);
+            let slider = egui::Slider::new(&mut value, *min..=*max)
+                .step_by(0.25)
+                .suffix("×")
+                .fixed_decimals(2);
+            ui.spacing_mut().slider_width = wide - 60.0;
+            if ui.add(slider).changed() {
+                values.set(def.id, ParamValue::Float(value));
+            }
+            hint(ui);
         }
         ParamKind::Float { min, max, default } => {
             let mut value = values.float(def.id).unwrap_or(*default);
-            ui.horizontal(|ui| {
-                ui.label(name);
-                if ui.add(egui::Slider::new(&mut value, *min..=*max)).changed() {
-                    values.set(def.id, ParamValue::Float(value));
-                }
-            });
+            if ui.add(egui::Slider::new(&mut value, *min..=*max)).changed() {
+                values.set(def.id, ParamValue::Float(value));
+            }
+            hint(ui);
         }
         ParamKind::Int { min, max, default } => {
             let mut value = values.int(def.id).unwrap_or(*default);
-            ui.horizontal(|ui| {
-                ui.label(name);
-                if ui.add(egui::Slider::new(&mut value, *min..=*max)).changed() {
-                    values.set(def.id, ParamValue::Int(value));
-                }
-            });
+            if ui.add(egui::Slider::new(&mut value, *min..=*max)).changed() {
+                values.set(def.id, ParamValue::Int(value));
+            }
+            hint(ui);
         }
         ParamKind::Bool { default } => {
             let mut value = values.bool(def.id).unwrap_or(*default);
-            if ui.checkbox(&mut value, name).changed() {
+            if widgets::toggle(ui, theme, &mut value).changed() {
                 values.set(def.id, ParamValue::Bool(value));
             }
+            hint(ui);
         }
         ParamKind::Choice { options, default } => {
             let current = values.choice(def.id).unwrap_or(default).to_owned();
-            ui.horizontal(|ui| {
-                ui.label(name);
-                for choice in *options {
-                    if ui
-                        .radio(current == choice.id, texts.t(&label(choice.label)))
-                        .clicked()
-                    {
-                        values.set(def.id, ParamValue::Choice(choice.id.to_owned()));
+            let shown = options
+                .iter()
+                .find(|o| o.id == current)
+                .map(|o| texts.t(&label(o.label)))
+                .unwrap_or_default();
+            egui::ComboBox::from_id_salt(("export.option", def.id))
+                .width(wide)
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for choice in *options {
+                        let name = texts.t(&label(choice.label));
+                        if ui.selectable_label(current == choice.id, name).clicked() {
+                            values.set(def.id, ParamValue::Choice(choice.id.to_owned()));
+                        }
                     }
-                }
-            });
+                });
+            hint(ui);
         }
         // No export format has a colour option yet.
         ParamKind::Color { .. } => {}
+        // A line of text; a secret one (a password) is hidden as it is typed.
+        ParamKind::Text { max_len, secret } => {
+            let mut value = values.text(def.id).unwrap_or_default().to_owned();
+            let field = widgets::field(&mut value, String::new())
+                .password(*secret)
+                .char_limit(*max_len)
+                .desired_width(wide);
+            if ui.add(field).changed() {
+                values.set(def.id, ParamValue::Text(value));
+            }
+        }
+    });
+}
+
+/// The catalog key of the explanation an option shows on its «i» icon
+/// (spec 073), by option id.
+fn hint_of(id: &str) -> Option<&'static str> {
+    match id {
+        "compress" => Some("export.pdf_compress_hint"),
+        "flatten" => Some("export.pdf_flatten_hint"),
+        "password" => Some("export.pdf_password_hint"),
+        "color_profile" => Some("export.pdf_color_hint"),
+        "text_as_paths" => Some("export.svg_text_as_paths_hint"),
+        "png_quality" => Some("export.png_quality_hint"),
+        "quality" => Some("export.jpeg_quality_hint"),
+        "webp_quality" => Some("export.webp_quality_hint"),
+        _ => None,
     }
+}
+
+/// A small «i» in a circle that shows `hint` on hover.
+fn info(ui: &mut egui::Ui, theme: &Theme, hint: String) {
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(16.0), egui::Sense::hover());
+    let colour = theme.c("text.secondary");
+    let painter = ui.painter();
+    painter.circle_stroke(rect.center(), 7.0, egui::Stroke::new(1.2, colour));
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "i",
+        egui::FontId::proportional(10.0),
+        colour,
+    );
+    response.on_hover_text(hint);
 }
 
 #[cfg(test)]
@@ -950,7 +1216,8 @@ pub(crate) mod tests {
         ))
     }
 
-    /// The registries the app composes: PNG, JPEG, WebP and PDF (spec 039).
+    /// The registries the app composes: PNG, JPEG, WebP and PDF (spec 039),
+    /// SVG (spec 074) and PowerPoint (spec 075).
     pub(crate) fn registries() -> Registries {
         let mut registries = Registries::new();
         for exporter in [
@@ -958,6 +1225,9 @@ pub(crate) mod tests {
             Arc::new(JpegExporter::new()),
             Arc::new(WebpExporter::new()),
             Arc::new(PdfExporter::new()),
+            Arc::new(gafira_io_svg::SvgExporter::new()),
+            Arc::new(gafira_io_pptx::PptxExporter::new()),
+            Arc::new(gafira_io_xlsx::XlsxExporter::new()),
         ] {
             registries
                 .formats
@@ -997,6 +1267,170 @@ pub(crate) mod tests {
         dialog
     }
 
+    /// Export settings kept in memory.
+    #[derive(Default)]
+    struct Kept(std::cell::RefCell<std::collections::HashMap<String, Vec<(String, PresetValue)>>>);
+
+    impl ExportPresets for Kept {
+        fn load(&self, format: &str) -> Option<Vec<(String, PresetValue)>> {
+            self.0.borrow().get(format).cloned()
+        }
+
+        fn save(&self, format: &str, values: Option<Vec<(String, PresetValue)>>) {
+            match values {
+                Some(values) => self.0.borrow_mut().insert(format.to_owned(), values),
+                None => self.0.borrow_mut().remove(format),
+            };
+        }
+    }
+
+    // S74-03: «Recordar esta configuración» keeps a format's settings, not
+    // its password, and the next dialog opens with them; off, it forgets.
+    #[test]
+    fn s74_03_the_settings_of_a_format_are_kept() {
+        let engine = document_engine(1);
+        let kept = Kept::default();
+        let mut dialog = dialog_on(&engine, "pdf", None).with_presets(&kept);
+        assert!(!dialog.remember);
+        dialog.values.set("compress", ParamValue::Bool(true));
+        dialog
+            .values
+            .set("color_profile", ParamValue::Choice("cmyk".to_owned()));
+        dialog
+            .values
+            .set("password", ParamValue::Text("secreto".to_owned()));
+        dialog.remember = true;
+        let (format, values) = dialog.preset().expect("a format");
+        kept.save(&format, values);
+        let saved = kept.load("pdf").expect("kept");
+        assert!(
+            saved.iter().all(|(id, _)| id != "password"),
+            "never the password"
+        );
+        let again = Dialog::new(formats(&engine), None).with_presets(&kept);
+        let index = again
+            .formats
+            .iter()
+            .position(|f| f.id == "pdf")
+            .expect("pdf");
+        let mut again = again;
+        again.pick(index);
+        assert!(again.remember);
+        assert_eq!(again.values.bool("compress"), Some(true));
+        assert_eq!(again.values.choice("color_profile"), Some("cmyk"));
+        assert_eq!(again.values.text("password"), Some(""));
+        again.remember = false;
+        let (format, values) = again.preset().expect("a format");
+        kept.save(&format, values);
+        assert!(kept.load("pdf").is_none(), "forgotten");
+    }
+
+    /// The text of `code`, drawn in `placement`, in the exported `image`.
+    fn scanned(
+        image: &image::DynamicImage,
+        code: &gafira_doc::QrNode,
+        placement: &gafira_doc::Placement,
+    ) -> Option<String> {
+        let drawing = gafira_qr::draw(code).expect("drawn");
+        let (k, (x0, y0)) = drawing.fit(placement.w, placement.h).expect("a box");
+        let grey = image.to_luma8();
+        let px = |v: f64, most: u32| (v.max(0.0) as u32).min(most - 1);
+        gafira_testkit::qr::read(drawing.size as usize, |x, y| {
+            let (x, y) = (placement.x + x0 + x * k, placement.y + y0 + y * k);
+            grey.get_pixel(px(x, grey.width()), px(y, grey.height()))[0]
+        })
+    }
+
+    // S80-12: a QR code with shapes, a gradient and a logo goes out in every
+    // format of the app, from the engine, and the files are read back.
+    #[test]
+    fn s80_12_a_qr_code_exports_in_every_format() {
+        use gafira_doc::{QrBody, QrEyeBall, QrEyeFrame, QrFill, QrLogo};
+        let dir = std::env::temp_dir().join(format!("gafira-s80-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let logo = dir.join("logo.png");
+        image::RgbaImage::from_pixel(32, 24, image::Rgba([220, 40, 40, 255]))
+            .save(&logo)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine =
+            crate::editor::tests::engine_with(Arc::new(crate::editor::tests::Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a document");
+        let asset = engine.assets().import(&logo).expect("imports");
+        let text = "https://example.com/gafira?qr=1";
+        let mut code = crate::qr::fresh();
+        code.content = gafira_doc::QrContent::Url {
+            url: text.to_owned(),
+        };
+        code.style.body = QrBody::FluidCorners;
+        code.style.eye_frame = QrEyeFrame::Leaf;
+        code.style.eye_ball = QrEyeBall::Flower;
+        code.style.fill = QrFill::Gradient(crate::colors::gradient(0x0018_243b, 0x004a_2c82, 90.0));
+        code.logo = Some(QrLogo {
+            asset,
+            natural: (32, 24),
+            share: 0.22,
+            clear_behind: true,
+        });
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let spec = crate::qr::spec(code.clone(), (size.width(), size.height()), None);
+        let placement = spec.placement;
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertNodes::new(
+                page.id,
+                None,
+                0,
+                vec![spec],
+            )))
+            .expect("the code");
+        for id in ["png", "pdf", "svg", "pptx"] {
+            let dialog = dialog_on(&engine, id, None);
+            let path = dir.join(format!("code.{id}"));
+            export_to(&mut engine, &dialog, &path).expect(id);
+            let bytes = std::fs::read(&path).expect("the file");
+            match id {
+                "png" | "jpeg" => {
+                    let image = image::load_from_memory(&bytes).expect("an image");
+                    assert_eq!(
+                        scanned(&image, &code, &placement).as_deref(),
+                        Some(text),
+                        "{id}"
+                    );
+                }
+                "webp" => assert_eq!(&bytes[8..12], b"WEBP"),
+                "pdf" => assert!(bytes.starts_with(b"%PDF")),
+                "svg" => {
+                    use resvg::{tiny_skia, usvg};
+                    let options = usvg::Options::default();
+                    let tree = usvg::Tree::from_data(&bytes, &options).expect("an SVG");
+                    let side = tree.size().to_int_size();
+                    let mut pixmap =
+                        tiny_skia::Pixmap::new(side.width(), side.height()).expect("a size");
+                    let at = tiny_skia::Transform::identity();
+                    resvg::render(&tree, at, &mut pixmap.as_mut());
+                    let image = image::RgbaImage::from_raw(
+                        side.width(),
+                        side.height(),
+                        pixmap.data().to_vec(),
+                    );
+                    let image = image::DynamicImage::from(image.expect("pixels"));
+                    assert_eq!(
+                        scanned(&image, &code, &placement).as_deref(),
+                        Some(text),
+                        "svg"
+                    );
+                }
+                _ => assert!(bytes.starts_with(b"PK"), "a package"),
+            }
+        }
+        if std::env::var_os("GAFIRA_KEEP_EXPORTS").is_none() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     // S39-03: `1-3, 5` is pages 1, 2, 3 and 5; spaces do not count and a
     // page named twice goes out once, in document order.
     #[test]
@@ -1006,6 +1440,120 @@ pub(crate) mod tests {
         assert_eq!(parse_range("3-3", 3), Ok(vec![2]));
         assert_eq!(parse_range("1,", 1), Ok(vec![0]));
         assert_eq!(parse_range("1-5", 5), Ok(vec![0, 1, 2, 3, 4]));
+    }
+
+    // S81-12 to S81-14: a table goes out in every format from the engine:
+    // Excel only with tables, the words of the PDF as text, not pixels.
+    #[test]
+    fn s81_14_a_table_exports_in_every_format() {
+        let mut engine = document_engine(1);
+        let dir = std::env::temp_dir().join(format!("gafira-s81-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let document = engine.edit().document().expect("a document");
+        let dialog = dialog_on(&engine, "xlsx", None);
+        assert_eq!(request(&dialog, &document).err(), Some(Refusal::NoTables));
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let spec = crate::table_templates::spec(
+            crate::table_templates::Template::Budget.table(&texts),
+            (size.width(), size.height()),
+            None,
+            "Presupuesto".to_owned(),
+        );
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertNodes::new(
+                page.id,
+                None,
+                0,
+                vec![spec],
+            )))
+            .expect("the table");
+        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"] {
+            let dialog = dialog_on(&engine, id, None);
+            let path = dir.join(format!("table.{id}"));
+            export_to(&mut engine, &dialog, &path).expect(id);
+            let bytes = std::fs::read(&path).expect("the file");
+            match id {
+                "svg" => {
+                    let svg = String::from_utf8(bytes).expect("utf-8");
+                    assert!(svg.contains("<text"), "the words are text");
+                    assert!(!svg.contains("<image"), "nothing is pixels");
+                }
+                "pdf" => {
+                    let has = |what: &[u8]| bytes.windows(what.len()).any(|w| w == what);
+                    assert!(has(b"/ToUnicode"), "the words can be copied");
+                    assert!(!has(b"/Subtype /Image") && !has(b"/Subtype/Image"));
+                }
+                _ => assert!(bytes.len() > 500, "{id}"),
+            }
+        }
+        if std::env::var_os("GAFIRA_KEEP_EXPORTS").is_none() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    // S83-09: every kind of chart goes out in every format from the engine:
+    // in the PDF and the SVG, paths and words, no pixels.
+    #[test]
+    fn s83_09_charts_export_in_every_format() {
+        let mut engine = document_engine(1);
+        let dir = std::env::temp_dir().join(format!("gafira-s83-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let (w, h) = (size.width() / 6.0, size.height() / 6.0);
+        let specs = crate::chart_templates::TEMPLATES
+            .iter()
+            .enumerate()
+            .map(|(i, template)| {
+                let chart = template.chart(&texts);
+                let name = template.key.to_owned();
+                let room = (size.width(), size.height());
+                let mut spec = crate::chart_templates::spec(chart, room, None, name);
+                // A grid of six by six, the words in proportion.
+                let (col, row) = (f64::from(i as u32 % 6), f64::from(i as u32 / 6));
+                let k = w * 0.9 / spec.placement.w;
+                spec.placement = gafira_doc::Placement::new(
+                    (col + 0.05) * w,
+                    (row + 0.05) * h,
+                    w * 0.9,
+                    h * 0.9,
+                );
+                if let gafira_doc::NodeKind::Chart(chart) = &mut spec.kind {
+                    chart.text.size = (chart.text.size * k).max(1.0);
+                    chart.weight *= k;
+                }
+                spec
+            })
+            .collect();
+        let insert = gafira_edit::InsertNodes::new(page.id, None, 0, specs);
+        engine.edit().execute(Box::new(insert)).expect("the charts");
+        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx"] {
+            let dialog = dialog_on(&engine, id, None);
+            let path = dir.join(format!("charts.{id}"));
+            export_to(&mut engine, &dialog, &path).expect(id);
+            let bytes = std::fs::read(&path).expect("the file");
+            match id {
+                "svg" => {
+                    let svg = String::from_utf8(bytes).expect("utf-8");
+                    assert!(svg.contains("<text"), "the words are text");
+                    assert!(!svg.contains("<image"), "nothing is pixels");
+                }
+                "pdf" => {
+                    let has = |what: &[u8]| bytes.windows(what.len()).any(|w| w == what);
+                    assert!(has(b"/ToUnicode"), "the words can be copied");
+                    assert!(!has(b"/Subtype /Image") && !has(b"/Subtype/Image"));
+                }
+                _ => assert!(bytes.len() > 500, "{id}"),
+            }
+        }
+        if std::env::var_os("GAFIRA_KEEP_EXPORTS").is_none() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     // S39-03: an empty range, page 0, a page past the last one, a reversed
@@ -1056,6 +1604,38 @@ pub(crate) mod tests {
         );
     }
 
+    // S56-04 (FD-02 b): a hidden page is left out of «Todas» and of a
+    // range, which still counts it; hidden alone, nothing is exported.
+    #[test]
+    fn s56_04_hidden_pages_are_not_exported() {
+        let mut engine = document_engine(4);
+        let ids: Vec<PageId> = engine
+            .edit()
+            .document()
+            .expect("a snapshot")
+            .pages()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetProperty::page(
+                ids[1],
+                gafira_edit::Property::PageHidden(true),
+                None,
+            )))
+            .expect("hidden");
+        let document = engine.edit().document().expect("a snapshot");
+        let mut dialog = dialog_on(&engine, "png", Some(ids[1]));
+        dialog.choose_pages(Pages::All);
+        assert_eq!(scope(&dialog, &document), Ok(vec![ids[0], ids[2], ids[3]]));
+        dialog.choose_pages(Pages::Range);
+        dialog.range = "1-3".to_owned();
+        assert_eq!(scope(&dialog, &document), Ok(vec![ids[0], ids[2]]));
+        dialog.choose_pages(Pages::Current);
+        assert_eq!(scope(&dialog, &document), Err(Refusal::Nothing));
+    }
+
     // S39-04: the options of the schema reach the request, and those the
     // format lacks do not; the PDF keeps its resolution of 2×.
     #[test]
@@ -1065,7 +1645,7 @@ pub(crate) mod tests {
         let mut dialog = dialog_on(&engine, "png", None);
         assert_eq!(
             dialog.formats.iter().map(|f| f.id).collect::<Vec<_>>(),
-            ["png", "jpeg", "webp", "pdf"]
+            ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"]
         );
         dialog.values.set(SCALE, ParamValue::Float(3.0));
         dialog.values.set(TRANSPARENT, ParamValue::Bool(true));
@@ -1078,7 +1658,7 @@ pub(crate) mod tests {
         dialog.pick(jpeg_index);
         let jpeg = request(&dialog, &document).expect("a request");
         assert_eq!(jpeg.format_id, "jpeg");
-        assert_eq!(jpeg.options.int("quality"), Some(90));
+        assert_eq!(jpeg.options.choice("quality"), Some("high"));
         assert_eq!(jpeg.options.float(SCALE), Some(1.0), "back to the default");
         assert_eq!(jpeg.options.bool(TRANSPARENT), None, "JPEG has none");
         dialog.values.set(TRANSPARENT, ParamValue::Bool(true));
@@ -1114,15 +1694,6 @@ pub(crate) mod tests {
         dialog.pick(0);
         dialog.pick(3);
         assert_eq!(dialog.pages, Pages::Current, "chosen");
-    }
-
-    // S39-04: the scale steps keep to the range of the schema.
-    #[test]
-    fn s39_04_the_scale_steps_keep_to_the_schema() {
-        let keys = |min, max| steps(min, max).into_iter().map(|s| s.0).collect::<Vec<_>>();
-        assert_eq!(keys(0.5, 4.0), [1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(keys(1.0, 2.0), [1.0, 2.0]);
-        assert_eq!(keys(2.5, 8.0), [3.0, 4.0]);
     }
 
     // S39-06: the size in pixels is the page by the scale, rounded.

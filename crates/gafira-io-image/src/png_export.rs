@@ -2,7 +2,8 @@
 
 use std::io;
 
-use gafira_doc::contract::{ParamSchema, ParamValues};
+use gafira_doc::contract::{ParamChoice, ParamDef, ParamKind, ParamSchema, ParamValues};
+use gafira_doc::msg::MessageKey;
 use gafira_ports::common::LegalClass;
 use gafira_ports::export::ExportError;
 use gafira_ports::format::{ByteSignature, FormatDescriptor, FormatKind};
@@ -38,12 +39,40 @@ impl PngExporter {
     pub fn new() -> Self {
         Self(Raster {
             format: &PNG_FORMAT,
-            schema: ParamSchema::new(vec![scale_param(), transparent_param()]),
+            schema: ParamSchema::new(vec![
+                scale_param(),
+                ParamDef {
+                    id: PNG_QUALITY,
+                    label: MessageKey("export.quality"),
+                    kind: ParamKind::Choice {
+                        options: PNG_QUALITIES,
+                        default: "high",
+                    },
+                    animatable: false,
+                },
+                transparent_param(),
+            ]),
             transparency: true,
             encode,
         })
     }
 }
+
+/// The option id of the PNG quality (spec 074): «Alta» or «Comprimir».
+pub const PNG_QUALITY: &str = "png_quality";
+
+/// The PNG qualities: both lossless; «Comprimir» spends more time for a
+/// smaller file.
+const PNG_QUALITIES: &[ParamChoice] = &[
+    ParamChoice {
+        id: "high",
+        label: MessageKey("export.quality_high"),
+    },
+    ParamChoice {
+        id: "compress",
+        label: MessageKey("export.quality_compress"),
+    },
+];
 
 delegate_exporter!(PngExporter);
 
@@ -53,10 +82,16 @@ fn encode(
     width: u32,
     height: u32,
     pixels: Vec<u8>,
-    _options: &ParamValues,
+    options: &ParamValues,
 ) -> Result<Vec<u8>, ExportError> {
     let mut out = Vec::new();
     let mut encoder = png::Encoder::new(&mut out, width, height);
+    // «Comprimir»: the strongest lossless compression (spec 074).
+    if options.choice(PNG_QUALITY) == Some("compress") {
+        encoder.set_compression(png::Compression::High);
+    } else {
+        encoder.set_compression(png::Compression::Fast);
+    }
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);

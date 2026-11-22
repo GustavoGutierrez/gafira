@@ -12,7 +12,7 @@ use gafira_doc::{
     ImageNode, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
 };
 use gafira_geom::{Length, Unit};
-use gafira_io_pdf::{FILE_NAME, PdfExporter, SCALE, page_points};
+use gafira_io_pdf::{COLOR_PROFILE, FILE_NAME, FLATTEN, PASSWORD, PdfExporter, SCALE, page_points};
 use gafira_ports::common::UnixTime;
 use gafira_ports::export::{
     ExportError, ExportJob, ExportReport, ExportRequest, ExportScope, ExportSink, Exporter,
@@ -100,6 +100,10 @@ fn page(id: u64, width: f64, height: f64, square: Option<u64>) -> Arc<Page> {
             fill: Some(Color::Srgb(Rgba::new(0.0, 0.5, 1.0, 0.5))),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes.insert(id, Arc::new(Node::new(base, kind)));
         page.roots.push(id);
@@ -143,7 +147,7 @@ fn export_with(
     let renderers = GraphPageRenderers::new(
         Box::new(|| Box::new(CpuBackend::new())),
         Arc::new(FixedClock),
-        Arc::new(FontBook::new()),
+        Arc::new(FontBook::new().with("Inter", gafira_testkit::fonts::INTER.bytes)),
     );
     let pages = renderers.for_document(document, images);
     let job = ExportJob {
@@ -220,7 +224,7 @@ fn s30_04_what_blocks_the_export_writes_nothing() {
 fn s32_06_a_page_with_an_image_exports_as_one_pdf_page() {
     let photo = AssetRef::new(ContentHash([7; 32]));
     let base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 40.0, 20.0));
-    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode { asset: photo })));
+    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode::new(photo))));
     let mut page = Arc::unwrap_or_clone(page(1, 100.0, 50.0, None));
     page.roots.push(image.base.id);
     page.nodes.insert(image.base.id, image);
@@ -244,4 +248,97 @@ fn s32_06_a_page_with_an_image_exports_as_one_pdf_page() {
     let pdf = hayro_syntax::Pdf::new(bytes).expect("a reader parses the PDF");
     let sizes: Vec<(f32, f32)> = pdf.pages().iter().map(|p| p.base_dimensions()).collect();
     assert_eq!(sizes, [(75.0, 37.5)]);
+}
+
+/// A page with a shape and the words «Hola mundo» in Inter.
+fn text_document() -> Document {
+    let mut page = (*page(1, 300.0, 120.0, Some(3))).clone();
+    let style = gafira_doc::SpanStyle {
+        font: "Inter".to_owned(),
+        size: 32.0,
+        color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
+        bold: false,
+        italic: false,
+    };
+    let id = NodeId::new(4);
+    let base = ElementBase::new(id, Placement::new(10.0, 40.0, 280.0, 60.0));
+    let kind = NodeKind::Text(gafira_doc::TextNode::plain("Hola mundo", &style));
+    page.nodes.insert(id, Arc::new(Node::new(base, kind)));
+    page.roots.push(id);
+    Document::from_parts(5, Dpi::default(), vec![Arc::new(page)]).expect("valid")
+}
+
+/// The PDF of `document` with `options` set on top of the defaults.
+fn pdf_of(document: &Document, options: &[(&'static str, ParamValue)]) -> Vec<u8> {
+    let mut request = request(&[1], 2.0);
+    for (id, value) in options {
+        request.options.set(*id, value.clone());
+    }
+    let mut sink = MemSink::default();
+    export(document, &request, &mut sink).expect("the export");
+    sink.files[0].1.lock().unwrap().get_ref().clone()
+}
+
+fn holds(bytes: &[u8], what: &[u8]) -> bool {
+    bytes.windows(what.len()).any(|w| w == what)
+}
+
+// S73-01: by default the text is real text, its font embedded, with the
+// map back to its letters; the shapes are vectors, no page image.
+#[test]
+fn s73_01_text_stays_text() {
+    let bytes = pdf_of(&text_document(), &[]);
+    assert!(holds(&bytes, b"/FontFile2"), "the font is embedded");
+    assert!(holds(&bytes, b"/ToUnicode"), "the text can be read back");
+    assert!(hayro_syntax::Pdf::new(bytes).is_ok());
+}
+
+// S73-02: «Aplanar» draws the page as one image, with no font.
+#[test]
+fn s73_02_flatten_draws_pixels() {
+    let bytes = pdf_of(&text_document(), &[(FLATTEN, ParamValue::Bool(true))]);
+    assert!(!holds(&bytes, b"/FontFile2"));
+    assert!(holds(&bytes, b"/Image"));
+}
+
+// S73-03: a password encrypts the PDF: it does not open without it, and
+// opens with it.
+#[test]
+fn s73_03_a_password_protects_the_pdf() {
+    let bytes = pdf_of(
+        &text_document(),
+        &[(PASSWORD, ParamValue::Text("clave-123".to_owned()))],
+    );
+    assert!(holds(&bytes, b"/Encrypt"));
+    let with = |password: &str| {
+        lopdf::Document::load_mem_with_options(&bytes, lopdf::LoadOptions::with_password(password))
+    };
+    let opened = with("clave-123");
+    assert!(opened.is_ok(), "opens with its password");
+    let wrong = with("otra");
+    assert!(wrong.is_err(), "not with another");
+}
+
+// S73-04: CMYK writes its colours in the CMYK space.
+#[test]
+fn s73_04_cmyk_colours() {
+    let rgb = pdf_of(&text_document(), &[]);
+    let cmyk = pdf_of(
+        &text_document(),
+        &[(COLOR_PROFILE, ParamValue::Choice("cmyk".to_owned()))],
+    );
+    // The page's drawing, decompressed: CMYK fills (` k`) and no RGB ones
+    // (` rg`) in CMYK; the other way round in RGB.
+    let content = |bytes: &[u8]| {
+        let document = lopdf::Document::load_mem(bytes).expect("reads");
+        let page = *document.get_pages().values().next().expect("a page");
+        document.get_page_content(page)
+    };
+    let (rgb, cmyk) = (content(&rgb), content(&cmyk));
+    assert!(holds(&cmyk, b" k\n") || holds(&cmyk, b" k "), "CMYK fills");
+    assert!(
+        !holds(&cmyk, b" rg\n") && !holds(&cmyk, b" rg "),
+        "no RGB fill"
+    );
+    assert!(holds(&rgb, b" rg\n") || holds(&rgb, b" rg "), "RGB fills");
 }

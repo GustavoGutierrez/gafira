@@ -125,6 +125,10 @@ fn square_document() -> Document {
             fill: Some(RED),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         }),
     );
     Document::from_parts(3, Dpi::default(), vec![page(1, 100.0, 50.0, vec![square])])
@@ -233,6 +237,8 @@ fn s30_01_a_text_paints_inside_its_box_and_nowhere_else() {
         font: "Inter".to_owned(),
         size: 24.0,
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        bold: false,
+        italic: false,
     };
     let text = node(
         2,
@@ -334,7 +340,7 @@ const PHOTO: AssetRef = AssetRef::new(ContentHash([7; 32]));
 fn image_document(opacity: f32) -> Document {
     let mut base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 40.0, 20.0));
     base.opacity = opacity;
-    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode { asset: PHOTO })));
+    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode::new(PHOTO))));
     let mut assets = AssetTable::new();
     assets.insert(
         PHOTO,

@@ -72,8 +72,32 @@ pub enum RenderOp {
         color: Color,
         transform: Affine,
     },
+    /// A path filled with a gradient laid in a box of `size` (w, h), the
+    /// local box `transform` maps to the page (spec 063).
+    FillGradient {
+        path: Arc<BezPath>,
+        gradient: Arc<gafira_doc::Gradient>,
+        size: (f64, f64),
+        transform: Affine,
+    },
     DrawImage {
         image: Arc<ImageBuf>,
+        transform: Affine,
+    },
+    /// Text (spec 073): its outline, which a raster backend fills like a
+    /// path, and its glyphs with the fonts they come from and their words,
+    /// which a vector writer (PDF) keeps as real text.
+    Text {
+        path: Arc<BezPath>,
+        color: Color,
+        transform: Affine,
+        runs: Arc<Vec<GlyphRun>>,
+    },
+    /// Cuts the open layer to `path`, which `transform` lays on the page:
+    /// each pixel keeps its share covered by the path, nothing outside it
+    /// (spec 066: the photo of a frame cut out by its shape).
+    ClipPath {
+        path: Arc<BezPath>,
         transform: Affine,
     },
     ApplyMask {
@@ -89,6 +113,29 @@ pub enum RenderOp {
         params: ParamValues,
         progress: f32,
     },
+}
+
+/// Glyphs of one font on one line (spec 073), in the text's own box: the
+/// font's bytes and face index, its size in px, the glyphs and the words
+/// they draw.
+#[derive(Clone, Debug)]
+pub struct GlyphRun {
+    pub font: Arc<[u8]>,
+    pub index: u32,
+    pub size: f32,
+    /// Every glyph: its id, where its origin is (x right, y down on the
+    /// baseline) and the bytes of `text` it draws.
+    pub glyphs: Vec<RunGlyph>,
+    pub text: Arc<str>,
+}
+
+/// One glyph of a [`GlyphRun`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunGlyph {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub text: std::ops::Range<usize>,
 }
 
 /// The work for one tile.

@@ -166,6 +166,12 @@ impl KeyParam {
         }
     }
 
+    /// The bytes [`Self::write`] gives, for the tests of other modules.
+    #[cfg(test)]
+    pub(crate) fn write_for_test(&self, out: &mut Vec<u8>) {
+        self.write(out);
+    }
+
     /// The bytes of the value of this parameter: its tag and its payload.
     fn write(&self, out: &mut Vec<u8>) {
         out.push(self.tag());
@@ -174,10 +180,29 @@ impl KeyParam {
                 RenderQuality::Preview => 0,
                 RenderQuality::Export => 1,
             }),
-            Self::Geometry(geometry) => out.push(match geometry {
-                ShapeGeometry::Rect => 0,
-                ShapeGeometry::Ellipse => 1,
-            }),
+            Self::Geometry(geometry) => match geometry {
+                ShapeGeometry::Rect => out.push(0),
+                ShapeGeometry::Ellipse => out.push(1),
+                // A path writes each order's tag and its points; the tag
+                // fixes how many points follow (spec 054).
+                ShapeGeometry::Path(path) => {
+                    out.push(2);
+                    for command in &path.commands {
+                        let tag = match command {
+                            gafira_doc::PathCommand::MoveTo(_) => 0,
+                            gafira_doc::PathCommand::LineTo(_) => 1,
+                            gafira_doc::PathCommand::QuadTo(..) => 2,
+                            gafira_doc::PathCommand::CubicTo(..) => 3,
+                            gafira_doc::PathCommand::Close => 4,
+                        };
+                        out.push(tag);
+                        for [x, y] in command.points() {
+                            out.extend_from_slice(&f64_bytes(x));
+                            out.extend_from_slice(&f64_bytes(y));
+                        }
+                    }
+                }
+            },
             Self::Fill(color) => match color {
                 None => out.push(0),
                 Some(color) => {

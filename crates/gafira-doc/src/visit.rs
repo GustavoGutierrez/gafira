@@ -186,6 +186,31 @@ pub trait NodeVisitor {
         self.visit_node(n)
     }
 
+    /// Receives a line (spec 058).
+    fn visit_line(&mut self, n: &Node, _l: &crate::LineNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
+    /// Receives a frame (spec 066).
+    fn visit_frame(&mut self, n: &Node, _f: &crate::FrameNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
+    /// Receives a QR code (spec 080).
+    fn visit_qr(&mut self, n: &Node, _q: &crate::QrNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
+    /// Receives a table (spec 081).
+    fn visit_table(&mut self, n: &Node, _t: &crate::TableNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
+    /// Receives a chart (spec 083).
+    fn visit_chart(&mut self, n: &Node, _c: &crate::ChartNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
     /// Receives an extension node.
     fn visit_extension(&mut self, n: &Node, _e: &ExtensionNode) -> Self::Out {
         self.visit_node(n)
@@ -259,6 +284,11 @@ fn dispatch<V: NodeVisitor>(v: &mut V, node: &Node) -> V::Out {
         NodeKind::Shape(s) => v.visit_shape(node, s),
         NodeKind::Text(t) => v.visit_text(node, t),
         NodeKind::Image(i) => v.visit_image(node, i),
+        NodeKind::Line(l) => v.visit_line(node, l),
+        NodeKind::Frame(f) => v.visit_frame(node, f),
+        NodeKind::Qr(q) => v.visit_qr(node, q),
+        NodeKind::Table(t) => v.visit_table(node, t),
+        NodeKind::Chart(c) => v.visit_chart(node, c),
         NodeKind::Extension(e) => v.visit_extension(node, e),
     }
 }

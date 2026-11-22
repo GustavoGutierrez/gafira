@@ -816,6 +816,7 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo: el clic pasa a lo que está debajo, y el marco y `Ctrl/Cmd+A` lo saltan. Se selecciona solo desde Capas. Seleccionado así, no muestra tiradores ni asa de giro y no se mueve con arrastre ni con flechas; girar, voltear, alinear (D-29) y eliminar desde los menús siguen actuando sobre él.
 - **Consecuencia**: un fondo bloqueado deja de tapar los clics sobre la página. Se aplica en la spec 048.
 - Precisa 04 FD-13. Aplicado a 04 (FD-13).
+- **Sustituida en parte** por D-110: un clic sí elige lo bloqueado.
 
 ## D-92 Lo que sobresale de una página se recorta en el lienzo
 
@@ -840,3 +841,164 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): la pestaña del riel y la biblioteca de elementos que el glosario llama «Piezas» se llama «Formas» («Shapes» en inglés).
 - **Consecuencia**: cambia el nombre normativo de D-04 en el glosario de 03 (§2.1 y §2.8). Las demás menciones a «Piezas» en 03 y 04 se leen como «Formas»; se actualizan cuando se edite cada sección. Se aplica en la spec 052.
 - Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
+
+## D-95 Las formas nuevas son trazados vectoriales en el documento
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): los polígonos, estrellas, flechas, nubes, corazones y demás formas de la biblioteca se guardan como una geometría nueva de trazado vectorial (`ShapeGeometry::Path`), que se rellena, se contornea, se escala y se gira como un rectángulo o una elipse. Se descartaron las formas paramétricas (solo cubren polígonos y estrellas) y las imágenes SVG (no se les puede cambiar color ni contorno).
+- **Consecuencia**: cambio aditivo del esquema 1 del documento: los `.gaf` existentes se abren igual y un documento sin trazados escribe el mismo JSON, pero una versión anterior de Gafira no abre un archivo que use trazados. Se aplica en la spec 054.
+
+## D-96 Las formas pueden llevar texto, y el texto se escribe en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura de referencia): toda forma puede llevar un texto dentro o quedar vacía; el texto se alinea a la izquierda, al centro o a la derecha y arriba, al medio o abajo (por defecto, centrado y al medio). Todo texto, el de un elemento de texto y el de una forma, se escribe directamente en el lienzo con un doble clic, sin ir al panel. La negrita y la cursiva vienen en una spec posterior.
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.text`, escrito solo cuando existe): una forma sin texto conserva sus bytes; una versión anterior de Gafira no abre un archivo con texto en una forma. Se aplica en la spec 055.
+
+## D-97 «Identidad» pasa a llamarse «Marca»
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): la pestaña del riel y el concepto que el glosario llama «Identidad» e «Identidad visual» se llaman «Marca» («Brand» en inglés), un nombre más reconocible.
+- **Consecuencia**: cambia los nombres normativos de D-04 en el glosario de 03 (§2.1 y §2.8). Las claves internas y los ids de requisitos no cambian; las demás menciones se leen como «Marca» y se actualizan al editar cada sección. Se aplica en la spec 057.
+- Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
+
+## D-98 Las líneas son un elemento propio que se conecta a las formas
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): una línea es un tipo nuevo de elemento con dos extremos, una punta por extremo, color y grosor. Cada extremo puede quedar conectado a una forma en uno de cinco puntos (arriba, derecha, abajo, izquierda y centro); su posición se calcula desde la forma al dibujar y al exportar, así que la línea la sigue sin despegarse. Al arrastrar un extremo cerca de una forma se ven sus puntos y el extremo se engancha como un imán. Se descartó guardar la línea como un trazado con puntas (obliga a reescribir cada línea al mover una forma).
+- **Consecuencia**: cambio aditivo del esquema 1 (`NodeKind::Line`); una versión anterior de Gafira no abre un archivo con líneas. Una conexión a una forma borrada no invalida el documento: el extremo vuelve a su punto guardado. Se aplica en la spec 058.
+
+## D-99 Las guías son comunes a todas las páginas
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): las guías no son de cada página sino del documento: una guía creada, movida o borrada en una página aparece, se mueve o se borra en todas, en las mismas posiciones.
+- **Consecuencia**: sustituye «Las guías son por página» de FD-03. Sin cambio de formato: cada página sigue guardando `Page.guides` y la interfaz las mantiene iguales en todas (un cambio se escribe en todas en un paso de deshacer; una página nueva nace con las de la primera). Se aplica en la spec 060.
+- Precisa 04 FD-03. Aplicado a 04 (FD-03).
+
+## D-100 Biblioteca de fuentes incrustadas, con negrita y cursiva
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): Gafira incrusta una selección curada de familias de licencia libre (SIL OFL) con normal, negrita, cursiva y negrita cursiva donde existan, y un texto puede cambiar de fuente desde un panel «Fuente». Se descartaron una selección mínima y las fuentes del sistema (un diseño abierto en otro equipo cambiaría de fuente).
+- **Consecuencia**: el estilo de un tramo gana `bold` e `italic` (cambio aditivo del esquema 1: un texto sin ellos conserva sus bytes; una versión anterior no abre un archivo que los use). Playfair Display y Merriweather se cambian por EB Garamond y Source Serif 4 por sus nombres reservados. La app crece unos 12 MB. Se aplica en la spec 062.
+
+## D-101 El relleno de una forma puede ser un degradado
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): el relleno de una forma es un color sólido o un degradado de dos o más colores, lineal en cualquier dirección o circular, elegido en el Inspector con las pestañas «Color sólido» y «Degradado».
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.gradient`, que rellena en lugar de `fill` cuando existe): una forma sin degradado conserva sus bytes; una versión anterior no abre un archivo con degradados. El contrato del render gana `RenderOp::FillGradient`. Se aplica en la spec 063.
+
+## D-102 «Formas» pasa a llamarse «Elementos», con categorías
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): la pestaña del riel que el glosario llama «Formas» se llama «Elementos» («Elements» en inglés). Su panel muestra una cuadrícula de categorías (las de 03 §2.3: Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones); al pulsar una se entra en ella, con una flecha junto al título para volver. Volver a pulsar la pestaña activa del riel oculta el panel lateral, en todas las pestañas. Las tarjetas de categoría siguen la guía de marca: iconos de trazo simple en grafito sobre tarjetas claras apiladas (03 §13, P1); se descartaron iconos a color.
+- **Consecuencia**: cambia el nombre normativo de D-94 en el glosario de 03 (§2.3 y §2.8); «Formas» queda como categoría dentro de Elementos. Las claves internas no cambian. Se aplica en la spec 064.
+- Precisa D-94 y 03 §2.3, §2.8, §13. Aplicado a 03 (glosario).
+
+## D-103 «Luces y efectos»: Brillo y Destello de lente
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con una imagen de referencia): Elementos gana la categoría «Luces y efectos» («Lights & effects») con dos elementos personalizables: «Brillo» («Sparkle»), una estrella de luz con halo interior blanco, rayos (número, grosor, intensidad y ángulo) y halo exterior de color opcional; y «Destello de lente» («Lens flare»), el mismo brillo más el reflejo de una cámara que cruza la página desde la luz y se recalcula al moverla. Los nombres buscan que los entienda quien no es diseñador. Se descartó «Pasar por detrás» (reordenar objetos dentro de una forma): la categoría es solo de luces.
+- **Origen**: el comportamiento se tomó del manual público de un programa existente; su licencia prohíbe la ingeniería inversa, así que no se analizó su binario y la implementación es propia, con técnicas gráficas estándar.
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.effect`; una forma sin efecto conserva sus bytes; una versión anterior no abre un archivo que lo use). La luz se dibuja como imagen, así que el contrato del render no cambia. Se aplica en la spec 065.
+- Precisa D-102 y 03 §2.3.
+
+## D-104 Tres luces más: Destello de cine, Rayos de sol y Luces bokeh
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, pidiendo innovar sobre D-103): «Luces y efectos» gana «Destello de cine» («Cinematic streak»), la línea de luz de una lente anamórfica a lo largo de la página; «Rayos de sol» («Sun rays»), haces de luz que salen de la luz y cruzan la página; y «Luces bokeh» («Bokeh lights»), círculos de luz desenfocados repartidos por la caja de la forma. Usan los mismos ajustes que Brillo y Destello de lente (número, grosor o tamaño, intensidad, ángulo y color); el Inspector nombra cada ajuste según la luz.
+- **Consecuencia**: tres variantes más de `ShapeEffect` (aditivo, esquema 1). Se aplica en la spec 065.
+- Precisa D-103.
+
+## D-105 Todo lo que sale del panel Elementos se arrastra al lienzo
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): cada elemento del panel Elementos, de cualquier categoría presente o futura, se añade de dos formas, como las formas (spec 052): un clic lo pone en el centro de la página y un arrastre lo lleva al lienzo y lo deja centrado donde se suelta, seleccionado, en un solo paso de deshacer.
+- **Consecuencia**: una categoría nueva de Elementos no está terminada sin arrastrar y soltar. Aplicado a Formas (spec 052) y a «Luces y efectos» (spec 065).
+- Precisa D-102.
+
+## D-106 «Líneas» sale de Elementos; entra «Foto collage»
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): la categoría «Líneas» deja Elementos (las líneas siguen en la biblioteca de Formas) y su lugar lo ocupa «Foto collage» («Photo collage»): composiciones de varias fotos que funcionan como los Marcos (FD-18), cada hueco recibe una foto que queda recortada por él, pero con la estructura de un collage.
+- **Consecuencia**: cambia la lista de categorías de D-102 y del glosario de 03 (§2.3, §2.8). Foto collage depende del mecanismo de Marcos (FD-18), aún no implementado; hasta entonces su vista dice «Disponible pronto.».
+- Precisa D-102 y 03 §2.3.
+
+## D-107 La foto de un marco vive dentro del marco
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): el contenido de un marco (FD-18) es una referencia a la imagen guardada en el propio marco (`FrameContent { asset, natural }`), no un nodo hijo. Reemplazar la foto es un solo comando con un paso de deshacer, y la foto no aparece suelta en Capas ni se selecciona aparte del marco.
+- **Consecuencia**: precisa el `content: Option<NodeId>` de 02 §3.2. Se aplica en la spec 066.
+- Precisa 02 §3.2 y FD-18.
+
+## D-108 Fondo de la página
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): con la página o el lienzo seleccionados (nada seleccionado), el Inspector muestra solo «Fondo de la página»: un color (de una paleta, del selector, o buscado por nombre en español o inglés —«azul», «blue»— o por código hexadecimal —«#00c4cc»—), un degradado predefinido, un patrón (puntos, cuadrícula, rayas, cuadros, zigzag o cruces) con su color y su fondo, o una imagen subida que rellena, encaja o se repite en mosaico; y «Aplicar a todas las páginas».
+- **Consecuencia**: cambio aditivo del esquema 1 (`Page.background`; una página sin fondo conserva sus bytes; una versión anterior no abre un archivo que lo use). Se aplica en la spec 069.
+
+## D-109 Redimensionar una caja de texto
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura): una caja de texto tiene tiradores en sus cuatro esquinas y en el centro de sus lados, no en el centro de arriba ni de abajo. Una esquina escala la caja y el tamaño de letra en la misma proporción (la letra más pequeña no baja de 6 px); un lado cambia solo el ancho, nunca por debajo de lo que necesita una letra (1,2 veces la letra más grande).
+- **Consecuencia**: 03 DIS-89. Aplicado en `gafira-ui` (`textbox.rs`).
+
+## D-110 Un clic elige lo bloqueado para desbloquearlo
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con dos capturas): un clic sobre un elemento bloqueado lo selecciona (o el grupo bloqueado de más arriba), y la barra sobre la selección muestra solo el candado cerrado, resaltado, con «Desbloquear» al pasar el puntero. Sigue sin moverse ni mostrar tiradores. Un arrastre que empieza sobre él dibuja el marco de selección, y el marco y `Ctrl/Cmd+A` siguen saltándolo, así que un fondo bloqueado no estorba.
+- **Consecuencia**: sustituye en D-91 «el clic pasa a lo que está debajo» y «se selecciona solo desde Capas»; lo demás de D-91 sigue. Se aplica en la spec 070.
+
+## D-111 Fotos remotas: la segunda conexión de red
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): Elementos → Fotos busca e inserta fotos de catálogos públicos. Es la segunda conexión de red de la app, acotada: solo la abre el panel Fotos al buscar, cargar miniaturas o insertar una foto, desde el adaptador `gafira-photos`, con su cliente HTTP (`ureq`, TLS con `rustls` y el almacén de certificados del sistema) tras la feature `online`, activada solo en el binario. Editar, guardar y exportar siguen sin red: una foto insertada se guarda en el almacén del proyecto como cualquier imagen.
+- **Fuentes**: Openverse y Wikimedia Commons, sin clave de API (el titular pidió servicios gratuitos sin clave). Solo licencias que permiten uso comercial y modificación (CC0, dominio público, CC BY y CC BY-SA). Pixabay, Unsplash y Pexels quedan para cuando haya intermediario o clave (spec 071 §7). Ninguna clave en el código, el ejecutable ni el `.gaf`.
+- **Privacidad**: las peticiones llevan un `User-Agent` genérico de Gafira, sin datos de la persona; la consulta no se guarda en disco.
+- **Consecuencia**: precisa ARQ-04 y D-01: «la única conexión es la de licencias» pasa a «licencias y el panel Fotos». Se aplica en la spec 071.
+- **Ampliación** (titular, 2026-11-21): Elementos → Ilustraciones usa la misma conexión con Iconify (`api.iconify.design`), sin clave, solo con colecciones MIT o Apache 2.0 (spec 072).
+
+## D-112 PDF con vectores, texto real y contraseña
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): el PDF se escribe por defecto con vectores y texto real con su fuente incrustada; «Aplanar PDF» conserva el PDF de imagen. La contraseña cifra con AES-256 mediante `lopdf` 0.47 (MIT, sin sus funciones por defecto) sobre el PDF que escribe krilla, que no cifra; la clave del archivo sale de `getrandom`. El perfil CMYK es una conversión directa sin perfil ICC: los perfiles de imprenta (FOGRA, GRACoL) tienen licencias que no se han revisado.
+- **Consecuencia**: `RenderOp::Text` y `PageRenderer::vectors` en `gafira-ports`; `ParamKind::Text` en el contrato de opciones. Se aplica en la spec 073.
+
+## D-113 El código QR es un tipo de nodo propio
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un código QR es `NodeKind::Qr` (`QrNode`), como los marcos y las líneas, en lugar del nodo `Extension` con `type_id = "gafira.qr"` que pedía FD-20. Así el documento valida el logotipo, la exportación lo decodifica y editarlo es un paso de deshacer.
+- **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con códigos QR. La técnica y FD-20 (c) quedan sustituidas. Los Gráficos (FD-22) siguen como estaban. Se aplica en la spec 080.
+- Precisa ADR-02 y FD-20.
+
+## D-114 El gráfico es un tipo de nodo propio
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un gráfico es `NodeKind::Chart` (`ChartNode`), como los QR (D-113) y las tablas, en lugar del nodo `Extension` con `type_id = "gafira.chart"` de FD-22: la infraestructura de extensiones no existe y el nodo propio se valida, se deshace y se exporta como vectores.
+- **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con gráficos. La técnica y FD-22 (c) quedan sustituidas. Se aplica en la spec 083.
+- Precisa ADR-02, FD-22 y D-113.
+
+## D-115 Modelos de imagen integrados y descargables
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): «Mejorar resolución» y «Quitar fondo» usan modelos locales. El paquete incluye los dos más ligeros (`u2netp` y `realesr-general-x4v3`, menos de 10 MB entre ambos); los mayores y la aceleración por GPU se descargan solo cuando la persona lo pide y acepta, con su peso y su licencia a la vista.
+- **Consecuencia**: precisa ARQ-76, RNF-04 y FD-40 («sin modelos en el instalador» pasa a «sin modelos de más de 10 MB en total»), y ARQ-04 y D-111: es la tercera conexión de red, acotada al botón de descargar del panel de modelos, tras la feature `online`. Las imágenes no salen nunca de la máquina. Solo modelos con licencia permisiva y procedencia comprobada. Se aplica en la spec 084.

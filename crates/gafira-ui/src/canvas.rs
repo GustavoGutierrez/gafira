@@ -26,6 +26,18 @@ pub(crate) struct Shape {
     pub(crate) stroke: Option<ShapeStroke>,
     /// The stored corner radius of a shape, in px; 0 for other elements.
     pub(crate) corner_radius: f64,
+    /// The gradient that fills a shape instead of `fill` (spec 063).
+    pub(crate) gradient: Option<gafira_doc::Gradient>,
+    /// A light drawn instead of the shape (spec 065).
+    pub(crate) effect: Option<gafira_doc::ShapeEffect>,
+    /// A frame: its photo is drawn cut out by the shape (spec 066).
+    pub(crate) frame: Option<gafira_doc::FrameNode>,
+    /// A QR code: it is drawn from its picture (spec 080).
+    pub(crate) qr: Option<Box<gafira_doc::QrNode>>,
+    /// A table: it is drawn from its picture (spec 081).
+    pub(crate) table: Option<Box<gafira_doc::TableNode>>,
+    /// A chart: it is drawn from its picture (spec 083).
+    pub(crate) chart: Option<Box<gafira_doc::ChartNode>>,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
     /// The opacity of the groups above it, multiplied (spec 043); the
@@ -38,6 +50,11 @@ pub(crate) struct Shape {
     /// The text of a text element; its box hits and moves like a rectangle
     /// (spec 027).
     pub(crate) text: Option<TextNode>,
+    /// The text inside a shape (spec 055); `None` for other elements.
+    pub(crate) inner: Option<gafira_doc::ShapeText>,
+    /// A line and its two ends in page px (spec 058); `None` for other
+    /// elements.
+    pub(crate) line: Option<(gafira_doc::LineNode, [gafira_geom::Point; 2])>,
     /// The asset an image element shows (spec 029).
     pub(crate) image: Option<gafira_doc::AssetRef>,
     /// Locked itself or below a locked group (D-91): drawn, but a click or
@@ -65,12 +82,25 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
         let rect = ShapeNode::new(ShapeGeometry::Rect);
         let locked = held || node.base.locked;
         let drawn = match &node.kind {
-            NodeKind::Shape(shape) => Some((*shape, None, None)),
-            NodeKind::Text(text) => Some((rect, Some(text.clone()), None)),
-            NodeKind::Image(image) => Some((rect, None, Some(image.asset))),
+            NodeKind::Shape(shape) => Some((shape.clone(), None, None)),
+            NodeKind::Text(text) => Some((rect.clone(), Some(text.clone()), None)),
+            NodeKind::Image(image) => Some((rect.clone(), None, Some(image.asset))),
+            NodeKind::Line(_) => Some((rect.clone(), None, None)),
+            // A frame is drawn as its outline over its photo; an empty one
+            // shows the sample photo on the canvas (spec 066).
+            NodeKind::Frame(frame) => {
+                let mut shape = ShapeNode::new(frame.clip_shape.clone());
+                shape.corner_radius = frame.corner_radius;
+                shape.stroke = frame.stroke;
+                Some((shape, None, None))
+            }
+            NodeKind::Qr(_) | NodeKind::Table(_) | NodeKind::Chart(_) => {
+                Some((rect.clone(), None, None))
+            }
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
+            let inner_text = shape.text.clone();
             out.push(Shape {
                 page: page.id,
                 node: id,
@@ -79,12 +109,37 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 fill: shape.fill,
                 stroke: shape.stroke,
                 corner_radius: shape.corner_radius,
+                gradient: shape.gradient,
+                effect: shape.effect,
                 opacity: node.base.opacity,
                 inherited,
                 group: false,
                 text,
                 image,
                 locked,
+                inner: inner_text,
+                line: match &node.kind {
+                    NodeKind::Line(line) => {
+                        Some((line.clone(), line.ends(page, &node.base.placement)))
+                    }
+                    _ => None,
+                },
+                chart: match &node.kind {
+                    NodeKind::Chart(chart) => Some(chart.clone()),
+                    _ => None,
+                },
+                table: match &node.kind {
+                    NodeKind::Table(table) => Some(table.clone()),
+                    _ => None,
+                },
+                qr: match &node.kind {
+                    NodeKind::Qr(qr) => Some(qr.clone()),
+                    _ => None,
+                },
+                frame: match &node.kind {
+                    NodeKind::Frame(frame) => Some(frame.clone()),
+                    _ => None,
+                },
             });
         }
         let below = inherited * node.base.opacity.clamp(0.0, 1.0);
@@ -94,7 +149,8 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
     }
     let mut out = Vec::new();
     for root in &page.roots {
-        visit(page, *root, (1.0, false), 0, &mut out);
+        // A locked page locks everything on it (spec 056).
+        visit(page, *root, (1.0, page.locked), 0, &mut out);
     }
     out
 }
@@ -204,6 +260,11 @@ pub(crate) fn kind_key(kind: &NodeKind) -> &'static str {
         NodeKind::Group(_) => "layers.group",
         NodeKind::Text(_) => "layers.text",
         NodeKind::Image(_) => "layers.image",
+        NodeKind::Line(_) => "layers.line",
+        NodeKind::Frame(_) => "layers.frame",
+        NodeKind::Qr(_) => "layers.qr",
+        NodeKind::Table(_) => "layers.table",
+        NodeKind::Chart(_) => "layers.chart",
         _ => "layers.element",
     }
 }
@@ -224,16 +285,35 @@ pub(crate) fn on_screen(page_rect: Rect, zoom: f32, placement: &Placement) -> Re
 pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -> Option<NodeId> {
     // What is locked is not picked: the click goes through it (D-91).
     shapes.iter().rev().filter(|s| !s.locked).find_map(|shape| {
+        // A line takes a click within half its width, or 5 screen px, of
+        // its segment (spec 058).
+        if let Some((line, ends)) = &shape.line {
+            let [a, b] = ends.map(|p| point_on_screen(page_rect, zoom, p));
+            let q = crate::lines::nearest_on_segment(
+                gafira_geom::Point::new(f64::from(pointer.x), f64::from(pointer.y)),
+                gafira_geom::Point::new(f64::from(a.x), f64::from(a.y)),
+                gafira_geom::Point::new(f64::from(b.x), f64::from(b.y)),
+            );
+            let d =
+                (q - gafira_geom::Point::new(f64::from(pointer.x), f64::from(pointer.y))).hypot();
+            let reach = (line.width * f64::from(zoom) / 2.0).max(5.0);
+            return (d <= reach).then_some(shape.node);
+        }
         let (w, h) = (shape.placement.w, shape.placement.h);
         let transform = rotation::to_screen(page_rect, zoom, &shape.placement);
         let local = rotation::local(transform, pointer)?;
-        let inside = match shape.geometry {
+        let inside = match &shape.geometry {
             ShapeGeometry::Rect => (0.0..=w).contains(&local.x) && (0.0..=h).contains(&local.y),
             ShapeGeometry::Ellipse => {
                 let (rx, ry) = (w / 2.0, h / 2.0);
                 rx > 0.0
                     && ry > 0.0
                     && ((local.x - rx) / rx).powi(2) + ((local.y - ry) / ry).powi(2) <= 1.0
+            }
+            // A path takes what its non-zero interior covers (S54-04).
+            ShapeGeometry::Path(path) => {
+                use kurbo::Shape as _;
+                crate::shapes::bez(path, w, h).contains(kurbo::Point::new(local.x, local.y))
             }
         };
         inside.then_some(shape.node)
@@ -252,9 +332,99 @@ pub(crate) fn in_marquee(
     shapes
         .iter()
         .filter(|shape| !shape.locked)
-        .filter(|shape| rotation::screen_box(page_rect, zoom, &shape.placement).intersects(marquee))
+        .filter(|shape| screen_box_of(shape, page_rect, zoom).intersects(marquee))
         .map(|shape| shape.node)
         .collect()
+}
+
+/// Where page point `p` (page px) is drawn on a page at `page_rect`.
+pub(crate) fn point_on_screen(page_rect: Rect, zoom: f32, p: gafira_geom::Point) -> Pos2 {
+    page_rect.min + Vec2::new(p.x as f32, p.y as f32) * zoom
+}
+
+/// The upright screen box of a shape: the one around its turned box, or
+/// around the two ends of a line (spec 058).
+pub(crate) fn screen_box_of(shape: &Shape, page_rect: Rect, zoom: f32) -> Rect {
+    match &shape.line {
+        Some((_, [a, b])) => Rect::from_two_pos(
+            point_on_screen(page_rect, zoom, *a),
+            point_on_screen(page_rect, zoom, *b),
+        ),
+        None => rotation::screen_box(page_rect, zoom, &shape.placement),
+    }
+}
+
+/// What the canvas draws for `line` from `a` to `b` (screen px) at `zoom`
+/// (spec 058): its stroke, cut back where a hollow cap sits, and its caps,
+/// as the render draws them.
+pub(crate) fn line_shapes(
+    line: &gafira_doc::LineNode,
+    a: Pos2,
+    b: Pos2,
+    zoom: f32,
+    color: Color32,
+) -> Vec<egui::Shape> {
+    use gafira_doc::LineCap;
+    let width = line.width as f32 * zoom;
+    let length = a.distance(b);
+    if width <= 0.0 || length <= f32::EPSILON {
+        return Vec::new();
+    }
+    let stroke = egui::Stroke::new(width, color);
+    let dir = (b - a) / length;
+    let size = (line.width as f32 * 2.5).max(5.0) * zoom;
+    let reach = |cap: LineCap| match cap {
+        LineCap::None | LineCap::Arrow => 0.0,
+        _ => size,
+    };
+    let (ra, rb) = (reach(line.start.cap), reach(line.end.cap));
+    let mut out = Vec::new();
+    if ra + rb < length {
+        out.push(egui::Shape::line_segment(
+            [a + dir * ra, b - dir * rb],
+            stroke,
+        ));
+    }
+    for (at, cap, out_dir) in [(a, line.start.cap, -dir), (b, line.end.cap, dir)] {
+        let normal = Vec2::new(-out_dir.y, out_dir.x);
+        let centre = at - out_dir * size;
+        match cap {
+            LineCap::None => {}
+            LineCap::Arrow => {
+                let back = at - out_dir * size * 1.6;
+                out.push(egui::Shape::line(
+                    vec![back + normal * size, at, back - normal * size],
+                    stroke,
+                ));
+            }
+            LineCap::Circle => {
+                out.push(egui::Shape::circle_stroke(centre, size, stroke));
+            }
+            LineCap::Diamond | LineCap::DiamondFilled => {
+                let points = vec![
+                    at,
+                    centre + normal * size,
+                    centre - out_dir * size,
+                    centre - normal * size,
+                ];
+                let fill = if cap == LineCap::DiamondFilled {
+                    color
+                } else {
+                    Color32::TRANSPARENT
+                };
+                out.push(egui::Shape::convex_polygon(points, fill, stroke));
+            }
+            LineCap::Square => {
+                let half = size * 0.8;
+                let points = [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
+                    .into_iter()
+                    .map(|(u, v)| centre + out_dir * (half * u) + normal * (half * v))
+                    .collect();
+                out.push(egui::Shape::closed_line(points, stroke));
+            }
+        }
+    }
+    out
 }
 
 /// The smallest box that holds every box of `rects`: the box drawn around
@@ -332,9 +502,16 @@ pub(crate) fn handle_point(transform: Affine, placement: &Placement, handle: Han
 
 /// The grip of `placement` under `pointer`, if any: the nearest of the
 /// eight handles and the rotate handle whose 24 px hit area holds it.
-pub(crate) fn grip_hit(transform: Affine, placement: &Placement, pointer: Pos2) -> Option<Grip> {
+pub(crate) fn grip_hit(
+    transform: Affine,
+    placement: &Placement,
+    pointer: Pos2,
+    text: bool,
+) -> Option<Grip> {
     HANDLES
         .into_iter()
+        // A text box has no handles at the middle of its top and bottom.
+        .filter(|handle| !text || crate::textbox::shown_on_text(*handle))
         .map(|handle| {
             (
                 Grip::Resize(handle),
@@ -418,6 +595,48 @@ fn resized_turned(origin: &Placement, handle: Handle, dx: f64, dy: f64) -> Place
     placement
 }
 
+pub(crate) use crate::shapes::{PIECE_SECTIONS, Piece};
+
+/// `piece` as `new_piece` makes it, with its corner radius.
+pub(crate) fn new_shape(page_px: Vec2, piece: Piece, fill: Color) -> NodeSpec {
+    // A line: across a third of the shorter side, in the middle, dark
+    // (spec 058).
+    if let Some((start, end)) = piece.line_caps() {
+        let side = f64::from(page_px.x.min(page_px.y)) / 3.0;
+        let line = gafira_doc::LineNode {
+            start: gafira_doc::LineEnd::new([0.0, 0.5], start),
+            end: gafira_doc::LineEnd::new([1.0, 0.5], end),
+            color: Color::Srgb(Rgba::new(0.1, 0.1, 0.1, 1.0)),
+            width: 4.0,
+        };
+        let placement = Placement::new(
+            (f64::from(page_px.x) - side) / 2.0,
+            f64::from(page_px.y) / 2.0,
+            side,
+            0.0,
+        );
+        return NodeSpec::new(NodeKind::Line(line), placement);
+    }
+    let mut spec = new_piece(page_px, piece.geometry(), fill);
+    // A shape wider than high keeps the side as its width, and the other
+    // way round (spec 054), still in the middle of the page.
+    let aspect = piece.aspect();
+    let side = spec.placement.w;
+    let (w, h) = if aspect >= 1.0 {
+        (side, side / aspect)
+    } else {
+        (side * aspect, side)
+    };
+    spec.placement.x += (side - w) / 2.0;
+    spec.placement.y += (side - h) / 2.0;
+    spec.placement.w = w;
+    spec.placement.h = h;
+    if let NodeKind::Shape(shape) = &mut spec.kind {
+        shape.corner_radius = piece.corner_radius(spec.placement.w);
+    }
+    spec
+}
+
 /// A new piece in the middle of a page of `page_px`, a third of its
 /// shorter side across.
 pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> NodeSpec {
@@ -434,6 +653,10 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
             fill: Some(fill),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         }),
         placement,
     )
@@ -441,13 +664,218 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
 
 /// The piece `new_piece` makes on a page of `page_px`, centred on `at`
 /// in px of page instead of the page's middle (S52-03).
-pub(crate) fn piece_at(
-    page_px: Vec2,
-    geometry: ShapeGeometry,
-    fill: Color,
-    at: (f64, f64),
-) -> NodeSpec {
-    let mut spec = new_piece(page_px, geometry, fill);
+/// A new light (spec 065): a circle of `share` of the
+/// shorter side of the page, in the middle, carrying `effect`. Its fill is
+/// the one of a new shape, shown again if the effect is taken off.
+pub(crate) fn new_effect(page_px: Vec2, effect: gafira_doc::ShapeEffect, share: f64) -> NodeSpec {
+    let side = f64::from(page_px.x.min(page_px.y)) * share;
+    let placement = Placement::new(
+        (f64::from(page_px.x) - side) / 2.0,
+        (f64::from(page_px.y) - side) / 2.0,
+        side,
+        side,
+    );
+    let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+    shape.fill = Some(default_fill());
+    shape.effect = Some(effect);
+    NodeSpec::new(NodeKind::Shape(shape), placement)
+}
+
+/// A new empty frame of `piece`'s outline (spec 066): half the shorter side
+/// of the page (a quarter of its area), in the middle, its proportions those
+/// of the piece.
+pub(crate) fn new_frame(page_px: Vec2, piece: Piece) -> NodeSpec {
+    let side = f64::from(page_px.x.min(page_px.y)) / 2.0;
+    let aspect = piece.aspect();
+    let (w, h) = if aspect >= 1.0 {
+        (side, side / aspect)
+    } else {
+        (side * aspect, side)
+    };
+    let placement = Placement::new(
+        (f64::from(page_px.x) - w) / 2.0,
+        (f64::from(page_px.y) - h) / 2.0,
+        w,
+        h,
+    );
+    let mut frame = gafira_doc::FrameNode::new(piece.geometry());
+    frame.corner_radius = piece.corner_radius(w.min(h));
+    NodeSpec::new(NodeKind::Frame(frame), placement)
+}
+
+/// The grey silhouette of `outline` in a box of `side` px, its proportions
+/// kept: the preview of a design in Biblioteca (spec 068).
+pub(crate) fn outline_preview(
+    outline: &gafira_io_vector::Outline,
+    side: f64,
+) -> Option<egui::ColorImage> {
+    let (w, h) = if outline.aspect >= 1.0 {
+        (side, side / outline.aspect)
+    } else {
+        (side * outline.aspect, side)
+    };
+    let path = crate::shapes::bez(&outline.path, w, h);
+    let mut builder = tiny_skia::PathBuilder::new();
+    let to = |p: kurbo::Point| (p.x as f32, p.y as f32);
+    for el in path.elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => {
+                let (x, y) = to(p);
+                builder.move_to(x, y);
+            }
+            kurbo::PathEl::LineTo(p) => {
+                let (x, y) = to(p);
+                builder.line_to(x, y);
+            }
+            kurbo::PathEl::QuadTo(c, p) => {
+                let ((cx, cy), (x, y)) = (to(c), to(p));
+                builder.quad_to(cx, cy, x, y);
+            }
+            kurbo::PathEl::CurveTo(c1, c2, p) => {
+                let ((ax, ay), (bx, by), (x, y)) = (to(c1), to(c2), to(p));
+                builder.cubic_to(ax, ay, bx, by, x, y);
+            }
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    let shape = builder.finish()?;
+    // Within 1..=side: the casts are exact.
+    let mut pixmap = tiny_skia::Pixmap::new(w.round().max(1.0) as u32, h.round().max(1.0) as u32)?;
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color_rgba8(204, 204, 204, 255);
+    paint.anti_alias = true;
+    pixmap.fill_path(
+        &shape,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    Some(egui::ColorImage::from_rgba_premultiplied(
+        [pixmap.width() as usize, pixmap.height() as usize],
+        pixmap.data(),
+    ))
+}
+
+/// A new empty frame of a custom `outline` (spec 066, S66-10): its
+/// proportions kept, half the shorter side of the page, in the middle.
+pub(crate) fn new_custom_frame(page_px: Vec2, outline: gafira_io_vector::Outline) -> NodeSpec {
+    let side = f64::from(page_px.x.min(page_px.y)) / 2.0;
+    let (w, h) = if outline.aspect >= 1.0 {
+        (side, side / outline.aspect)
+    } else {
+        (side * outline.aspect, side)
+    };
+    let placement = Placement::new(
+        (f64::from(page_px.x) - w) / 2.0,
+        (f64::from(page_px.y) - h) / 2.0,
+        w,
+        h,
+    );
+    let frame = gafira_doc::FrameNode::new(ShapeGeometry::Path(outline.path));
+    NodeSpec::new(NodeKind::Frame(frame), placement)
+}
+
+/// A new frame centred at `at`, in px of page (D-105).
+pub(crate) fn frame_at(page_px: Vec2, piece: Piece, at: (f64, f64)) -> NodeSpec {
+    let mut spec = new_frame(page_px, piece);
+    spec.placement.x = at.0 - spec.placement.w / 2.0;
+    spec.placement.y = at.1 - spec.placement.h / 2.0;
+    spec
+}
+
+/// The longest side of a frame texture, in px.
+const FRAME_TEXTURE_MAX: f64 = 2048.0;
+
+/// The photo of a frame cut out by its shape at `zoom` (spec 066), in the
+/// box of the frame: the same fit and cut as the export. `photo` holds the
+/// decoded pixels of the asset, at most 2048 px a side.
+pub(crate) fn frame_image(
+    shape: &Shape,
+    photo: &egui::ColorImage,
+    zoom: f32,
+) -> Option<egui::ColorImage> {
+    let frame = shape.frame.as_ref()?;
+    let content = frame.content?;
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    let zoom = f64::from(zoom);
+    if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let at = frame.content_transform(w, h)?;
+    let scale = zoom.min(FRAME_TEXTURE_MAX / w.max(h));
+    // Within 1..=2048: the casts are exact.
+    let (pw, ph) = (
+        (w * scale).round().max(1.0) as u32,
+        (h * scale).round().max(1.0) as u32,
+    );
+    let [iw, ih] = photo.size;
+    let mut bytes = Vec::with_capacity(iw * ih * 4);
+    for pixel in &photo.pixels {
+        bytes.extend(pixel.to_array());
+    }
+    let source = tiny_skia::Pixmap::from_vec(
+        bytes,
+        tiny_skia::IntSize::from_wh(u32::try_from(iw).ok()?, u32::try_from(ih).ok()?)?,
+    )?;
+    // Photo px → natural px → box px → texture px.
+    let natural = kurbo::Affine::scale_non_uniform(
+        f64::from(content.natural.0) / iw as f64,
+        f64::from(content.natural.1) / ih as f64,
+    );
+    let [a, b, c, d, e, f] = (kurbo::Affine::scale(scale) * at * natural).as_coeffs();
+    let shader = tiny_skia::Pattern::new(
+        source.as_ref(),
+        tiny_skia::SpreadMode::Pad,
+        tiny_skia::FilterQuality::Bilinear,
+        1.0,
+        tiny_skia::Transform::from_row(a as f32, b as f32, c as f32, d as f32, e as f32, f as f32),
+    );
+    let mut builder = tiny_skia::PathBuilder::new();
+    let to = |p: kurbo::Point| ((p.x * scale) as f32, (p.y * scale) as f32);
+    for el in outline_of(shape).elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => {
+                let (x, y) = to(p);
+                builder.move_to(x, y);
+            }
+            kurbo::PathEl::LineTo(p) => {
+                let (x, y) = to(p);
+                builder.line_to(x, y);
+            }
+            kurbo::PathEl::QuadTo(c, p) => {
+                let ((cx, cy), (x, y)) = (to(c), to(p));
+                builder.quad_to(cx, cy, x, y);
+            }
+            kurbo::PathEl::CurveTo(c1, c2, p) => {
+                let ((ax, ay), (bx, by), (x, y)) = (to(c1), to(c2), to(p));
+                builder.cubic_to(ax, ay, bx, by, x, y);
+            }
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    let outline = builder.finish()?;
+    let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
+    let paint = tiny_skia::Paint {
+        shader,
+        anti_alias: true,
+        ..tiny_skia::Paint::default()
+    };
+    pixmap.fill_path(
+        &outline,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    Some(egui::ColorImage::from_rgba_premultiplied(
+        [pw as usize, ph as usize],
+        pixmap.data(),
+    ))
+}
+
+pub(crate) fn piece_at(page_px: Vec2, piece: Piece, fill: Color, at: (f64, f64)) -> NodeSpec {
+    let mut spec = new_shape(page_px, piece, fill);
     spec.placement.x = at.0 - spec.placement.w / 2.0;
     spec.placement.y = at.1 - spec.placement.h / 2.0;
     spec
@@ -503,6 +931,35 @@ pub(crate) fn new_text(page_px: Vec2, text: &str, style: &SpanStyle) -> NodeSpec
     NodeSpec::new(NodeKind::Text(TextNode::plain(text, style)), placement)
 }
 
+/// The box a text of `sizing` placed at `placement` takes when its text,
+/// laid out at its width, is `laid` px of page high (S61-02): its height
+/// becomes that of the text when it grows down with it. `None` when nothing
+/// changes, by half a px or less.
+pub(crate) fn text_fit(
+    sizing: gafira_doc::TextSizing,
+    placement: &Placement,
+    laid: f64,
+) -> Option<Placement> {
+    if sizing != gafira_doc::TextSizing::AutoHeight
+        || !laid.is_finite()
+        || (placement.h - laid).abs() <= 0.5
+    {
+        return None;
+    }
+    let mut fitted = *placement;
+    fitted.h = laid.max(1.0);
+    Some(fitted)
+}
+
+/// A new text element of `text` in `style` centred on `at` of a page of
+/// `page_px`, as `new_text` makes it in the middle (S61-03).
+pub(crate) fn text_at(page_px: Vec2, text: &str, style: &SpanStyle, at: (f64, f64)) -> NodeSpec {
+    let mut spec = new_text(page_px, text, style);
+    spec.placement.x = at.0 - spec.placement.w / 2.0;
+    spec.placement.y = at.1 - spec.placement.h / 2.0;
+    spec
+}
+
 /// A new image element of `pixels` (width, height) centred on a page of
 /// `page_px`, scaled to fit 60 % of the page and never enlarged.
 pub(crate) fn new_image(
@@ -521,7 +978,10 @@ pub(crate) fn new_image(
         w,
         h,
     );
-    NodeSpec::new(NodeKind::Image(gafira_doc::ImageNode { asset }), placement)
+    NodeSpec::new(
+        NodeKind::Image(gafira_doc::ImageNode::new(asset)),
+        placement,
+    )
 }
 
 /// A document colour on screen (sRGB, 8 bits).
@@ -561,7 +1021,12 @@ pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
                     screen_color(stroke.color).gamma_multiply(opacity),
                 )
             });
-    match shape.geometry {
+    if textured(shape) {
+        // Drawn from a texture (specs 054 and 063): see `path_image`.
+        return egui::Shape::Noop;
+    }
+    match &shape.geometry {
+        ShapeGeometry::Path(_) => egui::Shape::Noop,
         ShapeGeometry::Rect => {
             let half = f64::from(at.width().min(at.height()).max(0.0)) / 2.0;
             let radius = (shape.corner_radius.max(0.0) * f64::from(zoom))
@@ -588,7 +1053,7 @@ pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
 /// The outline of a shape of `w` × `h` local px with corners rounded by
 /// `radius` (a rectangle) or as an ellipse, clockwise from the top. Each
 /// quarter of a curve gets `segments` steps.
-fn outline(geometry: ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize) -> Vec<Point> {
+fn outline(geometry: &ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize) -> Vec<Point> {
     let quarter = std::f64::consts::FRAC_PI_2;
     // Each corner: its arc centre, its radii and the angle where it starts.
     let (corners, rx, ry) = match geometry {
@@ -596,9 +1061,9 @@ fn outline(geometry: ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize
             let (rx, ry) = (w / 2.0, h / 2.0);
             ([(rx, ry); 4], rx, ry)
         }
-        ShapeGeometry::Rect => {
+        ShapeGeometry::Rect | ShapeGeometry::Path(_) => {
             let r = radius.max(0.0).min(w.min(h).max(0.0) / 2.0);
-            if r == 0.0 {
+            if r == 0.0 || matches!(geometry, ShapeGeometry::Path(_)) {
                 return vec![
                     Point::new(0.0, 0.0),
                     Point::new(w, 0.0),
@@ -641,7 +1106,12 @@ pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egu
                 )
             });
     let (w, h) = (shape.placement.w, shape.placement.h);
+    if textured(shape) {
+        // Drawn from a texture (specs 054 and 063): see `path_image`.
+        return egui::Shape::Noop;
+    }
     let curve = match shape.geometry {
+        ShapeGeometry::Path(_) => return egui::Shape::Noop,
         ShapeGeometry::Rect => shape.corner_radius,
         ShapeGeometry::Ellipse => w.max(h) / 2.0,
     };
@@ -649,11 +1119,474 @@ pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egu
     let segments = ((curve * f64::from(zoom)).abs() / 2.0)
         .ceil()
         .clamp(4.0, 64.0) as usize;
-    let points = outline(shape.geometry, w, h, shape.corner_radius, segments)
+    let points = outline(&shape.geometry, w, h, shape.corner_radius, segments)
         .into_iter()
         .map(|p| rotation::screen(transform, p.x, p.y))
         .collect();
     egui::Shape::convex_polygon(points, paint(shape), stroke)
+}
+
+/// The box the text of a shape is laid out in (spec 055): the shape's box
+/// less a tenth of its shorter side on each side, as the render lays it.
+pub(crate) fn text_box(at: Rect) -> Rect {
+    let pad = at.width().min(at.height()) / 10.0;
+    at.shrink(pad)
+}
+
+/// Where the first line of a text `text_h` high starts in `inner`, down
+/// the box by `valign` (spec 055).
+pub(crate) fn text_top(inner: Rect, text_h: f32, valign: gafira_doc::VerticalAlign) -> f32 {
+    let share = match valign {
+        gafira_doc::VerticalAlign::Top => 0.0,
+        gafira_doc::VerticalAlign::Middle => 0.5,
+        gafira_doc::VerticalAlign::Bottom => 1.0,
+    };
+    inner.min.y + (inner.height() - text_h) * share
+}
+
+/// The longest side, in px, of the texture a path shape is drawn from.
+const PATH_TEXTURE_MAX: f64 = 2048.0;
+
+/// The box the texture of a path shape covers (spec 054): its placement
+/// grown by half its outline and one screen px, so neither the outline nor
+/// the anti-aliased edge is cut. It turns and flips about the same centre.
+pub(crate) fn path_cover(shape: &Shape, zoom: f32) -> Placement {
+    let stroke = shape.stroke.filter(|stroke| stroke.width > 0.0);
+    let margin = stroke.map_or(0.0, |stroke| stroke.width / 2.0) + 1.0 / f64::from(zoom);
+    let mut covered = shape.placement;
+    covered.x -= margin;
+    covered.y -= margin;
+    covered.w += 2.0 * margin;
+    covered.h += 2.0 * margin;
+    covered
+}
+
+/// What the canvas draws for a path shape (spec 054): its fill and outline
+/// rasterised on a texture as large as the shape on screen, and the box the
+/// texture covers, the placement grown by half the outline and one screen
+/// px so neither is cut. `None` for a shape that is not a path or has no
+/// size.
+pub(crate) fn path_image(shape: &Shape, zoom: f32) -> Option<(egui::ColorImage, Placement)> {
+    if !textured(shape) {
+        return None;
+    }
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    let zoom = f64::from(zoom);
+    if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let stroke = shape.stroke.filter(|stroke| stroke.width > 0.0);
+    let covered = path_cover(shape, zoom as f32);
+    let margin = shape.placement.x - covered.x;
+    let scale = zoom.min(PATH_TEXTURE_MAX / covered.w.max(covered.h));
+    let side = |v: f64| (v * scale).round().max(1.0) as u32;
+    let (pw, ph) = (side(covered.w), side(covered.h));
+    let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
+    let mut builder = tiny_skia::PathBuilder::new();
+    let at = |p: kurbo::Point| {
+        (
+            ((p.x + margin) * scale) as f32,
+            ((p.y + margin) * scale) as f32,
+        )
+    };
+    for el in outline_of(shape).elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => {
+                let (x, y) = at(p);
+                builder.move_to(x, y);
+            }
+            kurbo::PathEl::LineTo(p) => {
+                let (x, y) = at(p);
+                builder.line_to(x, y);
+            }
+            kurbo::PathEl::QuadTo(c, p) => {
+                let ((cx, cy), (x, y)) = (at(c), at(p));
+                builder.quad_to(cx, cy, x, y);
+            }
+            kurbo::PathEl::CurveTo(c1, c2, p) => {
+                let ((ax, ay), (bx, by), (x, y)) = (at(c1), at(c2), at(p));
+                builder.cubic_to(ax, ay, bx, by, x, y);
+            }
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    let outline = builder.finish()?;
+    let paint = |color: Color32| {
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(color.r(), color.g(), color.b(), color.a());
+        paint.anti_alias = true;
+        paint
+    };
+    if let Some(gradient) = &shape.gradient {
+        if let Some(shader) = gradient_shader(gradient, (w, h), (margin, scale)) {
+            let paint = tiny_skia::Paint {
+                shader,
+                anti_alias: true,
+                ..tiny_skia::Paint::default()
+            };
+            pixmap.fill_path(
+                &outline,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
+        }
+    } else if let Some(fill) = shape.fill {
+        pixmap.fill_path(
+            &outline,
+            &paint(screen_color(fill)),
+            tiny_skia::FillRule::Winding,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    if let Some(stroke) = stroke {
+        // Centred on the edge with mitred corners, as the render draws it.
+        let style = tiny_skia::Stroke {
+            width: (stroke.width * scale) as f32,
+            line_join: tiny_skia::LineJoin::Miter,
+            line_cap: tiny_skia::LineCap::Butt,
+            ..tiny_skia::Stroke::default()
+        };
+        pixmap.stroke_path(
+            &outline,
+            &paint(screen_color(stroke.color)),
+            &style,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    let image =
+        egui::ColorImage::from_rgba_premultiplied([pw as usize, ph as usize], pixmap.data());
+    Some((image, covered))
+}
+
+/// The longest side of a light texture, in px: the light is soft, so a
+/// larger one adds time and no detail (spec 065).
+const LIGHT_TEXTURE_MAX: f64 = 1024.0;
+
+/// The texture of a light (spec 065) at `zoom` and the box it covers in
+/// page px: the lights that span the page cover the page of `page_px`, the
+/// others the box of the shape. The same pixels as the export (gafira-raster).
+pub(crate) fn light_image(
+    shape: &Shape,
+    page_px: (f64, f64),
+    zoom: f32,
+) -> Option<(egui::ColorImage, Placement)> {
+    let effect = shape.effect.as_ref()?;
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    let zoom = f64::from(zoom);
+    if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let fit = |w: f64, h: f64| {
+        let k = zoom.min(LIGHT_TEXTURE_MAX / w.max(h));
+        // Within 1..=1024: the casts are exact.
+        (
+            (w * k).round().max(1.0) as u32,
+            (h * k).round().max(1.0) as u32,
+        )
+    };
+    let (image, cover) = if gafira_raster::spans_page(effect) {
+        let (pw, ph) = page_px;
+        if !(pw > 0.0 && ph > 0.0) {
+            return None;
+        }
+        let (iw, ih) = fit(pw, ph);
+        let (kx, ky) = (f64::from(iw) / pw, f64::from(ih) / ph);
+        let centre = shape.placement.to_transform() * kurbo::Point::new(w / 2.0, h / 2.0);
+        let spot = gafira_raster::LightSpot {
+            centre: (centre.x * kx, centre.y * ky),
+            radius: w.min(h) / 2.0 * kx.min(ky),
+        };
+        let cover = Placement::new(0.0, 0.0, pw, ph);
+        (gafira_raster::light_picture(effect, iw, ih, spot), cover)
+    } else {
+        let (iw, ih) = fit(w, h);
+        let spot = gafira_raster::LightSpot {
+            centre: (f64::from(iw) / 2.0, f64::from(ih) / 2.0),
+            radius: f64::from(iw.min(ih)) / 2.0,
+        };
+        (
+            gafira_raster::light_picture(effect, iw, ih, spot),
+            shape.placement,
+        )
+    };
+    let gafira_raster::PixelBuf::Rgba8(data) = image.data() else {
+        return None;
+    };
+    let size = [image.width() as usize, image.height() as usize];
+    Some((egui::ColorImage::from_rgba_premultiplied(size, data), cover))
+}
+
+/// The box a light texture covers, without drawing it (spec 065).
+pub(crate) fn light_image_cover(shape: &Shape, page_px: (f64, f64)) -> Option<Placement> {
+    let effect = shape.effect.as_ref()?;
+    Some(if gafira_raster::spans_page(effect) {
+        Placement::new(0.0, 0.0, page_px.0, page_px.1)
+    } else {
+        shape.placement
+    })
+}
+
+/// The sample photo of the frames (spec 066, S66-12): what an empty frame
+/// shows on the canvas and in Elementos → Marcos, so the shape reads as a
+/// place for a photo. Not exported (FD-18 c). Decoded once, at most 1024 px
+/// a side.
+pub(crate) fn sample_photo() -> Option<std::sync::Arc<egui::ColorImage>> {
+    static SAMPLE: std::sync::OnceLock<Option<std::sync::Arc<egui::ColorImage>>> =
+        std::sync::OnceLock::new();
+    SAMPLE
+        .get_or_init(|| {
+            let bytes = include_bytes!("../../../assets/samples/frame-sample.png");
+            let decoded = image::load_from_memory(bytes).ok()?.thumbnail(1024, 1024);
+            let rgba = decoded.to_rgba8();
+            let size = [rgba.width() as usize, rgba.height() as usize];
+            Some(std::sync::Arc::new(
+                egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
+            ))
+        })
+        .clone()
+}
+
+/// `shape` as an empty frame shows it: with `sample` as its photo.
+pub(crate) fn with_sample(shape: &Shape, sample: &egui::ColorImage) -> Shape {
+    let mut shown = shape.clone();
+    if let Some(frame) = shown.frame.as_mut()
+        && frame.content.is_none()
+    {
+        frame.content = Some(gafira_doc::FrameContent {
+            asset: gafira_doc::timeline::AssetRef::new(gafira_doc::ContentHash([0; 32])),
+            natural: (sample.size[0] as u32, sample.size[1] as u32),
+        });
+    }
+    shown
+}
+
+/// True when the canvas draws `shape` from a texture: a path (spec 054) or
+/// a shape filled with a gradient (spec 063).
+pub(crate) fn textured(shape: &Shape) -> bool {
+    shape.line.is_none()
+        && shape.text.is_none()
+        && shape.image.is_none()
+        && !shape.group
+        && (matches!(shape.geometry, ShapeGeometry::Path(_)) || shape.gradient.is_some())
+}
+
+/// The outline of a shape in its local box, as the render draws it: the
+/// path, the ellipse, or the rectangle with its corners rounded at most to
+/// half the shorter side (FD-36 a).
+fn outline_of(shape: &Shape) -> kurbo::BezPath {
+    use kurbo::Shape as _;
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    match &shape.geometry {
+        ShapeGeometry::Path(path) => crate::shapes::bez(path, w, h),
+        ShapeGeometry::Ellipse => {
+            kurbo::Ellipse::from_rect(kurbo::Rect::new(0.0, 0.0, w, h)).to_path(0.1)
+        }
+        ShapeGeometry::Rect => {
+            let r = shape.corner_radius.max(0.0).min(w.min(h) / 2.0);
+            kurbo::RoundedRect::new(0.0, 0.0, w, h, r).to_path(0.1)
+        }
+    }
+}
+
+/// The tiny-skia shader of `gradient` in a `w` × `h` box drawn at `scale`
+/// with `margin` page px around it: the same ends as
+/// The longest side of a page background texture, in px.
+const BACKGROUND_MAX: f64 = 2048.0;
+
+/// The texture of the background of a page (spec 069) of `page_px` at
+/// `zoom`: a gradient, a pattern or an image (`photo`, its decoded pixels);
+/// `None` for a plain colour, painted directly. The same drawing as the
+/// export.
+pub(crate) fn background_image(
+    background: &gafira_doc::PageBackground,
+    (pw, ph): (f64, f64),
+    zoom: f32,
+    photo: Option<&egui::ColorImage>,
+) -> Option<egui::ColorImage> {
+    use gafira_doc::{BackgroundFit, PageBackground};
+    if !(pw > 0.0 && ph > 0.0) {
+        return None;
+    }
+    let k = f64::from(zoom).min(BACKGROUND_MAX / pw.max(ph));
+    // Within 1..=2048: the casts are exact.
+    let (iw, ih) = (
+        (pw * k).round().max(1.0) as u32,
+        (ph * k).round().max(1.0) as u32,
+    );
+    let to_image = |pixmap: tiny_skia::Pixmap| {
+        egui::ColorImage::from_rgba_premultiplied([iw as usize, ih as usize], pixmap.data())
+    };
+    let rect = tiny_skia::Rect::from_xywh(0.0, 0.0, iw as f32, ih as f32)?;
+    match background {
+        PageBackground::Solid(_) => None,
+        PageBackground::Gradient(gradient) => {
+            let shader = gradient_shader(gradient, (pw, ph), (0.0, k))?;
+            let mut pixmap = tiny_skia::Pixmap::new(iw, ih)?;
+            let paint = tiny_skia::Paint {
+                shader,
+                ..tiny_skia::Paint::default()
+            };
+            pixmap.fill_rect(rect, &paint, tiny_skia::Transform::identity(), None);
+            Some(to_image(pixmap))
+        }
+        PageBackground::Pattern { kind, color, back } => {
+            // The same vector shapes as the page, drawn small (spec 069).
+            let mut pixmap = tiny_skia::Pixmap::new(iw, ih)?;
+            let paint = |c: Color| {
+                let c = screen_color(c);
+                let mut paint = tiny_skia::Paint::default();
+                paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+                paint.anti_alias = true;
+                paint
+            };
+            pixmap.fill_rect(rect, &paint(*back), tiny_skia::Transform::identity(), None);
+            let path = gafira_raster::pattern_path(*kind, pw, ph, gafira_raster::PATTERN_CELL);
+            let mut builder = tiny_skia::PathBuilder::new();
+            for el in path.elements() {
+                match *el {
+                    kurbo::PathEl::MoveTo(p) => builder.move_to(p.x as f32, p.y as f32),
+                    kurbo::PathEl::LineTo(p) => builder.line_to(p.x as f32, p.y as f32),
+                    kurbo::PathEl::QuadTo(c, p) => {
+                        builder.quad_to(c.x as f32, c.y as f32, p.x as f32, p.y as f32);
+                    }
+                    kurbo::PathEl::CurveTo(a, b, p) => builder.cubic_to(
+                        a.x as f32, a.y as f32, b.x as f32, b.y as f32, p.x as f32, p.y as f32,
+                    ),
+                    kurbo::PathEl::ClosePath => builder.close(),
+                }
+            }
+            if let Some(shapes) = builder.finish() {
+                pixmap.fill_path(
+                    &shapes,
+                    &paint(*color),
+                    tiny_skia::FillRule::Winding,
+                    tiny_skia::Transform::from_scale(k as f32, k as f32),
+                    None,
+                );
+            }
+            Some(to_image(pixmap))
+        }
+        PageBackground::Image { natural, fit, .. } => {
+            let photo = photo?;
+            let [sw, sh] = photo.size;
+            let mut bytes = Vec::with_capacity(sw * sh * 4);
+            for pixel in &photo.pixels {
+                bytes.extend(pixel.to_array());
+            }
+            let source = tiny_skia::Pixmap::from_vec(
+                bytes,
+                tiny_skia::IntSize::from_wh(u32::try_from(sw).ok()?, u32::try_from(sh).ok()?)?,
+            )?;
+            let (nw, nh) = (f64::from(natural.0), f64::from(natural.1));
+            let (scale, x, y, spread) = match fit {
+                BackgroundFit::Fill | BackgroundFit::Fit => {
+                    let s = if *fit == BackgroundFit::Fill {
+                        (pw / nw).max(ph / nh)
+                    } else {
+                        (pw / nw).min(ph / nh)
+                    };
+                    (
+                        s,
+                        (pw - nw * s) / 2.0,
+                        (ph - nh * s) / 2.0,
+                        tiny_skia::SpreadMode::Pad,
+                    )
+                }
+                BackgroundFit::Tile => (1.0, 0.0, 0.0, tiny_skia::SpreadMode::Repeat),
+            };
+            // Photo px → natural px → page px → texture px.
+            let (sx, sy) = (nw / sw as f64 * scale * k, nh / sh as f64 * scale * k);
+            let shader = tiny_skia::Pattern::new(
+                source.as_ref(),
+                spread,
+                tiny_skia::FilterQuality::Bilinear,
+                1.0,
+                tiny_skia::Transform::from_row(
+                    sx as f32,
+                    0.0,
+                    0.0,
+                    sy as f32,
+                    (x * k) as f32,
+                    (y * k) as f32,
+                ),
+            );
+            let mut pixmap = tiny_skia::Pixmap::new(iw, ih)?;
+            let paint = tiny_skia::Paint {
+                shader,
+                ..tiny_skia::Paint::default()
+            };
+            // «Encajar» leaves the rest of the page as it is.
+            let covered = if *fit == BackgroundFit::Fit {
+                tiny_skia::Rect::from_xywh(
+                    (x * k) as f32,
+                    (y * k) as f32,
+                    (nw * scale * k) as f32,
+                    (nh * scale * k) as f32,
+                )?
+            } else {
+                rect
+            };
+            pixmap.fill_rect(covered, &paint, tiny_skia::Transform::identity(), None);
+            Some(to_image(pixmap))
+        }
+    }
+}
+
+/// `gafira_doc::Gradient::position` (spec 063).
+pub(crate) fn gradient_shader(
+    gradient: &gafira_doc::Gradient,
+    (w, h): (f64, f64),
+    (margin, scale): (f64, f64),
+) -> Option<tiny_skia::Shader<'static>> {
+    let stops = gradient
+        .stops
+        .iter()
+        .enumerate()
+        .map(|(index, stop)| {
+            let c = gradient.stop_rgba(index);
+            let color = tiny_skia::Color::from_rgba(
+                c.r.clamp(0.0, 1.0),
+                c.g.clamp(0.0, 1.0),
+                c.b.clamp(0.0, 1.0),
+                c.a.clamp(0.0, 1.0),
+            )
+            .unwrap_or(tiny_skia::Color::TRANSPARENT);
+            tiny_skia::GradientStop::new(stop.offset, color)
+        })
+        .collect();
+    let at = |x: f64, y: f64| {
+        tiny_skia::Point::from_xy(((x + margin) * scale) as f32, ((y + margin) * scale) as f32)
+    };
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    match gradient.kind {
+        gafira_doc::GradientKind::Linear { angle_deg } => {
+            let (sin, cos) = angle_deg.to_radians().sin_cos();
+            let half = (cx * cos).abs() + (cy * sin).abs();
+            tiny_skia::LinearGradient::new(
+                at(cx - cos * half, cy - sin * half),
+                at(cx + cos * half, cy + sin * half),
+                stops,
+                tiny_skia::SpreadMode::Pad,
+                tiny_skia::Transform::identity(),
+            )
+        }
+        gafira_doc::GradientKind::Radial => {
+            let centre = at(cx, cy);
+            tiny_skia::RadialGradient::new(
+                centre,
+                0.0,
+                centre,
+                (cx.hypot(cy) * scale) as f32,
+                stops,
+                tiny_skia::SpreadMode::Pad,
+                tiny_skia::Transform::identity(),
+            )
+        }
+    }
 }
 
 /// An image on its box mapped by `transform`: one textured quad whose
@@ -684,6 +1617,12 @@ pub(crate) fn image_mesh(
     mesh
 }
 
+/// The fill a new shape takes (spec 053): a light grey, #CCD1D9. It is
+/// document content, so it does not follow the light or dark theme.
+pub(crate) fn default_fill() -> Color {
+    Color::Srgb(Rgba::new(0.8, 0.82, 0.851, 1.0))
+}
+
 /// A theme colour as a document colour, for the default fill of a piece.
 pub(crate) fn document_color(color: Color32) -> Color {
     let channel = |v: u8| f32::from(v) / 255.0;
@@ -692,6 +1631,35 @@ pub(crate) fn document_color(color: Color32) -> Color {
         channel(color.g()),
         channel(color.b()),
         1.0,
+    ))
+}
+
+/// The colour a picker shows for `color`: unmultiplied sRGB bytes; no
+/// colour shows as transparent.
+pub(crate) fn picker_rgba(color: Option<Color>) -> [u8; 4] {
+    let Some(Color::Srgb(Rgba { r, g, b, a })) = color.map(|c| c.convert(ColorSpaceId::Srgb))
+    else {
+        return [0, 0, 0, 0];
+    };
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    [byte(r), byte(g), byte(b), byte(a)]
+}
+
+/// The colour picked as `rgba` (unmultiplied sRGB bytes) over `before`
+/// (spec 063): its transparency is kept, so a colour can fade out; picked
+/// over no colour, a transparent pick is made opaque, or it would not show.
+pub(crate) fn picked_color(before: Option<Color>, rgba: [u8; 4]) -> Color {
+    let channel = |v: u8| f32::from(v) / 255.0;
+    let alpha = if before.is_none() && rgba[3] == 0 {
+        1.0
+    } else {
+        channel(rgba[3])
+    };
+    Color::Srgb(Rgba::new(
+        channel(rgba[0]),
+        channel(rgba[1]),
+        channel(rgba[2]),
+        alpha,
     ))
 }
 
@@ -718,7 +1686,7 @@ mod tests {
             f64::from(rect.height()),
         );
         let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0));
-        match grip_hit(rotation::to_screen(page, 1.0, &p), &p, pointer)? {
+        match grip_hit(rotation::to_screen(page, 1.0, &p), &p, pointer, false)? {
             Grip::Resize(handle) => Some(handle),
             Grip::Rotate => None,
         }
@@ -739,6 +1707,10 @@ mod tests {
                     fill: None,
                     stroke: None,
                     corner_radius: 0.0,
+                    text: None,
+                    gradient: None,
+                    effect: None,
+                    drawn_with: None,
                 }),
             ))
         };
@@ -1043,6 +2015,8 @@ mod tests {
             font: "Inter".to_owned(),
             size: 40.0,
             color: document_color(Color32::BLACK),
+            bold: false,
+            italic: false,
         };
         let spec = new_text(Vec2::new(1000.0, 1000.0), "Hola", &style);
         assert_eq!((spec.placement.w, spec.placement.h), (600.0, 56.0));
@@ -1087,7 +2061,7 @@ mod tests {
             "never enlarged"
         );
         assert!(
-            matches!(small.kind, NodeKind::Image(gafira_doc::ImageNode { asset: a }) if a == asset)
+            matches!(small.kind, NodeKind::Image(gafira_doc::ImageNode { asset: a, .. }) if a == asset)
         );
     }
 
@@ -1172,6 +2146,345 @@ mod s41_tests {
     use super::*;
     use crate::rotation;
 
+    // S53-01: square, rounded square and circle: their geometry, their
+    // corner radius (an eighth of the side for the rounded one) and the
+    // size of a new piece.
+    #[test]
+    fn s53_01_basic_pieces() {
+        let fill = Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let page = Vec2::new(900.0, 600.0);
+        let cases = [
+            (Piece::Square, ShapeGeometry::Rect, 0.0),
+            (Piece::RoundedSquare, ShapeGeometry::Rect, 25.0),
+            (Piece::Circle, ShapeGeometry::Ellipse, 0.0),
+        ];
+        for (piece, geometry, radius) in cases {
+            let spec = new_shape(page, piece, fill);
+            assert_eq!((spec.placement.w, spec.placement.h), (200.0, 200.0));
+            let NodeKind::Shape(shape) = spec.kind else {
+                panic!("a shape");
+            };
+            assert_eq!(shape.geometry, geometry, "{piece:?}");
+            assert_eq!(shape.corner_radius, radius, "{piece:?}");
+        }
+    }
+
+    // S53-04: a new shape is filled light grey, #CCD1D9.
+    #[test]
+    fn s53_04_default_fill_is_light_grey() {
+        let Color::Srgb(rgba) = default_fill() else {
+            panic!("an sRGB colour");
+        };
+        let byte = |v: f32| (v * 255.0).round() as u8;
+        assert_eq!(
+            (byte(rgba.r), byte(rgba.g), byte(rgba.b), rgba.a),
+            (0xCC, 0xD1, 0xD9, 1.0)
+        );
+    }
+
+    // S58-05: «Líneas» comes first with its five lines, and a line from
+    // the panel is a line element across the middle of the page.
+    #[test]
+    fn s58_05_the_lines_come_first() {
+        let (title, pieces) = PIECE_SECTIONS[0];
+        assert_eq!(title, "pieces.lines");
+        assert_eq!(pieces.len(), 5);
+        assert!(pieces.iter().all(|p| p.line_caps().is_some()));
+        let fill = default_fill();
+        let spec = new_shape(Vec2::new(900.0, 600.0), Piece::LineArrow, fill);
+        let NodeKind::Line(line) = &spec.kind else {
+            panic!("a line");
+        };
+        assert_eq!(
+            (line.start.cap, line.end.cap),
+            (gafira_doc::LineCap::Square, gafira_doc::LineCap::Arrow)
+        );
+        assert_eq!(spec.placement, Placement::new(350.0, 300.0, 200.0, 0.0));
+        let dropped = piece_at(
+            Vec2::new(900.0, 600.0),
+            Piece::LinePlain,
+            fill,
+            (100.0, 50.0),
+        );
+        assert_eq!(dropped.placement, Placement::new(0.0, 50.0, 200.0, 0.0));
+    }
+
+    // S53-02: the panel lists «Formas básicas» with its three shapes in
+    // order, and no section is empty.
+    #[test]
+    fn s53_02_sections() {
+        let (title, pieces) = PIECE_SECTIONS[1];
+        assert_eq!(title, "pieces.basic");
+        assert_eq!(
+            pieces[..3],
+            [Piece::Square, Piece::RoundedSquare, Piece::Circle],
+            "spec 054 adds more after them"
+        );
+        assert!(PIECE_SECTIONS.iter().all(|(_, pieces)| !pieces.is_empty()));
+    }
+
+    // S55-04: the text of a shape is laid out in its box less a tenth of
+    // its shorter side, and starts at the top, the middle or the bottom.
+    #[test]
+    fn s55_04_text_offset() {
+        use gafira_doc::VerticalAlign;
+        let inner = text_box(Rect::from_min_size(
+            Pos2::new(10.0, 20.0),
+            Vec2::new(200.0, 100.0),
+        ));
+        assert_eq!(
+            inner,
+            Rect::from_min_max(Pos2::new(20.0, 30.0), Pos2::new(200.0, 110.0))
+        );
+        assert_eq!(text_top(inner, 20.0, VerticalAlign::Top), 30.0);
+        assert_eq!(text_top(inner, 20.0, VerticalAlign::Middle), 60.0);
+        assert_eq!(text_top(inner, 20.0, VerticalAlign::Bottom), 90.0);
+        assert_eq!(
+            text_top(inner, 200.0, VerticalAlign::Middle),
+            -30.0,
+            "taller than the box"
+        );
+    }
+
+    // S54-04: a path shape is drawn from a texture that fills its inside
+    // and leaves the rest of its box clear; a click inside the path takes
+    // it and one in the box but outside the path does not.
+    #[test]
+    fn s54_04_a_path_draws_and_hits_inside_only() {
+        use gafira_doc::{PathCommand, ShapePath};
+        let triangle = ShapePath::new(vec![
+            PathCommand::MoveTo([0.5, 0.0]),
+            PathCommand::LineTo([1.0, 1.0]),
+            PathCommand::LineTo([0.0, 1.0]),
+            PathCommand::Close,
+        ]);
+        let mut node = ShapeNode::new(ShapeGeometry::Path(triangle));
+        node.fill = Some(Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0)));
+        let shape = Shape {
+            page: PageId::new(1),
+            node: NodeId::new(2),
+            placement: Placement::new(0.0, 0.0, 100.0, 100.0),
+            geometry: node.geometry.clone(),
+            fill: node.fill,
+            stroke: None,
+            corner_radius: 0.0,
+            gradient: None,
+            effect: None,
+            opacity: 1.0,
+            inherited: 1.0,
+            group: false,
+            text: None,
+            image: None,
+            locked: false,
+            inner: None,
+            line: None,
+            frame: None,
+            qr: None,
+            table: None,
+            chart: None,
+        };
+        let (image, covered) = path_image(&shape, 1.0).expect("a texture");
+        // One screen px of margin on each side.
+        assert_eq!(covered, Placement::new(-1.0, -1.0, 102.0, 102.0));
+        assert_eq!(image.size, [102, 102]);
+        let at = |x: usize, y: usize| image.pixels[(y + 1) * 102 + x + 1];
+        assert_eq!(at(50, 90), Color32::from_rgb(255, 0, 0), "inside");
+        assert_eq!(at(5, 5).a(), 0, "a corner of the box");
+        let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
+        let shapes = [shape];
+        assert_eq!(
+            hit(&shapes, page, 1.0, Pos2::new(50.0, 90.0)),
+            Some(NodeId::new(2))
+        );
+        assert_eq!(hit(&shapes, page, 1.0, Pos2::new(5.0, 5.0)), None);
+        let mut flat = shapes[0].clone();
+        flat.placement.h = 0.0;
+        assert!(path_image(&flat, 1.0).is_none());
+    }
+
+    // S63-05: the picker keeps the transparency picked, so a gradient can
+    // run to transparent; over no colour, a transparent pick is opaque.
+    #[test]
+    fn s63_05_the_picker_keeps_the_alpha() {
+        let half = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 0.5));
+        assert_eq!(picker_rgba(Some(half)), [255, 0, 0, 128]);
+        assert_eq!(picker_rgba(None), [0, 0, 0, 0]);
+        let red = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
+        let clear = picked_color(Some(red), [255, 0, 0, 0]);
+        assert_eq!(clear, Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 0.0)));
+        let faded = picked_color(Some(red), [0, 0, 255, 51]);
+        assert_eq!(faded, Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 0.2)));
+        assert_eq!(
+            picked_color(None, [0, 0, 255, 0]),
+            Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0))
+        );
+    }
+
+    // S63-03: a shape with a gradient is drawn from a texture filled with
+    // it, red on the left of a left-to-right gradient and blue on the
+    // S66-05: the canvas cuts the photo of a frame to its shape: red inside
+    // the circle, nothing in the corners of the box; an empty frame shows
+    // the placeholder grey.
+    #[test]
+    fn s66_05_the_canvas_cuts_the_photo_to_the_shape() {
+        use gafira_doc::timeline::AssetRef;
+        use gafira_doc::{ContentHash, FrameContent, FrameNode};
+        let page_with = |content: Option<FrameContent>| {
+            let mut page = Page::new(
+                PageId::new(1),
+                String::new(),
+                gafira_doc::PageSize {
+                    width: gafira_geom::Length::new(400.0, gafira_geom::Unit::Px),
+                    height: gafira_geom::Length::new(400.0, gafira_geom::Unit::Px),
+                },
+            );
+            let mut frame = FrameNode::new(ShapeGeometry::Ellipse);
+            frame.content = content;
+            let base = gafira_doc::ElementBase::new(
+                NodeId::new(2),
+                Placement::new(0.0, 0.0, 100.0, 100.0),
+            );
+            page.nodes.insert(
+                NodeId::new(2),
+                std::sync::Arc::new(gafira_doc::Node::new(base, NodeKind::Frame(frame))),
+            );
+            page.roots = vec![NodeId::new(2)];
+            page
+        };
+        let content = FrameContent {
+            asset: AssetRef::new(ContentHash([5; 32])),
+            natural: (8, 8),
+        };
+        let shape = shapes(&page_with(Some(content))).remove(0);
+        assert!(shape.fill.is_none(), "a frame has no fill of its own");
+        let photo = egui::ColorImage::new([8, 8], vec![Color32::from_rgb(255, 0, 0); 64]);
+        let image = frame_image(&shape, &photo, 1.0).expect("a texture");
+        assert_eq!(image.size, [100, 100]);
+        assert_eq!(image.pixels[50 * 100 + 50], Color32::from_rgb(255, 0, 0));
+        assert_eq!(image.pixels[2 * 100 + 2].a(), 0, "the corner is cut");
+        // An empty frame shows the sample photo, cut out the same way.
+        let empty = shapes(&page_with(None)).remove(0);
+        assert!(empty.fill.is_none());
+        assert!(
+            frame_image(&empty, &photo, 1.0).is_none(),
+            "no photo of its own"
+        );
+        let sample = sample_photo().expect("the sample decodes");
+        let shown = frame_image(&with_sample(&empty, &sample), &sample, 1.0).expect("sample");
+        assert!(
+            shown.pixels[50 * 100 + 50].a() > 0,
+            "the sample shows inside"
+        );
+        assert_eq!(shown.pixels[2 * 100 + 2].a(), 0, "and is cut at the corner");
+        assert!(
+            crate::frames::spec(
+                crate::frames::Kind::Piece(Piece::Heart),
+                (44.0, 44.0),
+                (22.0, 22.0)
+            )
+            .and_then(|spec| spec_preview(&spec, 44.0, 2.0))
+            .is_some(),
+            "the panel tile"
+        );
+    }
+
+    // right, inside the rounded corners only.
+    #[test]
+    fn s63_03_a_gradient_shape_draws_from_a_texture() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let mut shape = shapes(&{
+            let mut page = Page::new(
+                PageId::new(1),
+                String::new(),
+                gafira_doc::PageSize {
+                    width: gafira_geom::Length::new(400.0, gafira_geom::Unit::Px),
+                    height: gafira_geom::Length::new(400.0, gafira_geom::Unit::Px),
+                },
+            );
+            let mut node = ShapeNode::new(ShapeGeometry::Rect);
+            node.corner_radius = 20.0;
+            node.gradient = Some(Gradient {
+                kind: GradientKind::Linear { angle_deg: 0.0 },
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0)),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
+                    },
+                ],
+            });
+            let base =
+                gafira_doc::ElementBase::new(NodeId::new(2), Placement::new(0.0, 0.0, 100.0, 50.0));
+            page.nodes.insert(
+                NodeId::new(2),
+                std::sync::Arc::new(gafira_doc::Node::new(base, NodeKind::Shape(node))),
+            );
+            page.roots = vec![NodeId::new(2)];
+            page
+        })
+        .remove(0);
+        assert!(textured(&shape));
+        let (image, _) = path_image(&shape, 1.0).expect("a texture");
+        let at = |x: usize, y: usize| image.pixels[(y + 1) * 102 + x + 1];
+        assert!(
+            at(2, 25).r() > 200 && at(2, 25).b() < 50,
+            "red on the left: {:?}",
+            at(2, 25)
+        );
+        assert!(
+            at(97, 25).b() > 200 && at(97, 25).r() < 50,
+            "blue on the right"
+        );
+        assert_eq!(at(1, 1).a(), 0, "outside the rounded corner");
+        assert_eq!(
+            painted(
+                &shape,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 50.0)),
+                1.0
+            ),
+            egui::Shape::Noop
+        );
+        shape.gradient = None;
+        assert!(!textured(&shape));
+    }
+
+    // S61-02: a box that grows down with its text takes the text's height;
+    // a fixed box does not; half a px or less changes nothing.
+    #[test]
+    fn s61_02_text_fit() {
+        use gafira_doc::TextSizing;
+        let at = Placement::new(10.0, 20.0, 300.0, 40.0);
+        let grown = text_fit(TextSizing::AutoHeight, &at, 96.0).expect("it grows");
+        assert_eq!(grown, Placement::new(10.0, 20.0, 300.0, 96.0));
+        assert_eq!(
+            text_fit(TextSizing::AutoHeight, &at, 20.0).map(|p| p.h),
+            Some(20.0),
+            "and shrinks"
+        );
+        assert_eq!(text_fit(TextSizing::AutoHeight, &at, 40.4), None);
+        assert_eq!(text_fit(TextSizing::Fixed, &at, 96.0), None);
+        assert_eq!(text_fit(TextSizing::AutoHeight, &at, f64::NAN), None);
+    }
+
+    // S61-03: a dropped text is centred on the point where it was dropped.
+    #[test]
+    fn s61_03_text_at() {
+        let style = SpanStyle {
+            font: "Inter".to_owned(),
+            size: 20.0,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
+        };
+        let spec = text_at(Vec2::new(1000.0, 800.0), "Hola", &style, (300.0, 100.0));
+        let p = spec.placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 100.0));
+        assert_eq!((p.w, p.h), (600.0, 28.0), "the size of a new text");
+    }
+
     // S52-02: a shape dropped on a page lands on the point under the
     // pointer, in px of page; in the gap between pages, nowhere.
     #[test]
@@ -1205,7 +2518,7 @@ mod s41_tests {
     fn s52_03_piece_at() {
         let fill = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
         let page = Vec2::new(900.0, 600.0);
-        let spec = piece_at(page, ShapeGeometry::Ellipse, fill, (100.0, 50.0));
+        let spec = piece_at(page, Piece::Circle, fill, (100.0, 50.0));
         assert_eq!(spec.placement, Placement::new(0.0, -50.0, 200.0, 200.0));
         assert!(matches!(
             spec.kind,
@@ -1299,18 +2612,21 @@ mod s41_tests {
         let at = handle_point(t, &p, right);
         assert!((at - Pos2::new(50.0, 70.0)).length() < 1e-3, "{at:?}");
         assert_eq!(
-            grip_hit(t, &p, Pos2::new(51.0, 71.0)),
+            grip_hit(t, &p, Pos2::new(51.0, 71.0), false),
             Some(Grip::Resize(right))
         );
         // The top edge faces right: the rotate handle is 24 px past x = 55.
-        assert_eq!(grip_hit(t, &p, Pos2::new(79.0, 50.0)), Some(Grip::Rotate));
         assert_eq!(
-            grip_hit(t, &p, Pos2::new(57.0, 50.0)),
+            grip_hit(t, &p, Pos2::new(79.0, 50.0), false),
+            Some(Grip::Rotate)
+        );
+        assert_eq!(
+            grip_hit(t, &p, Pos2::new(57.0, 50.0), false),
             Some(Grip::Resize(Handle { x: 0, y: -1 })),
             "the top-middle handle is nearer"
         );
         assert_eq!(
-            grip_hit(t, &p, Pos2::new(50.0, 90.0)),
+            grip_hit(t, &p, Pos2::new(50.0, 90.0), false),
             None,
             "past the ends"
         );
@@ -1419,4 +2735,280 @@ mod s41_tests {
             origin.pos
         );
     }
+}
+
+/// The fonts the canvas draws a curved text with (FD-44): those of the
+/// theme and the library, as the export has them.
+pub(crate) fn text_fonts() -> &'static gafira_render::FontBook {
+    static FONTS: std::sync::OnceLock<gafira_render::FontBook> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| {
+        let book = gafira_theme::fonts()
+            .iter()
+            .fold(gafira_render::FontBook::new(), |book, font| {
+                book.with(font.family, font.bytes)
+            });
+        gafira_theme::library().iter().fold(book, |book, face| {
+            book.with(
+                &gafira_theme::face_key(face.family, face.bold, face.italic),
+                face.bytes,
+            )
+        })
+    })
+}
+
+/// The height a text drawn from its outline needs: a curved one down to the
+/// lowest letter of its arc and a quarter of its size under it (FD-44), a
+/// straight one the height of its lines (FD-41); `None` when it draws
+/// nothing.
+pub(crate) fn curved_height(text: &TextNode, width: f64, height: f64) -> Option<f64> {
+    use kurbo::Shape as _;
+    let size = text.content.first_style()?.size;
+    let (path, _, lines) = gafira_render::text_outline(text, (width, height), text_fonts())?;
+    Some(if text.curve == 0.0 {
+        lines
+    } else {
+        path.bounding_box().y1 + size * 0.25
+    })
+}
+
+/// The texture of a text drawn from its outline (curved, spaced or with a
+/// gradient) at `zoom` and the box it covers:
+/// its own box grown the same on every side until the letters fit, so it
+/// turns about the same centre. The same outline as the export.
+pub(crate) fn curved_text_image(
+    text: &TextNode,
+    placement: &Placement,
+    zoom: f32,
+) -> Option<(egui::ColorImage, Placement)> {
+    use kurbo::Shape as _;
+    let (w, h) = (placement.w.abs(), placement.h.abs());
+    let zoom = f64::from(zoom);
+    if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let (path, color, _) = gafira_render::text_outline(text, (w, h), text_fonts())?;
+    let bbox = path.bounding_box();
+    let margin = [-bbox.x0, -bbox.y0, bbox.x1 - w, bbox.y1 - h]
+        .into_iter()
+        .fold(0.0_f64, f64::max)
+        + 2.0;
+    let cover = Placement {
+        x: placement.x - margin,
+        y: placement.y - margin,
+        w: w + 2.0 * margin,
+        h: h + 2.0 * margin,
+        ..*placement
+    };
+    let scale = zoom.min(PATH_TEXTURE_MAX / cover.w.max(cover.h));
+    let side = |v: f64| (v * scale).round().max(1.0) as u32;
+    let (pw, ph) = (side(cover.w), side(cover.h));
+    let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
+    let at = |p: kurbo::Point| {
+        (
+            ((p.x + margin) * scale) as f32,
+            ((p.y + margin) * scale) as f32,
+        )
+    };
+    let mut builder = tiny_skia::PathBuilder::new();
+    for el in path.elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => {
+                let (x, y) = at(p);
+                builder.move_to(x, y);
+            }
+            kurbo::PathEl::LineTo(p) => {
+                let (x, y) = at(p);
+                builder.line_to(x, y);
+            }
+            kurbo::PathEl::QuadTo(c, p) => {
+                let ((cx, cy), (x, y)) = (at(c), at(p));
+                builder.quad_to(cx, cy, x, y);
+            }
+            kurbo::PathEl::CurveTo(c1, c2, p) => {
+                let ((ax, ay), (bx, by), (x, y)) = (at(c1), at(c2), at(p));
+                builder.cubic_to(ax, ay, bx, by, x, y);
+            }
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    let outline = builder.finish()?;
+    let c = screen_color(color);
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+    paint.anti_alias = true;
+    // A gradient over the box, as the export fills it (spec 070).
+    if let Some(shader) = text
+        .gradient
+        .as_ref()
+        .and_then(|g| gradient_shader(g, (w, h), (margin, scale)))
+    {
+        paint.shader = shader;
+    }
+    pixmap.fill_path(
+        &outline,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    let image =
+        egui::ColorImage::from_rgba_premultiplied([pw as usize, ph as usize], pixmap.data());
+    Some((image, cover))
+}
+
+/// `path` as a tiny-skia path.
+pub(crate) fn skia_path(path: &kurbo::BezPath) -> Option<tiny_skia::Path> {
+    let mut builder = tiny_skia::PathBuilder::new();
+    for el in path.elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => builder.move_to(p.x as f32, p.y as f32),
+            kurbo::PathEl::LineTo(p) => builder.line_to(p.x as f32, p.y as f32),
+            kurbo::PathEl::QuadTo(c, p) => {
+                builder.quad_to(c.x as f32, c.y as f32, p.x as f32, p.y as f32);
+            }
+            kurbo::PathEl::CurveTo(a, b, p) => builder.cubic_to(
+                a.x as f32, a.y as f32, b.x as f32, b.y as f32, p.x as f32, p.y as f32,
+            ),
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    builder.finish()
+}
+
+/// The outline of `geometry` in a `w` × `h` box from its top-left corner,
+/// a rectangle's corners rounded by `radius`.
+fn spec_outline(geometry: &ShapeGeometry, (w, h): (f64, f64), radius: f64) -> kurbo::BezPath {
+    use kurbo::Shape as _;
+    match geometry {
+        ShapeGeometry::Path(path) => crate::shapes::bez(path, w, h),
+        ShapeGeometry::Ellipse => {
+            kurbo::Ellipse::from_rect(kurbo::Rect::new(0.0, 0.0, w, h)).to_path(0.1)
+        }
+        ShapeGeometry::Rect => {
+            let r = radius.max(0.0).min(w.min(h) / 2.0);
+            kurbo::RoundedRect::new(0.0, 0.0, w, h, r).to_path(0.1)
+        }
+    }
+}
+
+/// A frame, or a group of shapes and frames, drawn in a square of `side`
+/// px at `scale`, fitted with its proportions kept: shapes in their colours
+/// and outlines, turned as they are, frames holding the sample photo cut to
+/// cover them. The preview of a tile of Marcos.
+pub(crate) fn spec_preview(spec: &NodeSpec, side: f64, scale: f32) -> Option<egui::ColorImage> {
+    let sample = sample_photo()?;
+    let px = (side * f64::from(scale)).round().clamp(1.0, 1024.0) as u32;
+    let mut pixmap = tiny_skia::Pixmap::new(px, px)?;
+    let [sw, sh] = sample.size;
+    // egui's colours are premultiplied, as tiny-skia's pixmaps are.
+    let data: Vec<u8> = sample.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let photo = tiny_skia::Pixmap::from_vec(
+        data,
+        tiny_skia::IntSize::from_wh(u32::try_from(sw).ok()?, u32::try_from(sh).ok()?)?,
+    )?;
+    let b = spec.placement;
+    let k = f64::from(px) / b.w.max(b.h).max(1e-9);
+    let (ox, oy) = (
+        (f64::from(px) - b.w * k) / 2.0 - b.x * k,
+        (f64::from(px) - b.h * k) / 2.0 - b.y * k,
+    );
+    let mut leaves = Vec::new();
+    fn walk<'a>(spec: &'a NodeSpec, out: &mut Vec<&'a NodeSpec>) {
+        if spec.children.is_empty() {
+            out.push(spec);
+        }
+        for child in &spec.children {
+            walk(child, out);
+        }
+    }
+    walk(spec, &mut leaves);
+    for leaf in leaves {
+        let p = leaf.placement;
+        let (cx, cy) = (p.w / 2.0, p.h / 2.0);
+        let at = kurbo::Affine::translate((ox, oy))
+            * kurbo::Affine::scale(k)
+            * kurbo::Affine::translate((p.x + cx, p.y + cy))
+            * kurbo::Affine::rotate(p.rotation_deg.to_radians())
+            * kurbo::Affine::translate((-cx, -cy));
+        let (geometry, radius) = match &leaf.kind {
+            NodeKind::Shape(shape) => (&shape.geometry, shape.corner_radius),
+            NodeKind::Frame(frame) => (&frame.clip_shape, frame.corner_radius),
+            _ => continue,
+        };
+        let mut outline = spec_outline(geometry, (p.w, p.h), radius);
+        outline.apply_affine(at);
+        let Some(path) = skia_path(&outline) else {
+            continue;
+        };
+        match &leaf.kind {
+            NodeKind::Shape(shape) => {
+                if let Some(fill) = shape.fill {
+                    let c = screen_color(fill);
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+                    paint.anti_alias = true;
+                    pixmap.fill_path(
+                        &path,
+                        &paint,
+                        tiny_skia::FillRule::Winding,
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                }
+                if let Some(stroke) = shape.stroke.filter(|s| s.width > 0.0) {
+                    let c = screen_color(stroke.color);
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+                    paint.anti_alias = true;
+                    let style = tiny_skia::Stroke {
+                        width: ((stroke.width * k) as f32).max(0.75),
+                        ..tiny_skia::Stroke::default()
+                    };
+                    pixmap.stroke_path(
+                        &path,
+                        &paint,
+                        &style,
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                }
+            }
+            NodeKind::Frame(_) => {
+                // The photo covering the frame's box, its middle kept.
+                let cover = (p.w / sw as f64).max(p.h / sh as f64);
+                let into =
+                    at * kurbo::Affine::translate((
+                        (p.w - sw as f64 * cover) / 2.0,
+                        (p.h - sh as f64 * cover) / 2.0,
+                    )) * kurbo::Affine::scale(cover);
+                let [a, b2, c, d, e, f] = into.as_coeffs();
+                let shader = tiny_skia::Pattern::new(
+                    photo.as_ref(),
+                    tiny_skia::SpreadMode::Pad,
+                    tiny_skia::FilterQuality::Bilinear,
+                    1.0,
+                    tiny_skia::Transform::from_row(
+                        a as f32, b2 as f32, c as f32, d as f32, e as f32, f as f32,
+                    ),
+                );
+                let paint = tiny_skia::Paint {
+                    shader,
+                    anti_alias: true,
+                    ..tiny_skia::Paint::default()
+                };
+                pixmap.fill_path(
+                    &path,
+                    &paint,
+                    tiny_skia::FillRule::Winding,
+                    tiny_skia::Transform::identity(),
+                    None,
+                );
+            }
+            _ => {}
+        }
+    }
+    Some(egui::ColorImage::from_rgba_premultiplied(
+        [px as usize, px as usize],
+        pixmap.data(),
+    ))
 }

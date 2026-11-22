@@ -3,20 +3,82 @@
 use gafira_color::Color;
 use serde::{Deserialize, Serialize};
 
-use crate::{ElementBase, ImageNode, NodeId, TextNode};
+use crate::{ElementBase, ImageNode, NodeId, RichText, TextAlign, TextNode};
 
 /// A group: it only arranges its children and carries no data of its own.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupNode {}
 
 /// The outline of a shape, drawn inside the placement box.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Rect` and `Ellipse` are written as the strings `"rect"` and
+/// `"ellipse"`; a path as `{"path": {"commands": [...]}}` (D-95), so a
+/// document without paths writes the bytes it wrote before spec 054.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShapeGeometry {
     /// A rectangle filling the box.
     Rect,
     /// An ellipse inscribed in the box.
     Ellipse,
+    /// A vector path in the unit box, scaled to the placement (spec 054).
+    Path(ShapePath),
+}
+
+/// A vector path in the unit box: `(0, 0)` is the top-left corner of the
+/// placement and `(1, 1)` the bottom-right one (spec 054, D-95). Its
+/// interior follows the non-zero rule.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ShapePath {
+    /// The drawing orders, in order; the first one is a `MoveTo`.
+    pub commands: Vec<PathCommand>,
+}
+
+impl ShapePath {
+    /// The most orders a path holds.
+    pub const MAX_COMMANDS: usize = 4096;
+    /// The least and greatest coordinate a point may take: the path may
+    /// leave the unit box by one box in each direction.
+    pub const MIN_COORDINATE: f64 = -1.0;
+    pub const MAX_COORDINATE: f64 = 2.0;
+
+    /// A path of these orders.
+    pub fn new(commands: Vec<PathCommand>) -> Self {
+        Self { commands }
+    }
+
+    /// Every coordinate of every point, x then y, in order.
+    pub fn coordinates(&self) -> impl Iterator<Item = f64> + '_ {
+        self.commands.iter().flat_map(PathCommand::points).flatten()
+    }
+}
+
+/// One order of a [`ShapePath`], with its points in the unit box.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathCommand {
+    /// Start a new subpath at the point.
+    MoveTo([f64; 2]),
+    /// A straight line to the point.
+    LineTo([f64; 2]),
+    /// A quadratic curve through a control point to the point.
+    QuadTo([f64; 2], [f64; 2]),
+    /// A cubic curve through two control points to the point.
+    CubicTo([f64; 2], [f64; 2], [f64; 2]),
+    /// Close the subpath back to where it started.
+    Close,
+}
+
+impl PathCommand {
+    /// The points of the order, in order.
+    pub fn points(&self) -> Vec<[f64; 2]> {
+        match *self {
+            Self::MoveTo(p) | Self::LineTo(p) => vec![p],
+            Self::QuadTo(c, p) => vec![c, p],
+            Self::CubicTo(c1, c2, p) => vec![c1, c2, p],
+            Self::Close => Vec::new(),
+        }
+    }
 }
 
 /// The outline drawn along the edge of a shape, centred on it (spec 038,
@@ -39,8 +101,45 @@ impl ShapeStroke {
     }
 }
 
+/// Where the lines of a shape's text sit in its box, top to bottom.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalAlign {
+    Top,
+    #[default]
+    Middle,
+    Bottom,
+}
+
+/// The text inside a shape (spec 055, D-96): its words and styles, and how
+/// it aligns across and down the shape's box.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShapeText {
+    pub content: RichText,
+    #[serde(default = "centred")]
+    pub align: TextAlign,
+    #[serde(default)]
+    pub valign: VerticalAlign,
+}
+
+fn centred() -> TextAlign {
+    TextAlign::Center
+}
+
+impl ShapeText {
+    /// `text` in one style, centred across and down.
+    #[must_use]
+    pub fn plain(text: &str, style: &crate::SpanStyle) -> Self {
+        Self {
+            content: RichText::plain(text, style),
+            align: TextAlign::Center,
+            valign: VerticalAlign::Middle,
+        }
+    }
+}
+
 /// A geometric shape with an optional fill and outline.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShapeNode {
     /// The outline.
     pub geometry: ShapeGeometry,
@@ -60,6 +159,25 @@ pub struct ShapeNode {
     /// is not `+0.0`.
     #[serde(default, skip_serializing_if = "is_positive_zero")]
     pub corner_radius: f64,
+    /// The text written inside the shape, if any (spec 055, D-96).
+    ///
+    /// Written only when set, so a shape without one keeps the bytes it had
+    /// before spec 055.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<ShapeText>,
+    /// A gradient that fills the shape instead of `fill` (spec 063, D-101).
+    /// Written only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<crate::Gradient>,
+    /// A light drawn instead of the shape (spec 065, D-103). Written only
+    /// when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<crate::ShapeEffect>,
+    /// The brush that drew the shape by hand (spec 079): a freehand
+    /// stroke, which the eraser removes whole. Written only when set; at
+    /// most [`ShapeNode::MAX_BRUSH_ID`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drawn_with: Option<String>,
 }
 
 /// Whether `value` is `+0.0`, the default radius.
@@ -68,15 +186,22 @@ fn is_positive_zero(value: &f64) -> bool {
 }
 
 impl ShapeNode {
-    /// A shape without a fill, an outline or rounded corners.
+    /// A shape without a fill, an outline, rounded corners or text.
     pub const fn new(geometry: ShapeGeometry) -> Self {
         Self {
             geometry,
             fill: None,
             stroke: None,
             corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         }
     }
+
+    /// The longest brush id a freehand stroke keeps.
+    pub const MAX_BRUSH_ID: usize = 64;
 }
 
 /// A node owned by a plugin or a future feature, kept as opaque data.
@@ -110,6 +235,16 @@ pub enum NodeKind {
     Text(TextNode),
     /// An image element (spec 029).
     Image(ImageNode),
+    /// A line between two ends, which may stick to shapes (spec 058).
+    Line(crate::LineNode),
+    /// A photo cut out by a shape (spec 066, FD-18).
+    Frame(crate::FrameNode),
+    /// A QR code (spec 080, FD-20).
+    Qr(Box<crate::QrNode>),
+    /// A table (spec 081, FD-21).
+    Table(Box<crate::TableNode>),
+    /// A chart (spec 083, FD-22, D-114).
+    Chart(Box<crate::ChartNode>),
     /// An opaque extension node.
     Extension(ExtensionNode),
 }
@@ -157,11 +292,17 @@ mod tests {
             NodeKind::Shape(_) => "shape",
             NodeKind::Text(_) => "text",
             NodeKind::Image(_) => "image",
+            NodeKind::Line(_) => "line",
+            NodeKind::Frame(_) => "frame",
+            NodeKind::Qr(_) => "qr",
+            NodeKind::Table(_) => "table",
+            NodeKind::Chart(_) => "chart",
             NodeKind::Extension(_) => "extension",
         };
         let geometry_name = |g: ShapeGeometry| match g {
             ShapeGeometry::Rect => "rect",
             ShapeGeometry::Ellipse => "ellipse",
+            ShapeGeometry::Path(_) => "path",
         };
         assert_eq!(kind_name(&NodeKind::Group(GroupNode {})), "group");
         assert_eq!(
@@ -274,7 +415,7 @@ mod tests {
             2.5,
         ));
         shape.corner_radius = 12.0;
-        let n = Node::new(base(1), NodeKind::Shape(shape));
+        let n = Node::new(base(1), NodeKind::Shape(shape.clone()));
         assert_eq!(
             kind(&n),
             r#"{"corner_radius":12.0,"fill":null,"geometry":"rect","stroke":{"color":{"a":1.0,"b":1.0,"g":0.0,"r":0.0,"space":"srgb"},"width":2.5},"type":"shape"}"#

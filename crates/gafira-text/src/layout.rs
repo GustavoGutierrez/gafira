@@ -180,6 +180,56 @@ pub fn layout_box(
     layout_with(&mut stack, text, style, size_px, &[], bounds.width())
 }
 
+/// `layout_box` in the face `(bold, italic)` of the family of the first font
+/// (spec 062): the stack holds the faces of the family and the layout picks
+/// the one that matches.
+pub fn layout_box_face(
+    text: &str,
+    fonts: &[&[u8]],
+    style: &TextStyle,
+    face: (bool, bool),
+    dpi: f64,
+    bounds: Size,
+) -> Result<TextLayout, TextError> {
+    let size_px = check_input(style, dpi, bounds)?;
+    if fonts.is_empty() {
+        return Err(TextError::NoFont);
+    }
+    let mut stack = Stack::new(fonts)?;
+    stack.face = face;
+    layout_with(&mut stack, text, style, size_px, &[], bounds.width())
+}
+
+/// Fonts ready to lay many texts out (spec 081): registering them is the
+/// costly part of [`layout_box`], and it is done once. The result is the
+/// same.
+pub struct FontStack(Stack);
+
+impl FontStack {
+    /// Registers the fonts, in order; `InvalidFont` names the first that
+    /// cannot be read.
+    pub fn new(fonts: &[&[u8]]) -> Result<Self, TextError> {
+        if fonts.is_empty() {
+            return Err(TextError::NoFont);
+        }
+        Stack::new(fonts).map(Self)
+    }
+
+    /// [`layout_box_face`] with these fonts.
+    pub fn layout_box_face(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        face: (bool, bool),
+        dpi: f64,
+        bounds: Size,
+    ) -> Result<TextLayout, TextError> {
+        let size_px = check_input(style, dpi, bounds)?;
+        self.0.face = face;
+        layout_with(&mut self.0, text, style, size_px, &[], bounds.width())
+    }
+}
+
 /// The font stack of a call: registered once, so a search that lays the same text out many
 /// times does not register the fonts again.
 pub(crate) struct Stack {
@@ -187,6 +237,8 @@ pub(crate) struct Stack {
     lcx: LayoutContext<()>,
     names: Vec<FontFamilyName<'static>>,
     blob_ids: Vec<u64>,
+    /// The face asked for, bold then italic (spec 062).
+    face: (bool, bool),
 }
 
 impl Stack {
@@ -214,6 +266,7 @@ impl Stack {
             lcx: LayoutContext::new(),
             names,
             blob_ids,
+            face: (false, false),
         })
     }
 }
@@ -242,7 +295,9 @@ pub(crate) fn layout_with(
         lcx,
         names,
         blob_ids,
+        face,
     } = stack;
+    let (bold, italic) = *face;
     let input = text;
     let converted;
     let mut source_map = None;
@@ -291,6 +346,14 @@ pub(crate) fn layout_with(
             names.as_slice(),
         ))));
         builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
+        // The face of the family: the stack holds its faces and the
+        // layout takes the one with this weight and style (spec 062).
+        if bold {
+            builder.push_default(StyleProperty::FontWeight(parley::FontWeight::BOLD));
+        }
+        if italic {
+            builder.push_default(StyleProperty::FontStyle(parley::FontStyle::Italic));
+        }
         builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
             style.line_height as f32,
         )));

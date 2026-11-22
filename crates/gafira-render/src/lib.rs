@@ -23,11 +23,11 @@ mod scope;
 
 pub use budget::{FRAME, FrameBudget, GRAPH_READY, MARGIN, Stage, VISIBLE_DONE};
 pub use cache::ContentTileCache;
-pub use fonts::FontBook;
+pub use fonts::{FontBook, FontLoader};
 pub use frame::{BackendSelector, Degradation, FrameLoop, FrameOutcome, FrameRequest};
 pub use graph::{
     GraphError, GraphNode, GraphNodeId, GraphNodeKind, GraphParams, RenderGraph,
-    RenderGraphBuilder, SourceKind,
+    RenderGraphBuilder, SourceKind, cell_outline, chart_outlines, text_outline,
 };
 pub use key::{DOMAIN, KeyParam, NodeType, canonical_description, content_key};
 pub use page::{BackendFactory, GraphPageRenderer, GraphPageRenderers, PAGE_BACKGROUND};

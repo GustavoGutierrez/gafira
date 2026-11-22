@@ -168,7 +168,7 @@
     "control": { "sm": 28, "md": 32, "lg": 40 },
     "icon": { "sm": 16, "md": 20, "lg": 24 },
     "target.min": 24,
-    "panel.left": 320, "panel.right": 296, "rail": 64, "topbar": 48, "bottombar": 40, "timeline.min": 220
+    "panel.left": 320, "panel.right": 296, "rail": 68, "topbar": 48, "bottombar": 40, "timeline.min": 220
   },
   "border": { "width": 1, "focus": 2, "focus.offset": 2 },
   "shadow": {

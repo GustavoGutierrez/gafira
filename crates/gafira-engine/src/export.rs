@@ -321,10 +321,18 @@ fn decode_images_until(
     let assets: BTreeSet<AssetRef> = pages
         .iter()
         .filter_map(|page| document.page(*page))
-        .flat_map(|page| page.nodes.values())
-        .filter_map(|node| match &node.kind {
-            NodeKind::Image(image) => Some(image.asset),
-            _ => None,
+        // The image of a page background is decoded too (spec 069).
+        .flat_map(|page| {
+            page.background
+                .as_ref()
+                .and_then(gafira_doc::PageBackground::asset)
+                .into_iter()
+                .chain(page.nodes.values().filter_map(|node| match &node.kind {
+                    NodeKind::Image(image) => Some(image.asset),
+                    NodeKind::Frame(frame) => frame.content.map(|content| content.asset),
+                    NodeKind::Qr(qr) => qr.logo.map(|logo| logo.asset),
+                    _ => None,
+                }))
         })
         .collect();
     let mut decoded = ImagePixels::new();
@@ -893,7 +901,7 @@ mod tests {
                 .edit()
                 .execute(Box::new(InsertAsset::new(*asset, entry)));
             specs.push(NodeSpec::new(
-                NodeKind::Image(ImageNode { asset: *asset }),
+                NodeKind::Image(ImageNode::new(*asset)),
                 Placement::new(0.0, 0.0, 4.0, 4.0),
             ));
         }

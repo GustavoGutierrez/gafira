@@ -20,19 +20,25 @@ use gafira_theme::Shadow;
 
 use crate::arrange::{self, Order};
 use crate::canvas::{self, Shape};
+use crate::charts;
 use crate::clipboard::{self, Clip};
+use crate::elements::{self, Category, Move, Rail};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
 use crate::layers::{self, Flag};
+use crate::lines;
 use crate::magnet::{self, Snap};
+use crate::pairings;
 use crate::resize;
 use crate::rotation::{self, Axis};
 use crate::ruler;
 use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
+use crate::system_fonts;
+use crate::tables;
 use crate::text::Texts;
 use crate::transfer;
 use crate::versions::Versions;
@@ -40,13 +46,15 @@ use crate::widgets::{self, IconButton, Surface};
 use crate::zoom::{self, Zoom, ZoomAsk};
 
 /// The tabs of the rail, in the order of 03 §2.3, with their icons.
+/// The tabs of the rail (owner request): Elementos first, the one open
+/// when a design opens; Marca third from last and Plantillas last.
 const TABS: [(&str, Icon); 6] = [
-    ("tab.templates", Icon::Templates),
     ("tab.pieces", Icon::Pieces),
     ("tab.text", Icon::Text),
-    ("tab.identity", Icon::Identity),
     ("tab.library", Icon::Library),
+    ("tab.identity", Icon::Identity),
     ("tab.drawing", Icon::Drawing),
+    ("tab.templates", Icon::Templates),
 ];
 
 /// The margin around the page on the canvas, in logical px.
@@ -55,6 +63,8 @@ const CANVAS_MARGIN: f32 = 48.0;
 /// The space between two pages on the canvas, in logical px (03 §7.3: the
 /// pages stack vertically).
 const PAGE_GAP: f32 = 56.0;
+/// The room under the last page for «Añadir página» (spec 077).
+const ADD_PAGE_ROOM: f32 = 48.0;
 
 /// The shortcuts of 03 §9.2 that tooltips and the Edición menu show.
 const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
@@ -237,7 +247,9 @@ fn with_keys(ctx: &egui::Context, texts: &Texts, action: String, keys: KeyboardS
 /// The editor's view state; the document lives in the engine and is read
 /// from a snapshot every frame (02 §5.5).
 pub(crate) struct Editor {
-    tab: usize,
+    /// The active tab of the rail, whether the side panel shows and the
+    /// view of Elementos (spec 064).
+    rail: Rail,
     /// How the zoom is chosen: «Ajustar» or a fixed scale (spec 037).
     view: Zoom,
     /// The zoom of the last frame, for the bottom bar.
@@ -249,6 +261,43 @@ pub(crate) struct Editor {
     /// The textures of the images on display, by content hash; `None`
     /// when the bytes could not be read or decoded (a placeholder is drawn).
     textures: std::collections::HashMap<gafira_doc::ContentHash, Option<egui::TextureHandle>>,
+    /// Biblioteca (spec 068): the imported files, the panel's tab, search
+    /// and list, and the previews of its files.
+    pub(crate) library: Option<std::rc::Rc<dyn crate::LibraryStore>>,
+    /// Elementos → Fotos (spec 071): its search, results and downloads.
+    pub(crate) photo_panel: std::cell::RefCell<crate::photos::PhotosPanel>,
+    /// Dibujo: the tool, the brushes' settings and the stroke being drawn
+    /// (spec 079).
+    draw: std::cell::RefCell<crate::draw::DrawState>,
+    /// Elementos → Ilustraciones (spec 072).
+    pub(crate) illustration_panel: std::cell::RefCell<crate::illustrations::IllustrationsPanel>,
+    /// Elementos → Códigos QR and the QR fields of Propiedades (spec 080).
+    qr_panel: std::cell::RefCell<crate::qr::QrPanel>,
+    /// The changes to a QR code being made in Propiedades: one gesture, one
+    /// undo step, until its fields lose the focus (S80-12).
+    qr_gesture: Option<(NodeId, GestureId)>,
+    /// Elementos → Tablas and the tables on the canvas (spec 081): the
+    /// cells chosen, what is being dragged, the menu open and where, the
+    /// cell the pointer was over last, the pen of the borders, the looks
+    /// copied and the changes being made as one undo step.
+    table_panel: std::cell::RefCell<crate::table_templates::Panel>,
+    table_outlines: std::cell::RefCell<tables::Outlines>,
+    table_pen: std::cell::Cell<tables::Pen>,
+    table_style: Option<gafira_doc::CellStyle>,
+    table_drag: Option<TableDrag>,
+    table_menu: Option<(tables::Side, Pos2)>,
+    table_hover: Option<(NodeId, (usize, usize))>,
+    table_gesture: Option<GestureId>,
+    cells: Option<tables::Cells>,
+    library_view: std::cell::RefCell<(crate::library::View, f64)>,
+    /// Marcos: its search and the collection open with «Ver todo».
+    frames_view: std::cell::RefCell<(String, Option<usize>)>,
+    /// The search of «Fondo de la página» (spec 069).
+    background_query: std::cell::RefCell<String>,
+    library_previews: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Preview>>,
+    /// The decoded pixels of the photos of frames, by content hash, cut
+    /// out by each frame's shape into a texture (spec 066).
+    photos: std::collections::HashMap<gafira_doc::ContentHash, Option<Arc<egui::ColorImage>>>,
     /// The drag in progress: its gesture (one undo entry, ARQ-33), where the
     /// selected elements started and how far the pointer went.
     drag: Option<Drag>,
@@ -288,9 +337,94 @@ pub(crate) struct Editor {
     /// The page clicked last, drawn with a border; `None` after a click
     /// outside every page (spec 050).
     active: Option<PageId>,
+    /// The page whose title is being written in its header, the words so
+    /// far and whether the field took the keyboard (spec 056).
+    renaming_page: Option<(PageId, String, bool)>,
     /// Each page's id and screen box in the last frame drawn: where a shape
     /// dragged from the panel lands (spec 052).
     page_rects: Vec<(PageId, Rect)>,
+    /// The textures path shapes are drawn from, on the canvas and in the
+    /// Formas panel, by what they show (spec 054).
+    path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// The box each curved text texture covers, by its key (FD-44).
+    curved_covers: std::cell::RefCell<std::collections::BTreeMap<u64, Placement>>,
+    /// The text being written on the canvas (spec 055).
+    editing: Option<Editing>,
+    /// Crop mode of a frame (S66-07): the photo moves inside it, the whole
+    /// session one undo step.
+    cropping: Option<Cropping>,
+    /// A text paste arrived since Ctrl+V went down: its release then does
+    /// not look for an image in the clipboard (spec 067).
+    paste_seen: bool,
+    /// SVG files waiting for «¿Cómo quieres importarlo?» (spec 067):
+    /// the files and where they were dropped.
+    pending_svg: Option<(Vec<std::path::PathBuf>, Option<Pos2>)>,
+    /// Elementos → Gráficos, the panel of the chart being edited, and its
+    /// undo step: the chart, the field, the gesture (spec 083).
+    chart_panel: std::cell::RefCell<crate::chart_templates::Panel>,
+    chart_edit: Option<charts::Editing>,
+    chart_gesture: Option<(NodeId, u64, GestureId)>,
+    /// «Mejorar resolución», «Quitar fondo» and «Borrar píxeles» (spec 084).
+    pub(crate) studio: crate::vision::Studio,
+    eraser: Option<crate::eraser::Eraser>,
+    /// Spreadsheets waiting for the sheet to insert (spec 082).
+    sheets: crate::sheets::Asks,
+    /// The frame an image dragged on the canvas would drop into (spec 066):
+    /// lit, with the photo previewed in it.
+    frame_target: Option<FrameTarget>,
+    /// What the drag of a line end shows (spec 058).
+    line_view: Option<LineView>,
+    /// A text whose box takes the height of its words once drawn (a paste,
+    /// spec 061), and the height measured when a text is drawn.
+    fit_pending: Option<(PageId, NodeId)>,
+    text_measure: Option<(PageId, NodeId, f64)>,
+    /// The Fuente panel takes the side panel (spec 062), with the font of
+    /// the selected text and the families the document uses, as the
+    /// Inspector last saw them.
+    font_panel: bool,
+    selection_font: Option<(String, bool, bool)>,
+    document_fonts: Vec<String>,
+    /// The families of the system already installed in egui.
+    loaded_fonts: std::cell::RefCell<BTreeSet<String>>,
+}
+
+/// Crop mode of a frame (S66-07).
+#[derive(Clone, Copy, Debug)]
+struct Cropping {
+    page: PageId,
+    node: NodeId,
+    gesture: Option<GestureId>,
+}
+
+/// An image dragged over a frame (spec 066): where it would go.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FrameTarget {
+    page: PageId,
+    frame: NodeId,
+    image: NodeId,
+    asset: gafira_doc::timeline::AssetRef,
+}
+
+/// What the drag of a line end shows (spec 058): the shapes near it, whose
+/// five points are drawn; the one it sticks to, whose outline is lit; and
+/// both ends in page px, for the length and angle beside the pointer.
+struct LineView {
+    page: PageId,
+    near: Vec<NodeId>,
+    stuck: Option<NodeId>,
+    end: gafira_geom::Point,
+    other: gafira_geom::Point,
+}
+
+/// A text being written on the canvas (spec 055): whose it is, the words so
+/// far and the gesture that makes the whole edit one undo step.
+struct Editing {
+    page: PageId,
+    node: NodeId,
+    words: String,
+    gesture: Option<GestureId>,
+    /// The field took the keyboard on its first frame.
+    focused: bool,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -330,6 +464,8 @@ enum Hold {
         center: Pos2,
         from: Pos2,
     },
+    /// One end of a line (spec 058): 0 the start, 1 the end.
+    LineEnd(usize),
 }
 
 /// A marquee on the canvas, in screen px: where the drag started, where the
@@ -344,12 +480,32 @@ struct Marquee {
 impl Default for Editor {
     fn default() -> Self {
         Self {
-            tab: 0,
+            rail: Rail::default(),
             view: Zoom::Fit,
             zoom: 1.0,
             inspector_tab: 0,
             selected: Selection::default(),
             textures: std::collections::HashMap::new(),
+            photos: std::collections::HashMap::new(),
+            library: None,
+            photo_panel: std::cell::RefCell::default(),
+            draw: std::cell::RefCell::default(),
+            illustration_panel: std::cell::RefCell::default(),
+            qr_panel: std::cell::RefCell::default(),
+            qr_gesture: None,
+            table_panel: std::cell::RefCell::default(),
+            table_outlines: std::cell::RefCell::default(),
+            table_pen: std::cell::Cell::default(),
+            table_style: None,
+            table_drag: None,
+            table_menu: None,
+            table_hover: None,
+            table_gesture: None,
+            cells: None,
+            library_view: std::cell::RefCell::default(),
+            frames_view: std::cell::RefCell::default(),
+            background_query: std::cell::RefCell::default(),
+            library_previews: std::cell::RefCell::default(),
             drag: None,
             marquee: None,
             versions: Versions::default(),
@@ -366,7 +522,28 @@ impl Default for Editor {
             renaming: None,
             row_drag: None,
             active: None,
+            renaming_page: None,
             page_rects: Vec::new(),
+            path_textures: std::cell::RefCell::default(),
+            curved_covers: std::cell::RefCell::default(),
+            editing: None,
+            cropping: None,
+            paste_seen: false,
+            pending_svg: None,
+            sheets: crate::sheets::Asks::default(),
+            studio: crate::vision::Studio::default(),
+            eraser: None,
+            chart_panel: std::cell::RefCell::default(),
+            chart_edit: None,
+            chart_gesture: None,
+            frame_target: None,
+            line_view: None,
+            fit_pending: None,
+            text_measure: None,
+            font_panel: false,
+            selection_font: None,
+            document_fonts: Vec::new(),
+            loaded_fonts: std::cell::RefCell::default(),
         }
     }
 }
@@ -375,6 +552,10 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// A freehand stroke to add to its page (spec 079).
+    draw_stroke: Option<(PageId, gafira_edit::NodeSpec)>,
+    /// Strokes the eraser went over, to remove in one step (spec 079).
+    erase: Option<(PageId, Vec<NodeId>)>,
     home: bool,
     file: Option<FileAction>,
     /// «Versiones» in the top bar, «Guardar versión…» in Archivo.
@@ -387,7 +568,9 @@ struct Asked {
     add_page: bool,
     /// A new piece of this geometry on the selected element's page, or the
     /// first page.
-    insert: Option<ShapeGeometry>,
+    insert: Option<canvas::Piece>,
+    /// A new light in the middle of the page (spec 065).
+    insert_effect: Option<elements::LightItem>,
     /// A new selection (an empty one clears it, Esc).
     select: Option<Selection>,
     /// Ctrl+A or Edición → Seleccionar todo (spec 040).
@@ -444,17 +627,127 @@ struct Asked {
     place: Option<Placement>,
     /// A fill picked in the Inspector (`Some(None)` removes it).
     fill: Option<Option<gafira_color::Color>>,
+    /// A gradient set in the Inspector (`Some(None)` goes back to the
+    /// solid colour, spec 063).
+    gradient: Option<Option<gafira_doc::Gradient>>,
+    /// A light set in the Inspector (`Some(None)` takes it off, spec 065).
+    effect: Option<Option<gafira_doc::ShapeEffect>>,
     /// An opacity set in the Inspector, 0 to 1.
     opacity: Option<f32>,
     /// An outline set in the Inspector (`Some(None)` removes it, spec 038).
     stroke: Option<Option<gafira_doc::ShapeStroke>>,
     /// A corner radius set in the Inspector, in px (spec 038).
     corner_radius: Option<f64>,
-    /// Biblioteca → Importar imagen… (spec 029).
+    /// Biblioteca → Importar archivo… (spec 029, 068).
     import_image: bool,
+    /// A file of Biblioteca added: in the middle of the page, or dropped
+    /// at a screen point (spec 068).
+    library_add: Option<(std::path::PathBuf, bool, Option<Pos2>)>,
+    /// Files taken out of Biblioteca's list (path and tab); they stay on
+    /// the disk (spec 068).
+    library_remove: Vec<(std::path::PathBuf, bool)>,
+    /// A colour of a group changed in the Inspector: the group, the colour
+    /// it had and the new one (spec 067).
+    recolor: Option<(NodeId, gafira_color::Color, gafira_color::Color)>,
+    /// «Fondo de la página» (spec 069): the background of the current page
+    /// (`Some(None)` makes it white), the same background on every page,
+    /// and «Subir una imagen».
+    page_background: Option<Option<gafira_doc::PageBackground>>,
+    /// «Usar como fondo de la página»: the image element becomes its page's
+    /// background and leaves the page, in one step.
+    image_to_background: Option<(PageId, NodeId, gafira_doc::timeline::AssetRef)>,
+    background_all: bool,
+    background_pick: bool,
+    /// The answer to «¿Cómo quieres importarlo?» for the SVG files waiting:
+    /// `Some(true)` as an image, `Some(false)` as a frame (spec 067).
+    svg_as_image: Option<bool>,
+    svg_cancel: bool,
+    /// What Elementos → Gráficos asks for (spec 083).
+    chart_chosen: Option<crate::chart_templates::Chosen>,
+    /// The panel «Gráfico» opens on this chart, or closes.
+    chart_open: Option<(PageId, NodeId)>,
+    chart_close: bool,
+    /// The selected chart changed, the field that changes it, and whether
+    /// the controls are at rest, so the next change is another undo step.
+    chart: Option<(PageId, NodeId, Box<gafira_doc::ChartNode>)>,
+    chart_field: u64,
+    chart_rest: bool,
+    chart_import: Option<(PageId, NodeId)>,
+    /// What is asked for an image (spec 084).
+    vision: Option<crate::vision::Ask>,
+    eraser: Option<crate::eraser::Answer>,
+    /// The answer about the first spreadsheet that waits (spec 082).
+    sheet: Option<crate::sheets::Answer>,
+    /// A new empty frame of this outline in the middle of the page, and
+    /// one dropped on a page at a point in px of page (spec 066, D-105).
+    insert_frame: Option<canvas::Piece>,
+    drop_frame: Option<(canvas::Piece, PageId, (f64, f64))>,
+    /// «Poner foto…» of the Inspector: pick an image for the selected
+    /// frames (spec 066).
+    pick_frame_photo: bool,
+    /// «Importar forma (SVG o PDF)…» of Elementos → Marcos (S66-10).
+    import_frame_shape: bool,
+    /// The photo of the selected frames (`Some(None)` empties them) and how
+    /// it sits (spec 066).
+    frame_content: Option<Option<gafira_doc::FrameContent>>,
+    frame_fit: Option<gafira_doc::Fit>,
     /// A new text element of this preset (Texto tab, spec 027).
     /// With the words it starts with, already in the interface language.
     insert_text: Option<(canvas::TextPreset, String)>,
+    /// A curved text from the Texto panel, with its bend, in the middle of
+    /// the page or where it was dropped (FD-44).
+    insert_curved: Option<(f64, String, Option<Dropped>)>,
+    /// A font pairing from the Texto panel, by its index in
+    /// [`pairings::PAIRINGS`], in the middle of the page or where it was
+    /// dropped: a group of a heading and a body line.
+    insert_pairing: Option<(usize, (String, String), Option<Dropped>)>,
+    /// «Curva» of the selected texts (FD-44).
+    text_curve: Option<f64>,
+    /// An illustration to insert as vector shapes (spec 072): its SVG, its
+    /// credit and where it was let go (screen).
+    insert_illustration: Option<(Arc<Vec<u8>>, String, Option<Pos2>)>,
+    /// A QR code of Elementos, in the middle of the page or dropped at a
+    /// screen point (spec 080, D-105).
+    insert_qr: Option<(Box<gafira_doc::QrNode>, Option<Pos2>)>,
+    /// The selected QR code changed in Propiedades, and whether its fields
+    /// are at rest.
+    qr: Option<Box<gafira_doc::QrNode>>,
+    qr_rest: bool,
+    /// «Añadir logotipo»: of the panel's code, or of the selected one.
+    qr_panel_logo: bool,
+    qr_logo: bool,
+    /// «Convertir en formas» (S80-13).
+    qr_to_shapes: bool,
+    /// A table of Elementos, in the middle of the page or dropped at a
+    /// screen point (spec 081, D-105).
+    insert_table: Option<(crate::table_templates::Template, Option<Pos2>)>,
+    /// A change of the selected table; whether the controls are at rest, so
+    /// the next one is another undo step.
+    table_act: Option<tables::Act>,
+    table_rest: bool,
+    /// The border of a column or a row dragged: the table and its box now.
+    table_sized: Option<(gafira_doc::TableNode, Placement)>,
+    table_menu: Option<tables::Menu>,
+    /// The cells chosen from now on (`Some(None)` goes back to the table).
+    cells: Option<Option<tables::Cells>>,
+    /// Write in the first cell: the words it starts with, or its own.
+    write_cell: Option<Option<String>>,
+    /// The words written so far; and the end of the writing, with the move
+    /// to the next cell.
+    cell_words: Option<String>,
+    end_cell: Option<CellMove>,
+    /// A Foto collage layout, by its index in [`crate::collage::LAYOUTS`],
+    /// filling the current page or the one it was dropped on (S66-09).
+    insert_collage: Option<(usize, Option<PageId>)>,
+    /// A frame of Marcos, in the middle of the current page or where it
+    /// was dropped (spec 066, owner request with references).
+    insert_frame_kind: Option<(crate::frames::Kind, Option<Dropped>)>,
+    /// The alignment of the selected texts (spec 070).
+    text_align: Option<gafira_doc::TextAlign>,
+    /// The letter spacing and line height of the selected texts (FD-41).
+    text_spacing: Option<(f64, Option<f64>)>,
+    /// The colour or gradient of the selected texts' letters (spec 070).
+    text_fill: Option<TextFill>,
     /// New rich text for the selected text element (Inspector).
     text: Option<gafira_doc::RichText>,
     /// An element to move to this index among its siblings (Capas).
@@ -474,7 +767,49 @@ struct Asked {
     transfer: Option<(PageId, PageId, (f64, f64))>,
     /// A shape dragged from the panel and dropped on a page, at this point
     /// in px of page (spec 052).
-    drop_piece: Option<(ShapeGeometry, PageId, (f64, f64))>,
+    drop_piece: Option<(canvas::Piece, PageId, (f64, f64))>,
+    /// A light dragged from the panel and dropped on a page, at this point
+    /// in px of page (spec 065, D-105).
+    drop_effect: Option<(elements::LightItem, PageId, (f64, f64))>,
+    /// A double click on a text or a shape: write on it (spec 055).
+    begin_edit: Option<(PageId, NodeId)>,
+    /// Crop mode (S66-07): enter it on a frame, move the photo by screen
+    /// px, set its offset and scale from the Inspector, leave it.
+    begin_crop: Option<(PageId, NodeId)>,
+    crop_drag: Option<Vec2>,
+    crop_set: Option<((f64, f64), f64, f64)>,
+    end_crop: bool,
+    /// The words written so far on the canvas.
+    edit_text: Option<String>,
+    /// The writing on the canvas ends: Esc or a click elsewhere.
+    end_edit: bool,
+    /// The alignment of the selected shape's text, across and down.
+    shape_align: Option<(
+        Option<gafira_doc::TextAlign>,
+        Option<gafira_doc::VerticalAlign>,
+    )>,
+    /// An action of a page header (spec 056).
+    page_action: Option<PageAction>,
+    /// Text pasted from outside Gafira: a new text box (spec 061).
+    paste_text: Option<String>,
+    /// Spec 067: image files pasted (their paths were the clipboard text),
+    /// and image files dropped from the system with where the pointer was.
+    paste_files: Vec<std::path::PathBuf>,
+    drop_files: Vec<std::path::PathBuf>,
+    drop_at: Option<Pos2>,
+    /// Ctrl+V went up this frame, and a paste event came this frame.
+    v_released: bool,
+    pasted_any: bool,
+    /// A text of the Texto panel dropped on a page at this point in px of
+    /// page (spec 061).
+    drop_text: Option<(canvas::TextPreset, String, PageId, (f64, f64))>,
+    /// The height of the words written on the canvas, in px of page.
+    edit_height: Option<f64>,
+    /// A font for the selected text or shape text: family, bold, italic
+    /// (spec 062).
+    font: Option<(String, bool, bool)>,
+    /// Open (true) or close the Fuente panel.
+    font_panel: Option<bool>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -493,6 +828,46 @@ impl Asked {
         self.centre = keys.centre;
         self.free = keys.free;
     }
+}
+
+/// Where the writing in a cell goes on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CellMove {
+    Stay,
+    Down,
+    Next,
+    Before,
+}
+
+/// What is dragged on a table (spec 081): the border of a column or of a
+/// row, from where and over the table as it was, or a range of cells.
+#[derive(Clone, Debug)]
+enum TableDrag {
+    Column(usize, Box<TableStart>),
+    Row(usize, Box<TableStart>),
+    Cells,
+}
+
+/// What a drag on a table started from.
+#[derive(Clone, Debug)]
+struct TableStart {
+    table: gafira_doc::TableNode,
+    placement: Placement,
+    at: gafira_geom::Point,
+}
+
+/// What a page header asks for (spec 056, FD-02).
+#[derive(Clone, Debug, PartialEq)]
+enum PageAction {
+    /// One place towards the front (`-1`) or the back (`1`).
+    Move(PageId, isize),
+    Hide(PageId, bool),
+    Lock(PageId, bool),
+    Duplicate(PageId),
+    Delete(PageId),
+    /// An empty page of the same size right after it.
+    AddAfter(PageId),
+    Rename(PageId, String),
 }
 
 /// What the top bar shows about the session.
@@ -548,12 +923,21 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         fill: None,
         stroke: None,
         corner_radius: 0.0,
+        gradient: None,
+        effect: None,
         opacity: page.node(node)?.base.opacity,
         inherited: 1.0,
         group: true,
         text: None,
         image: None,
         locked: crate::layers::locked(page, node),
+        inner: None,
+        line: None,
+
+        frame: None,
+        qr: None,
+        table: None,
+        chart: None,
     })
 }
 
@@ -635,6 +1019,22 @@ impl Editor {
         let shapes = selected_shapes(document, &self.selected);
         self.selected
             .retain(|node| shapes.iter().any(|shape| shape.node == node));
+        // The cells chosen go with their table, and stay inside it.
+        let single = self.selected.single();
+        self.cells = self.cells.take().filter(|cells| {
+            single == Some((cells.page, cells.node))
+                && document
+                    .and_then(|d| table_of(d, cells.page, cells.node))
+                    .is_some_and(|(table, _)| {
+                        table.cell(cells.from.0, cells.from.1).is_some()
+                            && table.cell(cells.to.0, cells.to.1).is_some()
+                    })
+        });
+        // The panel «Gráfico» stays while its chart is the one selected.
+        self.chart_edit = self.chart_edit.take().filter(|edit| {
+            single == Some((edit.page, edit.node))
+                && document.is_some_and(|d| chart_of(d, edit.page, edit.node).is_some())
+        });
         self.scope = self.scope.filter(|(page, node)| {
             document
                 .and_then(|d| d.page(*page))
@@ -701,6 +1101,13 @@ impl Editor {
             self.shown_loaded = true;
         }
         let mut asked = Asked::default();
+        self.images_arrived(ctx, engine);
+        // «Borrador de píxeles» takes the whole window and its keys: Ctrl+Z
+        // is of its strokes (S84-08).
+        if let Some(eraser) = self.eraser.as_mut() {
+            asked.eraser = eraser.show(ctx, theme, texts);
+            return self.apply(engine, &document, &asked, theme);
+        }
         ctx.input(|i| {
             if i.modifiers.command && i.key_pressed(egui::Key::S) {
                 asked.file = Some(if i.modifiers.shift {
@@ -741,8 +1148,21 @@ impl Editor {
         {
             ctx.request_repaint();
         }
+        // Image files dropped from the system on the window (spec 067).
+        ctx.input(|i| {
+            asked.drop_files = i
+                .raw
+                .dropped_files
+                .iter()
+                .filter_map(|file| file.path.clone())
+                .filter(|path| is_importable(path))
+                .collect();
+            asked.drop_at = i.pointer.latest_pos();
+        });
         let typing = ctx.wants_keyboard_input();
-        if !typing {
+        // The cells chosen of a table take the keys (S81-08).
+        let in_cells = !typing && self.cell_keys(ctx, document.as_deref(), &mut asked);
+        if !typing && !in_cells {
             ctx.input(|i| {
                 if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
                     asked.delete = true;
@@ -750,7 +1170,9 @@ impl Editor {
                 // Esc leaves the group entered, selecting it; outside one it
                 // empties the selection (03 §9.1, spec 043).
                 if i.key_pressed(egui::Key::Escape) {
-                    if self.scope.is_some() {
+                    if self.cropping.is_some() {
+                        asked.end_crop = true;
+                    } else if self.scope.is_some() {
                         asked.leave = true;
                     } else {
                         asked.select = Some(Selection::default());
@@ -784,6 +1206,22 @@ impl Editor {
                     asked.paste |= i.key_pressed(egui::Key::V);
                 }
                 for event in &i.events {
+                    if matches!(event, egui::Event::Paste(_)) {
+                        asked.pasted_any = true;
+                    }
+                    // The window keeps Ctrl+V down for itself and reports
+                    // only its release: with no text pasted, the clipboard
+                    // may hold an image (spec 067).
+                    if let egui::Event::Key {
+                        key: egui::Key::V,
+                        pressed: false,
+                        modifiers,
+                        ..
+                    } = event
+                        && modifiers.command
+                    {
+                        asked.v_released = true;
+                    }
                     match event {
                         egui::Event::Copy => asked.copy = true,
                         egui::Event::Cut => asked.cut = true,
@@ -791,6 +1229,16 @@ impl Editor {
                             if self.clip.as_ref().is_some_and(|clip| clip.text == *text) =>
                         {
                             asked.paste = true;
+                        }
+                        // Text from anywhere else becomes a text box (spec
+                        // 061).
+                        // Files copied in the file manager arrive as their
+                        // paths: images are imported (spec 067).
+                        egui::Event::Paste(text) if !image_paths(text).is_empty() => {
+                            asked.paste_files = image_paths(text);
+                        }
+                        egui::Event::Paste(text) if !text.trim().is_empty() => {
+                            asked.paste_text = Some(text.clone());
                         }
                         _ => {}
                     }
@@ -906,13 +1354,32 @@ impl Editor {
                 })
                 .collect();
         }
+        self.studio.models_panel(ctx, theme, texts);
         self.can = CanArrange::of(document.as_deref(), &self.selected);
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         if let Some(ask) = asked.zoom {
             self.view = ask.apply(self.zoom);
         }
+        // «¿Cómo quieres importarlo?» for the SVG files dropped, pasted or
+        // picked (spec 067).
+        if let Some((files, _)) = &self.pending_svg {
+            match crate::dialogs::svg_import(ctx, theme, texts, files) {
+                crate::dialogs::SvgImport::Waiting => {}
+                crate::dialogs::SvgImport::Image => asked.svg_as_image = Some(true),
+                crate::dialogs::SvgImport::Frame => asked.svg_as_image = Some(false),
+                crate::dialogs::SvgImport::Cancel => asked.svg_cancel = true,
+            }
+        }
+        // «¿Qué hoja quieres insertar?» of the spreadsheets (spec 082).
+        if self.pending_svg.is_none() && !self.sheets.is_empty() {
+            asked.sheet = self.sheets.show(ctx, theme, texts);
+        }
         self.rail(ctx, theme, texts);
-        self.side_panel(ctx, theme, texts, &mut asked);
+        let editing = !self.font_panel
+            && self.chart_panel_of(ctx, theme, texts, document.as_deref(), &mut asked);
+        if !editing && let Some(step) = self.side_panel(ctx, theme, texts, &mut asked) {
+            self.rail.apply(step);
+        }
         self.inspector(
             ctx,
             theme,
@@ -922,6 +1389,39 @@ impl Editor {
             &mut asked,
         );
         self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
+        match asked.table_menu {
+            Some(tables::Menu::Duplicate) => asked.duplicate = true,
+            Some(tables::Menu::Delete) => asked.delete = true,
+            Some(tables::Menu::Lock) => asked.toggle = Some(Flag::Locked),
+            Some(tables::Menu::Align(index)) => {
+                asked.align = ALIGNS.get(index).map(|(action, ..)| *action);
+            }
+            Some(tables::Menu::Copy) => {
+                if let Some((page, node)) = self.selected.single()
+                    && let Some((table, _)) =
+                        document.as_deref().and_then(|d| table_of(d, page, node))
+                {
+                    let range = self.cell_range(node, &table);
+                    ctx.copy_text(gafira_table::copy(&table, range));
+                }
+            }
+            _ => {}
+        }
+        // The fields of a chart: each one is an undo step.
+        let focused = ctx.memory(|m| m.focused());
+        asked.chart_field = focused.map_or(0, |id| id.value());
+        asked.chart_rest = asked.chart.is_none()
+            && focused.is_none()
+            && !ctx.input(|i| i.pointer.any_down())
+            && !egui::Popup::is_any_open(ctx);
+        // The controls of a table are at rest: the next change is another
+        // undo step.
+        asked.table_rest |= self.table_gesture.is_some()
+            && self.table_drag.is_none()
+            && asked.table_act.is_none()
+            && asked.table_sized.is_none()
+            && !ctx.input(|i| i.pointer.any_down())
+            && !egui::Popup::is_any_open(ctx);
         if asked.versions {
             self.versions.open_list();
         }
@@ -929,7 +1429,57 @@ impl Editor {
             self.versions.ask_name();
         }
         asked.version = self.versions.show(ctx, engine, theme, texts);
-        self.apply(engine, &document, &asked, theme)
+        let field = |cells: &Option<tables::Cells>| {
+            cells
+                .as_ref()
+                .filter(|c| c.writing.is_some())
+                .map(|c| cell_id(c.node, c.from))
+        };
+        let before = field(&self.cells);
+        let go = self.apply(engine, &document, &asked, theme);
+        // The keyboard goes to the cell being written, and leaves the one
+        // before, in this very frame: no letter typed next is lost.
+        let now = field(&self.cells);
+        // Tab goes from cell to cell, not to another control.
+        let tabbed = ctx.input(|i| {
+            i.raw.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::Key {
+                        key: egui::Key::Tab,
+                        pressed: true,
+                        ..
+                    }
+                )
+            })
+        });
+        if tabbed && (in_cells || before.is_some()) {
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused().filter(|id| Some(*id) != now) {
+                    m.surrender_focus(id);
+                }
+            });
+            ctx.request_repaint();
+        }
+        if let Some(old) = before.filter(|old| Some(*old) != now) {
+            ctx.memory_mut(|m| m.surrender_focus(old));
+            ctx.request_repaint();
+        }
+        if let Some(id) = now
+            && let Some(writing) = self.cells.as_mut().and_then(|c| c.writing.as_mut())
+            && !std::mem::replace(&mut writing.focused, true)
+        {
+            // What was typed to start goes on at its end.
+            let mut state = egui::text_edit::TextEditState::load(ctx, id).unwrap_or_default();
+            let end = egui::text::CCursor::new(writing.words.chars().count());
+            state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::one(end)));
+            state.store(ctx, id);
+            ctx.memory_mut(|m| m.request_focus(id));
+            ctx.request_repaint();
+        }
+        go
     }
 
     fn bars(
@@ -1193,7 +1743,8 @@ impl Editor {
             )
             .show(ctx, |ui| {
                 // 03 §7.3: Notas on the left; on the right the magnet, the
-                // zoom, Páginas with «n de N», and Añadir página (spec 049).
+                // zoom, and Páginas with «n de N» (spec 049). Añadir página
+                // is under the last page (spec 077).
                 let label = |text: String| RichText::new(text).font(theme.font("ui-label"));
                 ui.horizontal_centered(|ui| {
                     // Notas is not a function yet (FD-02): shown, muted.
@@ -1211,10 +1762,6 @@ impl Editor {
                             .as_deref()
                             .and_then(|d| self.current_page(d))
                             .map(|page| page.id);
-                        asked.add_page |= ui
-                            .button(label(texts.t(&gafira_doc::msg!("editor.add_page"))))
-                            .clicked();
-                        bar_separator(ui, theme);
                         ui.label(label(texts.t(&gafira_doc::msg!(
                             "editor.page_of",
                             current = Count(page_number(&ids, current) as u64),
@@ -1360,15 +1907,29 @@ impl Editor {
                         key: gafira_doc::msg::MessageKey(key),
                         args: Vec::new(),
                     });
-                    let response = widgets::rail_tab(ui, theme, *icon, &label, index == self.tab);
+                    let active = index == self.rail.tab;
+                    let response = widgets::rail_tab(ui, theme, *icon, &label, active);
                     if response.clicked() {
-                        self.tab = index;
+                        // The active tab hides or shows the panel (S64-06).
+                        self.rail.click_tab(index);
                     }
                 }
             });
     }
 
-    fn side_panel(&self, ctx: &egui::Context, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+    /// The side panel; the move it asks inside Elementos, if any (spec 064).
+    fn side_panel(
+        &self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        asked: &mut Asked,
+    ) -> Option<Move> {
+        // Hidden from the rail (S64-06); «Fuente» shows all the same.
+        if !self.rail.open && !self.font_panel {
+            return None;
+        }
+        let mut go = None;
         egui::SidePanel::left("editor.side")
             .default_width(px(theme.tokens.size.panel_left))
             .width_range(280.0..=480.0)
@@ -1379,104 +1940,401 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
-                if TABS[self.tab].0 == "tab.library" {
-                    let import = widgets::secondary(
-                        ui,
-                        theme,
-                        texts.t(&gafira_doc::msg!("library.import_image")),
-                    );
-                    if import.clicked() {
-                        asked.import_image = true;
-                    }
+                if self.font_panel {
+                    self.fonts_panel(ui, theme, texts, asked);
                     return;
                 }
-                if TABS[self.tab].0 == "tab.text" {
-                    for (key, words, preset) in [
-                        (
-                            gafira_doc::msg!("text.add_title"),
-                            gafira_doc::msg!("text.title"),
-                            canvas::TextPreset::Title,
-                        ),
-                        (
-                            gafira_doc::msg!("text.add_subtitle"),
-                            gafira_doc::msg!("text.subtitle"),
-                            canvas::TextPreset::Subtitle,
-                        ),
-                        (
-                            gafira_doc::msg!("text.add_body"),
-                            gafira_doc::msg!("text.body"),
-                            canvas::TextPreset::Body,
-                        ),
-                    ] {
-                        let (size, display) = preset.size_and_display();
-                        let font = if display {
-                            egui::FontId::new(
-                                size as f32 * 0.4,
-                                egui::FontFamily::Name(crate::style::DISPLAY.into()),
-                            )
-                        } else {
-                            egui::FontId::proportional(size as f32 * 0.5)
-                        };
-                        let button = egui::Button::new(RichText::new(texts.t(&key)).font(font))
-                            .min_size(Vec2::new(ui.available_width(), 48.0));
-                        if ui.add(button).clicked() {
-                            asked.insert_text = Some((preset, texts.t(&words)));
-                        }
-                        ui.add_space(8.0);
-                    }
+                if TABS[self.rail.tab].0 == "tab.library" {
+                    self.library_panel(ui, theme, texts, asked);
                     return;
                 }
-                if TABS[self.tab].0 == "tab.pieces" {
-                    ui.label(
-                        RichText::new(texts.t(&gafira_doc::msg!("pieces.shapes")))
-                            .font(theme.font("ui-label"))
-                            .color(theme.c("text")),
-                    );
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        for (key, icon, geometry) in [
-                            (
-                                gafira_doc::msg!("pieces.rect"),
-                                Icon::Rect,
-                                ShapeGeometry::Rect,
-                            ),
-                            (
-                                gafira_doc::msg!("pieces.ellipse"),
-                                Icon::Ellipse,
-                                ShapeGeometry::Ellipse,
-                            ),
-                        ] {
-                            // A click adds it to the middle of the page; a
-                            // drag carries it to where it is dropped (S52).
-                            let button = widgets::secondary_icon(ui, theme, icon, texts.t(&key))
-                                .interact(egui::Sense::click_and_drag());
-                            if button.clicked() {
-                                asked.insert = Some(geometry);
+                if TABS[self.rail.tab].0 == "tab.text" {
+                    // The whole panel scrolls: the pairings go past the
+                    // bottom of the window.
+                    egui::ScrollArea::vertical()
+                        .id_salt("editor.text_panel")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            section_title(ui, theme, texts, "text.section_add");
+                            for (key, words, preset) in [
+                                (
+                                    gafira_doc::msg!("text.add_title"),
+                                    gafira_doc::msg!("text.title"),
+                                    canvas::TextPreset::Title,
+                                ),
+                                (
+                                    gafira_doc::msg!("text.add_subtitle"),
+                                    gafira_doc::msg!("text.subtitle"),
+                                    canvas::TextPreset::Subtitle,
+                                ),
+                                (
+                                    gafira_doc::msg!("text.add_body"),
+                                    gafira_doc::msg!("text.body"),
+                                    canvas::TextPreset::Body,
+                                ),
+                            ] {
+                                let (size, display) = preset.size_and_display();
+                                let font = if display {
+                                    egui::FontId::new(
+                                        size as f32 * 0.4,
+                                        egui::FontFamily::Name(crate::style::DISPLAY.into()),
+                                    )
+                                } else {
+                                    egui::FontId::proportional(size as f32 * 0.5)
+                                };
+                                let button = egui::Button::new(
+                                    RichText::new(texts.t(&key)).font(font.clone()),
+                                )
+                                .min_size(Vec2::new(ui.available_width(), 48.0));
+                                // A click adds it to the middle of the page; a drag
+                                // carries it to where it is dropped (spec 061).
+                                let button = ui.add(button).interact(egui::Sense::click_and_drag());
+                                // A hand over it, a closed hand while it is carried.
+                                if button.hovered() && !button.dragged() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                if button.clicked() {
+                                    asked.insert_text = Some((preset, texts.t(&words)));
+                                }
+                                let at = ui.input(|i| i.pointer.latest_pos());
+                                if button.dragged()
+                                    && let Some(at) = at
+                                {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                        egui::Order::Tooltip,
+                                        egui::Id::new("editor.text_ghost"),
+                                    ));
+                                    painter.text(
+                                        at,
+                                        Align2::CENTER_CENTER,
+                                        texts.t(&key),
+                                        font.clone(),
+                                        theme.c("text").gamma_multiply(0.5),
+                                    );
+                                }
+                                if button.drag_stopped()
+                                    && let Some(at) = at
+                                    && let Some((page, point)) =
+                                        canvas::drop_point(&self.page_rects, self.zoom, at)
+                                {
+                                    asked.drop_text = Some((preset, texts.t(&words), page, point));
+                                }
+                                ui.add_space(8.0);
+                            }
+                            self.text_extras(ui, theme, texts, asked);
+                        });
+                    return;
+                }
+                if TABS[self.rail.tab].0 == "tab.pieces" {
+                    // Elementos: the grid of categories, or the one open
+                    // with its «Volver» arrow (spec 064).
+                    let Some(category) = self.rail.category else {
+                        go = elements::grid(ui, theme, texts).map(Move::Enter);
+                        return;
+                    };
+                    if elements::header(ui, theme, texts, category) {
+                        go = Some(Move::Back);
+                    }
+                    if category == Category::Collage {
+                        // S66-09: a click fills the current page with the
+                        // layout, a drag the page it is dropped on (D-105).
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.collage")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(plain(texts, "collage.hint"))
+                                        .font(theme.font("body-sm"))
+                                        .color(theme.c("text.secondary")),
+                                );
+                                ui.add_space(8.0);
+                                let side = ((ui.available_width() - 2.0 * 8.0) / 3.0).max(40.0);
+                                // The sample photo of the frames in every cell.
+                                let sample = canvas::sample_photo().and_then(|image| {
+                                    let size =
+                                        Vec2::new(image.size[0] as f32, image.size[1] as f32);
+                                    self.path_texture(ui.ctx(), 0x5A3_91E, || {
+                                        Some((*image).clone())
+                                    })
+                                    .map(|texture| (texture, size))
+                                });
+                                let layouts: Vec<(usize, &str)> = crate::collage::LAYOUTS
+                                    .iter()
+                                    .copied()
+                                    .enumerate()
+                                    .collect();
+                                for line in layouts.chunks(3) {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 8.0;
+                                        for (index, layout) in line {
+                                            let (rect, card) = ui.allocate_exact_size(
+                                                Vec2::splat(side),
+                                                egui::Sense::click_and_drag(),
+                                            );
+                                            crate::collage::paint(
+                                                ui.painter(),
+                                                rect,
+                                                layout,
+                                                sample,
+                                            );
+                                            if card.hovered() && !card.dragged() {
+                                                ui.ctx().set_cursor_icon(
+                                                    egui::CursorIcon::PointingHand,
+                                                );
+                                                ui.painter().rect_stroke(
+                                                    rect.expand(2.0),
+                                                    4.0,
+                                                    Stroke::new(2.0, theme.c("primary.bg")),
+                                                    egui::StrokeKind::Outside,
+                                                );
+                                            }
+                                            if card.clicked() {
+                                                asked.insert_collage = Some((*index, None));
+                                            }
+                                            let at = ui.input(|i| i.pointer.latest_pos());
+                                            if card.dragged()
+                                                && let Some(at) = at
+                                            {
+                                                ui.ctx()
+                                                    .set_cursor_icon(egui::CursorIcon::Grabbing);
+                                                let ghost =
+                                                    ui.ctx().layer_painter(egui::LayerId::new(
+                                                        egui::Order::Tooltip,
+                                                        egui::Id::new("collage.ghost"),
+                                                    ));
+                                                crate::collage::paint(
+                                                    &ghost,
+                                                    Rect::from_center_size(at, Vec2::splat(80.0)),
+                                                    layout,
+                                                    sample,
+                                                );
+                                            }
+                                            if card.drag_stopped()
+                                                && let Some(at) = at
+                                                && let Some((page, _)) = canvas::drop_point(
+                                                    &self.page_rects,
+                                                    self.zoom,
+                                                    at,
+                                                )
+                                            {
+                                                asked.insert_collage = Some((*index, Some(page)));
+                                            }
+                                        }
+                                    });
+                                    ui.add_space(8.0);
+                                }
+                            });
+                        return;
+                    }
+                    if category == Category::Illustrations {
+                        // Spec 072: a click inserts the drawing as vector
+                        // shapes, a drag carries it (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let can_drop =
+                            move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.illustrations")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let mut panel = self.illustration_panel.borrow_mut();
+                                if !panel.available() {
+                                    ui.label(plain(texts, "photos.unavailable"));
+                                    return;
+                                }
+                                panel.pump();
+                                match panel.show(ui, theme, texts, &can_drop) {
+                                    Some(crate::illustrations::Chosen::Drawing {
+                                        illustration,
+                                        svg,
+                                        at,
+                                    }) => {
+                                        let credit = panel.credit(&illustration);
+                                        asked.insert_illustration = Some((svg, credit, at));
+                                    }
+                                    // A cut-out comes in as an image, through
+                                    // the downloads of Fotos (spec 071).
+                                    Some(crate::illustrations::Chosen::Cutout { photo, at }) => {
+                                        self.photo_panel.borrow_mut().fetch(photo, at);
+                                    }
+                                    None => {}
+                                }
+                            });
+                        return;
+                    }
+                    if category == Category::Photos {
+                        // Spec 071: a click inserts the photo, a drag
+                        // carries it to the page or into a frame (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let can_drop =
+                            move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.photos")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let mut panel = self.photo_panel.borrow_mut();
+                                if !panel.available() {
+                                    ui.label(plain(texts, "photos.unavailable"));
+                                    return;
+                                }
+                                let wanted = panel.show(ui, theme, texts, &can_drop);
+                                if let Some((photo, at)) = wanted.insert {
+                                    panel.fetch(photo, at);
+                                }
+                            });
+                        return;
+                    }
+                    if category == Category::Lights {
+                        // A click adds the light to the middle of the
+                        // page; a drag carries it to where it is dropped,
+                        // as every element of the panel (D-105).
+                        if let Some((item, card)) = elements::lights(ui, theme, texts) {
+                            if card.clicked() {
+                                asked.insert_effect = Some(item);
                             }
                             let at = ui.input(|i| i.pointer.latest_pos());
-                            if button.dragged()
+                            if card.dragged()
                                 && let Some(at) = at
                             {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                                self.piece_ghost(ui.ctx(), theme, geometry, at);
+                                self.light_ghost(ui.ctx(), theme, item, at);
                             }
-                            if button.drag_stopped()
+                            if card.drag_stopped()
                                 && let Some(at) = at
                                 && let Some((page, point)) =
                                     canvas::drop_point(&self.page_rects, self.zoom, at)
                             {
-                                asked.drop_piece = Some((geometry, page, point));
+                                asked.drop_effect = Some((item, page, point));
                             }
+                        }
+                        return;
+                    }
+                    if category == Category::Tables {
+                        // Spec 081: a table is added with a click or a drag
+                        // (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let over = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.tables")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_max_width(ui.available_width() - 12.0);
+                                let mut panel = self.table_panel.borrow_mut();
+                                asked.insert_table = panel.show(ui, theme, texts, &over);
+                            });
+                        return;
+                    }
+                    if category == Category::Charts {
+                        // Spec 083: a chart is added with a click or a drag
+                        // (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let over = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.charts")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_max_width(ui.available_width() - 12.0);
+                                let mut panel = self.chart_panel.borrow_mut();
+                                asked.chart_chosen = panel.show(ui, theme, texts, &over);
+                            });
+                        return;
+                    }
+                    if category == Category::QrCodes {
+                        // Spec 080: the code is added with a click or
+                        // dragged by its preview (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let over = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.qr")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                // Room for the scroll bar, beside the fields.
+                                ui.set_max_width(ui.available_width() - 12.0);
+                                let mut panel = self.qr_panel.borrow_mut();
+                                let logo = panel
+                                    .draft
+                                    .logo
+                                    .and_then(|l| self.photos.get(&l.asset.as_hash()))
+                                    .and_then(Option::as_deref);
+                                match panel.show(ui, theme, texts, logo, &over) {
+                                    Some(crate::qr::Chosen::Insert(code, at)) => {
+                                        asked.insert_qr = Some((code, at));
+                                    }
+                                    Some(crate::qr::Chosen::PickLogo) => {
+                                        asked.qr_panel_logo = true;
+                                    }
+                                    None => {}
+                                }
+                            });
+                        return;
+                    }
+                    if category == Category::Frames {
+                        self.frames_panel(ui, theme, texts, asked);
+                        return;
+                    }
+                    if category != Category::Shapes {
+                        elements::soon(ui, theme, texts);
+                        return;
+                    }
+                    // The shapes by section, each a tile that draws it
+                    // (spec 053): a click adds it to the middle of the
+                    // page, a drag carries it to where it is dropped
+                    // (spec 052).
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for (title, pieces) in canvas::PIECE_SECTIONS {
+                            ui.label(
+                                RichText::new(plain(texts, title))
+                                    .font(theme.font("ui-label"))
+                                    .color(theme.c("text")),
+                            );
+                            ui.add_space(8.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::splat(4.0);
+                                for piece in *pieces {
+                                    let tile = self.piece_tile(
+                                        ui,
+                                        theme,
+                                        *piece,
+                                        plain(texts, piece.key()),
+                                    );
+                                    if tile.clicked() {
+                                        asked.insert = Some(*piece);
+                                    }
+                                    let at = ui.input(|i| i.pointer.latest_pos());
+                                    if tile.dragged()
+                                        && let Some(at) = at
+                                    {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                        self.piece_ghost(ui.ctx(), theme, *piece, at);
+                                    }
+                                    if tile.drag_stopped()
+                                        && let Some(at) = at
+                                        && let Some((page, point)) =
+                                            canvas::drop_point(&self.page_rects, self.zoom, at)
+                                    {
+                                        asked.drop_piece = Some((*piece, page, point));
+                                    }
+                                }
+                            });
+                            ui.add_space(16.0);
                         }
                     });
                     return;
                 }
+                if TABS[self.rail.tab].0 == "tab.drawing" {
+                    crate::draw::panel(ui, theme, texts, &mut self.draw.borrow_mut());
+                    return;
+                }
                 let mut query = String::new();
-                ui.add(
-                    egui::TextEdit::singleline(&mut query)
-                        .hint_text(texts.t(&gafira_doc::msg!("editor.search_templates")))
-                        .desired_width(f32::INFINITY),
-                );
+                ui.add(widgets::field(
+                    &mut query,
+                    texts.t(&gafira_doc::msg!("editor.search_templates")),
+                ));
                 ui.add_space(16.0);
                 let card = Vec2::new((ui.available_width() - 12.0) / 2.0, 120.0);
                 ui.horizontal_wrapped(|ui| {
@@ -1493,6 +2351,7 @@ impl Editor {
                     }
                 });
             });
+        go
     }
 
     fn inspector(
@@ -1505,6 +2364,33 @@ impl Editor {
         asked: &mut Asked,
     ) {
         let can = self.can;
+        // What the Fuente panel shows as current and as the document's.
+        self.selection_font = selection.first().and_then(|shape| {
+            let style = shape
+                .text
+                .as_ref()
+                .and_then(|t| t.content.first_style())
+                .or_else(|| shape.inner.as_ref().and_then(|t| t.content.first_style()))
+                .cloned()
+                .or_else(|| {
+                    let text = &shape.chart.as_ref()?.text;
+                    Some(gafira_doc::SpanStyle {
+                        font: text.font.clone(),
+                        size: text.size,
+                        color: text.color,
+                        bold: text.bold,
+                        italic: text.italic,
+                    })
+                })
+                .or_else(|| {
+                    let table = shape.table.as_ref()?;
+                    let range = self.cell_range(shape.node, table);
+                    Some(span_of(&table.cell(range.r0, range.c0)?.style))
+                })?;
+            Some((style.font.clone(), style.bold, style.italic))
+        });
+        self.document_fonts = document.map(document_fonts).unwrap_or_default();
+        self.load_system_fonts(ctx);
         egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
@@ -1515,16 +2401,26 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                // Crop mode takes the Inspector (S66-07).
+                if let Some(crop) = self.cropping
+                    && let Some(shape) = selection.iter().find(|s| s.node == crop.node)
+                    && let Some(frame) = &shape.frame
+                {
+                    crop_fields(ui, theme, texts, frame, asked);
+                    return;
+                }
+                // «Propiedades» of what is selected (or of the page), and
+                // «Capas».
                 ui.horizontal(|ui| {
                     for (index, key) in [
-                        gafira_doc::msg!("inspector.position"),
+                        gafira_doc::msg!("inspector.properties"),
                         gafira_doc::msg!("inspector.layers"),
-                        gafira_doc::msg!("inspector.image"),
                     ]
                     .iter()
                     .enumerate()
                     {
-                        let color = if index == self.inspector_tab {
+                        let on = index == self.inspector_tab;
+                        let color = if on {
                             theme.c("text")
                         } else {
                             theme.c("text.muted")
@@ -1535,10 +2431,18 @@ impl Editor {
                                 .color(color),
                         )
                         .frame(false);
-                        if ui.add(tab).clicked() {
+                        let response = ui.add(tab);
+                        if on {
+                            let r = response.rect;
+                            ui.painter().line_segment(
+                                [r.left_bottom(), r.right_bottom()],
+                                Stroke::new(2.0, theme.c("primary.bg")),
+                            );
+                        }
+                        if response.clicked() {
                             self.inspector_tab = index;
                         }
-                        ui.add_space(4.0);
+                        ui.add_space(8.0);
                     }
                 });
                 ui.add_space(24.0);
@@ -1548,11 +2452,26 @@ impl Editor {
                 }
                 let shape = match selection {
                     [] => {
-                        ui.label(
-                            RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
-                                .font(theme.font("body-sm"))
-                                .color(theme.c("text.muted")),
-                        );
+                        // The page or the canvas: its background (spec 069).
+                        let page = document.and_then(|d| {
+                            self.active
+                                .and_then(|id| d.page(id))
+                                .or_else(|| d.pages().first().map(|p| &**p))
+                        });
+                        match page {
+                            Some(page) => {
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    self.background_fields(ui, theme, texts, page, asked);
+                                });
+                            }
+                            None => {
+                                ui.label(
+                                    RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
+                                        .font(theme.font("body-sm"))
+                                        .color(theme.c("text.muted")),
+                                );
+                            }
+                        }
                         return;
                     }
                     [shape] => shape,
@@ -1561,73 +2480,180 @@ impl Editor {
                         return;
                     }
                 };
+                // What is selected, as the title of «Propiedades».
+                ui.label(
+                    RichText::new(plain(texts, kind_title(shape)))
+                        .font(theme.font("ui-label"))
+                        .color(theme.c("text")),
+                );
+                ui.add_space(8.0);
+                // A table: the looks of its cells, then its box (spec 081).
+                if let Some(table) = &shape.table {
+                    let range = self.cell_range(shape.node, table);
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.table")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            let style = table
+                                .cell(range.r0, range.c0)
+                                .map(|cell| span_of(&cell.style));
+                            font_button(ui, theme, texts, style.as_ref(), asked);
+                            ui.add_space(8.0);
+                            let mut pen = self.table_pen.get();
+                            if let Some(act) =
+                                tables::inspector(ui, theme, texts, (table, range), &mut pen)
+                            {
+                                asked.table_act = Some(act);
+                            }
+                            self.table_pen.set(pen);
+                            ui.add_space(16.0);
+                            position_fields(ui, theme, texts, shape, asked);
+                            ui.add_space(8.0);
+                            turn_buttons(ui, theme, texts, asked);
+                            ui.add_space(16.0);
+                            arrange_buttons(ui, theme, texts, can, asked);
+                            ui.add_space(8.0);
+                            opacity_field(ui, texts, shape, asked);
+                        });
+                    return;
+                }
+                // A chart: how it looks, then its box (spec 083).
+                if let Some(chart) = &shape.chart {
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.chart")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            let at = (shape.page, shape.node);
+                            let (edit, asks) = charts::inspector(ui, theme, texts, chart);
+                            if edit {
+                                asked.chart_open = Some(at);
+                            }
+                            take_chart(asked, at, asks);
+                            ui.add_space(16.0);
+                            position_fields(ui, theme, texts, shape, asked);
+                            ui.add_space(8.0);
+                            turn_buttons(ui, theme, texts, asked);
+                            ui.add_space(16.0);
+                            arrange_buttons(ui, theme, texts, can, asked);
+                            ui.add_space(8.0);
+                            opacity_field(ui, texts, shape, asked);
+                        });
+                    return;
+                }
+                // A QR code: its own fields, then its box (spec 080).
+                if let Some(qr) = &shape.qr {
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.qr")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            // Room for the scroll bar, beside the fields.
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            let mut panel = self.qr_panel.borrow_mut();
+                            let (set, pick) = panel.inspector(ui, theme, texts, (shape.node, qr));
+                            asked.qr = set;
+                            asked.qr_logo = pick;
+                            ui.add_space(8.0);
+                            if ui.button(plain(texts, "qr.to_shapes")).clicked() {
+                                asked.qr_to_shapes = true;
+                            }
+                            ui.add_space(16.0);
+                            position_fields(ui, theme, texts, shape, asked);
+                            ui.add_space(8.0);
+                            turn_buttons(ui, theme, texts, asked);
+                            ui.add_space(16.0);
+                            arrange_buttons(ui, theme, texts, can, asked);
+                            ui.add_space(8.0);
+                            opacity_field(ui, texts, shape, asked);
+                        });
+                    asked.qr_rest = ctx.memory(|m| m.focused().is_none())
+                        && !ctx.input(|i| i.pointer.any_down())
+                        && !egui::Popup::is_any_open(ctx);
+                    return;
+                }
+                // An image: its file, and «Usar como fondo de la página».
+                if let Some(asset) = shape.image {
+                    let name = document
+                        .and_then(|d| d.asset(&asset))
+                        .map(|entry| entry.name.clone())
+                        .unwrap_or_default();
+                    if !name.is_empty() {
+                        ui.label(
+                            RichText::new(name)
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("text.secondary")),
+                        );
+                        ui.add_space(6.0);
+                    }
+                    if ui.button(plain(texts, "inspector.as_background")).clicked() {
+                        asked.image_to_background = Some((shape.page, shape.node, asset));
+                    }
+                    ui.add_space(12.0);
+                    if let Some(image) = document.and_then(|d| image_of(d, shape.page, shape.node))
+                    {
+                        let target = crate::vision::Target {
+                            page: shape.page,
+                            node: shape.node,
+                            image,
+                        };
+                        asked.vision =
+                            crate::vision::buttons(ui, theme, texts, &self.studio, target);
+                        ui.add_space(12.0);
+                    }
+                }
                 if let Some(text) = &shape.text {
-                    text_fields(ui, theme, texts, text, asked);
+                    font_button(ui, theme, texts, text.content.first_style(), asked);
+                    let design = document
+                        .and_then(|d| d.page(shape.page))
+                        .map(design_colors)
+                        .unwrap_or_default();
+                    text_fields(ui, theme, texts, (text, &design), asked);
                     ui.add_space(16.0);
                 }
-                if shape.group {
-                    ui.label(
-                        RichText::new(plain(texts, "layers.group"))
-                            .font(theme.font("ui-label"))
-                            .color(theme.c("text")),
-                    );
-                    ui.add_space(8.0);
-                }
-                let mut placement = shape.placement;
-                let mut changed = false;
-                egui::Grid::new("inspector.position")
-                    .num_columns(2)
-                    .spacing([12.0, 8.0])
-                    .show(ui, |ui| {
-                        for (key, value, min) in [
-                            (gafira_doc::msg!("inspector.x"), &mut placement.x, f64::MIN),
-                            (gafira_doc::msg!("inspector.y"), &mut placement.y, f64::MIN),
-                            (gafira_doc::msg!("inspector.width"), &mut placement.w, 1.0),
-                            (gafira_doc::msg!("inspector.height"), &mut placement.h, 1.0),
-                        ] {
-                            ui.label(texts.t(&key));
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(value)
-                                        .speed(1.0)
-                                        .range(min..=f64::MAX)
-                                        .max_decimals(1),
-                                )
-                                .changed();
-                            ui.end_row();
-                        }
-                        // «Giro», in degrees within one turn (spec 041). A
-                        // group has no turn of its own: its box is upright
-                        // around its children (spec 043).
-                        if shape.group {
-                            return;
-                        }
-                        ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
-                        let mut degrees = rotation::normalized(placement.rotation_deg);
-                        let field = egui::DragValue::new(&mut degrees)
-                            .speed(1.0)
-                            .max_decimals(1)
-                            .custom_formatter(|value, _| degrees_text(texts, value));
-                        if ui.add(field).changed() {
-                            placement.rotation_deg = rotation::normalized(degrees);
-                            changed = true;
-                        }
-                        ui.end_row();
-                    });
-                if changed {
-                    asked.place = Some(placement);
-                }
+                position_fields(ui, theme, texts, shape, asked);
                 ui.add_space(8.0);
                 turn_buttons(ui, theme, texts, asked);
                 ui.add_space(16.0);
                 arrange_buttons(ui, theme, texts, can, asked);
                 ui.add_space(16.0);
-                if shape.text.is_none() && !shape.group {
-                    fill_field(ui, texts, shape, asked);
+                // A light shows its own settings instead of the fill,
+                // outline and text (spec 065).
+                let plain_shape = shape.text.is_none()
+                    && shape.image.is_none()
+                    && !shape.group
+                    && shape.line.is_none();
+                // The colours of a group (an SVG brought in as shapes),
+                // each one changed everywhere in it (spec 067).
+                if shape.group
+                    && let Some(page) = document.and_then(|d| d.page(shape.page))
+                {
+                    group_colors(ui, texts, page, shape.node, asked);
                 }
-                if shape.text.is_none() && shape.image.is_none() && !shape.group {
+                if let Some(frame) = &shape.frame {
+                    frame_fields(ui, texts, frame, asked);
+                } else if let Some(effect) = &shape.effect {
+                    effect_fields(ui, texts, effect, asked);
+                } else if shape.text.is_none() && !shape.group && shape.line.is_none() {
+                    fill_field(ui, texts, shape, asked);
+                    // Any shape can become a light (spec 065, S65-06).
+                    if plain_shape {
+                        ui.add_space(8.0);
+                        light_kind_row(ui, texts, None, asked);
+                    }
+                }
+                if shape.effect.is_none()
+                    && shape.text.is_none()
+                    && shape.image.is_none()
+                    && !shape.group
+                    && shape.line.is_none()
+                {
                     ui.add_space(8.0);
                     outline_fields(ui, texts, shape, asked);
+                    shape_text_fields(ui, theme, texts, shape, asked);
+                    if let Some(inner) = &shape.inner {
+                        font_button(ui, theme, texts, inner.content.first_style(), asked);
+                    }
                 }
                 ui.add_space(8.0);
                 opacity_field(ui, texts, shape, asked);
@@ -1862,10 +2888,1158 @@ impl Editor {
         Some(name)
     }
 
+    /// A text of `preset` with `words` on `page`, centred on `at` (px of
+    /// page) or in the middle, selected, one undo step (specs 027, 061).
+    /// Alignment, spacing and colour of the selected texts (spec 070), each
+    /// one undo step; spacing refits a box that grows with its words.
+    fn text_styles(&mut self, engine: &mut Gafira, asked: &Asked) {
+        let Some(page) = self.selected.page() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let nodes: Vec<NodeId> = self
+            .selected
+            .nodes()
+            .iter()
+            .copied()
+            .filter(|id| {
+                on.node(*id)
+                    .is_some_and(|n| matches!(n.kind, gafira_doc::NodeKind::Text(_)))
+            })
+            .collect();
+        if nodes.is_empty() {
+            return;
+        }
+        let mut commands: Vec<Box<dyn Command>> = Vec::new();
+        if let Some(align) = asked.text_align {
+            commands.push(Box::new(SetProperty::new(
+                page,
+                nodes.clone(),
+                Property::TextAlign(align),
+                None,
+            )));
+        }
+        if let Some((letters, lines)) = asked.text_spacing {
+            commands.push(Box::new(SetProperty::new(
+                page,
+                nodes.clone(),
+                Property::TextSpacing(letters, lines),
+                None,
+            )));
+            self.fit_pending = nodes.first().map(|node| (page, *node));
+        }
+        match &asked.text_fill {
+            Some(TextFill::Gradient(gradient)) => commands.push(Box::new(SetProperty::new(
+                page,
+                nodes.clone(),
+                Property::TextGradient(Some(gradient.clone())),
+                None,
+            ))),
+            Some(TextFill::Solid(color)) => {
+                commands.push(Box::new(SetProperty::new(
+                    page,
+                    nodes.clone(),
+                    Property::TextGradient(None),
+                    None,
+                )));
+                for node in &nodes {
+                    if let Some(found) = on.node(*node)
+                        && let gafira_doc::NodeKind::Text(text) = &found.kind
+                        && let Some(style) = text.content.first_style()
+                    {
+                        let restyled = gafira_doc::SpanStyle {
+                            color: *color,
+                            ..style.clone()
+                        };
+                        let words = text.content.plain_text();
+                        commands.push(Box::new(SetProperty::new(
+                            page,
+                            vec![*node],
+                            Property::TextContent(gafira_doc::RichText::plain(&words, &restyled)),
+                            None,
+                        )));
+                    }
+                }
+            }
+            None => {}
+        }
+        if commands.is_empty() {
+            return;
+        }
+        let step = Transaction::new(MessageKey("edit.set_property"), commands);
+        if let Err(error) = engine.edit().execute(Box::new(step)) {
+            eprintln!("text style: {error}");
+        }
+    }
+
+    /// «Texto curvo» and «Combinaciones de fuentes» of the Texto panel:
+    /// each card is added with a click and carried with a drag (D-105).
+    fn text_extras(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        ui.add_space(12.0);
+        section_title(ui, theme, texts, "text.curved");
+        let half = ((ui.available_width() - 8.0) / 2.0).max(40.0);
+        ui.horizontal(|ui| {
+            for (key, bend) in [
+                ("text.arc_up", CURVE_PRESET),
+                ("text.arc_down", -CURVE_PRESET),
+            ] {
+                let (rect, response) =
+                    ui.allocate_exact_size(Vec2::new(half, 72.0), egui::Sense::click_and_drag());
+                card_frame(ui, theme, rect, response.hovered());
+                let painter = ui.painter();
+                painter.text(
+                    Pos2::new(rect.center().x, rect.top() + 20.0),
+                    Align2::CENTER_CENTER,
+                    plain(texts, key),
+                    theme.font("body-sm"),
+                    theme.c("text.secondary"),
+                );
+                // The arc the words follow: ⌒ for an arch, ⌣ for a cup.
+                let y = rect.top() + 48.0;
+                let lift = if bend > 0.0 { 12.0 } else { -12.0 };
+                let a = Pos2::new(rect.center().x - 22.0, y + lift / 2.0);
+                let b = Pos2::new(rect.center().x + 22.0, y + lift / 2.0);
+                let control = Pos2::new(rect.center().x, y - lift);
+                painter.add(egui::epaint::QuadraticBezierShape::from_points_stroke(
+                    [a, control, b],
+                    false,
+                    Color32::TRANSPARENT,
+                    Stroke::new(2.0, theme.c("text")),
+                ));
+                let words = plain(texts, "text.curved_words");
+                if response.clicked() {
+                    asked.insert_curved = Some((bend, words.clone(), None));
+                }
+                self.carry(ui, theme, &response, &plain(texts, key), |page, point| {
+                    asked.insert_curved = Some((bend, words, Some((page, point))));
+                });
+            }
+        });
+        ui.add_space(16.0);
+        section_title(ui, theme, texts, "text.pairings");
+        let heading_words = plain(texts, "text.pairing_heading");
+        let body_words = plain(texts, "text.pairing_body");
+        for (index, pairing) in pairings::PAIRINGS.iter().enumerate() {
+            let (rect, response) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), 92.0),
+                egui::Sense::click_and_drag(),
+            );
+            card_frame(ui, theme, rect, response.hovered());
+            let clip = ui.painter().with_clip_rect(rect.shrink(1.0));
+            let left = rect.left() + 14.0;
+            clip.text(
+                Pos2::new(left, rect.top() + 10.0),
+                Align2::LEFT_TOP,
+                plain(texts, pairing.key),
+                theme.font("body-sm"),
+                theme.c("text.secondary"),
+            );
+            for (face, words, y, size) in [
+                (pairing.heading, &heading_words, rect.top() + 30.0, 24.0),
+                (pairing.body, &body_words, rect.top() + 66.0, 12.0),
+            ] {
+                let style = pairings::style(face);
+                let family = text_family(ui.ctx(), theme, &style);
+                clip.text(
+                    Pos2::new(left, y),
+                    Align2::LEFT_TOP,
+                    pairings::words(face, words),
+                    egui::FontId::new(size, family),
+                    canvas::screen_color(style.color),
+                );
+            }
+            let words = (heading_words.clone(), body_words.clone());
+            if response.clicked() {
+                asked.insert_pairing = Some((index, words.clone(), None));
+            }
+            self.carry(
+                ui,
+                theme,
+                &response,
+                &plain(texts, pairing.key),
+                |page, point| {
+                    asked.insert_pairing = Some((index, words, Some((page, point))));
+                },
+            );
+            ui.add_space(8.0);
+        }
+    }
+
+    /// A card of a side panel being dragged: a ghost under the pointer and,
+    /// when it is let go over a page, `dropped` with the page and the point.
+    fn carry(
+        &self,
+        ui: &egui::Ui,
+        theme: &Theme,
+        response: &egui::Response,
+        label: &str,
+        dropped: impl FnOnce(PageId, (f64, f64)),
+    ) {
+        let at = ui.input(|i| i.pointer.latest_pos());
+        // A hand over the card, a closed hand while it is carried.
+        if response.hovered() && !response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if response.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("editor.text_ghost"),
+            ));
+            painter.text(
+                at,
+                Align2::CENTER_CENTER,
+                label,
+                theme.font("ui-label"),
+                theme.c("text").gamma_multiply(0.6),
+            );
+        }
+        if response.drag_stopped()
+            && let Some(at) = at
+            && let Some((page, point)) = canvas::drop_point(&self.page_rects, self.zoom, at)
+        {
+            dropped(page, point);
+        }
+    }
+
+    /// A curved text of `bend` on `page`, in its middle or centred on `at`,
+    /// its box as high as its arc; selected (FD-44).
+    fn add_curved(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        theme: &Theme,
+        (bend, words): (f64, &str),
+        (page, at): (PageId, Option<(f64, f64)>),
+    ) {
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let style = text_style(theme, canvas::TextPreset::Subtitle);
+        let px = Vec2::new(size.width() as f32, size.height() as f32);
+        let mut spec = match at {
+            Some(at) => canvas::text_at(px, words, &style, at),
+            None => canvas::new_text(px, words, &style),
+        };
+        if let gafira_doc::NodeKind::Text(text) = &mut spec.kind {
+            text.curve = bend;
+            text.sizing = gafira_doc::TextSizing::Fixed;
+            let placement = &mut spec.placement;
+            // As wide as the words on a line, so they bend as one arc.
+            placement.w = (words.chars().count() as f64 * style.size * 0.62).max(80.0);
+            if let Some(h) = canvas::curved_height(text, placement.w, placement.h) {
+                let centre_y = placement.y + placement.h / 2.0;
+                placement.h = h;
+                placement.y = centre_y - h / 2.0;
+            }
+            let centre_x = match at {
+                Some((x, _)) => x,
+                None => f64::from(px.x) / 2.0,
+            };
+            placement.x = centre_x - placement.w / 2.0;
+        }
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+                self.scope = None;
+            }
+            Err(error) => eprintln!("insert curved text: {error}"),
+        }
+    }
+
+    /// The font pairing `index` on `page`, in its middle or centred on
+    /// `at`: one group of its heading and body line, selected.
+    fn add_pairing(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        (index, (heading, body)): (usize, &(String, String)),
+        (page, at): (PageId, Option<(f64, f64)>),
+    ) {
+        let (Some(on), Some(pairing)) = (document.page(page), pairings::PAIRINGS.get(index)) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let (w, h) = (size.width(), size.height());
+        let centre = at.unwrap_or((w / 2.0, h / 2.0));
+        let spec = pairings::group(w, centre, *pairing, (heading, body));
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+                self.scope = None;
+            }
+            Err(error) => eprintln!("insert font pairing: {error}"),
+        }
+    }
+
+    fn add_text(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        theme: &Theme,
+        (preset, words): (canvas::TextPreset, &str),
+        (page, at): (PageId, Option<(f64, f64)>),
+    ) -> Option<(PageId, NodeId)> {
+        let on = document.page(page)?;
+        let size = on.size.to_px(document.dpi()).ok()?;
+        let style = text_style(theme, preset);
+        let px = Vec2::new(size.width() as f32, size.height() as f32);
+        let spec = match at {
+            Some(at) => canvas::text_at(px, words, &style, at),
+            None => canvas::new_text(px, words, &style),
+        };
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        let next = NodeId::new(document.next_id());
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+                self.scope = None;
+                Some((page, next))
+            }
+            Err(error) => {
+                eprintln!("insert text: {error}");
+                None
+            }
+        }
+    }
+
+    /// The texture `key` names, made by `make` the first time; `None` when
+    /// it cannot be made. The cache is emptied when it grows past 256, so
+    /// a resize or a zoom does not keep every size it went through.
+    fn path_texture(
+        &self,
+        ctx: &egui::Context,
+        key: u64,
+        make: impl FnOnce() -> Option<egui::ColorImage>,
+    ) -> Option<egui::TextureId> {
+        let mut cache = self.path_textures.borrow_mut();
+        if let Some(texture) = cache.get(&key) {
+            return Some(texture.id());
+        }
+        if cache.len() > 256 {
+            cache.clear();
+        }
+        let texture = ctx.load_texture(
+            format!("path-{key:x}"),
+            make()?,
+            egui::TextureOptions::LINEAR,
+        );
+        let id = texture.id();
+        cache.insert(key, texture);
+        Some(id)
+    }
+
+    /// `piece` filling `rect` in `color`, at its own proportions (specs 053
+    /// and 054): what a tile of the Formas panel and the drag preview draw.
+    fn paint_piece(
+        &self,
+        ctx: &egui::Context,
+        painter: &egui::Painter,
+        piece: canvas::Piece,
+        rect: Rect,
+        color: Color32,
+    ) {
+        // A line: across the tile with its caps (spec 058).
+        if let Some((start, end)) = piece.line_caps() {
+            let line = gafira_doc::LineNode {
+                start: gafira_doc::LineEnd::new([0.0, 0.5], start),
+                end: gafira_doc::LineEnd::new([1.0, 0.5], end),
+                color: canvas::document_color(color),
+                width: 2.0,
+            };
+            let y = rect.center().y;
+            painter.extend(canvas::line_shapes(
+                &line,
+                Pos2::new(rect.min.x + 2.0, y),
+                Pos2::new(rect.max.x - 2.0, y),
+                1.0,
+                color,
+            ));
+            return;
+        }
+        let aspect = piece.aspect() as f32;
+        let side = rect.width().min(rect.height());
+        let size = if aspect >= 1.0 {
+            Vec2::new(side, side / aspect)
+        } else {
+            Vec2::new(side * aspect, side)
+        };
+        let rect = Rect::from_center_size(rect.center(), size);
+        match piece.geometry() {
+            ShapeGeometry::Rect => {
+                let radius = piece.corner_radius(f64::from(rect.width())) as f32;
+                painter.rect_filled(rect, radius, color);
+            }
+            ShapeGeometry::Ellipse => {
+                painter.circle_filled(rect.center(), side / 2.0, color);
+            }
+            geometry @ ShapeGeometry::Path(_) => {
+                let shape = Shape {
+                    page: PageId::new(0),
+                    node: NodeId::new(0),
+                    placement: Placement::new(
+                        f64::from(rect.min.x),
+                        f64::from(rect.min.y),
+                        f64::from(rect.width()),
+                        f64::from(rect.height()),
+                    ),
+                    geometry,
+                    fill: Some(canvas::document_color(color)),
+                    stroke: None,
+                    corner_radius: 0.0,
+                    gradient: None,
+                    effect: None,
+                    opacity: f32::from(color.a()) / 255.0,
+                    inherited: 1.0,
+                    group: false,
+                    text: None,
+                    image: None,
+                    locked: false,
+                    inner: None,
+                    line: None,
+                    frame: None,
+                    qr: None,
+                    table: None,
+                    chart: None,
+                };
+                let cover = canvas::path_cover(&shape, 1.0);
+                let key = path_key(&shape, 1.0);
+                if let Some(texture) =
+                    self.path_texture(ctx, key, || canvas::path_image(&shape, 1.0).map(|(i, _)| i))
+                {
+                    let at = Rect::from_min_size(
+                        Pos2::new(cover.x as f32, cover.y as f32),
+                        Vec2::new(cover.w as f32, cover.h as f32),
+                    );
+                    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    painter.image(
+                        texture,
+                        at,
+                        uv,
+                        Color32::WHITE.gamma_multiply(shape.opacity),
+                    );
+                }
+            }
+        }
+    }
+
+    /// A 56 px tile of the Formas panel that draws `piece` (S53-03), named
+    /// `name` for assistive technology and in its tooltip; it can be clicked
+    /// and dragged.
+    /// «Fondo de la página» (spec 069): what the Inspector shows with the
+    /// page or the canvas selected. A colour (searched by name or hex, from
+    /// the palette, or picked), a gradient, a pattern with its two colours, or
+    /// an image filled, fitted or tiled; «Aplicar a todas las páginas».
+    fn background_fields(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        page: &gafira_doc::Page,
+        asked: &mut Asked,
+    ) {
+        use gafira_doc::{
+            BackgroundFit, Gradient, GradientKind, GradientStop, PageBackground, PatternKind,
+        };
+        let current = page.background.clone();
+        let heading = |ui: &mut egui::Ui, key: &'static str| {
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(plain(texts, key))
+                    .font(theme.font("ui-label"))
+                    .color(theme.c("text")),
+            );
+            ui.add_space(6.0);
+        };
+        ui.label(
+            RichText::new(plain(texts, "background.title"))
+                .font(theme.font("ui-label"))
+                .color(theme.c("text")),
+        );
+        ui.add_space(8.0);
+        // The search: «azul», «blue» or «#00c4cc».
+        let found = {
+            let mut query = self.background_query.borrow_mut();
+            ui.add(widgets::field(
+                &mut query,
+                plain(texts, "background.search"),
+            ));
+            crate::colors::search(&query)
+        };
+        if !found.is_empty() {
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                for color in found {
+                    if swatch(ui, theme, |p, r| {
+                        p.rect_filled(r, 6.0, canvas::screen_color(color));
+                    })
+                    .clicked()
+                    {
+                        asked.page_background = Some(Some(PageBackground::Solid(color)));
+                    }
+                }
+            });
+        }
+        heading(ui, "background.color");
+        ui.horizontal(|ui| {
+            ui.label(plain(texts, "background.custom"));
+            let solid = match &current {
+                Some(PageBackground::Solid(c)) => Some(*c),
+                _ => None,
+            };
+            if let Some(color) = color_button(ui, solid.or(Some(crate::colors::hex(0xFFFFFF)))) {
+                asked.page_background = Some(Some(PageBackground::Solid(color)));
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            for code in crate::colors::PALETTE {
+                let color = crate::colors::hex(code);
+                if swatch(ui, theme, |p, r| {
+                    p.rect_filled(r, 6.0, canvas::screen_color(color));
+                })
+                .clicked()
+                {
+                    asked.page_background = Some(Some(PageBackground::Solid(color)));
+                }
+            }
+        });
+        heading(ui, "background.gradient");
+        ui.horizontal_wrapped(|ui| {
+            for (a, b, angle) in crate::colors::GRADIENTS {
+                let (ca, cb) = (crate::colors::hex(a), crate::colors::hex(b));
+                let clicked = swatch(ui, theme, |p, r| {
+                    paint_gradient_swatch(
+                        p,
+                        r,
+                        canvas::screen_color(ca),
+                        canvas::screen_color(cb),
+                        angle,
+                    );
+                })
+                .clicked();
+                if clicked {
+                    asked.page_background = Some(Some(PageBackground::Gradient(Gradient {
+                        kind: GradientKind::Linear { angle_deg: angle },
+                        stops: vec![
+                            GradientStop {
+                                offset: 0.0,
+                                color: ca,
+                            },
+                            GradientStop {
+                                offset: 1.0,
+                                color: cb,
+                            },
+                        ],
+                    })));
+                }
+            }
+        });
+        heading(ui, "background.patterns");
+        let (pattern_color, pattern_back) = match &current {
+            Some(PageBackground::Pattern { color, back, .. }) => (*color, *back),
+            // Gafira's mint (brand.mint) on white until a pattern is chosen.
+            _ => (crate::colors::hex(0x3FBFA9), crate::colors::hex(0xFFFFFF)),
+        };
+        let current_kind = match &current {
+            Some(PageBackground::Pattern { kind, .. }) => Some(*kind),
+            _ => None,
+        };
+        ui.horizontal(|ui| {
+            ui.label(plain(texts, "background.pattern_color"));
+            if let Some(color) = color_button(ui, Some(pattern_color)) {
+                asked.page_background = Some(Some(PageBackground::Pattern {
+                    kind: current_kind.unwrap_or(PatternKind::Dots),
+                    color,
+                    back: pattern_back,
+                }));
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(plain(texts, "background.pattern_back"));
+            if let Some(back) = color_button(ui, Some(pattern_back)) {
+                asked.page_background = Some(Some(PageBackground::Pattern {
+                    kind: current_kind.unwrap_or(PatternKind::Dots),
+                    color: pattern_color,
+                    back,
+                }));
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            for kind in PatternKind::ALL {
+                let preview = PageBackground::Pattern {
+                    kind,
+                    color: pattern_color,
+                    back: pattern_back,
+                };
+                let key = {
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    format!("pattern tile {preview:?}").hash(&mut hasher);
+                    hasher.finish()
+                };
+                let texture = self.path_texture(ui.ctx(), key, || {
+                    canvas::background_image(&preview, (96.0, 96.0), 1.0, None)
+                });
+                let clicked = swatch(ui, theme, |p, r| {
+                    if let Some(texture) = texture {
+                        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                        p.image(texture, r, uv, Color32::WHITE);
+                    }
+                })
+                .clicked();
+                if clicked {
+                    asked.page_background = Some(Some(preview));
+                }
+            }
+        });
+        heading(ui, "background.image");
+        if ui
+            .add_sized(
+                [ui.available_width(), 32.0],
+                egui::Button::new(plain(texts, "background.upload")),
+            )
+            .clicked()
+        {
+            asked.background_pick = true;
+        }
+        if let Some(PageBackground::Image {
+            asset,
+            natural,
+            fit,
+        }) = &current
+        {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                for (option, key) in [
+                    (BackgroundFit::Fill, "background.fill"),
+                    (BackgroundFit::Fit, "background.fit"),
+                    (BackgroundFit::Tile, "background.tile"),
+                ] {
+                    if ui
+                        .selectable_label(*fit == option, plain(texts, key))
+                        .clicked()
+                    {
+                        asked.page_background = Some(Some(PageBackground::Image {
+                            asset: *asset,
+                            natural: *natural,
+                            fit: option,
+                        }));
+                    }
+                }
+            });
+        }
+        ui.add_space(12.0);
+        if current.is_some() && ui.button(plain(texts, "background.remove")).clicked() {
+            asked.page_background = Some(None);
+        }
+        ui.add_space(8.0);
+        if ui
+            .add_sized(
+                [ui.available_width(), 32.0],
+                egui::Button::new(plain(texts, "background.all")).fill(theme.c("secondary.bg")),
+            )
+            .clicked()
+        {
+            asked.background_all = true;
+        }
+    }
+
+    /// The bar over the selection (owner request): «Agrupar» for several
+    /// elements or «Desagrupar» for a group, then Bloquear or Desbloquear,
+    /// Duplicar, Eliminar and «···» with Copiar and Cortar. Above the
+    /// selection, or below it when there is no room.
+    fn selection_bar(
+        &self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        around: Rect,
+        page: &Page,
+        asked: &mut Asked,
+    ) {
+        let locked = self
+            .selected
+            .nodes()
+            .iter()
+            .all(|node| page.node(*node).is_some_and(|n| n.base.locked));
+        let screen = ctx.content_rect();
+        // Clear of the turn handle above the box.
+        let above = around.top() - 84.0 > screen.top() + 56.0;
+        let anchor = if above {
+            Pos2::new(around.center().x, around.top() - 40.0)
+        } else {
+            Pos2::new(around.center().x, around.bottom() + 16.0)
+        };
+        let pivot = if above {
+            Align2::CENTER_BOTTOM
+        } else {
+            Align2::CENTER_TOP
+        };
+        egui::Area::new(egui::Id::new("editor.selection_bar"))
+            .order(egui::Order::Foreground)
+            .pivot(pivot)
+            .fixed_pos(anchor)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style())
+                    .corner_radius(theme.radius_md())
+                    .inner_margin(egui::Margin::symmetric(10, 6))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.set_min_height(32.0);
+                            // Locked, the one thing to do is unlock it (D-110).
+                            if locked {
+                                // The closed lock, lit, «Desbloquear» on hover.
+                                let unlock =
+                                    IconButton::new(Icon::Locked, plain(texts, "layers.unlock"))
+                                        .active(true)
+                                        .small()
+                                        .show(ui, theme);
+                                if unlock.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                if unlock.clicked() {
+                                    asked.toggle = Some(Flag::Locked);
+                                }
+                                return;
+                            }
+                            if let Some((_, node)) = self.selected.single()
+                                && let Some(gafira_doc::NodeKind::Table(table)) =
+                                    page.node(node).map(|n| &n.kind)
+                            {
+                                self.table_bar(ui, theme, texts, (node, table), asked);
+                                bar_separator(ui, theme);
+                            }
+                            if let Some(at) = self.selected.single()
+                                && let Some(gafira_doc::NodeKind::Chart(chart)) =
+                                    page.node(at.1).map(|n| &n.kind)
+                            {
+                                let (edit, asks) = charts::bar(ui, theme, texts, chart);
+                                if edit {
+                                    asked.chart_open = Some(at);
+                                }
+                                take_chart(asked, at, asks);
+                                bar_separator(ui, theme);
+                            }
+                            if self.can.ungroup && self.selected.len() == 1 {
+                                if ui.button(plain(texts, "editor.ungroup")).clicked() {
+                                    asked.ungroup = true;
+                                }
+                            } else if self.can.group
+                                && self.selected.len() > 1
+                                && ui.button(plain(texts, "editor.group")).clicked()
+                            {
+                                asked.group = true;
+                            }
+                            let (icon, key) = if locked {
+                                (Icon::Locked, "layers.unlock")
+                            } else {
+                                (Icon::Unlocked, "layers.lock")
+                            };
+                            if IconButton::new(icon, plain(texts, key))
+                                .small()
+                                .show(ui, theme)
+                                .clicked()
+                            {
+                                asked.toggle = Some(Flag::Locked);
+                            }
+                            if IconButton::new(Icon::PageCopy, plain(texts, "editor.duplicate"))
+                                .small()
+                                .show(ui, theme)
+                                .clicked()
+                            {
+                                asked.duplicate = true;
+                            }
+                            if IconButton::new(Icon::Delete, plain(texts, "editor.delete"))
+                                .small()
+                                .show(ui, theme)
+                                .clicked()
+                            {
+                                asked.delete = true;
+                            }
+                            ui.menu_button("···", |ui| {
+                                if ui.button(plain(texts, "editor.copy")).clicked() {
+                                    asked.copy = true;
+                                    ui.close();
+                                }
+                                if ui.button(plain(texts, "editor.cut")).clicked() {
+                                    asked.cut = true;
+                                    ui.close();
+                                }
+                            });
+                        });
+                    });
+            });
+    }
+
+    /// The background of a page on the canvas (spec 069): a colour painted
+    /// directly, anything else from its texture.
+    fn paint_background(
+        &self,
+        ctx: &egui::Context,
+        painter: &egui::Painter,
+        page: Rect,
+        zoom: f32,
+        background: &gafira_doc::PageBackground,
+    ) {
+        if let gafira_doc::PageBackground::Solid(color) = background {
+            painter.rect_filled(page, 0.0, canvas::screen_color(*color));
+            return;
+        }
+        // A pattern is drawn as vector shapes, sharp at any zoom (spec 069).
+        if let gafira_doc::PageBackground::Pattern { kind, color, back } = background {
+            painter.rect_filled(page, 0.0, canvas::screen_color(*back));
+            let fill = canvas::screen_color(*color);
+            let clip = painter.with_clip_rect(page.intersect(painter.clip_rect()));
+            let (pw, ph) = (
+                f64::from(page.width() / zoom),
+                f64::from(page.height() / zoom),
+            );
+            let path = gafira_raster::pattern_path(*kind, pw, ph, gafira_raster::PATTERN_CELL);
+            let to_screen = |p: kurbo::Point| {
+                Pos2::new(
+                    page.min.x + p.x as f32 * zoom,
+                    page.min.y + p.y as f32 * zoom,
+                )
+            };
+            let mut shape: Vec<Pos2> = Vec::new();
+            let mut shapes: Vec<egui::Shape> = Vec::new();
+            // A quarter of a screen px, in px of page.
+            let tolerance = 0.25 / f64::from(zoom.max(1e-3));
+            kurbo::flatten(path.elements().iter().copied(), tolerance, |el| match el {
+                kurbo::PathEl::MoveTo(p) => {
+                    shape.clear();
+                    shape.push(to_screen(p));
+                }
+                kurbo::PathEl::LineTo(p) => shape.push(to_screen(p)),
+                kurbo::PathEl::ClosePath => {
+                    if shape.len() >= 3 {
+                        shapes.push(egui::Shape::convex_polygon(
+                            std::mem::take(&mut shape),
+                            fill,
+                            Stroke::NONE,
+                        ));
+                    }
+                }
+                _ => {}
+            });
+            clip.extend(shapes);
+            return;
+        }
+        let page_px = (
+            f64::from(page.width() / zoom),
+            f64::from(page.height() / zoom),
+        );
+        let photo = background
+            .asset()
+            .and_then(|asset| self.photos.get(&asset.as_hash()))
+            .and_then(Option::as_ref);
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            format!("background {background:?} {page_px:?} {zoom}").hash(&mut hasher);
+            hasher.finish()
+        };
+        if let Some(texture) = self.path_texture(ctx, key, || {
+            canvas::background_image(background, page_px, zoom, photo.map(|p| &**p))
+        }) {
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+            painter.image(texture, page, uv, Color32::WHITE);
+        }
+    }
+
+    /// A tile of Elementos → Marcos (S66-12): the frame's shape with the
+    /// sample photo inside; click and drag like the shape tiles.
+    /// Marcos (spec 066, owner request with references): a search, the
+    /// collections as rows with «Ver todo», «Populares» as a grid, and
+    /// «Importar forma». Each frame is added with a click or a drag.
+    fn frames_panel(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        use crate::frames::collections;
+        egui::ScrollArea::vertical()
+            .id_salt("editor.frames")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let mut view = self.frames_view.borrow_mut();
+                ui.add(widgets::field(&mut view.0, plain(texts, "frames.search")));
+                ui.add_space(10.0);
+                let query = view.0.trim().to_owned();
+                let side = ((ui.available_width() - 3.0 * 6.0) / 4.0).max(40.0);
+                if !query.is_empty() {
+                    let found: Vec<crate::frames::Kind> = crate::frames::search(&query)
+                        .iter()
+                        .map(|i| i.kind)
+                        .collect();
+                    if found.is_empty() {
+                        ui.label(
+                            RichText::new(plain(texts, "frames.empty"))
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("text.secondary")),
+                        );
+                    }
+                    self.frame_grid(ui, theme, &found, side, asked);
+                    return;
+                }
+                if let Some(open) = view.1 {
+                    let Some(collection) = collections().get(open) else {
+                        view.1 = None;
+                        return;
+                    };
+                    ui.horizontal(|ui| {
+                        let back = ui.add(egui::Button::new("←").frame(false));
+                        if back.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if back.clicked() {
+                            view.1 = None;
+                        }
+                        ui.label(
+                            RichText::new(plain(texts, collection.key))
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                        );
+                    });
+                    ui.add_space(6.0);
+                    let kinds: Vec<_> = collection.items.iter().map(|i| i.kind).collect();
+                    self.frame_grid(ui, theme, &kinds, side * 4.0 / 3.0 - 2.0, asked);
+                    return;
+                }
+                for (index, collection) in collections().iter().enumerate() {
+                    let kinds: Vec<_> = collection.items.iter().map(|i| i.kind).collect();
+                    let popular = collection.key == "frames.popular";
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(plain(texts, collection.key))
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                        );
+                        if !popular {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let all = ui.add(
+                                        egui::Button::new(
+                                            RichText::new(plain(texts, "frames.see_all"))
+                                                .font(theme.font("body-sm")),
+                                        )
+                                        .frame(false),
+                                    );
+                                    if all.hovered() {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    }
+                                    if all.clicked() {
+                                        view.1 = Some(index);
+                                    }
+                                },
+                            );
+                        }
+                    });
+                    ui.add_space(4.0);
+                    if popular {
+                        self.frame_grid(ui, theme, &kinds, side * 4.0 / 3.0 - 2.0, asked);
+                    } else {
+                        egui::ScrollArea::horizontal()
+                            .id_salt(("editor.frames.row", index))
+                            .scroll_bar_visibility(
+                                egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                            )
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    for kind in kinds.iter().take(10) {
+                                        self.frame_kind_tile(ui, theme, *kind, side, asked);
+                                    }
+                                });
+                            });
+                    }
+                    ui.add_space(12.0);
+                }
+                if widgets::secondary(ui, theme, plain(texts, "frame.import_shape")).clicked() {
+                    asked.import_frame_shape = true;
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(plain(texts, "frame.hint"))
+                        .small()
+                        .color(theme.c("text.secondary")),
+                );
+            });
+    }
+
+    /// `kinds` as a grid of three columns of tiles `side` across.
+    fn frame_grid(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        kinds: &[crate::frames::Kind],
+        side: f32,
+        asked: &mut Asked,
+    ) {
+        let columns = ((ui.available_width() + 6.0) / (side + 6.0))
+            .floor()
+            .max(1.0) as usize;
+        for line in kinds.chunks(columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                for kind in line {
+                    self.frame_kind_tile(ui, theme, *kind, side, asked);
+                }
+            });
+            ui.add_space(6.0);
+        }
+    }
+
+    /// One frame of Marcos: the sample photo cut by its outline, or the
+    /// device or film with the sample in its screens; a click adds it, a
+    /// drag carries it (D-105).
+    fn frame_kind_tile(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        kind: crate::frames::Kind,
+        side: f32,
+        asked: &mut Asked,
+    ) {
+        let (rect, tile) = ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click_and_drag());
+        if tile.hovered() && !tile.dragged() {
+            ui.painter()
+                .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if ui.is_rect_visible(rect) {
+            self.paint_frame_kind(ui.ctx(), ui.painter(), kind, rect.shrink(4.0));
+        }
+        if tile.clicked() {
+            asked.insert_frame_kind = Some((kind, None));
+        }
+        let at = ui.input(|i| i.pointer.latest_pos());
+        if tile.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let ghost = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("frames.ghost"),
+            ));
+            self.paint_frame_kind(
+                ui.ctx(),
+                &ghost,
+                kind,
+                Rect::from_center_size(at, Vec2::splat(80.0)),
+            );
+        }
+        if tile.drag_stopped()
+            && let Some(at) = at
+            && let Some((page, point)) = canvas::drop_point(&self.page_rects, self.zoom, at)
+        {
+            asked.insert_frame_kind = Some((kind, Some((page, point))));
+        }
+    }
+
+    /// The preview of `kind` in `rect`, its proportions kept.
+    fn paint_frame_kind(
+        &self,
+        ctx: &egui::Context,
+        painter: &egui::Painter,
+        kind: crate::frames::Kind,
+        rect: Rect,
+    ) {
+        // Every frame, plain or held by a device, film, stem or paper, is
+        // drawn by the same preview, its proportions kept.
+        let scale = ctx.pixels_per_point();
+        let side = f64::from(rect.width().min(rect.height()));
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            format!("frame kind {kind:?} {side} {scale}").hash(&mut hasher);
+            hasher.finish()
+        };
+        let made = self.path_texture(ctx, key, || {
+            let spec = crate::frames::spec(kind, (side, side), (side / 2.0, side / 2.0))?;
+            canvas::spec_preview(&spec, side, scale)
+        });
+        if let Some(texture) = made {
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+            let square = Rect::from_center_size(rect.center(), Vec2::splat(side as f32));
+            painter.image(texture, square, uv, Color32::WHITE);
+        }
+    }
+
+    fn piece_tile(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        piece: canvas::Piece,
+        name: String,
+    ) -> egui::Response {
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::click_and_drag());
+        if response.hovered() || response.dragged() {
+            ui.painter()
+                .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        self.paint_piece(
+            ui.ctx(),
+            ui.painter(),
+            piece,
+            rect.shrink(6.0),
+            theme.c("text"),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+        response.on_hover_text(name)
+    }
+
     /// The shape being dragged from the panel, half transparent under the
     /// pointer, over everything, with the size it will take on the page
     /// under it (or the first page) at the zoom on display (S52-04).
-    fn piece_ghost(&self, ctx: &egui::Context, theme: &Theme, geometry: ShapeGeometry, at: Pos2) {
+    /// What follows the pointer while a light is dragged from the panel
+    /// (D-105): a soft disc of its size on the page under it, with its icon.
+    fn light_ghost(&self, ctx: &egui::Context, theme: &Theme, item: elements::LightItem, at: Pos2) {
+        let Some((_, page)) = self
+            .page_rects
+            .iter()
+            .find(|(_, rect)| rect.contains(at))
+            .or(self.page_rects.first())
+        else {
+            return;
+        };
+        let side = page.width().min(page.height()) * item.share() as f32;
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Tooltip,
+            egui::Id::new("editor.light_ghost"),
+        ));
+        painter.circle_filled(at, side / 2.0, theme.c("accent").gamma_multiply(0.35));
+        let icon = side.clamp(16.0, 32.0);
+        crate::icons::paint(
+            &painter,
+            Rect::from_center_size(at, Vec2::splat(icon)),
+            item.icon(),
+            crate::icons::Weight::Regular,
+            theme.c("text"),
+        );
+    }
+
+    fn piece_ghost(&self, ctx: &egui::Context, theme: &Theme, piece: canvas::Piece, at: Pos2) {
         let Some((_, page)) = self
             .page_rects
             .iter()
@@ -1880,14 +4054,87 @@ impl Editor {
             egui::Order::Tooltip,
             egui::Id::new("editor.piece_ghost"),
         ));
-        match geometry {
-            ShapeGeometry::Rect => {
-                painter.rect_filled(Rect::from_center_size(at, Vec2::splat(side)), 0.0, color);
-            }
-            ShapeGeometry::Ellipse => {
-                painter.circle_filled(at, side / 2.0, color);
-            }
+        self.paint_piece(
+            ctx,
+            &painter,
+            piece,
+            Rect::from_center_size(at, Vec2::splat(side)),
+            color,
+        );
+    }
+
+    /// The end of a line follows the pointer (spec 058): near a shape it
+    /// sticks to one of its five points or, else, to the nearest point of
+    /// its outline, unless Ctrl lets the magnet go. The line and its box
+    /// change together, one undo step for the whole drag.
+    fn drag_line_end(&mut self, engine: &mut Gafira, delta: Vec2, free: bool) {
+        let zoom = f64::from(self.zoom);
+        let Some(drag) = self.drag.as_mut() else {
+            return;
+        };
+        drag.offset += delta;
+        let Some(Hold::LineEnd(which)) = drag.hold else {
+            return;
+        };
+        let Some((node, origin)) = drag.origins.first().copied() else {
+            return;
+        };
+        let Some(start) = drag.start.as_ref().and_then(|d| d.page(drag.page)) else {
+            return;
+        };
+        let Some(gafira_doc::NodeKind::Line(line)) = start.node(node).map(|n| &n.kind) else {
+            return;
+        };
+        let Some(now) = engine.edit().document() else {
+            return;
+        };
+        let Some(page) = now.page(drag.page) else {
+            return;
+        };
+        let from = line.ends(start, &origin)[which.min(1)];
+        let p = from
+            + gafira_geom::Vec2::new(
+                f64::from(drag.offset.x) / zoom,
+                f64::from(drag.offset.y) / zoom,
+            );
+        let stuck = (!free)
+            .then(|| lines::stick(page, p, lines::SNAP_PX / zoom, node))
+            .flatten();
+        let point = stuck.map_or(p, |s| s.point);
+        let attach = stuck.map(|s| gafira_doc::Attachment {
+            node: s.node,
+            at: s.at,
+        });
+        let (next, placement) = lines::with_end(line, &origin, page, which, point, attach);
+        let ends = next.ends(page, &placement);
+        let commands: Vec<Box<dyn Command>> = vec![
+            Box::new(SetProperty::new(
+                drag.page,
+                vec![node],
+                Property::Placement(placement),
+                drag.gesture,
+            )),
+            Box::new(SetProperty::new(
+                drag.page,
+                vec![node],
+                Property::Line(next),
+                drag.gesture,
+            )),
+        ];
+        match engine.edit().execute(Box::new(Transaction::new(
+            MessageKey("edit.line"),
+            commands,
+        ))) {
+            Ok(applied) => drag.moved |= applied == gafira_edit::Applied::Changed,
+            Err(error) => eprintln!("line: {error}"),
         }
+        self.line_view = Some(LineView {
+            page: drag.page,
+            near: lines::near(page, p, lines::REACH_PX / zoom, node),
+            stuck: stuck.map(|s| s.node),
+            end: ends[which.min(1)],
+            other: ends[1 - which.min(1)],
+        });
     }
 
     /// Move `nodes` from one page to the other after a drag (spec 051), as
@@ -1924,6 +4171,691 @@ impl Editor {
                     eprintln!("transfer: {error}");
                 }
             }
+        }
+    }
+
+    /// The header over a page (spec 056, FD-02): «Página N» («Página
+    /// oculta» when hidden), a dash and its title, written in place on a
+    /// click, or «Agregar título de página»; on the right, Subir, Bajar,
+    /// Ocultar, Bloquear, Duplicar, Eliminar and Añadir página.
+    fn page_header(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        rect: Rect,
+        (page, index, count): (&Page, usize, usize),
+        asked: &mut Asked,
+    ) {
+        let mut row = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        let ui = &mut row;
+        let font = theme.font("ui-label");
+        let number = if page.hidden {
+            plain(texts, "editor.page_hidden")
+        } else {
+            texts.t(&gafira_doc::msg!(
+                "editor.page",
+                number = Count(index as u64 + 1)
+            ))
+        };
+        ui.label(
+            RichText::new(number)
+                .font(font.clone())
+                .color(theme.c("text")),
+        );
+        ui.label(
+            RichText::new(" - ")
+                .font(font.clone())
+                .color(theme.c("text.secondary")),
+        );
+        let renaming = self
+            .renaming_page
+            .as_mut()
+            .filter(|(id, _, _)| *id == page.id);
+        if let Some((_, words, focused)) = renaming {
+            let field = ui.add(
+                egui::TextEdit::singleline(words)
+                    .font(font.clone())
+                    .desired_width(220.0)
+                    .hint_text(plain(texts, "editor.page_title_hint")),
+            );
+            if !*focused {
+                field.request_focus();
+                *focused = true;
+            } else if field.lost_focus() {
+                // Enter or a click elsewhere keeps it; Esc does not.
+                if !ui.input(|i| i.key_pressed(Key::Escape)) && words.trim() != page.name {
+                    asked.page_action = Some(PageAction::Rename(page.id, words.clone()));
+                }
+                self.renaming_page = None;
+            }
+        } else {
+            let empty = page.name.is_empty();
+            let (words, color) = if empty {
+                (
+                    plain(texts, "editor.page_title_hint"),
+                    theme.c("text.secondary"),
+                )
+            } else {
+                (page.name.clone(), theme.c("text"))
+            };
+            let title = ui
+                .add(
+                    egui::Label::new(RichText::new(words).font(font).color(color))
+                        .sense(egui::Sense::click()),
+                )
+                .on_hover_cursor(egui::CursorIcon::Text);
+            if empty {
+                // A dotted line under the hint, like a field to fill.
+                let y = title.rect.bottom() + 1.0;
+                ui.painter().extend(egui::Shape::dashed_line(
+                    &[
+                        Pos2::new(title.rect.left(), y),
+                        Pos2::new(title.rect.right(), y),
+                    ],
+                    Stroke::new(1.0, theme.c("text.secondary")),
+                    3.0,
+                    2.0,
+                ));
+            }
+            if title.clicked() {
+                self.renaming_page = Some((page.id, page.name.clone(), false));
+            }
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let button = |ui: &mut egui::Ui, icon, key: &'static str, enabled: bool| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    IconButton::new(icon, plain(texts, key))
+                        .small()
+                        .show(ui, theme)
+                })
+                .inner
+                .clicked()
+            };
+            let id = page.id;
+            if button(ui, Icon::PageAdd, "page.add", true) {
+                asked.page_action = Some(PageAction::AddAfter(id));
+            }
+            if button(ui, Icon::Delete, "page.delete", count > 1) {
+                asked.page_action = Some(PageAction::Delete(id));
+            }
+            if button(ui, Icon::PageCopy, "page.duplicate", true) {
+                asked.page_action = Some(PageAction::Duplicate(id));
+            }
+            let (icon, key) = if page.locked {
+                (Icon::Locked, "page.unlock")
+            } else {
+                (Icon::Unlocked, "page.lock")
+            };
+            if button(ui, icon, key, true) {
+                asked.page_action = Some(PageAction::Lock(id, !page.locked));
+            }
+            let (icon, key) = if page.hidden {
+                (Icon::Hidden, "page.show")
+            } else {
+                (Icon::Visible, "page.hide")
+            };
+            if button(ui, icon, key, true) {
+                asked.page_action = Some(PageAction::Hide(id, !page.hidden));
+            }
+            if button(ui, Icon::Expand, "page.down", index + 1 < count) {
+                asked.page_action = Some(PageAction::Move(id, 1));
+            }
+            if button(ui, Icon::PageUp, "page.up", index > 0) {
+                asked.page_action = Some(PageAction::Move(id, -1));
+            }
+        });
+    }
+
+    /// An action of a page header (spec 056), one undo step each: every
+    /// command has a gesture of its own, so two quick ones never merge.
+    fn page_action(&mut self, engine: &mut Gafira, action: &PageAction) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let pages = document.pages();
+        let index_of = |id: PageId| pages.iter().position(|p| p.id == id);
+        let gesture = engine.edit().begin_gesture().ok();
+        let command: Box<dyn Command> = match action {
+            PageAction::Move(page, step) => {
+                let Some(to) = index_of(*page)
+                    .and_then(|at| at.checked_add_signed(*step))
+                    .filter(|to| *to < pages.len())
+                else {
+                    let _ = engine.edit().end_gesture();
+                    return;
+                };
+                Box::new(gafira_edit::ReorderPage::new(*page, to))
+            }
+            PageAction::Hide(page, on) => {
+                Box::new(SetProperty::page(*page, Property::PageHidden(*on), gesture))
+            }
+            PageAction::Lock(page, on) => {
+                Box::new(SetProperty::page(*page, Property::PageLocked(*on), gesture))
+            }
+            PageAction::Rename(page, name) => Box::new(SetProperty::page(
+                *page,
+                Property::PageName(name.trim().to_owned()),
+                gesture,
+            )),
+            PageAction::Duplicate(page) => Box::new(gafira_edit::DuplicatePage::new(*page)),
+            PageAction::Delete(page) => {
+                if pages.len() < 2 {
+                    let _ = engine.edit().end_gesture();
+                    return;
+                }
+                Box::new(gafira_edit::RemovePage::new(*page))
+            }
+            PageAction::AddAfter(page) => {
+                let Some(at) = index_of(*page) else {
+                    let _ = engine.edit().end_gesture();
+                    return;
+                };
+                new_page(&document, at + 1, pages[at].size)
+            }
+        };
+        // A new page takes the next id of the document.
+        let next = PageId::new(document.next_id());
+        match engine.edit().execute(command) {
+            Ok(_) => match action {
+                PageAction::Duplicate(_) | PageAction::AddAfter(_) => {
+                    self.active = Some(next);
+                    self.selected = Selection::default();
+                    self.scope = None;
+                }
+                PageAction::Delete(page) => {
+                    if self.selected.page() == Some(*page) {
+                        self.selected = Selection::default();
+                    }
+                    if self.active == Some(*page) {
+                        self.active = None;
+                    }
+                    self.scope = None;
+                }
+                _ => {}
+            },
+            Err(error) => eprintln!("page: {error}"),
+        }
+        let _ = engine.edit().end_gesture();
+    }
+
+    /// `family` in `bold` and `italic` for every span of the selected text,
+    /// or of the text of the selected shape, one undo step (spec 062).
+    fn apply_font(&mut self, engine: &mut Gafira, (family, bold, italic): (&str, bool, bool)) {
+        let Some((page, node)) = self.selected.single() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(found) = document.page(page).and_then(|p| p.node(node)) else {
+            return;
+        };
+        let restyle = |content: &gafira_doc::RichText| {
+            let mut content = content.clone();
+            for span in content
+                .paragraphs
+                .iter_mut()
+                .flat_map(|p| p.spans.iter_mut())
+            {
+                span.style.font = family.to_owned();
+                span.style.bold = bold;
+                span.style.italic = italic;
+            }
+            content
+        };
+        if matches!(found.kind, gafira_doc::NodeKind::Table(_)) {
+            let font = tables::Act::Font(family.to_owned(), bold, italic);
+            self.change_table(engine, &font, None);
+            return;
+        }
+        let property = match &found.kind {
+            gafira_doc::NodeKind::Chart(chart) => {
+                let mut chart = chart.clone();
+                family.clone_into(&mut chart.text.font);
+                chart.text.bold = bold;
+                chart.text.italic = italic;
+                Property::Chart(chart)
+            }
+            gafira_doc::NodeKind::Text(text) => Property::TextContent(restyle(&text.content)),
+            gafira_doc::NodeKind::Shape(shape) => match &shape.text {
+                Some(text) => {
+                    let mut text = text.clone();
+                    text.content = restyle(&text.content);
+                    Property::ShapeText(Some(text))
+                }
+                None => return,
+            },
+            _ => return,
+        };
+        let gesture = engine.edit().begin_gesture().ok();
+        let command = SetProperty::new(page, vec![node], property, gesture);
+        if let Err(error) = engine.edit().execute(Box::new(command)) {
+            eprintln!("font: {error}");
+        }
+        if gesture.is_some() {
+            let _ = engine.edit().end_gesture();
+        }
+    }
+
+    /// The Fuente panel (spec 062): a search box, then the families of the
+    /// document, the fonts of Gafira (each in its own face, with a sample
+    /// and, opened, its faces) and the fonts of the system (by name). The
+    /// list is one column of rows of the same height, and only the rows in
+    /// view are drawn, however many fonts the system has. A click gives the
+    /// selected text that family or face.
+    fn fonts_panel(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        let current = self.selection_font.clone();
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(plain(texts, "fonts.title"))
+                    .font(theme.font("ui-label"))
+                    .color(theme.c("text")),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button(plain(texts, "fonts.close")).clicked() {
+                    asked.font_panel = Some(false);
+                }
+            });
+        });
+        ui.add_space(8.0);
+        let search_id = ui.id().with("fonts.search");
+        let mut search: String = ui.data_mut(|d| d.get_temp(search_id).unwrap_or_default());
+        ui.add(widgets::field(&mut search, plain(texts, "fonts.search")));
+        ui.data_mut(|d| d.insert_temp(search_id, search.clone()));
+        let open_id = ui.id().with("fonts.open");
+        let mut open: BTreeSet<String> = ui.data_mut(|d| d.get_temp(open_id).unwrap_or_default());
+        let system = system_fonts::catalogue();
+        let rows = font_rows(&search, &self.document_fonts, &open, &system);
+        ui.add_space(8.0);
+        egui::ScrollArea::vertical().show_rows(ui, FONT_ROW_HEIGHT, rows.len(), |ui, range| {
+            for row in &rows[range] {
+                match row {
+                    PanelRow::Title(key) => {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), FONT_ROW_HEIGHT),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().text(
+                            Pos2::new(rect.min.x + 4.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            plain(texts, key),
+                            theme.font("ui-label"),
+                            theme.c("text"),
+                        );
+                    }
+                    PanelRow::Family {
+                        family,
+                        faces,
+                        system,
+                    } => {
+                        let is_open = open.contains(family);
+                        let face = if *system {
+                            egui::FontFamily::Proportional
+                        } else {
+                            library_family(ui.ctx(), &gafira_theme::face_key(family, false, false))
+                        };
+                        let clicked = font_row(
+                            ui,
+                            theme,
+                            FontRow {
+                                indent: 0.0,
+                                chevron: (faces.len() > 1).then_some(is_open),
+                                name: family.clone(),
+                                face,
+                                sample: !*system,
+                                ticked: current.as_ref().is_some_and(|c| &c.0 == family),
+                            },
+                        );
+                        match clicked {
+                            Some(RowClick::Chevron) => {
+                                if is_open {
+                                    open.remove(family);
+                                } else {
+                                    open.insert(family.clone());
+                                }
+                            }
+                            Some(RowClick::Row) => {
+                                let (bold, italic) = current
+                                    .as_ref()
+                                    .filter(|c| &c.0 == family)
+                                    .map_or((false, false), |c| (c.1, c.2));
+                                asked.font = Some((family.clone(), bold, italic));
+                            }
+                            None => {}
+                        }
+                    }
+                    PanelRow::Face {
+                        family,
+                        bold,
+                        italic,
+                        system,
+                    } => {
+                        let key = match (bold, italic) {
+                            (false, false) => "fonts.regular",
+                            (true, false) => "fonts.bold",
+                            (false, true) => "fonts.italic",
+                            (true, true) => "fonts.bold_italic",
+                        };
+                        let face = if *system {
+                            egui::FontFamily::Proportional
+                        } else {
+                            library_family(
+                                ui.ctx(),
+                                &gafira_theme::face_key(family, *bold, *italic),
+                            )
+                        };
+                        let clicked = font_row(
+                            ui,
+                            theme,
+                            FontRow {
+                                indent: 28.0,
+                                chevron: None,
+                                name: plain(texts, key),
+                                face,
+                                sample: false,
+                                ticked: current.as_ref().is_some_and(|c| {
+                                    &c.0 == family && c.1 == *bold && c.2 == *italic
+                                }),
+                            },
+                        );
+                        if clicked.is_some() {
+                            asked.font = Some((family.clone(), *bold, *italic));
+                        }
+                    }
+                    PanelRow::Note(key) => {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), FONT_ROW_HEIGHT),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().text(
+                            Pos2::new(rect.min.x + 8.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            plain(texts, key),
+                            theme.font("body-sm"),
+                            theme.c("text.secondary"),
+                        );
+                    }
+                }
+            }
+        });
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+    }
+
+    /// The faces of the system families the document uses, installed in
+    /// egui the first time they are needed (spec 062): the canvas then draws
+    /// those texts in their own face. A family of Gafira is already there.
+    fn load_system_fonts(&self, ctx: &egui::Context) {
+        let system = system_fonts::catalogue();
+        if !system.ready() {
+            return;
+        }
+        let mut loaded = self.loaded_fonts.borrow_mut();
+        for family in &self.document_fonts {
+            if loaded.contains(family) {
+                continue;
+            }
+            loaded.insert(family.clone());
+            if gafira_theme::library().iter().any(|f| f.family == family) {
+                continue;
+            }
+            for face in system.faces().iter().filter(|f| &f.family == family) {
+                let Ok(bytes) = std::fs::read(&face.path) else {
+                    continue;
+                };
+                let key = gafira_theme::face_key(&face.family, face.bold, face.italic);
+                ctx.add_font(egui::epaint::text::FontInsert::new(
+                    &key,
+                    egui::FontData::from_owned(bytes),
+                    vec![egui::epaint::text::InsertFontFamily {
+                        family: egui::FontFamily::Name(key.clone().into()),
+                        priority: egui::epaint::text::FontPriority::Highest,
+                    }],
+                ));
+            }
+        }
+    }
+
+    /// Writing on the canvas and the alignment of a shape's text (spec
+    /// 055). A whole edit is one undo step: every change carries the
+    /// gesture opened when it began.
+    fn text_editing(&mut self, engine: &mut Gafira, asked: &Asked, theme: &Theme) {
+        let ink = canvas::document_color(crate::style::color32(theme.tokens.brand.ink));
+        let default = gafira_doc::SpanStyle {
+            font: theme.tokens.typography.ui.clone(),
+            size: 24.0,
+            color: ink,
+            bold: false,
+            italic: false,
+        };
+        if let Some((page, node)) = asked.begin_edit {
+            if self.editing.take().is_some_and(|e| e.gesture.is_some()) {
+                let _ = engine.edit().end_gesture();
+            }
+            let Some(document) = engine.edit().document() else {
+                return;
+            };
+            let words = match document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .map(|n| &n.kind)
+            {
+                Some(gafira_doc::NodeKind::Text(text)) => text.content.plain_text(),
+                Some(gafira_doc::NodeKind::Shape(shape)) => shape
+                    .text
+                    .as_ref()
+                    .map(|text| text.content.plain_text())
+                    .unwrap_or_default(),
+                _ => return,
+            };
+            let gesture = engine.edit().begin_gesture().ok();
+            self.editing = Some(Editing {
+                page,
+                node,
+                words,
+                gesture,
+                focused: false,
+            });
+            self.selected = Selection::one(page, node);
+        }
+        if let Some(words) = &asked.edit_text
+            && let Some(editing) = self.editing.as_mut()
+            && let Some(document) = engine.edit().document()
+            && let Some(node) = document
+                .page(editing.page)
+                .and_then(|p| p.node(editing.node))
+        {
+            editing.words.clone_from(words);
+            let property = match &node.kind {
+                gafira_doc::NodeKind::Text(text) => {
+                    let style = text.content.first_style().cloned().unwrap_or(default);
+                    // The words and the height of the box in one command,
+                    // so the whole edit stays one undo step (spec 061).
+                    let fitted = asked
+                        .edit_height
+                        .and_then(|h| canvas::text_fit(text.sizing, &node.base.placement, h))
+                        .unwrap_or(node.base.placement);
+                    let commands: Vec<Box<dyn Command>> = vec![
+                        Box::new(SetProperty::new(
+                            editing.page,
+                            vec![editing.node],
+                            Property::TextContent(gafira_doc::RichText::plain(words, &style)),
+                            editing.gesture,
+                        )),
+                        Box::new(SetProperty::new(
+                            editing.page,
+                            vec![editing.node],
+                            Property::Placement(fitted),
+                            editing.gesture,
+                        )),
+                    ];
+                    if let Err(error) = engine.edit().execute(Box::new(Transaction::new(
+                        MessageKey("edit.write"),
+                        commands,
+                    ))) {
+                        eprintln!("write: {error}");
+                    }
+                    None
+                }
+                gafira_doc::NodeKind::Shape(shape) => {
+                    // An empty shape keeps no text (S55-04).
+                    Some(Property::ShapeText((!words.is_empty()).then(|| {
+                        let old = shape.text.as_ref();
+                        let style = old
+                            .and_then(|text| text.content.first_style().cloned())
+                            .unwrap_or(default);
+                        let mut text = gafira_doc::ShapeText::plain(words, &style);
+                        if let Some(old) = old {
+                            text.align = old.align;
+                            text.valign = old.valign;
+                        }
+                        text
+                    })))
+                }
+                _ => None,
+            };
+            if let Some(property) = property {
+                let command =
+                    SetProperty::new(editing.page, vec![editing.node], property, editing.gesture);
+                if let Err(error) = engine.edit().execute(Box::new(command)) {
+                    eprintln!("write: {error}");
+                }
+            }
+        }
+        if asked.end_edit
+            && let Some(editing) = self.editing.take()
+            && editing.gesture.is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("write: {error}");
+        }
+        if let Some((align, valign)) = asked.shape_align
+            && let Some((page, node)) = self.selected.single()
+            && let Some(document) = engine.edit().document()
+            && let Some(gafira_doc::NodeKind::Shape(shape)) = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .map(|n| &n.kind)
+            && let Some(mut text) = shape.text.clone()
+        {
+            text.align = align.unwrap_or(text.align);
+            text.valign = valign.unwrap_or(text.valign);
+            let gesture = engine.edit().begin_gesture().ok();
+            let command =
+                SetProperty::new(page, vec![node], Property::ShapeText(Some(text)), gesture);
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("align text: {error}");
+            }
+            if gesture.is_some() {
+                let _ = engine.edit().end_gesture();
+            }
+        }
+    }
+
+    /// The field of the text being written on the canvas (spec 055): over
+    /// the element's box (a shape's box less its margin), in its size,
+    /// colour and alignment, without a frame, so the words seem to be
+    /// written in place. Each change asks to store the words; losing the
+    /// keyboard (Esc or a click elsewhere) ends the edit.
+    fn edit_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        pages: &[Arc<Page>],
+        page_rects: &[(PageId, Rect)],
+        zoom: f32,
+        asked: &mut Asked,
+    ) {
+        let Some(editing) = self.editing.as_mut() else {
+            return;
+        };
+        let Some((page, rect)) = pages.iter().find(|p| p.id == editing.page).zip(
+            page_rects
+                .iter()
+                .find(|(id, _)| *id == editing.page)
+                .map(|r| r.1),
+        ) else {
+            return;
+        };
+        let Some(node) = page.node(editing.node) else {
+            asked.end_edit = true;
+            return;
+        };
+        let at = rotation::screen_box(rect, zoom, &node.base.placement);
+        let (field_rect, style, align, valign) = match &node.kind {
+            gafira_doc::NodeKind::Text(text) => {
+                (at, text.content.first_style().cloned(), text.align, None)
+            }
+            gafira_doc::NodeKind::Shape(shape) => (
+                canvas::text_box(at),
+                shape
+                    .text
+                    .as_ref()
+                    .and_then(|t| t.content.first_style().cloned()),
+                shape
+                    .text
+                    .as_ref()
+                    .map_or(gafira_doc::TextAlign::Center, |t| t.align),
+                Some(
+                    shape
+                        .text
+                        .as_ref()
+                        .map_or(gafira_doc::VerticalAlign::Middle, |t| t.valign),
+                ),
+            ),
+            _ => {
+                asked.end_edit = true;
+                return;
+            }
+        };
+        let size = style.as_ref().map_or(24.0, |s| s.size) as f32 * zoom;
+        let color = style.as_ref().map_or_else(
+            || crate::style::color32(theme.tokens.brand.ink),
+            |s| canvas::screen_color(s.color),
+        );
+        let family = style.as_ref().map_or(egui::FontFamily::Proportional, |s| {
+            text_family(ui.ctx(), theme, s)
+        });
+        let halign = match align {
+            gafira_doc::TextAlign::Center => Align::Center,
+            gafira_doc::TextAlign::Right => Align::RIGHT,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => Align::LEFT,
+        };
+        let vertical = match valign {
+            Some(gafira_doc::VerticalAlign::Top) | None => Align::TOP,
+            Some(gafira_doc::VerticalAlign::Middle) => Align::Center,
+            Some(gafira_doc::VerticalAlign::Bottom) => Align::BOTTOM,
+        };
+        let field = egui::TextEdit::multiline(&mut editing.words)
+            .frame(false)
+            .background_color(Color32::TRANSPARENT)
+            .font(egui::FontId::new(size.max(1.0), family))
+            .text_color(color)
+            .horizontal_align(halign)
+            .vertical_align(vertical)
+            .desired_width(field_rect.width());
+        let mut height = None;
+        let response = ui.put(field_rect, |ui: &mut egui::Ui| {
+            let output = field.show(ui);
+            height = Some(output.galley.size().y);
+            output.response
+        });
+        // The height of the words, for a text box that grows with them.
+        if let (Some(height), gafira_doc::NodeKind::Text(_)) = (height, &node.kind) {
+            asked.edit_height = Some(f64::from(height / zoom));
+        }
+        if !editing.focused {
+            response.request_focus();
+            editing.focused = true;
+        } else if response.lost_focus() {
+            asked.end_edit = true;
+        }
+        if response.changed() {
+            asked.edit_text = Some(editing.words.clone());
         }
     }
 
@@ -1995,12 +4927,39 @@ impl Editor {
                 } else {
                     full
                 };
-                let (scroll, command) =
-                    ui.input(|i| (i.smooth_scroll_delta.y, i.modifiers.command));
-                if command && scroll != 0.0 && ui.rect_contains_pointer(area) {
-                    self.view = Zoom::Fixed(zoom::wheel(self.zoom, scroll));
-                }
+                // Ctrl (Cmd) + wheel and a pinch zoom (egui turns them into
+                // a zoom factor and leaves the scroll alone); the page point
+                // under the pointer stays under it (spec 059, FD-08).
+                let (factor, hover) = ui.input(|i| (i.zoom_delta(), i.pointer.hover_pos()));
                 let sizes = document.map(page_sizes).unwrap_or_default();
+                // The scroll offset that keeps the page point under the
+                // pointer under it, set in this very frame so nothing jumps.
+                let mut anchored: Option<Vec2> = None;
+                if factor != 1.0
+                    && let Some(at) = hover
+                    && area.contains(at)
+                {
+                    let next = zoom::by_factor(self.zoom, factor);
+                    let ids: Vec<PageId> = document
+                        .map(|d| d.pages().iter().map(|p| p.id).collect())
+                        .unwrap_or_default();
+                    if let Some(page) = ruler::page_at(&self.page_rects, at.y)
+                        && let Some((_, rect)) = self.page_rects.iter().find(|(id, _)| *id == page)
+                        && let Some(index) = ids.iter().position(|id| *id == page)
+                    {
+                        let point = (at - rect.min) / self.zoom;
+                        let origin = zoom::page_origin(
+                            &sizes,
+                            index,
+                            next,
+                            area.size(),
+                            (CANVAS_MARGIN, PAGE_GAP),
+                        );
+                        let offset = origin + point * next - (at - area.min);
+                        anchored = Some(offset.max(Vec2::ZERO));
+                    }
+                    self.view = Zoom::Fixed(next);
+                }
                 let Some(first) = sizes.first().copied() else {
                     return;
                 };
@@ -2020,510 +4979,1124 @@ impl Editor {
                 let mut grip_cursor: Option<egui::CursorIcon> = None;
                 let width =
                     sizes.iter().map(|s| s.x).fold(0.0, f32::max) * zoom + 2.0 * CANVAS_MARGIN;
-                let height: f32 =
-                    sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>() + CANVAS_MARGIN;
+                // Room under the last page for «Añadir página» (spec 077).
+                let height: f32 = sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>()
+                    + CANVAS_MARGIN
+                    + ADD_PAGE_ROOM;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
-                    egui::ScrollArea::both()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            let (rect, response) = ui.allocate_exact_size(
-                                Vec2::new(width.max(area.width()), height.max(area.height())),
-                                egui::Sense::click_and_drag(),
+                    let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
+                    if let Some(offset) = anchored {
+                        scroll = scroll.scroll_offset(offset);
+                    }
+                    scroll.show(ui, |ui| {
+                        let (rect, response) = ui.allocate_exact_size(
+                            Vec2::new(width.max(area.width()), height.max(area.height())),
+                            egui::Sense::click_and_drag(),
+                        );
+                        let painter = &ui.painter().clone();
+                        let pages = document.map(Document::pages).unwrap_or_default();
+                        // A drag starts only once the pointer has moved a few
+                        // px; what it grabbed is decided where it was pressed.
+                        let pointer = if response.drag_started() {
+                            ui.input(|input| input.pointer.press_origin())
+                                .or_else(|| response.interact_pointer_pos())
+                        } else {
+                            response.interact_pointer_pos()
+                        };
+                        // In crop mode a drag moves the photo, not the
+                        // elements (S66-07).
+                        let pressed =
+                            (response.clicked() || response.drag_started()) && self.cropping.is_none();
+                        if self.cropping.is_some() && response.dragged() {
+                            asked.crop_drag = Some(response.drag_delta());
+                        }
+                        let mut crop_kept = false;
+                        let (shift, press) =
+                            ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
+                        let single = self.selected.single();
+                        let mut picked: Option<(PageId, NodeId)> = None;
+                        let mut grabbed: Option<Hold> = None;
+                        // A press a table keeps for its cells (spec 081).
+                        let mut on_cells = false;
+                        // Each page's id, screen box and shapes, for the marquee.
+                        let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
+                        let selection = theme.c("canvas.selection");
+                        for (index, size) in sizes.iter().enumerate() {
+                            // Where the zoom expects it (spec 059).
+                            let origin = zoom::page_origin(
+                                &sizes,
+                                index,
+                                zoom,
+                                area.size(),
+                                (CANVAS_MARGIN, PAGE_GAP),
                             );
-                            let painter = ui.painter();
-                            let pages = document.map(Document::pages).unwrap_or_default();
-                            // A drag starts only once the pointer has moved a few
-                            // px; what it grabbed is decided where it was pressed.
-                            let pointer = if response.drag_started() {
-                                ui.input(|input| input.pointer.press_origin())
-                                    .or_else(|| response.interact_pointer_pos())
-                            } else {
-                                response.interact_pointer_pos()
-                            };
-                            let pressed = response.clicked() || response.drag_started();
-                            let (shift, press) =
-                                ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
-                            let single = self.selected.single();
-                            let mut picked: Option<(PageId, NodeId)> = None;
-                            let mut grabbed: Option<Hold> = None;
-                            // Each page's id, screen box and shapes, for the marquee.
-                            let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
-                            let selection = theme.c("canvas.selection");
-                            let mut top = rect.min.y
-                                + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
-                            for (index, size) in sizes.iter().enumerate() {
-                                let page = Rect::from_min_size(
-                                    Pos2::new(rect.center().x - size.x * zoom / 2.0, top),
-                                    *size * zoom,
+                            let page = Rect::from_min_size(rect.min + origin, *size * zoom);
+                            if let Some(Shadow::Drop {
+                                x,
+                                y,
+                                blur,
+                                color,
+                                alpha,
+                            }) = theme.tokens.shadow.get(&1).copied()
+                            {
+                                let shadow = egui::epaint::Shadow {
+                                    offset: [to_i8(x), to_i8(y)],
+                                    blur: to_u8(blur),
+                                    spread: 0,
+                                    color: color32(color).gamma_multiply(alpha),
+                                };
+                                painter.add(shadow.as_shape(page, 0.0));
+                            }
+                            // The page colour belongs to the document (white
+                            // by default, 03 §7.1), not to the theme.
+                            painter.rect_filled(page, 0.0, Color32::WHITE);
+                            // Its background, as the export draws it (spec 069).
+                            if let Some(background) =
+                                pages.get(index).and_then(|p| p.background.as_ref())
+                            {
+                                self.paint_background(ctx, painter, page, zoom, background);
+                            }
+                            // The active page is ringed (S50-02).
+                            if self.active.is_some()
+                                && self.active == pages.get(index).map(|p| p.id)
+                            {
+                                painter.rect_stroke(
+                                    page,
+                                    0.0,
+                                    Stroke::new(2.0, selection),
+                                    egui::StrokeKind::Outside,
                                 );
-                                if let Some(Shadow::Drop {
-                                    x,
-                                    y,
-                                    blur,
-                                    color,
-                                    alpha,
-                                }) = theme.tokens.shadow.get(&1).copied()
-                                {
-                                    let shadow = egui::epaint::Shadow {
-                                        offset: [to_i8(x), to_i8(y)],
-                                        blur: to_u8(blur),
-                                        spread: 0,
-                                        color: color32(color).gamma_multiply(alpha),
-                                    };
-                                    painter.add(shadow.as_shape(page, 0.0));
+                            }
+                            // The header over the page (spec 056).
+                            if let Some(page_doc) = pages.get(index) {
+                                let header = Rect::from_min_max(
+                                    Pos2::new(page.min.x, page.min.y - 36.0),
+                                    Pos2::new(page.max.x, page.min.y - 4.0),
+                                );
+                                self.page_header(
+                                    ui,
+                                    theme,
+                                    texts,
+                                    header,
+                                    (page_doc, index, pages.len()),
+                                    asked,
+                                );
+                                // «Añadir página» under the last page.
+                                if index + 1 == pages.len() {
+                                    let bar = Rect::from_min_size(
+                                        Pos2::new(page.min.x, page.max.y + 16.0),
+                                        Vec2::new(page.width().max(220.0), 40.0),
+                                    );
+                                    add_page_bar(ui, theme, texts, bar, page_doc.id, asked);
                                 }
-                                // The page colour belongs to the document (white
-                                // by default, 03 §7.1), not to the theme.
-                                painter.rect_filled(page, 0.0, Color32::WHITE);
-                                // The active page is ringed (S50-02).
-                                if self.active.is_some()
-                                    && self.active == pages.get(index).map(|p| p.id)
+                            }
+                            if let Some(page_doc) = pages.get(index) {
+                                let mut shapes = canvas::shapes(page_doc);
+                                // The strokes the eraser has gone over fade
+                                // until it lets go (spec 079).
+                                if let Some((page, erased)) = &self.draw.borrow().erasing
+                                    && *page == page_doc.id
                                 {
+                                    for shape in &mut shapes {
+                                        if erased.contains(&shape.node) {
+                                            shape.opacity *= 0.2;
+                                        }
+                                    }
+                                }
+                                // An image dragged over a frame: the frame
+                                // shows the photo, the image fades (spec 066).
+                                if let Some(target) =
+                                    self.frame_target.filter(|t| t.page == page_doc.id)
+                                    && let Some(Some(photo)) =
+                                        self.photos.get(&target.asset.as_hash())
+                                {
+                                    for shape in &mut shapes {
+                                        if shape.node == target.image {
+                                            shape.opacity *= 0.35;
+                                        }
+                                        if shape.node == target.frame
+                                            && let Some(frame) = shape.frame.as_mut()
+                                        {
+                                            frame.content = Some(gafira_doc::FrameContent {
+                                                asset: target.asset,
+                                                natural: (
+                                                    photo.size[0] as u32,
+                                                    photo.size[1] as u32,
+                                                ),
+                                            });
+                                            shape.fill = None;
+                                        }
+                                    }
+                                }
+                                // A click away from the frame in crop mode
+                                // ends it (S66-07).
+                                if let Some(crop) = self.cropping
+                                    && crop.page == page_doc.id
+                                    && response.clicked()
+                                    && let Some(at) = pointer
+                                    && canvas::hit(&shapes, page, zoom, at) == Some(crop.node)
+                                {
+                                    crop_kept = true;
+                                }
+                                // Each page draws its elements cut to it (D-92).
+                                let clip =
+                                    painter.with_clip_rect(page.intersect(painter.clip_rect()));
+                                for shape in &shapes {
+                                    let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    // Where the local box lands on the screen,
+                                    // turned and flipped as the render draws it
+                                    // (spec 041).
+                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                    let upright = rotation::upright(&shape.placement);
+                                    let outline = rotation::corners(turn, &shape.placement);
+                                    if let Some(asset) = shape.image {
+                                        let tint = Color32::WHITE
+                                            .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
+                                        match self
+                                            .textures
+                                            .get(&asset.as_hash())
+                                            .and_then(Option::as_ref)
+                                        {
+                                            Some(texture) => {
+                                                clip.add(canvas::image_mesh(
+                                                    texture.id(),
+                                                    turn,
+                                                    &shape.placement,
+                                                    tint,
+                                                ));
+                                            }
+                                            None => {
+                                                clip.add(egui::Shape::convex_polygon(
+                                                    outline.to_vec(),
+                                                    theme.c("surface.sunken"),
+                                                    Stroke::NONE,
+                                                ));
+                                            }
+                                        }
+                                        // The models are at work on it
+                                        // (S84-07).
+                                        if self.studio.scanning(shape.node).is_some() {
+                                            let texture = self
+                                                .textures
+                                                .get(&asset.as_hash())
+                                                .and_then(Option::as_ref)
+                                                .map(egui::TextureHandle::id);
+                                            let time = ctx.input(|i| i.time);
+                                            let still = ctx.style().animation_time <= 0.0;
+                                            crate::vision::scan(
+                                                &clip,
+                                                theme,
+                                                texture,
+                                                (turn, &shape.placement),
+                                                time,
+                                                still,
+                                            );
+                                            ctx.request_repaint();
+                                        }
+                                    }
+                                    let edited =
+                                        self.editing.as_ref().is_some_and(|e| e.node == shape.node);
+                                    // A curved text is drawn from its outline,
+                                        // as the export draws it (FD-44).
+                                    if let Some(text) = shape
+                                        .text
+                                        .as_ref()
+                                        .filter(|t| !edited && t.styled())
+                                    {
+                                        let key = curved_key(text, &shape.placement, zoom);
+                                        let texture = self.path_texture(ctx, key, || {
+                                            let (image, cover) = canvas::curved_text_image(
+                                                text,
+                                                &shape.placement,
+                                                zoom,
+                                            )?;
+                                            self.curved_covers.borrow_mut().insert(key, cover);
+                                            Some(image)
+                                        });
+                                        let cover = self.curved_covers.borrow().get(&key).copied();
+                                        if let (Some(texture), Some(cover)) = (texture, cover) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE
+                                                    .gamma_multiply(shape.opacity.clamp(0.0, 1.0)),
+                                            ));
+                                        }
+                                        // A box that grows with its words takes the
+                                        // height of its lines (spec 061).
+                                        let resized = self.drag.as_ref().is_some_and(|d| {
+                                            matches!(d.hold, Some(Hold::Resize(_)))
+                                                && d.origins.first().map(|o| o.0)
+                                                    == Some(shape.node)
+                                        });
+                                        if (resized
+                                            || self.fit_pending == Some((page_doc.id, shape.node)))
+                                            && text.sizing == gafira_doc::TextSizing::AutoHeight
+                                            && let Some(height) = canvas::curved_height(
+                                                text,
+                                                shape.placement.w,
+                                                shape.placement.h,
+                                            )
+                                        {
+                                            self.text_measure =
+                                                Some((page_doc.id, shape.node, height));
+                                        }
+                                    } else if let Some(text) = shape.text.as_ref().filter(|_| !edited) {
+                                        let laid =
+                                            lay_text(&clip, theme, at, zoom, shape.opacity, text);
+                                        // The height of the words, for a box that
+                                        // grows with them (spec 061): a paste, or
+                                        // a box being resized.
+                                        let resized = self.drag.as_ref().is_some_and(|d| {
+                                            matches!(d.hold, Some(Hold::Resize(_)))
+                                                && d.origins.first().map(|o| o.0)
+                                                    == Some(shape.node)
+                                        });
+                                        if (resized
+                                            || self.fit_pending == Some((page_doc.id, shape.node)))
+                                            && let Some(height) = laid_height(&laid, at, zoom)
+                                        {
+                                            self.text_measure =
+                                                Some((page_doc.id, shape.node, height));
+                                        }
+                                        if upright {
+                                            for (pos, galley, color) in laid {
+                                                clip.galley(pos, galley, color);
+                                            }
+                                        } else {
+                                            let atlas = ctx.fonts(|f| f.font_image_size());
+                                            self.font_atlas = Some(atlas);
+                                            clip.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                        }
+                                    }
+                                    // Crop mode: the whole photo, faded, where
+                                    // it lies around the frame (S66-07).
+                                    if let Some(crop) = self.cropping
+                                        && crop.node == shape.node
+                                        && let Some(frame) = &shape.frame
+                                        && let Some(content) = frame.content
+                                        && let Some(Some(photo)) =
+                                            self.photos.get(&content.asset.as_hash())
+                                        && let Some(bounds) =
+                                            frame.photo_bounds(shape.placement.w, shape.placement.h)
+                                    {
+                                        let p = shape.placement;
+                                        let mut whole = gafira_doc::Placement::new(
+                                            p.x + bounds.x0,
+                                            p.y + bounds.y0,
+                                            bounds.width(),
+                                            bounds.height(),
+                                        );
+                                        whole.rotation_deg = frame.content_rotation_deg;
+                                        let key = photo_key(content.asset);
+                                        let photo = Arc::clone(photo);
+                                        if let Some(texture) =
+                                            self.path_texture(ctx, key, || Some((*photo).clone()))
+                                        {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &whole),
+                                                &whole,
+                                                Color32::WHITE.gamma_multiply(0.35),
+                                            ));
+                                        }
+                                    }
+                                    // An empty frame shows the sample photo,
+                                    // cut out by its shape (S66-12).
+                                    if shape.frame.as_ref().is_some_and(|f| f.content.is_none())
+                                        && let Some(sample) = canvas::sample_photo()
+                                    {
+                                        let shown = canvas::with_sample(shape, &sample);
+                                        let key = frame_key(&shown, zoom);
+                                        if let Some(texture) = self.path_texture(ctx, key, || {
+                                            canvas::frame_image(&shown, &sample, zoom)
+                                        }) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &shape.placement),
+                                                &shape.placement,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                    }
+                                    // The photo of a frame, cut out by its
+                                    // shape, under its outline (spec 066).
+                                    if let Some(content) =
+                                        shape.frame.as_ref().and_then(|f| f.content)
+                                        && let Some(Some(photo)) =
+                                            self.photos.get(&content.asset.as_hash())
+                                    {
+                                        let key = frame_key(shape, zoom);
+                                        if let Some(texture) = self.path_texture(ctx, key, || {
+                                            canvas::frame_image(shape, photo, zoom)
+                                        }) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &shape.placement),
+                                                &shape.placement,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                    }
+                                    // A table is drawn from its picture,
+                                    // without the words being written
+                                    // (spec 081).
+                                    if let Some(table) = &shape.table {
+                                        let (w, h) = (shape.placement.w, shape.placement.h);
+                                        let writing = self
+                                            .cells
+                                            .as_ref()
+                                            .filter(|c| c.node == shape.node && c.writing.is_some())
+                                            .map(|c| c.from);
+                                        let key = tables::key(
+                                            table,
+                                            (w.to_bits(), h.to_bits(), zoom.to_bits(), writing),
+                                        );
+                                        let texture = self.path_texture(ctx, key, || {
+                                            let mut outlines = self.table_outlines.borrow_mut();
+                                            tables::image(
+                                                table,
+                                                (w, h),
+                                                zoom,
+                                                writing,
+                                                &mut outlines,
+                                            )
+                                        });
+                                        let margin = tables::overhang(table);
+                                        let cover = grown(&shape.placement, margin);
+                                        if let Some(texture) = texture {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
+                                    }
+                                    // A chart is drawn from its picture
+                                    // (spec 083).
+                                    if let Some(chart) = &shape.chart {
+                                        let (w, h) = (shape.placement.w, shape.placement.h);
+                                        let key = charts::key(
+                                            chart,
+                                            (w.to_bits(), h.to_bits(), zoom.to_bits()),
+                                        );
+                                        let texture = self.path_texture(ctx, key, || {
+                                            charts::image(chart, (w, h), zoom)
+                                        });
+                                        let margin = charts::overhang(chart);
+                                        let cover = grown(&shape.placement, margin);
+                                        if let Some(texture) = texture {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
+                                    }
+                                    // A QR code is drawn from its picture
+                                    // (spec 080).
+                                    if let Some(qr) = &shape.qr {
+                                        let logo = qr
+                                            .logo
+                                            .and_then(|l| self.photos.get(&l.asset.as_hash()))
+                                            .and_then(Option::as_deref);
+                                        let (w, h) = (shape.placement.w, shape.placement.h);
+                                        let key = crate::qr::key(
+                                            qr,
+                                            (
+                                                w.to_bits(),
+                                                h.to_bits(),
+                                                zoom.to_bits(),
+                                                logo.is_some(),
+                                            ),
+                                        );
+                                        if let Some(texture) = self.path_texture(ctx, key, || {
+                                            crate::qr::image(qr, (w, h), zoom, logo)
+                                        }) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &shape.placement),
+                                                &shape.placement,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
+                                    }
+                                    // A light is drawn from its picture
+                                    // instead of the shape (spec 065).
+                                    if shape.effect.is_some() {
+                                        let page_px = (
+                                            f64::from(page.width() / zoom),
+                                            f64::from(page.height() / zoom),
+                                        );
+                                        let key = light_key(shape, page_px, zoom);
+                                        let cover = canvas::light_image_cover(shape, page_px);
+                                        let texture = cover.and_then(|_| {
+                                            self.path_texture(ctx, key, || {
+                                                canvas::light_image(shape, page_px, zoom)
+                                                    .map(|(image, _)| image)
+                                            })
+                                        });
+                                        if let (Some(texture), Some(cover)) = (texture, cover) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
+                                    }
+                                    // A path is drawn from its texture, in
+                                    // its own axes (spec 054).
+                                    if canvas::textured(shape) {
+                                        let cover = canvas::path_cover(shape, zoom);
+                                        let key = path_key(shape, zoom);
+                                        if let Some(texture) = self.path_texture(ctx, key, || {
+                                            canvas::path_image(shape, zoom).map(|(image, _)| image)
+                                        }) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                    }
+                                    // A line: its stroke and caps between its
+                                    // resolved ends (spec 058).
+                                    if let Some((line, ends)) = &shape.line {
+                                        let [a, b] =
+                                            ends.map(|p| canvas::point_on_screen(page, zoom, p));
+                                        let color = canvas::screen_color(line.color)
+                                            .gamma_multiply(shape.alpha());
+                                        clip.extend(canvas::line_shapes(line, a, b, zoom, color));
+                                        continue;
+                                    }
+                                    if upright {
+                                        clip.add(canvas::painted(shape, at, zoom));
+                                    } else {
+                                        clip.add(canvas::painted_turned(shape, turn, zoom));
+                                    }
+                                    // The text inside a shape, over it
+                                    // (spec 055).
+                                    if let Some(inner) = shape.inner.as_ref().filter(|_| !edited) {
+                                        let laid =
+                                            lay_inner(&clip, theme, at, zoom, shape.alpha(), inner);
+                                        if upright {
+                                            for (pos, galley, color) in laid {
+                                                clip.galley(pos, galley, color);
+                                            }
+                                        } else {
+                                            let atlas = ctx.fonts(|f| f.font_image_size());
+                                            self.font_atlas = Some(atlas);
+                                            clip.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                        }
+                                    }
+                                }
+                                // A click picks the child of the entered group
+                                // that holds the drawn element; a double click
+                                // on a group enters it (03 §9.1, spec 043).
+                                if pressed
+                                    && let Some(at) = pointer
+                                    && page.contains(at)
+                                    && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
+                                    && let Some((node, scope)) = group::click(
+                                        page_doc,
+                                        leaf,
+                                        self.scope_on(page_doc.id),
+                                        response.double_clicked(),
+                                    )
+                                {
+                                    picked = Some((page_doc.id, node));
+                                    asked.scope = Some(scope.map(|group| (page_doc.id, group)));
+                                    // A double click on a text or a shape
+                                    // writes on it (spec 055).
+                                    if response.double_clicked()
+                                        && page_doc.node(node).is_some_and(|n| {
+                                            matches!(
+                                                n.kind,
+                                                gafira_doc::NodeKind::Text(_)
+                                                    | gafira_doc::NodeKind::Shape(_)
+                                            )
+                                        })
+                                    {
+                                        asked.begin_edit = Some((page_doc.id, node));
+                                    }
+                                    // A double click on a chart opens its
+                                    // panel (S83-07).
+                                    if response.double_clicked()
+                                        && page_doc.node(node).is_some_and(|n| {
+                                            matches!(n.kind, gafira_doc::NodeKind::Chart(_))
+                                        })
+                                    {
+                                        asked.chart_open = Some((page_doc.id, node));
+                                    }
+                                    // A double click on a frame with a photo
+                                    // enters crop mode (S66-07).
+                                    if response.double_clicked()
+                                        && page_doc.node(node).is_some_and(|n| {
+                                            matches!(
+                                                &n.kind,
+                                                gafira_doc::NodeKind::Frame(f) if f.content.is_some()
+                                            )
+                                        })
+                                    {
+                                        asked.begin_crop = Some((page_doc.id, node));
+                                    }
+                                }
+                                // Page guides, and the smart guides of the
+                                // magnet while it holds (FD-03, FD-06).
+                                if self.shown.guides {
+                                    // The guide being dragged is drawn where
+                                    // it goes, not where it was (S60-03).
+                                    let held = self
+                                        .guide_drag
+                                        .filter(|g| g.page == page_doc.id)
+                                        .and_then(|g| g.index);
+                                    draw_guides(
+                                        painter,
+                                        theme,
+                                        page_doc,
+                                        dpi,
+                                        (page, rect),
+                                        zoom,
+                                        held,
+                                    );
+                                }
+                                if let Some((_, snap)) =
+                                    self.snapped.filter(|(on, _)| *on == page_doc.id)
+                                {
+                                    draw_snap(painter, theme, &snap, page, zoom);
+                                }
+                                if self.shown.guides
+                                    && response.drag_started()
+                                    && let Some(at) = pointer
+                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
+                                {
+                                    guide_hit = Some(GuideDrag {
+                                        page: page_doc.id,
+                                        axis: page_doc.guides.0[index].axis,
+                                        index: Some(index),
+                                    });
+                                }
+                                if self.shown.guides
+                                    && self.guide_drag.is_none()
+                                    && grip_cursor.is_none()
+                                    && let Some(at) = response.hover_pos()
+                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
+                                {
+                                    ui.ctx().set_cursor_icon(guide_cursor(
+                                        page_doc.guides.0[index].axis,
+                                    ));
+                                }
+                                page_rects.push((page_doc.id, page));
+                                laid.push((page_doc.id, page, shapes));
+                            }
+                        }
+                        // The selection, over every page and the gaps
+                        // between them (D-92, S51-02).
+                        for (id, page) in page_rects.clone() {
+                            let Some(page_doc) = pages.iter().find(|p| p.id == id) else {
+                                continue;
+                            };
+                            let page_doc: &Page = page_doc;
+                            // The selection, on top of what is drawn: each
+                            // selected element by its own box, a group by
+                            // the box around its children (spec 043).
+                            let chosen = chosen(page_doc, &self.selected);
+                            for shape in &chosen {
+                                // A line shows its two ends, which can be
+                                // dragged (spec 058).
+                                if let Some((_, ends)) = &shape.line {
+                                    let [a, b] =
+                                        ends.map(|p| canvas::point_on_screen(page, zoom, p));
+                                    painter.line_segment([a, b], Stroke::new(1.0, selection));
+                                    if single == Some((shape.page, shape.node)) && !shape.locked {
+                                        for (which, at) in [a, b].into_iter().enumerate() {
+                                            painter.circle(
+                                                at,
+                                                canvas::HANDLE_HALF,
+                                                theme.c("surface"),
+                                                Stroke::new(1.5, selection),
+                                            );
+                                            let near = |p: Option<Pos2>| {
+                                                p.is_some_and(|p| {
+                                                    p.distance(at) <= canvas::HANDLE_HALF * 2.5
+                                                })
+                                            };
+                                            if response.drag_started() && near(pointer) {
+                                                grabbed = Some(Hold::LineEnd(which));
+                                            }
+                                            if near(response.hover_pos()) {
+                                                grip_cursor = Some(egui::CursorIcon::Grab);
+                                            }
+                                        }
+                                    }
+                                    continue;
+                                }
+                                let at = canvas::on_screen(page, zoom, &shape.placement);
+                                let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                let upright = rotation::upright(&shape.placement);
+                                let outline = rotation::corners(turn, &shape.placement);
+                                if upright {
                                     painter.rect_stroke(
-                                        page,
+                                        at.expand(1.0),
                                         0.0,
                                         Stroke::new(2.0, selection),
                                         egui::StrokeKind::Outside,
                                     );
+                                } else {
+                                    painter.add(egui::Shape::closed_line(
+                                        outline.to_vec(),
+                                        Stroke::new(2.0, selection),
+                                    ));
                                 }
-                                painter.text(
-                                    Pos2::new(page.min.x, page.min.y - 8.0),
-                                    Align2::LEFT_BOTTOM,
-                                    texts.t(&gafira_doc::msg!(
-                                        "editor.page",
-                                        number = Count(index as u64 + 1)
-                                    )),
-                                    theme.font("caption"),
-                                    theme.c("text.secondary"),
-                                );
-                                if let Some(page_doc) = pages.get(index) {
-                                    let shapes = canvas::shapes(page_doc);
-                                    // Each page draws its elements cut to it (D-92).
-                                    let clip =
-                                        painter.with_clip_rect(page.intersect(painter.clip_rect()));
-                                    for shape in &shapes {
-                                        let at = canvas::on_screen(page, zoom, &shape.placement);
-                                        // Where the local box lands on the screen,
-                                        // turned and flipped as the render draws it
-                                        // (spec 041).
-                                        let turn =
-                                            rotation::to_screen(page, zoom, &shape.placement);
-                                        let upright = rotation::upright(&shape.placement);
-                                        let outline = rotation::corners(turn, &shape.placement);
-                                        if let Some(asset) = shape.image {
-                                            let tint = Color32::WHITE
-                                                .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
-                                            match self
-                                                .textures
-                                                .get(&asset.as_hash())
-                                                .and_then(Option::as_ref)
-                                            {
-                                                Some(texture) => {
-                                                    clip.add(canvas::image_mesh(
-                                                        texture.id(),
-                                                        turn,
-                                                        &shape.placement,
-                                                        tint,
-                                                    ));
-                                                }
-                                                None => {
-                                                    clip.add(egui::Shape::convex_polygon(
-                                                        outline.to_vec(),
-                                                        theme.c("surface.sunken"),
-                                                        Stroke::NONE,
-                                                    ));
-                                                }
-                                            }
-                                        }
-                                        if let Some(text) = &shape.text {
-                                            let laid = lay_text(
-                                                &clip,
-                                                theme,
-                                                at,
-                                                zoom,
-                                                shape.opacity,
-                                                text,
-                                            );
-                                            if upright {
-                                                for (pos, galley, color) in laid {
-                                                    clip.galley(pos, galley, color);
-                                                }
-                                            } else {
-                                                let atlas = ctx.fonts(|f| f.font_image_size());
-                                                self.font_atlas = Some(atlas);
-                                                clip.add(text_mesh(&laid, at, zoom, turn, atlas));
-                                            }
-                                        }
-                                        if upright {
-                                            clip.add(canvas::painted(shape, at, zoom));
-                                        } else {
-                                            clip.add(canvas::painted_turned(shape, turn, zoom));
-                                        }
-                                    }
-                                    // A click picks the child of the entered group
-                                    // that holds the drawn element; a double click
-                                    // on a group enters it (03 §9.1, spec 043).
-                                    if pressed
-                                        && let Some(at) = pointer
-                                        && page.contains(at)
-                                        && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
-                                        && let Some((node, scope)) = group::click(
-                                            page_doc,
-                                            leaf,
-                                            self.scope_on(page_doc.id),
-                                            response.double_clicked(),
-                                        )
-                                    {
-                                        picked = Some((page_doc.id, node));
-                                        asked.scope = Some(scope.map(|group| (page_doc.id, group)));
-                                    }
-                                    // Page guides, and the smart guides of the
-                                    // magnet while it holds (FD-03, FD-06).
-                                    if self.shown.guides {
-                                        draw_guides(
-                                            painter, theme, page_doc, dpi, page, rect, zoom,
+                                // Only a single, free selection resizes or
+                                // turns by hand (D-91).
+                                if single == Some((shape.page, shape.node)) && !shape.locked {
+                                    let knob = rotation::rotate_handle(turn, &shape.placement);
+                                    let top = canvas::handle_point(
+                                        turn,
+                                        &shape.placement,
+                                        canvas::Handle { x: 0, y: -1 },
+                                    );
+                                    painter.line_segment([top, knob], Stroke::new(1.0, selection));
+                                    painter.circle(
+                                        knob,
+                                        canvas::HANDLE_HALF,
+                                        theme.c("surface"),
+                                        Stroke::new(1.5, selection),
+                                    );
+                                    for handle in canvas::HANDLES.into_iter().filter(|h| {
+                                        shape.text.is_none() || crate::textbox::shown_on_text(*h)
+                                    }) {
+                                        let square = Rect::from_center_size(
+                                            canvas::handle_point(turn, &shape.placement, handle),
+                                            Vec2::splat(canvas::HANDLE_HALF * 2.0),
                                         );
-                                    }
-                                    if let Some((_, snap)) =
-                                        self.snapped.filter(|(on, _)| *on == page_doc.id)
-                                    {
-                                        draw_snap(painter, theme, &snap, page, zoom);
-                                    }
-                                    if self.shown.guides
-                                        && response.drag_started()
-                                        && let Some(at) = pointer
-                                        && let Some(index) =
-                                            ruler::hit(page_doc, dpi, page, zoom, at)
-                                    {
-                                        guide_hit = Some(GuideDrag {
-                                            page: page_doc.id,
-                                            axis: page_doc.guides.0[index].axis,
-                                            index: Some(index),
-                                        });
-                                    }
-                                    if self.shown.guides
-                                        && self.guide_drag.is_none()
-                                        && grip_cursor.is_none()
-                                        && let Some(at) = response.hover_pos()
-                                        && let Some(index) =
-                                            ruler::hit(page_doc, dpi, page, zoom, at)
-                                    {
-                                        ui.ctx().set_cursor_icon(guide_cursor(
-                                            page_doc.guides.0[index].axis,
-                                        ));
-                                    }
-                                    page_rects.push((page_doc.id, page));
-                                    laid.push((page_doc.id, page, shapes));
-                                }
-                                top = page.max.y + PAGE_GAP;
-                            }
-                            // The selection, over every page and the gaps
-                            // between them (D-92, S51-02).
-                            for (id, page) in page_rects.clone() {
-                                let Some(page_doc) = pages.iter().find(|p| p.id == id) else {
-                                    continue;
-                                };
-                                let page_doc: &Page = page_doc;
-                                // The selection, on top of what is drawn: each
-                                // selected element by its own box, a group by
-                                // the box around its children (spec 043).
-                                let chosen = chosen(page_doc, &self.selected);
-                                for shape in &chosen {
-                                    let at = canvas::on_screen(page, zoom, &shape.placement);
-                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
-                                    let upright = rotation::upright(&shape.placement);
-                                    let outline = rotation::corners(turn, &shape.placement);
-                                    if upright {
-                                        painter.rect_stroke(
-                                            at.expand(1.0),
-                                            0.0,
-                                            Stroke::new(2.0, selection),
-                                            egui::StrokeKind::Outside,
-                                        );
-                                    } else {
-                                        painter.add(egui::Shape::closed_line(
-                                            outline.to_vec(),
-                                            Stroke::new(2.0, selection),
-                                        ));
-                                    }
-                                    // Only a single, free selection resizes or
-                                    // turns by hand (D-91).
-                                    if single == Some((shape.page, shape.node)) && !shape.locked {
-                                        let knob = rotation::rotate_handle(turn, &shape.placement);
-                                        let top = canvas::handle_point(
-                                            turn,
-                                            &shape.placement,
-                                            canvas::Handle { x: 0, y: -1 },
-                                        );
-                                        painter
-                                            .line_segment([top, knob], Stroke::new(1.0, selection));
-                                        painter.circle(
-                                            knob,
-                                            canvas::HANDLE_HALF,
+                                        painter.rect(
+                                            square,
+                                            2.0,
                                             theme.c("surface"),
                                             Stroke::new(1.5, selection),
+                                            egui::StrokeKind::Inside,
                                         );
-                                        for handle in canvas::HANDLES {
-                                            let square = Rect::from_center_size(
-                                                canvas::handle_point(
+                                    }
+                                    // The same hit test as the grab: the
+                                    // nearest handle within 24 px.
+                                    grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
+                                        Some(Some(Hold::Resize(handle))) => {
+                                            Some(resize::cursor(turn, handle))
+                                        }
+                                        Some(Some(Hold::Rotate { .. } | Hold::LineEnd(_))) => {
+                                            Some(egui::CursorIcon::Grabbing)
+                                        }
+                                        Some(None) => grip_cursor,
+                                        None => response
+                                            .hover_pos()
+                                            .and_then(|at| {
+                                                canvas::grip_hit(
                                                     turn,
                                                     &shape.placement,
-                                                    handle,
-                                                ),
-                                                Vec2::splat(canvas::HANDLE_HALF * 2.0),
-                                            );
-                                            painter.rect(
-                                                square,
-                                                2.0,
-                                                theme.c("surface"),
-                                                Stroke::new(1.5, selection),
-                                                egui::StrokeKind::Inside,
-                                            );
-                                        }
-                                        // The same hit test as the grab: the
-                                        // nearest handle within 24 px.
-                                        grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
-                                            Some(Some(Hold::Resize(handle))) => {
-                                                Some(resize::cursor(turn, handle))
-                                            }
-                                            Some(Some(Hold::Rotate { .. })) => {
-                                                Some(egui::CursorIcon::Grabbing)
-                                            }
-                                            Some(None) => grip_cursor,
-                                            None => response
-                                                .hover_pos()
-                                                .and_then(|at| {
-                                                    canvas::grip_hit(turn, &shape.placement, at)
-                                                })
-                                                .map(|grip| match grip {
-                                                    canvas::Grip::Resize(handle) => {
-                                                        resize::cursor(turn, handle)
-                                                    }
-                                                    canvas::Grip::Rotate => egui::CursorIcon::Grab,
-                                                })
-                                                .or(grip_cursor),
-                                        };
-                                        if let Some(drag) = &self.drag
-                                            && let Some(Hold::Resize(handle)) = drag.hold
-                                            && let Some((_, from)) = drag.origins.first()
-                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
-                                        {
-                                            size_label(
-                                                painter,
-                                                theme,
-                                                at,
-                                                resize::outward(turn, handle),
-                                                area,
-                                                (from, &shape.placement),
-                                            );
-                                        }
-                                        if response.drag_started()
-                                            && let Some(pos) = pointer
-                                            && let Some(grip) =
-                                                canvas::grip_hit(turn, &shape.placement, pos)
-                                        {
-                                            grabbed = Some(match grip {
+                                                    at,
+                                                    shape.text.is_some(),
+                                                )
+                                            })
+                                            .map(|grip| match grip {
                                                 canvas::Grip::Resize(handle) => {
-                                                    Hold::Resize(handle)
+                                                    resize::cursor(turn, handle)
                                                 }
-                                                canvas::Grip::Rotate => Hold::Rotate {
-                                                    center: rotation::screen(
-                                                        turn,
-                                                        shape.placement.w / 2.0,
-                                                        shape.placement.h / 2.0,
-                                                    ),
-                                                    from: pos,
-                                                },
-                                            });
-                                        }
+                                                canvas::Grip::Rotate => egui::CursorIcon::Grab,
+                                            })
+                                            .or(grip_cursor),
+                                    };
+                                    if let Some(drag) = &self.drag
+                                        && let Some(Hold::Resize(handle)) = drag.hold
+                                        && let Some((_, from)) = drag.origins.first()
+                                        && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                    {
+                                        size_label(
+                                            painter,
+                                            theme,
+                                            at,
+                                            resize::outward(turn, handle),
+                                            area,
+                                            (from, &shape.placement),
+                                        );
+                                    }
+                                    if response.drag_started()
+                                        && let Some(pos) = pointer
+                                        && let Some(grip) =
+                                            canvas::grip_hit(
+                                                turn,
+                                                &shape.placement,
+                                                pos,
+                                                shape.text.is_some(),
+                                            )
+                                    {
+                                        grabbed = Some(match grip {
+                                            canvas::Grip::Resize(handle) => Hold::Resize(handle),
+                                            canvas::Grip::Rotate => Hold::Rotate {
+                                                center: rotation::screen(
+                                                    turn,
+                                                    shape.placement.w / 2.0,
+                                                    shape.placement.h / 2.0,
+                                                ),
+                                                from: pos,
+                                            },
+                                        });
                                     }
                                 }
-                                if self.selected.len() > 1
-                                    && self.selected.page() == Some(page_doc.id)
-                                {
-                                    // The box around a multi-selection (spec 040).
-                                    let boxes = chosen
-                                        .iter()
-                                        .map(|s| rotation::screen_box(page, zoom, &s.placement));
-                                    if let Some(all) = canvas::bounds(boxes) {
-                                        painter.rect_stroke(
-                                            all.expand(4.0),
-                                            0.0,
-                                            Stroke::new(1.0, selection),
-                                            egui::StrokeKind::Outside,
+                            }
+                            // The cells, the borders and the buttons of the
+                            // selected table (spec 081).
+                            if let Some(shape) = chosen.iter().find(|shape| {
+                                single == Some((shape.page, shape.node))
+                                    && shape.table.is_some()
+                                    && !shape.locked
+                            }) && self.drag.is_none()
+                                && grabbed.is_none()
+                            {
+                                on_cells |= self.table_overlay(
+                                    ui,
+                                    (theme, texts),
+                                    (&response, pointer),
+                                    (page, zoom),
+                                    shape,
+                                    asked,
+                                );
+                            }
+                            if self.selected.len() > 1 && self.selected.page() == Some(page_doc.id)
+                            {
+                                // The box around a multi-selection (spec 040).
+                                let boxes = chosen
+                                    .iter()
+                                    .map(|s| rotation::screen_box(page, zoom, &s.placement));
+                                if let Some(all) = canvas::bounds(boxes) {
+                                    painter.rect_stroke(
+                                        all.expand(4.0),
+                                        0.0,
+                                        Stroke::new(1.0, selection),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                            }
+                            // A press inside the box of a selected element
+                            // takes it, also where it leaves its page
+                            // (S51-03).
+                            if pressed
+                                && !response.double_clicked()
+                                && let Some(at) = pointer
+                            {
+                                let boxes: Vec<Shape> = chosen
+                                    .iter()
+                                    .cloned()
+                                    .map(|mut shape| {
+                                        shape.geometry = ShapeGeometry::Rect;
+                                        shape.locked = false;
+                                        shape
+                                    })
+                                    .collect();
+                                if let Some(node) = canvas::hit(&boxes, page, zoom, at) {
+                                    picked = Some((id, node));
+                                }
+                            }
+                        }
+                        // The bar over the selection: Agrupar or Desagrupar,
+                        // Bloquear, Duplicar, Eliminar and «···» (owner
+                        // request); hidden while dragging, writing or
+                        // cropping.
+                        if self.drag.is_none()
+                            && self.editing.is_none()
+                            && self.cropping.is_none()
+                            && let Some(page_id) = self.selected.page()
+                            && let Some((_, rect)) = page_rects.iter().find(|(id, _)| *id == page_id)
+                            && let Some(page_doc) = pages.iter().find(|p| p.id == page_id)
+                        {
+                            let boxes: Vec<Rect> = chosen(page_doc, &self.selected)
+                                .iter()
+                                .map(|shape| canvas::screen_box_of(shape, *rect, zoom))
+                                .collect();
+                            if let Some(first) = boxes.first() {
+                                let around = boxes.iter().fold(*first, |a, b| a.union(*b));
+                                self.selection_bar(ui.ctx(), theme, texts, around, page_doc, asked);
+                            }
+                        }
+                        // Outside every page, the cut-away part of an
+                        // element is still taken (S51-06).
+                        if pressed
+                            && picked.is_none()
+                            && let Some(at) = pointer
+                            && let Some((id, leaf)) = transfer::outside_hit(&laid, zoom, at)
+                            && let Some(page_doc) = pages.iter().find(|p| p.id == id)
+                            && let Some((node, scope)) = group::click(
+                                page_doc,
+                                leaf,
+                                self.scope_on(id),
+                                response.double_clicked(),
+                            )
+                        {
+                            picked = Some((id, node));
+                            asked.scope = Some(scope.map(|group| (id, group)));
+                        }
+                        // While a line end is dragged: the five points of
+                        // the shapes near it, the outline of the one it
+                        // sticks to, and its length and angle (spec 058).
+                        if let Some(view) = &self.line_view
+                            && let Some((_, rect)) =
+                                page_rects.iter().find(|(id, _)| *id == view.page)
+                            && let Some(page_doc) = pages.iter().find(|p| p.id == view.page)
+                        {
+                            let to_screen = |p| canvas::point_on_screen(*rect, zoom, p);
+                            if let Some(node) = view.stuck {
+                                for ring in lines::outline(page_doc, node) {
+                                    let points: Vec<Pos2> =
+                                        ring.into_iter().map(to_screen).collect();
+                                    painter.add(egui::Shape::closed_line(
+                                        points,
+                                        Stroke::new(1.5, selection),
+                                    ));
+                                }
+                            }
+                            for node in &view.near {
+                                for anchor in gafira_doc::Anchor::ALL {
+                                    if let Some(p) = gafira_doc::LineNode::anchor_point(
+                                        page_doc,
+                                        *node,
+                                        anchor.unit(),
+                                    ) {
+                                        painter.circle(
+                                            to_screen(p),
+                                            4.0,
+                                            theme.c("surface"),
+                                            Stroke::new(1.0, theme.c("text.secondary")),
                                         );
                                     }
                                 }
-                                // A press inside the box of a selected element
-                                // takes it, also where it leaves its page
-                                // (S51-03).
-                                if pressed
-                                    && !response.double_clicked()
-                                    && let Some(at) = pointer
-                                {
-                                    let boxes: Vec<Shape> = chosen
-                                        .iter()
-                                        .cloned()
-                                        .map(|mut shape| {
-                                            shape.geometry = ShapeGeometry::Rect;
-                                            shape.locked = false;
-                                            shape
-                                        })
-                                        .collect();
-                                    if let Some(node) = canvas::hit(&boxes, page, zoom, at) {
-                                        picked = Some((id, node));
+                            }
+                            let end = to_screen(view.end);
+                            painter.circle_filled(end, 4.0, selection);
+                            let (length, angle) = lines::length_and_angle(view.other, view.end);
+                            let label = format!("l: {length:.0} {angle:.0}°");
+                            let galley = painter.layout_no_wrap(
+                                label,
+                                theme.font("caption"),
+                                theme.c("topbar.fg"),
+                            );
+                            let at = end + Vec2::new(14.0, 14.0);
+                            let back =
+                                Rect::from_min_size(at, galley.size()).expand2(Vec2::new(6.0, 3.0));
+                            painter.rect_filled(back, 4.0, theme.c("topbar.bg"));
+                            painter.galley(at, galley, theme.c("topbar.fg"));
+                        }
+                        // The field of a text being written on the
+                        // canvas, over its element (spec 055).
+                        self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
+                        self.cell_field(ui, theme, pages, &page_rects, zoom, asked);
+                        if let Some(icon) = grip_cursor {
+                            ui.ctx().set_cursor_icon(icon);
+                        }
+                        // A press on a page makes it the active one;
+                        // outside every page none is. A handle or a
+                        // guide keeps it (S50-01).
+                        if (response.clicked() || response.drag_started())
+                            && grabbed.is_none()
+                            && guide_hit.is_none()
+                            && let Some(at) = pointer
+                        {
+                            self.active =
+                                active_after(&page_rects, at, picked.map(|(page, _)| page));
+                        }
+                        if let Some(tool) = self.drawing_tool() {
+                            // Dibujo with a brush or the eraser: the
+                            // pointer draws or erases (spec 079).
+                            self.draw_input(
+                                ui,
+                                painter,
+                                &response,
+                                (pages, &page_rects, zoom),
+                                (texts, tool),
+                                asked,
+                            );
+                        } else if let Some(handle) = grabbed {
+                            // A handle of the selection wins over whatever
+                            // lies under it, and keeps the scope.
+                            asked.drag_begin = Some(Some(handle));
+                            asked.scope = None;
+                        } else if let Some(held) = guide_hit {
+                            // Then a guide, over the elements (spec 044).
+                            self.guide_drag = Some(held);
+                        } else if on_cells {
+                            // The table took it.
+                        } else if response.clicked() {
+                            // Click selects one; Shift+click toggles it.
+                            let mut next = self.selected.clone();
+                            match (picked, shift) {
+                                (Some((page, node)), true) => next.toggle(page, node),
+                                (Some((page, node)), false) => next = Selection::one(page, node),
+                                (None, true) => {}
+                                // A locked element under the click is
+                                // selected, to unlock it from its bar
+                                // (D-110); empty canvas also leaves a group
+                                // entered.
+                                (None, false) => {
+                                    next.clear();
+                                    if let Some(at) = pointer
+                                        && let Some((page, node)) =
+                                            locked_under(pages, &page_rects, zoom, at)
+                                    {
+                                        next = Selection::one(page, node);
                                     }
+                                    asked.scope = Some(None);
                                 }
                             }
-                            // Outside every page, the cut-away part of an
-                            // element is still taken (S51-06).
-                            if pressed
-                                && picked.is_none()
-                                && let Some(at) = pointer
-                                && let Some((id, leaf)) = transfer::outside_hit(&laid, zoom, at)
-                                && let Some(page_doc) = pages.iter().find(|p| p.id == id)
-                                && let Some((node, scope)) = group::click(
-                                    page_doc,
-                                    leaf,
-                                    self.scope_on(id),
-                                    response.double_clicked(),
-                                )
-                            {
-                                picked = Some((id, node));
-                                asked.scope = Some(scope.map(|group| (id, group)));
-                            }
-                            if let Some(icon) = grip_cursor {
-                                ui.ctx().set_cursor_icon(icon);
-                            }
-                            // A press on a page makes it the active one;
-                            // outside every page none is. A handle or a
-                            // guide keeps it (S50-01).
-                            if (response.clicked() || response.drag_started())
-                                && grabbed.is_none()
-                                && guide_hit.is_none()
-                                && let Some(at) = pointer
-                            {
-                                self.active =
-                                    active_after(&page_rects, at, picked.map(|(page, _)| page));
-                            }
-                            if let Some(handle) = grabbed {
-                                // A handle of the selection wins over whatever
-                                // lies under it, and keeps the scope.
-                                asked.drag_begin = Some(Some(handle));
-                                asked.scope = None;
-                            } else if let Some(held) = guide_hit {
-                                // Then a guide, over the elements (spec 044).
-                                self.guide_drag = Some(held);
-                            } else if response.clicked() {
-                                // Click selects one; Shift+click toggles it.
-                                let mut next = self.selected.clone();
-                                match (picked, shift) {
-                                    (Some((page, node)), true) => next.toggle(page, node),
-                                    (Some((page, node)), false) => {
-                                        next = Selection::one(page, node)
-                                    }
-                                    (None, true) => {}
-                                    // Empty canvas also leaves a group entered.
-                                    (None, false) => {
-                                        next.clear();
-                                        asked.scope = Some(None);
-                                    }
-                                }
-                                asked.select = Some(next);
-                            } else if response.drag_started() {
-                                match picked {
-                                    // A drag on a selected element moves the
-                                    // whole selection; on another one it selects
-                                    // it first (Shift adds it).
-                                    Some((page, node)) => {
-                                        if !self.selected.contains(page, node) {
-                                            let mut next = self.selected.clone();
-                                            if shift {
-                                                next.add(page, [node]);
-                                            } else {
-                                                next = Selection::one(page, node);
-                                            }
-                                            asked.select = Some(next);
+                            asked.select = Some(next);
+                        } else if response.drag_started() {
+                            match picked {
+                                // A drag on a selected element moves the
+                                // whole selection; on another one it selects
+                                // it first (Shift adds it).
+                                Some((page, node)) => {
+                                    if !self.selected.contains(page, node) {
+                                        let mut next = self.selected.clone();
+                                        if shift {
+                                            next.add(page, [node]);
+                                        } else {
+                                            next = Selection::one(page, node);
                                         }
-                                        asked.drag_begin = Some(None);
+                                        asked.select = Some(next);
                                     }
-                                    // On empty canvas it draws a marquee.
-                                    None => {
-                                        if let Some(from) = press.or(pointer) {
-                                            self.marquee = Some(Marquee {
-                                                from,
-                                                to: pointer.unwrap_or(from),
-                                                add: shift,
-                                            });
-                                        }
+                                    asked.drag_begin = Some(None);
+                                }
+                                // On empty canvas it draws a marquee.
+                                None => {
+                                    if let Some(from) = press.or(pointer) {
+                                        self.marquee = Some(Marquee {
+                                            from,
+                                            to: pointer.unwrap_or(from),
+                                            add: shift,
+                                        });
                                     }
                                 }
                             }
-                            if response.dragged() {
-                                if let Some(marquee) = self.marquee.as_mut() {
-                                    if let Some(to) = pointer {
-                                        marquee.to = to;
-                                    }
-                                } else if self.drag.is_some() {
-                                    asked.drag_to = Some(response.drag_delta());
-                                    // Only the state of the keys counts (D-90):
-                                    // Shift frees a corner, Alt resizes from the
-                                    // centre and Ctrl lets the magnet go.
-                                    asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
+                        }
+                        if response.dragged() {
+                            if let Some(marquee) = self.marquee.as_mut() {
+                                if let Some(to) = pointer {
+                                    marquee.to = to;
                                 }
+                            } else if self.drag.is_some() {
+                                asked.drag_to = Some(response.drag_delta());
+                                // Only the state of the keys counts (D-90):
+                                // Shift frees a corner, Alt resizes from the
+                                // centre and Ctrl lets the magnet go.
+                                asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
                             }
-                            if let Some(marquee) = self.marquee {
-                                painter.rect(
-                                    Rect::from_two_pos(marquee.from, marquee.to),
-                                    0.0,
-                                    theme.c("selection.bg").gamma_multiply(0.5),
-                                    Stroke::new(1.0, selection),
-                                    egui::StrokeKind::Inside,
-                                );
+                        }
+                        if self.cropping.is_some() && response.clicked() && !crop_kept {
+                            asked.end_crop = true;
+                        }
+                        // An image dragged over a frame (spec 066): the
+                        // frame under the pointer, if any, takes it.
+                        self.frame_target = None;
+                        if self.drag.as_ref().is_some_and(|d| d.hold.is_none())
+                            && let Some((page_id, image)) = self.selected.single()
+                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                            && let Some((_, rect, shapes)) =
+                                laid.iter().find(|(id, rect, _)| *id == page_id && rect.contains(at))
+                            && let Some(asset) =
+                                shapes.iter().find(|s| s.node == image).and_then(|s| s.image)
+                        {
+                            let others: Vec<Shape> =
+                                shapes.iter().filter(|s| s.node != image).cloned().collect();
+                            if let Some(frame) = canvas::hit(&others, *rect, zoom, at)
+                                && others.iter().any(|s| s.node == frame && s.frame.is_some())
+                            {
+                                self.frame_target = Some(FrameTarget {
+                                    page: page_id,
+                                    frame,
+                                    image,
+                                    asset,
+                                });
                             }
-                            if response.drag_stopped() {
-                                match self.marquee.take() {
-                                    Some(marquee) => {
-                                        // What it touches counts by the child of
-                                        // the scope that holds it (spec 043).
-                                        let pick = |page: PageId, leaf: NodeId| {
-                                            let on = pages.iter().find(|p| p.id == page)?;
-                                            group::pick(on, leaf, self.scope_on(page))
-                                        };
-                                        asked.select = Some(marquee_selection(
-                                            &self.selected,
-                                            marquee,
-                                            &laid,
-                                            zoom,
-                                            pick,
+                        }
+                        // The frame that takes the image, or the one being
+                        // cropped, is lit along its outline (spec 066).
+                        let lit = self
+                            .frame_target
+                            .map(|t| (t.page, t.frame))
+                            .or(self.cropping.map(|c| (c.page, c.node)));
+                        if let Some((page_id, node)) = lit
+                            && let Some(page_doc) = document.and_then(|d| d.page(page_id))
+                            && let Some((_, rect, _)) = laid.iter().find(|(id, _, _)| *id == page_id)
+                        {
+                            let stroke = Stroke::new(2.0, theme.c("primary.bg"));
+                            for ring in crate::lines::outline(page_doc, node) {
+                                let points: Vec<Pos2> = ring
+                                    .into_iter()
+                                    .map(|p| canvas::point_on_screen(*rect, zoom, p))
+                                    .collect();
+                                painter.add(egui::Shape::closed_line(points, stroke));
+                            }
+                        }
+                        if let Some(marquee) = self.marquee {
+                            painter.rect(
+                                Rect::from_two_pos(marquee.from, marquee.to),
+                                0.0,
+                                theme.c("selection.bg").gamma_multiply(0.5),
+                                Stroke::new(1.0, selection),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        if response.drag_stopped() {
+                            match self.marquee.take() {
+                                Some(marquee) => {
+                                    // What it touches counts by the child of
+                                    // the scope that holds it (spec 043).
+                                    let pick = |page: PageId, leaf: NodeId| {
+                                        let on = pages.iter().find(|p| p.id == page)?;
+                                        group::pick(on, leaf, self.scope_on(page))
+                                    };
+                                    asked.select = Some(marquee_selection(
+                                        &self.selected,
+                                        marquee,
+                                        &laid,
+                                        zoom,
+                                        pick,
+                                    ));
+                                }
+                                None => {
+                                    asked.drag_end = true;
+                                    // A move dropped on another page goes
+                                    // there (S51-04).
+                                    let rect_of = |id: PageId| {
+                                        page_rects.iter().find(|(p, _)| *p == id).map(|r| r.1)
+                                    };
+                                    if let Some(drag) = &self.drag
+                                        && drag.hold.is_none()
+                                        && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                        && let Some(to) =
+                                            transfer::drop_target(&page_rects, drag.page, at)
+                                        && let (Some(a), Some(b)) =
+                                            (rect_of(drag.page), rect_of(to))
+                                    {
+                                        let shift = (a.min - b.min) / zoom;
+                                        asked.transfer = Some((
+                                            drag.page,
+                                            to,
+                                            (f64::from(shift.x), f64::from(shift.y)),
                                         ));
                                     }
-                                    None => {
-                                        asked.drag_end = true;
-                                        // A move dropped on another page goes
-                                        // there (S51-04).
-                                        let rect_of = |id: PageId| {
-                                            page_rects.iter().find(|(p, _)| *p == id).map(|r| r.1)
-                                        };
-                                        if let Some(drag) = &self.drag
-                                            && drag.hold.is_none()
-                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
-                                            && let Some(to) =
-                                                transfer::drop_target(&page_rects, drag.page, at)
-                                            && let (Some(a), Some(b)) =
-                                                (rect_of(drag.page), rect_of(to))
-                                        {
-                                            let shift = (a.min - b.min) / zoom;
-                                            asked.transfer = Some((
-                                                drag.page,
-                                                to,
-                                                (f64::from(shift.x), f64::from(shift.y)),
-                                            ));
-                                        }
-                                    }
                                 }
                             }
-                        });
+                        }
+                    });
                 });
                 self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
                 self.page_rects = page_rects;
@@ -2560,10 +6133,28 @@ impl Editor {
                 .filter(|shape| shape.page == page)
                 .map(|shape| rotation::screen_box(origin, zoom, &shape.placement))
                 .collect();
+            // The rulers count in the unit of the page's size (spec 076):
+            // a page made in inches is measured in inches.
+            let measure = document
+                .and_then(|d| {
+                    let unit = d.page(page)?.size.width.unit();
+                    let px = gafira_geom::Length::new(1.0, unit)
+                        .to_px(f64::from(d.dpi().get()))
+                        .ok()?;
+                    Some((unit, px))
+                })
+                .unwrap_or((gafira_geom::Unit::Px, 1.0));
             for axis in [GuideAxis::Horizontal, GuideAxis::Vertical] {
                 let strip = ruler::strip(axis, area);
                 let band = ruler::band(&boxes, axis);
-                draw_ruler(ui.painter(), theme, axis, strip, (origin, zoom), band);
+                draw_ruler(
+                    ui.painter(),
+                    theme,
+                    axis,
+                    strip,
+                    (origin, zoom, measure),
+                    band,
+                );
                 let response = ui.interact(
                     strip,
                     ui.id().with(("ruler", axis == GuideAxis::Horizontal)),
@@ -2597,8 +6188,8 @@ impl Editor {
             None => ruler::page_at(page_rects, at.y),
         };
         let rect = page.and_then(|id| page_rects.iter().find(|(p, _)| *p == id));
-        let on_ruler = ruler::strip(held.axis, area).contains(at);
-        if !on_ruler && let Some((_, rect)) = rect {
+        let on_ruler = ruler::back_to_ruler(held.axis, area, at);
+        if !on_ruler && let Some((page_id, rect)) = rect {
             let px = ruler::page_coordinate(held.axis, *rect, zoom, at);
             let line = Stroke::new(1.0, theme.c("canvas.guide"));
             let offset = px as f32 * zoom;
@@ -2613,6 +6204,36 @@ impl Editor {
                 ],
             };
             ui.painter().line_segment(points, line);
+            // Where it is, in the page's unit, on the ruler it runs to
+            // (spec 076): a vertical guide on the top ruler, a horizontal
+            // one on the left; it follows the pointer.
+            if self.shown.rulers
+                && let Some(page) = document.and_then(|d| d.page(*page_id))
+            {
+                let unit = page.size.width.unit();
+                let per = gafira_geom::Length::new(1.0, unit)
+                    .to_px(document.map_or(96.0, |d| f64::from(d.dpi().get())))
+                    .unwrap_or(1.0);
+                let text = ruler::position_label(px / per, unit);
+                let font = egui::FontId::proportional(11.0);
+                let galley = ui.painter().layout_no_wrap(text, font, Color32::WHITE);
+                let size = galley.size() + Vec2::new(8.0, 2.0);
+                let centre = match held.axis {
+                    GuideAxis::Vertical => Pos2::new(points[0].x, area.min.y + ruler::RULER / 2.0),
+                    GuideAxis::Horizontal => {
+                        Pos2::new(area.min.x + ruler::RULER / 2.0, points[0].y)
+                    }
+                };
+                let mut badge = Rect::from_center_size(centre, size);
+                if held.axis == GuideAxis::Horizontal {
+                    // Kept inside the left ruler's width, reading across.
+                    badge =
+                        badge.translate(Vec2::new(badge.width() / 2.0 - ruler::RULER / 2.0, 0.0));
+                }
+                let painter = ui.painter();
+                painter.rect_filled(badge, 3.0, theme.c("canvas.guide"));
+                painter.galley(badge.min + Vec2::new(4.0, 1.0), galley, Color32::WHITE);
+            }
         }
         if !released {
             return;
@@ -2669,12 +6290,13 @@ impl Editor {
             .and_then(|d| d.pages().last().map(|page| (d.pages().len(), page.size)));
         if asked.add_page
             && let Some((at, size)) = last
+            && let Some(document) = document
         {
             log(
                 "add page",
                 engine
                     .edit()
-                    .execute(Box::new(InsertPage::new(at, String::new(), size)))
+                    .execute(new_page(document, at, size))
                     .map(drop),
             );
         }
@@ -2711,13 +6333,13 @@ impl Editor {
             let scope = self.scope_on(page.id);
             self.selected = Selection::of(page.id, group::items(page, scope));
         }
-        if let Some(geometry) = asked.insert
+        if let Some(piece) = asked.insert
             && let Some(document) = document
             && let Some(page) = self.current_page(document)
             && let Ok(size) = page.size.to_px(document.dpi())
         {
             let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let spec = canvas::new_piece(px, geometry, canvas::document_color(theme.c("accent")));
+            let spec = canvas::new_shape(px, piece, canvas::default_fill());
             let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
             let next = NodeId::new(document.next_id());
             match engine.edit().execute(Box::new(command)) {
@@ -2725,16 +6347,53 @@ impl Editor {
                 Err(error) => eprintln!("insert: {error}"),
             }
         }
-        // A shape dropped from the panel lands centred where it was
-        // dropped, selected, its page active (S52-03).
-        if let Some((geometry, page, point)) = asked.drop_piece
+        // A light lands in the middle of the page, selected (spec 065).
+        if let Some(item) = asked.insert_effect
+            && let Some(document) = document
+            && let Some(page) = self.current_page(document)
+            && let Ok(size) = page.size.to_px(document.dpi())
+        {
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let spec = canvas::new_effect(px, item.effect(), item.share());
+            let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => self.selected = Selection::one(page.id, next),
+                Err(error) => eprintln!("insert effect: {error}"),
+            }
+        }
+        // A light dropped from the panel lands centred where it was
+        // dropped, selected, its page active (D-105).
+        if let Some((item, page, point)) = asked.drop_effect
             && let Some(document) = document
             && let Some(on) = document.page(page)
             && let Ok(size) = on.size.to_px(document.dpi())
         {
             let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let fill = canvas::document_color(theme.c("accent"));
-            let spec = canvas::piece_at(px, geometry, fill, point);
+            let mut spec = canvas::new_effect(px, item.effect(), item.share());
+            spec.placement.x = point.0 - spec.placement.w / 2.0;
+            spec.placement.y = point.1 - spec.placement.h / 2.0;
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page, next);
+                    self.active = Some(page);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("drop light: {error}"),
+            }
+        }
+        // A shape dropped from the panel lands centred where it was
+        // dropped, selected, its page active (S52-03).
+        if let Some((piece, page, point)) = asked.drop_piece
+            && let Some(document) = document
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+        {
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let fill = canvas::default_fill();
+            let spec = canvas::piece_at(px, piece, fill, point);
             let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
             let next = NodeId::new(document.next_id());
             match engine.edit().execute(Box::new(command)) {
@@ -2751,35 +6410,453 @@ impl Editor {
         {
             self.import_image(engine, document);
         }
+        // A new empty frame, in the middle of the page or where it was
+        // dropped, selected (spec 066, D-105).
+        let frame_spec = |document: &Document, page: PageId, at: Option<(f64, f64)>, piece| {
+            let on = document.page(page)?;
+            let size = on.size.to_px(document.dpi()).ok()?;
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            Some(match at {
+                Some(at) => canvas::frame_at(px, piece, at),
+                None => canvas::new_frame(px, piece),
+            })
+        };
+        let frame_asked = match (asked.insert_frame, asked.drop_frame) {
+            (_, Some((piece, page, at))) => Some((piece, Some(page), Some(at))),
+            (Some(piece), None) => Some((piece, None, None)),
+            (None, None) => None,
+        };
+        if let Some((piece, page, at)) = frame_asked
+            && let Some(document) = document
+            && let Some(page) = page.or_else(|| self.current_page(document).map(|p| p.id))
+            && let Some(spec) = frame_spec(document, page, at, piece)
+            && let Some(on) = document.page(page)
+        {
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page, next);
+                    self.active = Some(page);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("insert frame: {error}"),
+            }
+        }
+        self.qr_codes(engine, asked);
+        self.tables(engine, asked);
+        self.charts(engine, asked);
+        self.images(engine, asked);
+        if asked.pick_frame_photo {
+            self.pick_frame_photo(engine);
+        }
+        if let Some((file, design, at)) = asked.library_add.clone() {
+            // An SVG of Biblioteca comes in the way it came in before: no
+            // question (spec 068).
+            if is_svg_path(&file) {
+                self.pending_svg = Some((vec![file], at));
+                self.place_svgs(engine, !design);
+            } else {
+                self.place_images(engine, &[file], at);
+            }
+        }
+        // A colour of a group, changed in every shape of it in one step
+        // (spec 067).
+        if let Some((group, old, new)) = asked.recolor
+            && let Some(page) = self.selected.page()
+            && let Some(document) = engine.edit().document()
+            && let Some(on) = document.page(page)
+        {
+            let mut commands: Vec<Box<dyn Command>> = crate::recolor::recolor(on, group, old, new)
+                .into_iter()
+                .map(|(node, value)| {
+                    Box::new(SetProperty::new(page, vec![node], value, None)) as Box<dyn Command>
+                })
+                .collect();
+            let command: Option<Box<dyn Command>> = match commands.len() {
+                0 => None,
+                1 => commands.pop(),
+                _ => Some(Box::new(Transaction::new(
+                    MessageKey("edit.set_property"),
+                    commands,
+                ))),
+            };
+            if let Some(command) = command
+                && let Err(error) = engine.edit().execute(command)
+            {
+                eprintln!("recolor: {error}");
+            }
+        }
+        // «Fondo de la página» (spec 069): the current page, every page, or
+        // an image picked for it.
+        let background_page = self.active.or_else(|| {
+            engine
+                .edit()
+                .document()
+                .and_then(|d| d.pages().first().map(|p| p.id))
+        });
+        if asked.background_pick
+            && let Some(page) = background_page
+        {
+            let picked = rfd::FileDialog::new()
+                .add_filter("Imagen", &["png", "jpg", "jpeg"])
+                .pick_file();
+            if let Some(path) = picked
+                && let Ok(natural) = image::image_dimensions(&path)
+            {
+                match engine.assets().import(&path) {
+                    Ok(asset) => {
+                        self.remember(&path, false);
+                        let background = gafira_doc::PageBackground::Image {
+                            asset,
+                            natural,
+                            fit: gafira_doc::BackgroundFit::Fill,
+                        };
+                        let command = SetProperty::page(
+                            page,
+                            Property::PageBackground(Some(background)),
+                            None,
+                        );
+                        if let Err(error) = engine.edit().execute(Box::new(command)) {
+                            eprintln!("background: {error}");
+                        }
+                    }
+                    Err(error) => eprintln!("background: {error}"),
+                }
+            }
+        }
+        if let Some(background) = asked.page_background.clone()
+            && let Some(page) = background_page
+        {
+            let command = SetProperty::page(page, Property::PageBackground(background), None);
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("background: {error}");
+            }
+        }
+        if let Some((page, spec)) = asked.draw_stroke.clone()
+            && let Some(on) = document.as_ref().and_then(|d| d.page(page))
+        {
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("draw: {error}");
+            }
+            self.active = Some(page);
+        }
+        if let Some((page, nodes)) = asked.erase.clone()
+            && !nodes.is_empty()
+            && let Err(error) = engine
+                .edit()
+                .execute(Box::new(RemoveNodes::new(page, nodes)))
+        {
+            eprintln!("erase: {error}");
+        }
+        if let Some((page, node, asset)) = asked.image_to_background
+            && let Some(natural) = natural_size(engine, asset.as_hash())
+        {
+            let background = gafira_doc::PageBackground::Image {
+                asset,
+                natural,
+                fit: gafira_doc::BackgroundFit::Fill,
+            };
+            let commands: Vec<Box<dyn Command>> = vec![
+                Box::new(SetProperty::page(
+                    page,
+                    Property::PageBackground(Some(background)),
+                    None,
+                )),
+                Box::new(RemoveNodes::new(page, vec![node])),
+            ];
+            match engine.edit().execute(Box::new(Transaction::new(
+                MessageKey("edit.set_property"),
+                commands,
+            ))) {
+                Ok(_) => {
+                    self.selected = Selection::default();
+                    self.active = Some(page);
+                }
+                Err(error) => eprintln!("image to background: {error}"),
+            }
+        }
+        if asked.background_all
+            && let Some(page) = background_page
+            && let Some(document) = engine.edit().document()
+        {
+            let background = document.page(page).and_then(|p| p.background.clone());
+            let commands: Vec<Box<dyn Command>> = document
+                .pages()
+                .iter()
+                .filter(|p| p.id != page)
+                .map(|p| {
+                    Box::new(SetProperty::page(
+                        p.id,
+                        Property::PageBackground(background.clone()),
+                        None,
+                    )) as Box<dyn Command>
+                })
+                .collect();
+            if !commands.is_empty()
+                && let Err(error) = engine.edit().execute(Box::new(Transaction::new(
+                    MessageKey("edit.set_property"),
+                    commands,
+                )))
+            {
+                eprintln!("background: {error}");
+            }
+        }
+        if !asked.library_remove.is_empty() {
+            if let Some(library) = &self.library {
+                library.remove(&asked.library_remove);
+            }
+            let mut view = self.library_view.borrow_mut();
+            view.0.files = None;
+            view.0.ticked.retain(|t| !asked.library_remove.contains(t));
+            if view
+                .0
+                .info
+                .as_ref()
+                .is_some_and(|i| asked.library_remove.contains(&(i.path.clone(), i.design)))
+            {
+                view.0.info = None;
+            }
+        }
+        if let Some(as_image) = asked.svg_as_image {
+            self.place_svgs(engine, as_image);
+        }
+        if asked.svg_cancel {
+            self.pending_svg = None;
+        }
+        if let Some(answer) = asked.sheet
+            && let Some((sheet, purpose, at)) = self.sheets.answer(answer)
+        {
+            self.bring_sheet(engine, sheet, purpose, at);
+        }
+        if asked.import_frame_shape {
+            self.import_frame_shape(engine);
+        }
         if let Some((preset, words)) = &asked.insert_text
             && let Some(document) = document
             && let Some(page) = self.current_page(document)
-            && let Ok(size) = page.size.to_px(document.dpi())
         {
-            let (font_size, display) = preset.size_and_display();
-            let tokens = &theme.tokens;
-            let style = gafira_doc::SpanStyle {
-                font: if display {
-                    tokens.typography.display.clone()
-                } else {
-                    tokens.typography.ui.clone()
-                },
-                size: font_size,
-                color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
-            };
-            let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let spec = canvas::new_text(px, words, &style);
-            let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
-            let next = NodeId::new(document.next_id());
-            match engine.edit().execute(Box::new(command)) {
-                Ok(_) => self.selected = Selection::one(page.id, next),
-                Err(error) => eprintln!("insert text: {error}"),
+            let page = page.id;
+            self.add_text(engine, document, theme, (*preset, words), (page, None));
+        }
+        if let Some((bend, words, at)) = &asked.insert_curved
+            && let Some(document) = document
+            && let Some(page) = at
+                .map(|(page, _)| page)
+                .or_else(|| self.current_page(document).map(|p| p.id))
+        {
+            self.add_curved(
+                engine,
+                document,
+                theme,
+                (*bend, words),
+                (page, at.map(|a| a.1)),
+            );
+        }
+        if let Some((index, words, at)) = &asked.insert_pairing
+            && let Some(document) = document
+            && let Some(page) = at
+                .map(|(page, _)| page)
+                .or_else(|| self.current_page(document).map(|p| p.id))
+        {
+            self.add_pairing(engine, document, (*index, words), (page, at.map(|a| a.1)));
+        }
+        // Text pasted from outside: a body text box on the current page,
+        // fitted to its words once drawn (spec 061).
+        // Spec 067: images from the system.
+        if asked.pasted_any {
+            self.paste_seen = true;
+        }
+        if asked.v_released {
+            let image = !self.paste_seen;
+            self.paste_seen = false;
+            if image {
+                self.paste_image(engine);
             }
         }
+        if !asked.paste_files.is_empty() {
+            self.place_images(engine, &asked.paste_files, None);
+        }
+        // Spec 071: a photo whose bytes arrived goes into the project's
+        // store with its credit as its name, then on the page or into the
+        // frame it was dropped on; one undo step.
+        // A frame of Marcos: in the middle of the current page or where it
+        // was dropped; selected, one undo step.
+        if let Some((kind, dropped)) = asked.insert_frame_kind
+            && let Some(document) = engine.edit().document()
+            && let Some(page) = dropped
+                .map(|(page, _)| page)
+                .or_else(|| self.current_page(&document).map(|p| p.id))
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+        {
+            let (pw, ph) = (size.width(), size.height());
+            let centre = dropped.map_or((pw / 2.0, ph / 2.0), |(_, point)| point);
+            if let Some(spec) = crate::frames::spec(kind, (pw, ph), centre) {
+                let next = NodeId::new(document.next_id());
+                let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+                match engine.edit().execute(Box::new(command)) {
+                    Ok(_) => {
+                        self.selected = Selection::one(page, next);
+                        self.active = Some(page);
+                        self.scope = None;
+                    }
+                    Err(error) => eprintln!("insert frame: {error}"),
+                }
+            }
+        }
+        // S66-09: a collage fills its whole page (owner request): one group
+        // of frames, selected, one undo step.
+        if let Some((index, dropped)) = asked.insert_collage
+            && let Some(document) = engine.edit().document()
+            && let Some(page) = dropped.or_else(|| self.current_page(&document).map(|p| p.id))
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+            && let Some(layout) = crate::collage::LAYOUTS.get(index)
+            && let Some(spec) = crate::collage::spec(layout, (size.width(), size.height()))
+        {
+            let next = NodeId::new(document.next_id());
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page, next);
+                    self.active = Some(page);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("collage: {error}"),
+            }
+        }
+        // Spec 072: an illustration as a group of vector shapes, 30 % of
+        // the page's shorter side, named by its credit.
+        if let Some((svg, credit, at)) = &asked.insert_illustration {
+            match gafira_io_vector::svg_drawing(svg) {
+                Ok(drawing) => {
+                    self.place_drawing(engine, &drawing, *at, Some((0.3, credit.clone())));
+                }
+                Err(error) => eprintln!("illustration: {error:?}"),
+            }
+        }
+        let arrived = self.photo_panel.borrow_mut().pump();
+        for arrived in arrived {
+            match engine
+                .assets()
+                .import_bytes(&arrived.photo.credit(), &arrived.bytes)
+            {
+                Ok(asset) => self.place_image(engine, asset, arrived.natural, arrived.at, true),
+                Err(error) => eprintln!("photo: {error}"),
+            }
+        }
+        if !asked.drop_files.is_empty() {
+            self.place_images(engine, &asked.drop_files, asked.drop_at);
+        }
+        if let Some(words) = &asked.paste_text
+            && let Some(document) = document
+            && let Some(page) = self.current_page(document).map(|p| p.id)
+            && let Some(added) = self.add_text(
+                engine,
+                document,
+                theme,
+                (canvas::TextPreset::Body, words),
+                (page, None),
+            )
+        {
+            self.fit_pending = Some(added);
+        }
+        if let Some((preset, words, page, point)) = &asked.drop_text
+            && let Some(document) = document
+        {
+            self.add_text(
+                engine,
+                document,
+                theme,
+                (*preset, words),
+                (*page, Some(*point)),
+            );
+        }
+        // A box that grows with its words takes their height: in the
+        // resize being dragged, or alone after a paste (spec 061).
+        if let Some((page, node, laid)) = self.text_measure.take()
+            && let Some(document) = engine.edit().document()
+            && let Some(found) = document.page(page).and_then(|p| p.node(node))
+            && let gafira_doc::NodeKind::Text(text) = &found.kind
+        {
+            let dragged = self
+                .drag
+                .as_ref()
+                .filter(|d| d.origins.first().map(|o| o.0) == Some(node))
+                .map(|d| d.gesture);
+            if let Some(fitted) = canvas::text_fit(text.sizing, &found.base.placement, laid) {
+                let gesture = match dragged {
+                    Some(gesture) => gesture,
+                    None => engine.edit().begin_gesture().ok(),
+                };
+                let command =
+                    SetProperty::new(page, vec![node], Property::Placement(fitted), gesture);
+                log(
+                    "fit text",
+                    engine.edit().execute(Box::new(command)).map(drop),
+                );
+                if dragged.is_none() && gesture.is_some() {
+                    log("end gesture", engine.edit().end_gesture());
+                }
+            }
+            if dragged.is_none() {
+                self.fit_pending = None;
+            }
+        }
+        // «Curva»: the bend of every selected text and the height of its
+        // box, which follows its arc, in one undo step (FD-44).
+        if let Some(curve) = asked.text_curve
+            && let Some(page) = self.selected.page()
+            && let Some(document) = engine.edit().document()
+            && let Some(on) = document.page(page)
+        {
+            let mut nodes = Vec::new();
+            let mut commands: Vec<Box<dyn Command>> = Vec::new();
+            for id in self.selected.nodes() {
+                if let Some(node) = on.node(*id)
+                    && let gafira_doc::NodeKind::Text(text) = &node.kind
+                {
+                    nodes.push(*id);
+                    let mut bent = text.clone();
+                    bent.curve = curve;
+                    let mut placement = node.base.placement;
+                    if let Some(h) = canvas::curved_height(&bent, placement.w, placement.h) {
+                        placement.h = h.max(1.0);
+                        commands.push(Box::new(SetProperty::new(
+                            page,
+                            vec![*id],
+                            Property::Placement(placement),
+                            None,
+                        )));
+                    }
+                }
+            }
+            if !nodes.is_empty() {
+                commands.insert(
+                    0,
+                    Box::new(SetProperty::new(
+                        page,
+                        nodes,
+                        Property::TextCurve(curve),
+                        None,
+                    )),
+                );
+                let step = Transaction::new(MessageKey("edit.set_property"), commands);
+                log(
+                    "text curve",
+                    engine.edit().execute(Box::new(step)).map(drop),
+                );
+            }
+        }
+        self.text_styles(engine, asked);
         if let (Some(text), Some((page, node))) = (&asked.text, self.selected.single()) {
             let command =
                 SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
             log("text", engine.edit().execute(Box::new(command)).map(drop));
+            // A new size or colour may change the height of the words.
+            self.fit_pending = Some((page, node));
         }
         if let Some(hold) = asked.drag_begin
             && let Some(page) = self.selected.page()
@@ -2810,7 +6887,16 @@ impl Editor {
                 });
             }
         }
-        if let (Some(delta), Some(drag)) = (asked.drag_to, self.drag.as_mut()) {
+        // The end of a line is dragged on its own (spec 058).
+        let line_end = matches!(
+            self.drag.as_ref().and_then(|d| d.hold),
+            Some(Hold::LineEnd(_))
+        );
+        if line_end && let Some(delta) = asked.drag_to {
+            self.drag_line_end(engine, delta, asked.free);
+        }
+        if let (Some(delta), Some(drag)) = (asked.drag_to.filter(|_| !line_end), self.drag.as_mut())
+        {
             drag.offset += delta;
             let zoom = self.zoom;
             let start = drag.start.as_ref().and_then(|d| d.page(drag.page));
@@ -2833,6 +6919,8 @@ impl Editor {
                 moving: &moving,
             });
             let mut snap = Snap::default();
+            // The letters a corner drag of a text box scales (owner rule).
+            let mut letters: Vec<(NodeId, Property)> = Vec::new();
             if drag.hold.is_none()
                 && let Some(field) = &field
                 && let Some(from) = start.and_then(|page| magnet::selection_box(page, &moving))
@@ -2859,28 +6947,91 @@ impl Editor {
                             } else {
                                 resize::resized(origin, handle, drag.offset, zoom, keep)
                             };
-                            match &field {
-                                Some(field) => {
-                                    let (to, edges) = match (asked.centre, keep) {
-                                        (true, _) => magnet::snap_resize_centred(
-                                            field, origin, handle, to, keep,
-                                        ),
-                                        (false, true) => {
-                                            magnet::snap_resize_kept(field, origin, handle, to)
-                                        }
-                                        (false, false) => {
-                                            magnet::snap_resize(field, origin, handle, to)
-                                        }
-                                    };
-                                    snap = edges;
+                            // A text box: a corner scales its letters with it,
+                            // a side keeps room for one letter (owner rule).
+                            let words = start.and_then(|page| page.node(*node)).and_then(|n| {
+                                match &n.kind {
+                                    gafira_doc::NodeKind::Text(text) => Some(text.content.clone()),
+                                    _ => None,
+                                }
+                            });
+                            // A group: a corner scales the letters of every
+                            // text below it by one factor, so they keep
+                            // their proportion (owner rule).
+                            let grouped = start
+                                .filter(|page| group::is_group(page, *node))
+                                .filter(|_| resize::is_corner(handle) && origin.w > 0.0);
+                            if let Some(page) = grouped {
+                                let (k, words) =
+                                    group::scaled_letters(page, *node, to.w / origin.w);
+                                for (id, words) in words {
+                                    letters.push((
+                                        id,
+                                        match words {
+                                            group::ScaledWords::Text(text) => {
+                                                Property::TextContent(text)
+                                            }
+                                            group::ScaledWords::Shape(text) => {
+                                                Property::ShapeText(Some(text))
+                                            }
+                                        },
+                                    ));
+                                }
+                                if (k - to.w / origin.w).abs() > 1e-9 {
+                                    if asked.centre {
+                                        resize::scaled_centred(origin, k).unwrap_or(to)
+                                    } else {
+                                        resize::scaled(origin, handle, k).unwrap_or(to)
+                                    }
+                                } else {
                                     to
                                 }
-                                None => to,
+                            } else if let Some(words) = words {
+                                if resize::is_corner(handle) && origin.w > 0.0 {
+                                    let k = crate::textbox::corner_factor(&words, to.w / origin.w);
+                                    let to = resize::scaled(origin, handle, k).unwrap_or(*origin);
+                                    letters.push((
+                                        *node,
+                                        Property::TextContent(crate::textbox::scaled(&words, k)),
+                                    ));
+                                    to
+                                } else {
+                                    let least = crate::textbox::min_width(&words);
+                                    let mut to = to;
+                                    if to.w < least {
+                                        if handle.x < 0 {
+                                            to.x = origin.x + origin.w - least;
+                                        }
+                                        to.w = least;
+                                    }
+                                    to
+                                }
+                            } else {
+                                match &field {
+                                    Some(field) => {
+                                        let (to, edges) = match (asked.centre, keep) {
+                                            (true, _) => magnet::snap_resize_centred(
+                                                field, origin, handle, to, keep,
+                                            ),
+                                            (false, true) => {
+                                                magnet::snap_resize_kept(field, origin, handle, to)
+                                            }
+                                            (false, false) => {
+                                                magnet::snap_resize(field, origin, handle, to)
+                                            }
+                                        };
+                                        snap = edges;
+                                        to
+                                    }
+                                    None => to,
+                                }
                             }
                         }
                         Some(Hold::Rotate { center, from }) => {
                             rotation::rotated(origin, center, from, from + drag.offset, asked.snap)
                         }
+                        // Handled by `drag_line_end`.
+                        Some(Hold::LineEnd(_)) => *origin,
                         None => {
                             let mut to = canvas::moved(origin, drag.offset, zoom);
                             to.x += snap.dx;
@@ -2905,6 +7056,15 @@ impl Editor {
                     })
                 })
                 .collect();
+            let mut commands: Vec<Box<dyn Command>> = commands;
+            for (node, words) in letters {
+                commands.push(Box::new(SetProperty::new(
+                    drag.page,
+                    vec![node],
+                    words,
+                    drag.gesture,
+                )));
+            }
             if let Some(command) = batch(commands) {
                 match engine.edit().execute(command) {
                     Ok(applied) => drag.moved |= applied == gafira_edit::Applied::Changed,
@@ -2915,13 +7075,20 @@ impl Editor {
         }
         if asked.drag_end {
             self.snapped = None;
+            self.line_view = None;
         }
         if asked.drag_end
             && let Some(drag) = self.drag.take()
         {
             log("end gesture", engine.edit().end_gesture());
             let moved: Vec<NodeId> = drag.origins.iter().map(|(node, _)| *node).collect();
-            if let Some((from, to, shift)) = asked.transfer
+            let into = self
+                .frame_target
+                .take()
+                .filter(|_| drag.moved && drag.hold.is_none());
+            if let Some(target) = into {
+                self.drop_into_frame(engine, target);
+            } else if let Some((from, to, shift)) = asked.transfer
                 && drag.moved
             {
                 self.transfer(engine, (from, to), &moved, shift);
@@ -2929,6 +7096,7 @@ impl Editor {
                 drop_outside(engine, &drag, &moved);
             }
         }
+        self.crop(engine, document.as_deref(), asked);
         if let Some((dx, dy)) = asked.nudge
             && let Some(page) = self.selected.page()
             && self.drag.is_none()
@@ -2936,10 +7104,26 @@ impl Editor {
             self.nudge(engine, page, dx, dy);
         }
         if let Some((page, guides)) = &asked.guides {
-            // A gesture of its own: one undo step that never merges with
-            // the next guide (FD-03).
+            // The guides are the same on every page (D-99): the new set
+            // goes to all of them, in a gesture of its own, one undo step
+            // that never merges with the next guide (FD-03).
             let gesture = engine.edit().begin_gesture().ok();
-            let command = SetProperty::page(*page, Property::Guides(guides.clone()), gesture);
+            let pages: Vec<PageId> = engine
+                .edit()
+                .document()
+                .map(|d| d.pages().iter().map(|p| p.id).collect())
+                .unwrap_or_else(|| vec![*page]);
+            let commands: Vec<Box<dyn Command>> = pages
+                .into_iter()
+                .map(|id| {
+                    Box::new(SetProperty::page(
+                        id,
+                        Property::Guides(guides.clone()),
+                        gesture,
+                    )) as Box<dyn Command>
+                })
+                .collect();
+            let command = Transaction::new(MessageKey("edit.guides"), commands);
             log("guides", engine.edit().execute(Box::new(command)).map(drop));
             if gesture.is_some() {
                 log("end gesture", engine.edit().end_gesture());
@@ -2993,6 +7177,13 @@ impl Editor {
         if let Some(page) = self.selected.page() {
             let values = [
                 ("fill", asked.fill.map(Property::Fill)),
+                ("gradient", asked.gradient.clone().map(Property::Gradient)),
+                ("effect", asked.effect.clone().map(Property::Effect)),
+                (
+                    "frame content",
+                    asked.frame_content.map(Property::FrameContent),
+                ),
+                ("frame fit", asked.frame_fit.map(Property::FrameFit)),
                 ("outline", asked.stroke.map(Property::Stroke)),
                 (
                     "corner radius",
@@ -3015,18 +7206,59 @@ impl Editor {
             );
         }
         self.layer_changes(engine, asked);
+        self.text_editing(engine, asked, theme);
+        if let Some(open) = asked.font_panel {
+            self.font_panel = open;
+        }
+        if let Some((family, bold, italic)) = &asked.font {
+            self.apply_font(engine, (family, *bold, *italic));
+            // Another face may change the height of the words (spec 061).
+            self.fit_pending = self.selected.single();
+        }
+        if let Some(action) = &asked.page_action {
+            self.page_action(engine, action);
+        }
         // Every selected element goes in one RemoveNodes: one undo step.
         if asked.delete
             && let Some(page) = self.selected.page()
         {
-            self.selected.clear();
-            log(
-                "delete",
-                engine
-                    .edit()
-                    .execute(Box::new(RemoveNodes::new(page, all)))
-                    .map(drop),
-            );
+            // Suprimir on a frame with a photo takes the photo out and keeps
+            // the frame, still selected; an empty frame and every other
+            // element go (spec 066). One undo step either way.
+            let (emptied, removed): (Vec<NodeId>, Vec<NodeId>) = all.iter().partition(|node| {
+                document
+                    .as_deref()
+                    .and_then(|d| frame_of(d, page, **node))
+                    .is_some_and(|frame| frame.content.is_some())
+            });
+            let mut commands: Vec<Box<dyn Command>> = Vec::new();
+            if !emptied.is_empty() {
+                commands.push(Box::new(SetProperty::new(
+                    page,
+                    emptied.clone(),
+                    Property::FrameContent(None),
+                    None,
+                )));
+            }
+            if !removed.is_empty() {
+                commands.push(Box::new(RemoveNodes::new(page, removed)));
+            }
+            self.selected = if emptied.is_empty() {
+                Selection::default()
+            } else {
+                Selection::of(page, emptied)
+            };
+            let command: Option<Box<dyn Command>> = match commands.len() {
+                0 => None,
+                1 => commands.pop(),
+                _ => Some(Box::new(Transaction::new(
+                    MessageKey("edit.set_property"),
+                    commands,
+                ))),
+            };
+            if let Some(command) = command {
+                log("delete", engine.edit().execute(command).map(drop));
+            }
         }
         if let Some(dark) = asked.dark {
             Go::Dark(dark)
@@ -3244,9 +7476,47 @@ impl Editor {
     fn load_textures(&mut self, ctx: &egui::Context, engine: &Gafira, document: Option<&Document>) {
         let Some(document) = document else { return };
         for page in document.pages() {
+            // The image of a page background, decoded once (spec 069).
+            if let Some(asset) = page
+                .background
+                .as_ref()
+                .and_then(gafira_doc::PageBackground::asset)
+            {
+                let hash = asset.as_hash();
+                self.photos
+                    .entry(hash)
+                    .or_insert_with(|| decode(engine, hash).map(Arc::new));
+            }
             for shape in canvas::shapes(page) {
+                // The photo of a frame is decoded once and cut out per
+                // frame (spec 066).
+                if let Some(content) = shape.frame.as_ref().and_then(|f| f.content) {
+                    let hash = content.asset.as_hash();
+                    self.photos
+                        .entry(hash)
+                        .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                }
+                // The logo of a QR code is decoded once (spec 080).
+                if let Some(logo) = shape.qr.as_ref().and_then(|qr| qr.logo) {
+                    let hash = logo.asset.as_hash();
+                    self.photos
+                        .entry(hash)
+                        .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                }
                 let Some(asset) = shape.image else { continue };
                 let hash = asset.as_hash();
+                // While an image is dragged its pixels are kept too, for the
+                // preview in a frame (spec 066).
+                if self.drag.is_some()
+                    && self
+                        .selected
+                        .single()
+                        .is_some_and(|(_, node)| node == shape.node)
+                {
+                    self.photos
+                        .entry(hash)
+                        .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                }
                 if self.textures.contains_key(&hash) {
                     continue;
                 }
@@ -3265,42 +7535,2288 @@ impl Editor {
     /// Biblioteca → Importar imagen…: pick a file, import it through
     /// `AssetService` (embedded, deduplicated by hash) and place it on the
     /// selected element's page, or the first one.
-    fn import_image(&mut self, engine: &mut Gafira, document: &Document) {
+    /// Crop mode (S66-07): enter it with its own gesture, so every move of
+    /// the photo and every change of its zoom merge into one undo step;
+    /// leave it ending the gesture.
+    fn crop(&mut self, engine: &mut Gafira, document: Option<&Document>, asked: &Asked) {
+        if let Some((page, node)) = asked.begin_crop {
+            if let Some(old) = self.cropping.take()
+                && old.gesture.is_some()
+                && let Err(error) = engine.edit().end_gesture()
+            {
+                eprintln!("end gesture: {error}");
+            }
+            let gesture = engine.edit().begin_gesture().ok();
+            self.cropping = Some(Cropping {
+                page,
+                node,
+                gesture,
+            });
+            self.selected = Selection::one(page, node);
+            if let Some(document) = document
+                && let Some(frame) = frame_of(document, page, node)
+                && let Some(content) = frame.content
+            {
+                let hash = content.asset.as_hash();
+                self.photos
+                    .entry(hash)
+                    .or_insert_with(|| decode(engine, hash).map(Arc::new));
+            }
+            return;
+        }
+        let Some(crop) = self.cropping else { return };
+        let frame = document.and_then(|d| frame_of(d, crop.page, crop.node));
+        let box_of = document
+            .and_then(|d| d.page(crop.page))
+            .and_then(|page| page.node(crop.node))
+            .map(|node| node.base.placement);
+        if asked.end_crop || frame.is_none() {
+            self.cropping = None;
+            if let Err(error) = engine.edit().end_gesture() {
+                eprintln!("end gesture: {error}");
+            }
+            return;
+        }
+        let (Some(frame), Some(placement)) = (frame, box_of) else {
+            return;
+        };
+        let (w, h) = (placement.w, placement.h);
+        let next = if let Some(delta) = asked.crop_drag {
+            // Screen px to px of the box (rotation is not taken into account).
+            let zoom = f64::from(self.zoom.max(1e-3));
+            let offset = frame.moved(w, h, f64::from(delta.x) / zoom, f64::from(delta.y) / zoom);
+            Some((offset, frame.content_scale, frame.content_rotation_deg))
+        } else {
+            asked.crop_set.map(|(offset, scale, degrees)| {
+                // A new zoom or turn keeps the photo covering the frame.
+                let mut set = frame.clone();
+                set.content_offset = offset;
+                set.content_scale = scale;
+                set.content_rotation_deg = degrees;
+                (set.moved(w, h, 0.0, 0.0), scale, degrees)
+            })
+        };
+        if let Some((offset, scale, degrees)) = next {
+            let command = SetProperty::new(
+                crop.page,
+                vec![crop.node],
+                Property::FrameCrop(offset, scale, degrees),
+                crop.gesture,
+            );
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("crop: {error}");
+            }
+        }
+    }
+
+    /// An image dropped on a frame becomes its photo (spec 066): the move is
+    /// undone and one step sets the photo and removes the image.
+    fn drop_into_frame(&mut self, engine: &mut Gafira, target: FrameTarget) {
+        let hash = target.asset.as_hash();
+        let natural = natural_size(engine, hash).or_else(|| {
+            self.photos
+                .get(&hash)
+                .and_then(Option::as_ref)
+                .map(|p| (p.size[0] as u32, p.size[1] as u32))
+        });
+        let Some(natural) = natural else { return };
+        if let Err(error) = engine.edit().undo() {
+            eprintln!("into frame: {error}");
+            return;
+        }
+        let content = gafira_doc::FrameContent {
+            asset: target.asset,
+            natural,
+        };
+        let commands: Vec<Box<dyn Command>> = vec![
+            Box::new(SetProperty::new(
+                target.page,
+                vec![target.frame],
+                Property::FrameContent(Some(content)),
+                None,
+            )),
+            Box::new(RemoveNodes::new(target.page, vec![target.image])),
+        ];
+        match engine.edit().execute(Box::new(Transaction::new(
+            MessageKey("edit.set_property"),
+            commands,
+        ))) {
+            Ok(_) => self.selected = Selection::one(target.page, target.frame),
+            Err(error) => {
+                eprintln!("into frame: {error}");
+                if let Err(error) = engine.edit().redo() {
+                    eprintln!("redo: {error}");
+                }
+            }
+        }
+    }
+
+    /// Image files from the system (spec 067): each imported and placed on
+    /// the page under `at` (screen), centred there, one after the other a
+    /// little apart; without `at`, in the middle of the current page. Over
+    /// a frame, the first one becomes its photo. The last one placed is
+    /// selected.
+    fn place_images(
+        &mut self,
+        engine: &mut Gafira,
+        paths: &[std::path::PathBuf],
+        at: Option<Pos2>,
+    ) {
+        for (index, path) in paths.iter().enumerate() {
+            let step = 24.0 * index as f32;
+            // An SVG waits for the person to say how it comes in: as it is
+            // or as a frame (spec 067).
+            if is_svg_path(path) {
+                let waiting = self.pending_svg.get_or_insert_with(|| (Vec::new(), at));
+                waiting.0.push(path.clone());
+                continue;
+            }
+            // A spreadsheet is a table (spec 082).
+            if crate::sheets::is_sheet(path) {
+                let at = at.map(|at| at + Vec2::splat(step));
+                self.open_sheet(engine, path, crate::sheets::Purpose::Table, at);
+                continue;
+            }
+            // A PDF makes a custom frame of its outline (S66-10).
+            if is_vector_path(path) {
+                if let Some(outline) = vector_outline(path) {
+                    self.remember(path, true);
+                    self.place_custom_frame(engine, outline, at.map(|at| at + Vec2::splat(step)));
+                }
+                continue;
+            }
+            let Ok(natural) = image::image_dimensions(path) else {
+                eprintln!("import: {} is not a readable image", path.display());
+                continue;
+            };
+            match engine.assets().import(path) {
+                Ok(asset) => {
+                    self.remember(path, false);
+                    let at = at.map(|at| at + Vec2::splat(step));
+                    self.place_image(engine, asset, natural, at, index == 0);
+                }
+                Err(error) => eprintln!("import: {error}"),
+            }
+        }
+    }
+
+    /// The SVG files waiting, brought in as the person chose (spec 067):
+    /// drawn as they are, as images, or as custom frames of their outline.
+    fn place_svgs(&mut self, engine: &mut Gafira, as_image: bool) {
+        let Some((files, at)) = self.pending_svg.take() else {
+            return;
+        };
+        for (index, file) in files.iter().enumerate() {
+            let at = at.map(|at| at + Vec2::splat(24.0 * index as f32));
+            if !as_image {
+                if let Some(outline) = vector_outline(file) {
+                    self.remember(file, true);
+                    self.place_custom_frame(engine, outline, at);
+                }
+                continue;
+            }
+            let bytes = std::fs::read(file).ok();
+            // «Tal cual»: the SVG's paths as vector shapes of Gafira, in a
+            // group; only an SVG without paths comes in as pixels.
+            if let Some(drawing) = bytes
+                .as_deref()
+                .and_then(|b| gafira_io_vector::svg_drawing(b).ok())
+            {
+                self.remember(file, false);
+                self.place_drawing(engine, &drawing, at, None);
+                continue;
+            }
+            let pixels = bytes.and_then(|bytes| gafira_io_vector::svg_pixels(&bytes, 2.0).ok());
+            let Some((rgba, w, h)) = pixels else {
+                eprintln!("svg: {} could not be drawn", file.display());
+                continue;
+            };
+            let Some(image) = image::RgbaImage::from_raw(w, h, rgba) else {
+                continue;
+            };
+            let mut png = Vec::new();
+            if image
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .is_err()
+            {
+                continue;
+            }
+            let name = file
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .map_or_else(|| "svg.png".to_owned(), |n| format!("{n}.png"));
+            match engine.assets().import_bytes(&name, &png) {
+                Ok(asset) => {
+                    self.remember(file, false);
+                    // Drawn at twice its size: placed at its own size.
+                    self.place_image(engine, asset, (w / 2, h / 2), at, index == 0);
+                }
+                Err(error) => eprintln!("svg: {error}"),
+            }
+        }
+    }
+
+    /// An SVG drawing as a group of shapes (spec 067): at its own size, or
+    /// smaller to fit in the page, centred at `at` (screen) on the page under
+    /// it, or in the middle of the current page; the group selected.
+    fn place_drawing(
+        &mut self,
+        engine: &mut Gafira,
+        drawing: &gafira_io_vector::Drawing,
+        at: Option<Pos2>,
+        sized: Option<(f64, String)>,
+    ) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => page,
+            None => match self.current_page(&document) {
+                Some(page) => page.id,
+                None => return,
+            },
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let (pw, ph) = (size.width(), size.height());
+        let (dw, dh) = drawing.size;
+        if !(dw > 0.0 && dh > 0.0) {
+            return;
+        }
+        // An illustration takes `share` of the page's shorter side; a file
+        // keeps its own size, or less to fit (spec 067).
+        let k = match &sized {
+            Some((share, _)) => share * pw.min(ph) / dw.max(dh),
+            None => (0.8 * pw.min(ph) / dw.max(dh)).min(1.0),
+        };
+        let centre = dropped.map_or((pw / 2.0, ph / 2.0), |(_, point)| point);
+        let origin = (centre.0 - dw * k / 2.0, centre.1 - dh * k / 2.0);
+        let children: Vec<gafira_edit::NodeSpec> = drawing
+            .shapes
+            .iter()
+            .map(|shape| {
+                let (x, y, w, h) = shape.bounds;
+                let mut node =
+                    gafira_doc::ShapeNode::new(gafira_doc::ShapeGeometry::Path(shape.path.clone()));
+                match &shape.fill {
+                    Some(gafira_io_vector::Fill::Solid(color)) => node.fill = Some(*color),
+                    Some(gafira_io_vector::Fill::Gradient(gradient)) => {
+                        node.gradient = Some(gradient.clone());
+                    }
+                    None => {}
+                }
+                node.stroke = shape
+                    .stroke
+                    .map(|(color, width)| gafira_doc::ShapeStroke::new(color, width * k));
+                gafira_edit::NodeSpec::new(
+                    gafira_doc::NodeKind::Shape(node),
+                    gafira_doc::Placement::new(origin.0 + x * k, origin.1 + y * k, w * k, h * k),
+                )
+            })
+            .collect();
+        let group = gafira_edit::NodeSpec::new(
+            gafira_doc::NodeKind::Group(gafira_doc::GroupNode {}),
+            gafira_doc::Placement::new(origin.0, origin.1, dw * k, dh * k),
+        )
+        .with_children(children);
+        let group = match sized {
+            Some((_, name)) => gafira_edit::NodeSpec {
+                name: Some(name),
+                ..group
+            },
+            None => group,
+        };
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![group]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+            }
+            Err(error) => eprintln!("svg: {error}"),
+        }
+    }
+
+    /// Biblioteca remembers `file` as just imported (spec 068).
+    fn remember(&self, file: &std::path::Path, design: bool) {
+        if let Some(library) = &self.library {
+            library.record(file, design);
+        }
+        self.library_view.borrow_mut().0.files = None;
+    }
+
+    /// Biblioteca (spec 068): «Importar archivo…», the search, the tabs
+    /// «Imágenes» and «Diseños», and the previews of the imported files
+    /// that still exist; a click adds one, a drag carries it to a page.
+    /// Ticked files show a bar to take them out of the list, and «Más
+    /// información» shows the details of one.
+    fn library_panel(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        use crate::library::{Tab, shown};
+        let now = ui.input(|i| i.time);
+        {
+            let mut view = self.library_view.borrow_mut();
+            // The list is read again every few seconds: a file deleted
+            // outside Gafira leaves the panel (spec 068).
+            if view.0.files.is_none() || now - view.1 > 3.0 {
+                view.0.files = Some(
+                    self.library
+                        .as_ref()
+                        .map(|l| l.existing())
+                        .unwrap_or_default(),
+                );
+                view.1 = now;
+            }
+        }
+        let info = self.library_view.borrow().0.info.clone();
+        if let Some(entry) = info {
+            self.library_info(ui, theme, texts, &entry, asked);
+            return;
+        }
+        let width = ui.available_width();
+        let import = ui.add_sized(
+            [width, 36.0],
+            egui::Button::new(
+                RichText::new(plain(texts, "library.import_file")).color(theme.c("primary.fg")),
+            )
+            .fill(theme.c("primary.bg")),
+        );
+        if import.clicked() {
+            asked.import_image = true;
+        }
+        ui.add_space(12.0);
+        let (files, tab, ticked) = {
+            let mut view = self.library_view.borrow_mut();
+            ui.add(widgets::field(
+                &mut view.0.query,
+                plain(texts, "library.search"),
+            ));
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                for (tab, key) in [
+                    (Tab::Images, "library.images"),
+                    (Tab::Designs, "library.designs"),
+                ] {
+                    let on = view.0.tab == tab;
+                    let label = RichText::new(plain(texts, key))
+                        .font(theme.font("ui-label"))
+                        .color(if on {
+                            theme.c("text")
+                        } else {
+                            theme.c("text.muted")
+                        });
+                    let response = ui.add(egui::Button::new(label).frame(false));
+                    if on {
+                        let r = response.rect;
+                        ui.painter().line_segment(
+                            [r.left_bottom(), r.right_bottom()],
+                            Stroke::new(2.0, theme.c("primary.bg")),
+                        );
+                    }
+                    if response.clicked() && !on {
+                        view.0.tab = tab;
+                        view.0.ticked.clear();
+                    }
+                    ui.add_space(8.0);
+                }
+            });
+            ui.add_space(12.0);
+            let files = shown(
+                view.0.files.as_deref().unwrap_or_default(),
+                view.0.tab,
+                &view.0.query,
+            );
+            (files, view.0.tab, view.0.ticked.clone())
+        };
+        if files.is_empty() {
+            let key = match tab {
+                Tab::Images => "library.empty_images",
+                Tab::Designs => "library.empty_designs",
+            };
+            ui.label(
+                RichText::new(plain(texts, key))
+                    .font(theme.font("body-sm"))
+                    .color(theme.c("text.muted")),
+            );
+            return;
+        }
+        let column = (ui.available_width() - 8.0) / 2.0;
+        let bar = if ticked.is_empty() { 0.0 } else { 56.0 };
+        egui::ScrollArea::vertical()
+            .max_height((ui.available_height() - bar).max(80.0))
+            .show(ui, |ui| {
+                for row in files.chunks(2) {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::splat(8.0);
+                        for entry in row {
+                            let on = ticked.contains(&(entry.path.clone(), entry.design));
+                            let look = (column, on, !ticked.is_empty());
+                            self.library_tile(ui, theme, texts, entry, look, asked);
+                        }
+                    });
+                    ui.add_space(8.0);
+                }
+            });
+        // «N seleccionados»: clear the ticks, or take the files out of the
+        // list; in both tabs (spec 068).
+        if !ticked.is_empty() {
+            // At the bottom of the panel.
+            ui.add_space((ui.available_height() - 48.0).max(8.0));
+            egui::Frame::NONE
+                .fill(theme.c("surface"))
+                .stroke(Stroke::new(1.0, theme.c("border")))
+                .corner_radius(theme.radius_md())
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(egui::Button::new("×").frame(false))
+                            .on_hover_text(plain(texts, "library.clear"))
+                            .clicked()
+                        {
+                            self.library_view.borrow_mut().0.ticked.clear();
+                        }
+                        ui.label(texts.t(&gafira_doc::msg!(
+                            "library.ticked",
+                            count = Count(ticked.len() as u64)
+                        )));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let remove =
+                                IconButton::new(Icon::Delete, plain(texts, "library.remove"))
+                                    .small()
+                                    .show(ui, theme);
+                            if remove.clicked() {
+                                asked.library_remove = ticked.clone();
+                            }
+                        });
+                    });
+                });
+        }
+    }
+
+    /// One file of Biblioteca: its preview, for a design its name and size;
+    /// under the pointer a tick box and «···» with «Más información» and
+    /// «Quitar de la lista» (spec 068).
+    fn library_tile(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        entry: &crate::LibraryEntry,
+        (width, on, ticking): (f32, bool, bool),
+        asked: &mut Asked,
+    ) {
+        let file = entry.path.as_path();
+        let design = entry.design;
+        let picture_h = if design { width } else { width * 0.75 };
+        let label_h = if design { 36.0 } else { 0.0 };
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(width, picture_h + label_h),
+            egui::Sense::click_and_drag(),
+        );
+        let picture = Rect::from_min_size(rect.min, Vec2::new(width, picture_h));
+        let preview = self.library_preview(ui.ctx(), file, design);
+        {
+            let painter = ui.painter();
+            painter.rect_filled(picture, theme.radius_md(), theme.c("surface.sunken"));
+            if let Some((texture, size)) = &preview {
+                let fit = picture.shrink(if design { 12.0 } else { 0.0 });
+                let tex = texture.size_vec2();
+                let k = (fit.width() / tex.x).min(fit.height() / tex.y);
+                let at = Rect::from_center_size(fit.center(), tex * k);
+                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                painter.image(texture.id(), at, uv, Color32::WHITE);
+                if design {
+                    let name = file
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or_default();
+                    painter.text(
+                        Pos2::new(rect.min.x, picture.max.y + 4.0),
+                        Align2::LEFT_TOP,
+                        name,
+                        theme.font("ui-label"),
+                        theme.c("text"),
+                    );
+                    painter.text(
+                        Pos2::new(rect.min.x, picture.max.y + 20.0),
+                        Align2::LEFT_TOP,
+                        format!("{:.0} × {:.0} px", size.0, size.1),
+                        theme.font("caption"),
+                        theme.c("text.secondary"),
+                    );
+                }
+            }
+        }
+        let hovered = ui.rect_contains_pointer(rect);
+        if hovered || on {
+            ui.painter().rect_stroke(
+                picture,
+                theme.radius_md(),
+                Stroke::new(2.0, theme.c("primary.bg")),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let key = (entry.path.clone(), entry.design);
+        let id = ui.id().with(("library.tile", &key));
+        let menu_open = self.library_view.borrow().0.menu.as_ref() == Some(&key);
+        // The tick box, top left, and «···», top right: drawn over the
+        // preview, so they take no room in the row (spec 068).
+        if hovered || on || ticking {
+            let at = Rect::from_min_size(picture.min + Vec2::splat(6.0), Vec2::splat(20.0));
+            let tick = ui.interact(at, id.with("tick"), egui::Sense::click());
+            let painter = ui.painter();
+            let fill = if on {
+                theme.c("primary.bg")
+            } else {
+                theme.c("surface")
+            };
+            painter.rect(
+                at,
+                4.0,
+                fill,
+                Stroke::new(1.5, theme.c("border.strong")),
+                egui::StrokeKind::Inside,
+            );
+            if on {
+                let c = at.center();
+                painter.line(
+                    vec![
+                        c + Vec2::new(-5.0, 0.0),
+                        c + Vec2::new(-1.5, 3.5),
+                        c + Vec2::new(5.0, -4.0),
+                    ],
+                    Stroke::new(2.0, theme.c("primary.fg")),
+                );
+            }
+            if tick.clicked() {
+                let mut view = self.library_view.borrow_mut();
+                if on {
+                    view.0.ticked.retain(|t| *t != key);
+                } else {
+                    view.0.ticked.push(key.clone());
+                }
+            }
+        }
+        if hovered || menu_open {
+            let at = Rect::from_min_size(
+                Pos2::new(picture.max.x - 32.0, picture.min.y + 6.0),
+                Vec2::new(26.0, 20.0),
+            );
+            let dots = ui.interact(at, id.with("dots"), egui::Sense::click());
+            let painter = ui.painter();
+            painter.rect_filled(at, 10.0, theme.c("surface"));
+            for dx in [-6.0, 0.0, 6.0] {
+                painter.circle_filled(at.center() + Vec2::new(dx, 0.0), 1.8, theme.c("text"));
+            }
+            if dots.clicked() {
+                self.library_view.borrow_mut().0.menu =
+                    if menu_open { None } else { Some(key.clone()) };
+            }
+            if menu_open {
+                let area = egui::Area::new(id.with("menu"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(at.left_bottom() + Vec2::new(-120.0, 4.0))
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                            ui.set_min_width(150.0);
+                            if ui.button(plain(texts, "library.info")).clicked() {
+                                let mut view = self.library_view.borrow_mut();
+                                view.0.info = Some(entry.clone());
+                                view.0.menu = None;
+                            }
+                            if ui.button(plain(texts, "library.remove")).clicked() {
+                                asked.library_remove = vec![key.clone()];
+                                self.library_view.borrow_mut().0.menu = None;
+                            }
+                        });
+                    });
+                // A click anywhere else closes it.
+                let pressed = ui.input(|i| i.pointer.any_pressed());
+                let pointer = ui.input(|i| i.pointer.interact_pos());
+                if pressed
+                    && !dots.contains_pointer()
+                    && pointer.is_some_and(|p| !area.response.rect.contains(p))
+                {
+                    self.library_view.borrow_mut().0.menu = None;
+                }
+            }
+        }
+        // A click adds it; the second click of a double click does not add
+        // it again (spec 068).
+        if response.clicked() && !response.double_clicked() {
+            asked.library_add = Some((entry.path.clone(), design, None));
+        }
+        let at = ui.input(|i| i.pointer.latest_pos());
+        if response.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            if let Some((texture, _)) = &preview {
+                let ghost = ui.ctx().layer_painter(egui::LayerId::new(
+                    egui::Order::Tooltip,
+                    egui::Id::new("editor.library_ghost"),
+                ));
+                let tex = texture.size_vec2();
+                let k = 96.0 / tex.x.max(tex.y);
+                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                ghost.image(
+                    texture.id(),
+                    Rect::from_center_size(at, tex * k),
+                    uv,
+                    Color32::WHITE.gamma_multiply(0.7),
+                );
+            }
+        }
+        if response.drag_stopped()
+            && let Some(at) = at
+            && canvas::drop_point(&self.page_rects, self.zoom, at).is_some()
+        {
+            asked.library_add = Some((entry.path.clone(), design, Some(at)));
+        }
+        let name = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        response.on_hover_text(name);
+    }
+
+    /// «Más información» (spec 068): the file's name with a way back, its
+    /// preview, and «Detalles»: folder, kind, format, weight, size in px and
+    /// when it was imported.
+    fn library_info(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        entry: &crate::LibraryEntry,
+        asked: &mut Asked,
+    ) {
+        let file = entry.path.as_path();
+        let name = file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        ui.horizontal(|ui| {
+            let back = IconButton::new(Icon::Back, plain(texts, "library.back"))
+                .small()
+                .show(ui, theme);
+            if back.clicked() {
+                self.library_view.borrow_mut().0.info = None;
+            }
+            ui.label(
+                RichText::new(name)
+                    .font(theme.font("ui-label"))
+                    .color(theme.c("text")),
+            );
+        });
+        ui.add_space(12.0);
+        let preview = self.library_preview(ui.ctx(), file, entry.design);
+        let width = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, width * 0.7), egui::Sense::hover());
+        ui.painter()
+            .rect_filled(rect, theme.radius_md(), theme.c("surface.sunken"));
+        if let Some((texture, _)) = &preview {
+            let fit = rect.shrink(16.0);
+            let tex = texture.size_vec2();
+            let k = (fit.width() / tex.x).min(fit.height() / tex.y);
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+            ui.painter().image(
+                texture.id(),
+                Rect::from_center_size(fit.center(), tex * k),
+                uv,
+                Color32::WHITE,
+            );
+        }
+        ui.add_space(16.0);
+        ui.label(RichText::new(plain(texts, "library.details")).font(theme.font("ui-label")));
+        ui.add_space(8.0);
+        let folder = file
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        let format = file
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_uppercase)
+            .unwrap_or_default();
+        let kind = plain(
+            texts,
+            if entry.design {
+                "library.kind_design"
+            } else {
+                "library.kind_image"
+            },
+        );
+        let weight = std::fs::metadata(file)
+            .map(|m| crate::library::bytes(m.len()))
+            .unwrap_or_default();
+        let pixels = preview
+            .as_ref()
+            .map(|(_, (w, h))| format!("{w:.0} × {h:.0} px"))
+            .unwrap_or_default();
+        let rows = [
+            ("library.saved_in", folder),
+            ("library.kind", kind),
+            ("library.format", format),
+            ("library.weight", weight),
+            ("library.pixels", pixels),
+            ("library.added", crate::library::date(entry.added)),
+        ];
+        egui::Grid::new("library.details")
+            .num_columns(2)
+            .spacing([16.0, 8.0])
+            .show(ui, |ui| {
+                for (key, value) in rows {
+                    ui.label(RichText::new(plain(texts, key)).color(theme.c("text.secondary")));
+                    ui.label(value);
+                    ui.end_row();
+                }
+            });
+        ui.add_space(16.0);
+        if ui.button(plain(texts, "library.remove")).clicked() {
+            asked.library_remove = vec![(entry.path.clone(), entry.design)];
+        }
+        ui.label(
+            RichText::new(file.display().to_string())
+                .small()
+                .color(theme.c("text.muted")),
+        );
+    }
+
+    /// The preview of a file of Biblioteca, made once: a thumbnail of an
+    /// image, or the grey silhouette of a design with its size in px.
+    fn library_preview(
+        &self,
+        ctx: &egui::Context,
+        file: &std::path::Path,
+        design: bool,
+    ) -> Option<(egui::TextureHandle, (f64, f64))> {
+        let mut previews = self.library_previews.borrow_mut();
+        previews
+            .entry(file.to_path_buf())
+            .or_insert_with(|| {
+                let name = format!("library:{}", file.display());
+                if design {
+                    let outline = vector_outline(file)?;
+                    let size = outline.size;
+                    let image = canvas::outline_preview(&outline, 256.0)?;
+                    Some((
+                        ctx.load_texture(name, image, egui::TextureOptions::LINEAR),
+                        size,
+                    ))
+                } else {
+                    let decoded = image::open(file).ok()?;
+                    let size = (f64::from(decoded.width()), f64::from(decoded.height()));
+                    let rgba = decoded.thumbnail(320, 320).to_rgba8();
+                    let image = egui::ColorImage::from_rgba_unmultiplied(
+                        [rgba.width() as usize, rgba.height() as usize],
+                        rgba.as_raw(),
+                    );
+                    Some((
+                        ctx.load_texture(name, image, egui::TextureOptions::LINEAR),
+                        size,
+                    ))
+                }
+            })
+            .clone()
+    }
+
+    /// A custom frame of `outline` (S66-10), centred at `at` (screen) on the
+    /// page under it, or in the middle of the current page; selected.
+    fn place_custom_frame(
+        &mut self,
+        engine: &mut Gafira,
+        outline: gafira_io_vector::Outline,
+        at: Option<Pos2>,
+    ) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => page,
+            None => match self.current_page(&document) {
+                Some(page) => page.id,
+                None => return,
+            },
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let px = Vec2::new(size.width() as f32, size.height() as f32);
+        let mut spec = canvas::new_custom_frame(px, outline);
+        if let Some((_, point)) = dropped {
+            spec.placement.x = point.0 - spec.placement.w / 2.0;
+            spec.placement.y = point.1 - spec.placement.h / 2.0;
+        }
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+            }
+            Err(error) => eprintln!("custom frame: {error}"),
+        }
+    }
+
+    /// «Importar forma (SVG o PDF)…» of Elementos → Marcos (S66-10).
+    fn import_frame_shape(&mut self, engine: &mut Gafira) {
+        let picked = rfd::FileDialog::new()
+            .add_filter("SVG, PDF", &["svg", "pdf"])
+            .pick_file();
+        if let Some(path) = picked
+            && let Some(outline) = vector_outline(&path)
+        {
+            self.place_custom_frame(engine, outline, None);
+        }
+    }
+
+    /// An image pasted from the system clipboard (spec 067): stored as a
+    /// PNG and placed in the middle of the current page.
+    fn paste_image(&mut self, engine: &mut Gafira) {
+        let Ok(mut clipboard) = arboard::Clipboard::new() else {
+            return;
+        };
+        let Ok(data) = clipboard.get_image() else {
+            return;
+        };
+        let (Ok(w), Ok(h)) = (u32::try_from(data.width), u32::try_from(data.height)) else {
+            return;
+        };
+        let Some(pixels) = image::RgbaImage::from_raw(w, h, data.bytes.into_owned()) else {
+            return;
+        };
+        let mut png = Vec::new();
+        if let Err(error) =
+            pixels.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        {
+            eprintln!("paste image: {error}");
+            return;
+        }
+        match engine.assets().import_bytes("pasted.png", &png) {
+            Ok(asset) => self.place_image(engine, asset, (w, h), None, false),
+            Err(error) => eprintln!("paste image: {error}"),
+        }
+    }
+
+    /// Place the image `asset` of `natural` px: in the frame under `at` when
+    /// `into_frame`, else as an image centred at `at` (screen) on the page
+    /// under it, or in the middle of the current page.
+    fn place_image(
+        &mut self,
+        engine: &mut Gafira,
+        asset: gafira_doc::timeline::AssetRef,
+        natural: (u32, u32),
+        at: Option<Pos2>,
+        into_frame: bool,
+    ) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let dropped = at.and_then(|at| {
+            let (page, point) = canvas::drop_point(&self.page_rects, self.zoom, at)?;
+            Some((page, point, at))
+        });
+        let page = match dropped {
+            Some((page, _, _)) => page,
+            None => match self.current_page(&document) {
+                Some(page) => page.id,
+                None => return,
+            },
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        // Over a frame: the photo of the frame (spec 066).
+        if into_frame
+            && let Some((_, _, screen)) = dropped
+            && let Some((_, rect)) = self.page_rects.iter().find(|(id, _)| *id == page)
+            && let Some(frame) = canvas::hit(&canvas::shapes(on), *rect, self.zoom, screen)
+            && frame_of(&document, page, frame).is_some()
+        {
+            let content = gafira_doc::FrameContent { asset, natural };
+            let command = SetProperty::new(
+                page,
+                vec![frame],
+                Property::FrameContent(Some(content)),
+                None,
+            );
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => self.selected = Selection::one(page, frame),
+                Err(error) => eprintln!("import into frame: {error}"),
+            }
+            return;
+        }
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let px = Vec2::new(size.width() as f32, size.height() as f32);
+        let mut spec = canvas::new_image(px, natural, asset);
+        if let Some((_, point, _)) = dropped {
+            spec.placement.x = point.0 - spec.placement.w / 2.0;
+            spec.placement.y = point.1 - spec.placement.h / 2.0;
+        }
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+            }
+            Err(error) => eprintln!("import image: {error}"),
+        }
+    }
+
+    /// The cells of the table `node` a change goes to: the chosen ones, or
+    /// all.
+    fn cell_range(&self, node: NodeId, table: &gafira_doc::TableNode) -> gafira_table::Range {
+        self.cells
+            .as_ref()
+            .filter(|cells| cells.node == node)
+            .map_or_else(
+                || gafira_table::Range::all(table),
+                |cells| cells.range(table),
+            )
+    }
+
+    /// The controls of a table in the bar over it (S81-10).
+    fn table_bar(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        (node, table): (NodeId, &gafira_doc::TableNode),
+        asked: &mut Asked,
+    ) {
+        use egui::containers::menu::{MenuButton, MenuConfig};
+        let range = self.cell_range(node, table);
+        let stay =
+            || MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+        // A menu holds choices; these hold controls, in their own looks.
+        let controls = |ui: &mut egui::Ui, width: f32| {
+            *ui.style_mut() = (*ui.ctx().style()).clone();
+            ui.set_width(width);
+        };
+        if let Some(act) = tables::look_controls(ui, theme, texts, table, range) {
+            asked.table_act = Some(act);
+        }
+        MenuButton::new(plain(texts, "table.align"))
+            .config(stay())
+            .ui(ui, |ui| {
+                controls(ui, 200.0);
+                if let Some(act) = tables::align_controls(ui, theme, texts, table, range) {
+                    asked.table_act = Some(act);
+                }
+            });
+        MenuButton::new(plain(texts, "table.borders"))
+            .config(stay())
+            .ui(ui, |ui| {
+                controls(ui, 200.0);
+                let mut pen = self.table_pen.get();
+                if let Some(act) = tables::border_controls(ui, theme, texts, &mut pen) {
+                    asked.table_act = Some(act);
+                }
+                self.table_pen.set(pen);
+            });
+        MenuButton::new(plain(texts, "table.room"))
+            .config(stay())
+            .ui(ui, |ui| {
+                controls(ui, 240.0);
+                if let Some(act) = tables::spacing_controls(ui, theme, texts, table) {
+                    asked.table_act = Some(act);
+                }
+            });
+    }
+
+    /// The selected table on the canvas (S81-08, S81-09): the cells chosen,
+    /// the borders that resize, the buttons of the row and the column, the
+    /// «+» at its ends and the one that moves it. Whether it took the press.
+    fn table_overlay(
+        &mut self,
+        ui: &mut egui::Ui,
+        (theme, texts): (&Theme, &Texts),
+        (response, pointer): (&egui::Response, Option<Pos2>),
+        (page, zoom): (Rect, f32),
+        shape: &Shape,
+        asked: &mut Asked,
+    ) -> bool {
+        use gafira_table::{Layout, Range};
+        let Some(table) = shape.table.as_deref() else {
+            return false;
+        };
+        let placement = shape.placement;
+        let (w, h) = (placement.w, placement.h);
+        let turn = rotation::to_screen(page, zoom, &placement);
+        let layout = Layout::of(table, (w, h));
+        let local = |at: Pos2| rotation::local(turn, at);
+        let cell_at = |at: Pos2| local(at).and_then(|p| layout.at(table, p.x, p.y));
+        let writing = self
+            .cells
+            .as_ref()
+            .is_some_and(|c| c.node == shape.node && c.writing.is_some());
+        let slack = f64::from(tables::EDGE_SLACK / zoom);
+        // The border of a column or a row near a point of the screen.
+        let edge_at = |at: Pos2| -> Option<(bool, usize)> {
+            if canvas::grip_hit(turn, &placement, at, false).is_some() {
+                return None;
+            }
+            let p = local(at)?;
+            let inside = p.x >= -slack && p.x <= w + slack && p.y >= -slack && p.y <= h + slack;
+            if !inside {
+                return None;
+            }
+            layout
+                .column_edge(p.x, slack)
+                .map(|i| (true, i))
+                .or_else(|| layout.row_edge(p.y, slack).map(|i| (false, i)))
+        };
+        let shift = ui.input(|i| i.modifiers.shift);
+        let mut took = self.table_drag.is_some();
+        if response.drag_started()
+            && let Some(at) = pointer
+        {
+            if let (Some((column, index)), Some(from)) = (edge_at(at), local(at)) {
+                let start = Box::new(TableStart {
+                    table: table.clone(),
+                    placement,
+                    at: from,
+                });
+                self.table_drag = Some(if column {
+                    TableDrag::Column(index, start)
+                } else {
+                    TableDrag::Row(index, start)
+                });
+                took = true;
+            } else if self.cells.as_ref().is_some_and(|c| c.node == shape.node)
+                && canvas::grip_hit(turn, &placement, at, false).is_none()
+                && let Some(cell) = cell_at(at)
+            {
+                asked.cells = Some(Some(tables::Cells::one(shape.page, shape.node, cell)));
+                self.table_drag = Some(TableDrag::Cells);
+                took = true;
+            }
+        }
+        if response.dragged()
+            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+        {
+            match &self.table_drag {
+                Some(TableDrag::Column(index, start) | TableDrag::Row(index, start)) => {
+                    let column = matches!(self.table_drag, Some(TableDrag::Column(..)));
+                    let turn = rotation::to_screen(page, zoom, &start.placement);
+                    if let Some(p) = rotation::local(turn, at) {
+                        let act = if column {
+                            tables::Act::ResizeColumn(*index, p.x - start.at.x)
+                        } else {
+                            tables::Act::ResizeRow(*index, p.y - start.at.y)
+                        };
+                        let all = Range::all(&start.table);
+                        asked.table_sized =
+                            tables::change(&start.table, &start.placement, all, &act)
+                                .map(|(table, placement, _)| (table, placement));
+                    }
+                }
+                Some(TableDrag::Cells) => {
+                    if let (Some(cell), Some(mut cells)) = (cell_at(at), self.cells.clone()) {
+                        cells.to = cell;
+                        asked.cells = Some(Some(cells));
+                    }
+                }
+                None => {}
+            }
+        }
+        if response.drag_stopped() && self.table_drag.take().is_some() {
+            asked.table_rest = true;
+        }
+        if response.clicked()
+            && let Some(at) = pointer
+            && let Some(cell) = cell_at(at)
+        {
+            took = true;
+            let mut cells = tables::Cells::one(shape.page, shape.node, cell);
+            if shift && let Some(now) = self.cells.as_ref().filter(|c| c.node == shape.node) {
+                cells.from = now.from;
+            }
+            asked.cells = Some(Some(cells));
+            if response.double_clicked() {
+                asked.write_cell = Some(None);
+            }
+        }
+        if response.secondary_clicked()
+            && let Some(at) = response.interact_pointer_pos()
+            && let Some(cell) = cell_at(at)
+        {
+            if !self.cell_range(shape.node, table).contains(cell.0, cell.1) || self.cells.is_none()
+            {
+                asked.cells = Some(Some(tables::Cells::one(shape.page, shape.node, cell)));
+            }
+            self.table_menu = Some((tables::Side::Cells, at));
+            took = true;
+        }
+        // The cells chosen.
+        let painter = ui.painter().clone();
+        let ring = tables::ring(theme);
+        let corners = |rect: kurbo::Rect| {
+            [
+                (rect.x0, rect.y0),
+                (rect.x1, rect.y0),
+                (rect.x1, rect.y1),
+                (rect.x0, rect.y1),
+            ]
+            .map(|(x, y)| rotation::screen(turn, x, y))
+            .to_vec()
+        };
+        let chosen = self.cells.as_ref().filter(|c| c.node == shape.node);
+        if let Some(cells) = chosen {
+            let range = cells.range(table);
+            let first = layout.cell(table, cells.from.0, cells.from.1);
+            let outline = corners(layout.range(range));
+            painter.add(egui::Shape::convex_polygon(
+                outline.clone(),
+                ring.gamma_multiply(if cells.from == cells.to { 0.0 } else { 0.15 }),
+                Stroke::NONE,
+            ));
+            // A white line under it, to be seen over any fill.
+            for (width, color) in [(4.0, Color32::WHITE), (2.0, ring)] {
+                let stroke = Stroke::new(width, color);
+                painter.add(egui::Shape::closed_line(outline.clone(), stroke));
+            }
+            painter.add(egui::Shape::closed_line(
+                corners(first),
+                Stroke::new(1.0, ring),
+            ));
+        }
+        let hover = response.hover_pos();
+        if !writing
+            && self.table_drag.is_none()
+            && let Some(at) = hover
+            && let Some((column, _)) = edge_at(at)
+        {
+            ui.ctx().set_cursor_icon(if column {
+                egui::CursorIcon::ResizeColumn
+            } else {
+                egui::CursorIcon::ResizeRow
+            });
+        }
+        // The row and the column at hand: the chosen ones, or those of the
+        // cell the pointer was over last, while it is near.
+        if let Some(cell) = hover.and_then(cell_at) {
+            self.table_hover = Some((shape.node, cell));
+        } else if ui.input(|i| i.pointer.latest_pos()).is_none_or(|at| {
+            !rotation::screen_box(page, zoom, &placement)
+                .expand(48.0)
+                .contains(at)
+        }) {
+            self.table_hover = None;
+        }
+        let at_hand = chosen.map(|c| c.range(table)).or_else(|| {
+            self.table_hover
+                .filter(|(node, _)| *node == shape.node)
+                .map(|(_, (r, c))| Range::cell(r, c).over(table))
+        });
+        if self.table_drag.is_some() {
+            return took;
+        }
+        let way = |x: f64, y: f64| {
+            let d = rotation::screen(turn, x, y) - rotation::screen(turn, 0.0, 0.0);
+            d / d.length().max(1e-3)
+        };
+        let (right, down) = (way(1.0, 0.0), way(0.0, 1.0));
+        let id = ui.id().with(("table", shape.node));
+        let all = Range::all(table);
+        if let Some(range) = at_hand {
+            let rect = layout.range(range);
+            let spots = [
+                (
+                    tables::Side::Columns,
+                    rotation::screen(turn, rect.center().x, 0.0) - down * 14.0,
+                    Vec2::new(30.0, 16.0),
+                    Vec2::new(6.0, 0.0),
+                    "table.column_menu",
+                ),
+                (
+                    tables::Side::Rows,
+                    rotation::screen(turn, 0.0, rect.center().y) - right * 14.0,
+                    Vec2::new(16.0, 30.0),
+                    Vec2::new(0.0, 6.0),
+                    "table.row_menu",
+                ),
+            ];
+            let knob = rotation::rotate_handle(turn, &placement);
+            for (side, mut centre, size, dots, key) in spots {
+                // Clear of the turn handle.
+                if centre.distance(knob) < 30.0 {
+                    centre += right * 34.0;
+                }
+                let spot = Rect::from_center_size(centre, size);
+                let name = plain(texts, key);
+                let mark = tables::Mark::Dots(dots);
+                if tables::pill(ui, theme, id.with(key), spot, mark, &name).clicked() {
+                    let (from, to) = if side == tables::Side::Columns {
+                        ((0, range.c0), (all.r1, range.c1))
+                    } else {
+                        ((range.r0, 0), (range.r1, all.c1))
+                    };
+                    let mut cells = tables::Cells::one(shape.page, shape.node, from);
+                    cells.to = to;
+                    asked.cells = Some(Some(cells));
+                    self.table_menu = Some((side, spot.right_bottom()));
+                    took = true;
+                }
+            }
+        }
+        let ends = [
+            (
+                tables::Act::ColumnLast,
+                rotation::screen(turn, w, h / 2.0) + right * 22.0,
+                "table.column_after",
+            ),
+            (
+                tables::Act::RowLast,
+                rotation::screen(turn, w / 2.0, h) + down * 22.0,
+                "table.row_after",
+            ),
+        ];
+        for (act, centre, key) in ends {
+            let spot = Rect::from_center_size(centre, Vec2::splat(22.0));
+            let name = plain(texts, key);
+            let button = id.with(("end", key));
+            if tables::change(table, &placement, all, &act).is_some()
+                && tables::pill(ui, theme, button, spot, tables::Mark::Plus, &name).clicked()
+            {
+                asked.table_act = Some(act);
+                took = true;
+            }
+        }
+        // The table moves as a whole, also while its cells are chosen.
+        let spot = Rect::from_center_size(
+            rotation::screen(turn, w / 2.0, h) + down * 22.0 + right * 30.0,
+            Vec2::splat(22.0),
+        );
+        let name = plain(texts, "table.move");
+        let moving = tables::pill(ui, theme, id.with("move"), spot, tables::Mark::Move, &name);
+        if moving.drag_started() {
+            asked.drag_begin = Some(None);
+            took = true;
+        }
+        self.table_menu(ui.ctx(), texts, (table, &placement), shape.node, asked);
+        took
+    }
+
+    /// The menu open over a table (S81-09).
+    fn table_menu(
+        &mut self,
+        ctx: &egui::Context,
+        texts: &Texts,
+        (table, placement): (&gafira_doc::TableNode, &Placement),
+        node: NodeId,
+        asked: &mut Asked,
+    ) {
+        let Some((side, at)) = self.table_menu else {
+            return;
+        };
+        let range = self.cell_range(node, table);
+        let mut open = true;
+        let mut picked = None;
+        let room = ctx.content_rect().height() - 48.0;
+        let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("table.menu"));
+        // The press that opened it does not close it.
+        let fresh = ctx.input(|i| i.pointer.any_click());
+        egui::Popup::new(
+            egui::Id::new("table.menu"),
+            ctx.clone(),
+            egui::PopupAnchor::Position(at),
+            layer,
+        )
+        .kind(egui::PopupKind::Menu)
+        .style(egui::containers::menu::menu_style)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .open_bool(&mut open)
+        .show(|ui| {
+            egui::ScrollArea::vertical()
+                .max_height(room)
+                .min_scrolled_height(room)
+                .show(ui, |ui| {
+                    picked = tables::menu(
+                        ui,
+                        texts,
+                        (table, placement),
+                        range,
+                        side,
+                        (
+                            self.table_style.is_some(),
+                            &ALIGNS.map(|(_, key, _, _)| key),
+                        ),
+                    );
+                });
+        });
+        match picked {
+            Some(tables::Picked::Act(act)) => asked.table_act = Some(act),
+            Some(tables::Picked::Menu(menu)) => asked.table_menu = Some(menu),
+            None => {}
+        }
+        let escaped = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if picked_or_closed(&asked.table_act, asked.table_menu, open || fresh) || escaped {
+            self.table_menu = None;
+        }
+    }
+
+    /// The keys of the cells chosen (S81-08, S81-11): moving, writing,
+    /// emptying, and the clipboard. Whether there are any.
+    fn cell_keys(
+        &mut self,
+        ctx: &egui::Context,
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) -> bool {
+        use egui::Key;
+        let Some(cells) = self.cells.clone().filter(|c| c.writing.is_none()) else {
+            return false;
+        };
+        let Some((table, _)) = document.and_then(|d| table_of(d, cells.page, cells.node)) else {
+            return false;
+        };
+        if self.selected.single() != Some((cells.page, cells.node)) {
+            return false;
+        }
+        let one = |cell| tables::Cells::one(cells.page, cells.node, cell);
+        let (events, modifiers) = ctx.input_mut(|i| {
+            // Tab stays here, it does not go to another control.
+            i.consume_key(Modifiers::NONE, Key::Tab);
+            i.consume_key(Modifiers::SHIFT, Key::Tab);
+            (i.raw.events.clone(), i.modifiers)
+        });
+        for event in events {
+            match event {
+                egui::Event::Copy if modifiers.alt => {
+                    asked.table_menu = Some(tables::Menu::CopyStyle)
+                }
+                egui::Event::Copy => asked.table_menu = Some(tables::Menu::Copy),
+                egui::Event::Cut => {
+                    asked.table_menu = Some(tables::Menu::Copy);
+                    asked.table_act = Some(tables::Act::Clear);
+                }
+                egui::Event::Paste(_) if modifiers.alt => {
+                    asked.table_menu = Some(tables::Menu::PasteStyle);
+                }
+                egui::Event::Paste(text) => {
+                    asked.table_act = Some(tables::Act::Paste(gafira_table::parse_grid(&text)));
+                }
+                egui::Event::Text(text) if !modifiers.command => {
+                    // Several letters may come in one frame.
+                    match &mut asked.write_cell {
+                        Some(Some(words)) => words.push_str(&text),
+                        _ if !text.trim().is_empty() => asked.write_cell = Some(Some(text)),
+                        _ => {}
+                    }
+                }
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => {
+                    let steps = match key {
+                        Key::ArrowUp => Some((-1, 0)),
+                        Key::ArrowDown => Some((1, 0)),
+                        Key::ArrowLeft => Some((0, -1)),
+                        Key::ArrowRight => Some((0, 1)),
+                        _ => None,
+                    };
+                    if let Some((rows, cols)) = steps {
+                        let mut next = cells.clone();
+                        if modifiers.shift {
+                            let end = one(cells.to).step(&table, rows, cols);
+                            next.to = end;
+                        } else {
+                            next = one(cells.step(&table, rows, cols));
+                        }
+                        asked.cells = Some(Some(next));
+                        continue;
+                    }
+                    match key {
+                        Key::Escape => asked.cells = Some(None),
+                        Key::Enter | Key::F2 => asked.write_cell = Some(None),
+                        Key::Tab => match cells.tab(&table, modifiers.shift) {
+                            Some(cell) => asked.cells = Some(Some(one(cell))),
+                            None if !modifiers.shift => {
+                                asked.table_act = Some(tables::Act::RowLast);
+                            }
+                            None => {}
+                        },
+                        Key::Delete | Key::Backspace => {
+                            asked.table_act = Some(tables::Act::Clear);
+                        }
+                        Key::A if modifiers.command => {
+                            let all = gafira_table::Range::all(&table);
+                            let mut next = one((0, 0));
+                            next.to = (all.r1, all.c1);
+                            asked.cells = Some(Some(next));
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
+    /// The field of the cell being written (S81-08), over it, in its looks.
+    fn cell_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        pages: &[Arc<Page>],
+        page_rects: &[(PageId, Rect)],
+        zoom: f32,
+        asked: &mut Asked,
+    ) {
+        let Some(cells) = self.cells.as_mut() else {
+            return;
+        };
+        let (page_id, node_id, (r, c)) = (cells.page, cells.node, cells.from);
+        let Some(writing) = cells.writing.as_mut() else {
+            return;
+        };
+        let Some((page, rect)) = pages.iter().find(|p| p.id == page_id).zip(
+            page_rects
+                .iter()
+                .find(|(id, _)| *id == page_id)
+                .map(|p| p.1),
+        ) else {
+            return;
+        };
+        let Some(node) = page.node(node_id) else {
+            return;
+        };
+        let gafira_doc::NodeKind::Table(table) = &node.kind else {
+            return;
+        };
+        let Some(cell) = table.cell(r, c) else {
+            return;
+        };
+        let placement = node.base.placement;
+        let layout = gafira_table::Layout::of(table, (placement.w, placement.h));
+        let own = layout.cell(table, r, c);
+        let turn = rotation::to_screen(rect, zoom, &placement);
+        let centre = rotation::screen(turn, own.center().x, own.center().y);
+        let size = Vec2::new(own.width() as f32, own.height() as f32) * zoom;
+        let pad = table.padding as f32 * zoom;
+        let place = Rect::from_center_size(centre, size);
+        let inner = Rect::from_min_max(
+            Pos2::new(place.left() + pad.min(size.x / 3.0), place.top()),
+            Pos2::new(place.right() - pad.min(size.x / 3.0), place.bottom()),
+        );
+        // Enter goes down, Tab on, Escape ends; Shift+Enter breaks the line.
+        let keys = ui.input_mut(|i| {
+            let shift_tab = i.consume_key(Modifiers::SHIFT, egui::Key::Tab);
+            (
+                i.consume_key(Modifiers::NONE, egui::Key::Escape),
+                shift_tab,
+                i.consume_key(Modifiers::NONE, egui::Key::Tab),
+                !i.modifiers.shift
+                    && !i.modifiers.alt
+                    && i.consume_key(Modifiers::NONE, egui::Key::Enter),
+            )
+        });
+        let ended = match keys {
+            (true, ..) => Some(CellMove::Stay),
+            (_, true, ..) => Some(CellMove::Before),
+            (_, _, true, _) => Some(CellMove::Next),
+            (.., true) => Some(CellMove::Down),
+            _ => None,
+        };
+        let style = span_of(&cell.style);
+        let font = egui::FontId::new(
+            (style.size as f32 * zoom).max(1.0),
+            text_family(ui.ctx(), theme, &style),
+        );
+        let halign = match cell.style.align {
+            gafira_doc::TextAlign::Center => Align::Center,
+            gafira_doc::TextAlign::Right => Align::RIGHT,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => Align::LEFT,
+        };
+        let valign = match cell.style.valign {
+            gafira_doc::VerticalAlign::Top => Align::TOP,
+            gafira_doc::VerticalAlign::Middle => Align::Center,
+            gafira_doc::VerticalAlign::Bottom => Align::BOTTOM,
+        };
+        let field = egui::TextEdit::multiline(&mut writing.words)
+            .id(cell_id(node_id, (r, c)))
+            .lock_focus(true)
+            .frame(false)
+            .margin(egui::Margin::ZERO)
+            .background_color(Color32::TRANSPARENT)
+            .font(font)
+            .text_color(canvas::screen_color(cell.style.color))
+            .horizontal_align(halign)
+            .vertical_align(valign)
+            .desired_rows(1)
+            .desired_width(inner.width());
+        let response = ui.put(inner, field);
+        if response.lost_focus() {
+            asked.end_cell = Some(CellMove::Stay);
+        }
+        if response.changed() {
+            asked.cell_words = Some(writing.words.clone());
+        }
+        if ended.is_some() {
+            asked.end_cell = ended;
+        }
+    }
+
+    /// Changes the selected table; the cells chosen follow. Within
+    /// `gesture`, the changes are one undo step.
+    fn change_table(
+        &mut self,
+        engine: &mut Gafira,
+        act: &tables::Act,
+        gesture: Option<GestureId>,
+    ) -> bool {
+        let Some((page, node)) = self.selected.single() else {
+            return false;
+        };
+        let Some((table, placement)) = engine
+            .edit()
+            .document()
+            .and_then(|d| table_of(&d, page, node))
+        else {
+            return false;
+        };
+        let range = self.cell_range(node, &table);
+        let Some((next, box_of, now)) = tables::change(&table, &placement, range, act) else {
+            return false;
+        };
+        let done = set_table(engine, (page, node), next, box_of, gesture);
+        if done && let Some(cells) = self.cells.as_mut().filter(|c| c.node == node) {
+            cells.from = (now.r0, now.c0);
+            cells.to = (now.r1, now.c1);
+        }
+        done
+    }
+
+    /// The tables asked for this frame (spec 081).
+    fn tables(&mut self, engine: &mut Gafira, asked: &Asked) {
+        if let Some((template, at)) = asked.insert_table {
+            self.insert_table(engine, template, at);
+        }
+        // The writing ends before anything else happens to the table.
+        if let Some(words) = &asked.cell_words
+            && let Some(cells) = self.cells.as_mut()
+            && let Some(writing) = cells.writing.as_mut()
+        {
+            writing.words.clone_from(words);
+            let (cell, gesture) = (cells.from, writing.gesture);
+            self.change_table(engine, &tables::Act::Words(cell, words.clone()), gesture);
+        }
+        if let Some(to) = asked.end_cell {
+            self.end_cell(engine, to);
+        }
+        if let Some(cells) = &asked.cells {
+            if self.cells.as_ref().is_some_and(|c| c.writing.is_some()) {
+                self.end_cell(engine, CellMove::Stay);
+            }
+            self.cells.clone_from(cells);
+        }
+        if let Some(words) = &asked.write_cell {
+            self.write_cell(engine, words.clone());
+        }
+        if let Some((table, placement)) = &asked.table_sized
+            && let Some(at) = self.selected.single()
+        {
+            let gesture = self.table_step(engine);
+            set_table(engine, at, table.clone(), *placement, gesture);
+        }
+        if let Some(act) = &asked.table_act {
+            // A slider or a colour picker goes on changing: one step until
+            // it is let go.
+            let gesture = match act {
+                tables::Act::Fill(_)
+                | tables::Act::Ink(_)
+                | tables::Act::Size(_)
+                | tables::Act::Spacing(_)
+                | tables::Act::Padding(_) => self.table_step(engine),
+                _ => {
+                    self.end_table_step(engine);
+                    None
+                }
+            };
+            self.change_table(engine, act, gesture);
+        }
+        match asked.table_menu {
+            Some(tables::Menu::CopyStyle) => {
+                self.table_style = self.first_cell(engine).map(|cell| cell.style);
+            }
+            Some(tables::Menu::PasteStyle) => {
+                if let Some(style) = self.table_style.clone() {
+                    let act = tables::Act::PasteStyle(Box::new(style));
+                    self.change_table(engine, &act, None);
+                }
+            }
+            Some(tables::Menu::Excel) => self.save_excel(engine),
+            // With the charts, and what the frame does.
+            Some(tables::Menu::Chart) => {}
+            // These are done elsewhere, in the same frame.
+            Some(
+                tables::Menu::Copy
+                | tables::Menu::Duplicate
+                | tables::Menu::Delete
+                | tables::Menu::Lock
+                | tables::Menu::Align(_),
+            )
+            | None => {}
+        }
+        if asked.table_rest {
+            self.end_table_step(engine);
+        }
+    }
+
+    /// The gesture of the changes being made to a table, opened if needed.
+    fn table_step(&mut self, engine: &mut Gafira) -> Option<GestureId> {
+        if self.table_gesture.is_none() {
+            self.table_gesture = engine.edit().begin_gesture().ok();
+        }
+        self.table_gesture
+    }
+
+    fn end_table_step(&mut self, engine: &mut Gafira) {
+        if self.table_gesture.take().is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
+    /// The first of the cells chosen in the selected table.
+    fn first_cell(&self, engine: &mut Gafira) -> Option<gafira_doc::TableCell> {
+        let (page, node) = self.selected.single()?;
+        let (table, _) = table_of(&*engine.edit().document()?, page, node)?;
+        let range = self.cell_range(node, &table);
+        table.cell(range.r0, range.c0).cloned()
+    }
+
+    /// Starts writing in the first cell chosen, over `words` or its own.
+    fn write_cell(&mut self, engine: &mut Gafira, words: Option<String>) {
+        self.end_table_step(engine);
+        let Some(cell) = self.cells.as_ref().map(|c| c.from) else {
+            return;
+        };
+        let own = self.cells.as_ref().and_then(|c| {
+            let (table, _) = table_of(&*engine.edit().document()?, c.page, c.node)?;
+            Some(table.cell(cell.0, cell.1)?.text.clone())
+        });
+        let gesture = engine.edit().begin_gesture().ok();
+        if let Some(cells) = self.cells.as_mut() {
+            cells.to = cells.from;
+            cells.writing = Some(tables::Writing {
+                words: words.clone().or(own).unwrap_or_default(),
+                gesture,
+                focused: false,
+            });
+        }
+        if let Some(words) = words {
+            self.change_table(engine, &tables::Act::Words(cell, words), gesture);
+        }
+    }
+
+    /// Ends the writing in a cell and goes on to another; Tab in the last
+    /// one adds a row (S81-08).
+    fn end_cell(&mut self, engine: &mut Gafira, to: CellMove) {
+        let Some(cells) = self.cells.as_mut() else {
+            return;
+        };
+        if cells.writing.take().is_some_and(|w| w.gesture.is_some()) {
+            let _ = engine.edit().end_gesture();
+        }
+        let cells = cells.clone();
+        let Some((table, _)) = engine
+            .edit()
+            .document()
+            .and_then(|d| table_of(&d, cells.page, cells.node))
+        else {
+            return;
+        };
+        let next = match to {
+            CellMove::Stay => None,
+            CellMove::Down => Some(cells.step(&table, 1, 0)),
+            CellMove::Before => cells.tab(&table, true),
+            CellMove::Next => match cells.tab(&table, false) {
+                Some(cell) => Some(cell),
+                None => {
+                    self.change_table(engine, &tables::Act::RowLast, None);
+                    None
+                }
+            },
+        };
+        if let Some(cell) = next {
+            self.cells = Some(tables::Cells::one(cells.page, cells.node, cell));
+        }
+    }
+
+    /// A new table, centred where it was dropped or in the middle of the
+    /// current page, selected; one undo step (S81-07).
+    fn insert_table(
+        &mut self,
+        engine: &mut Gafira,
+        template: crate::table_templates::Template,
+        at: Option<Pos2>,
+    ) {
+        let texts = Texts::new(engine.settings().locale().locale);
+        let name = plain(&texts, template.key());
+        self.put_table(engine, at, |page_px, _, point| {
+            crate::table_templates::spec(template.table(&texts), page_px, point, name)
+        });
+    }
+
+    /// Reads the spreadsheet at `path`: its only sheet comes in, or the
+    /// person is asked.
+    fn open_sheet(
+        &mut self,
+        engine: &mut Gafira,
+        path: &std::path::Path,
+        purpose: crate::sheets::Purpose,
+        at: Option<Pos2>,
+    ) {
+        let texts = Texts::new(engine.settings().locale().locale);
+        let found = crate::sheets::read(path, &texts);
+        if let Some(sheet) = self.sheets.take(path, (purpose, at), found) {
+            self.bring_sheet(engine, sheet, purpose, at);
+        }
+    }
+
+    /// A sheet as a table, as a new chart, or as the data of one.
+    fn bring_sheet(
+        &mut self,
+        engine: &mut Gafira,
+        sheet: gafira_io_xlsx::ReadSheet,
+        purpose: crate::sheets::Purpose,
+        at: Option<Pos2>,
+    ) {
+        use crate::sheets::Purpose;
+        match purpose {
+            Purpose::Table => self.insert_sheet(engine, sheet, at),
+            Purpose::Chart => self.chart_from(engine, &sheet.data, sheet.name),
+            Purpose::Data(page, node) => {
+                let document = engine.edit().document();
+                let chart = document.and_then(|d| chart_of(&d, page, node));
+                if let Some(mut chart) = chart
+                    && gafira_chart::from_grid(&mut chart, &sheet.data)
+                {
+                    self.end_chart_step(engine);
+                    set_chart(engine, (page, node), chart, None);
+                }
+            }
+        }
+    }
+
+    /// The file of a spreadsheet, picked.
+    fn pick_sheet() -> Option<std::path::PathBuf> {
+        rfd::FileDialog::new()
+            .add_filter("Excel, CSV", &["xlsx", "xlsm", "csv", "tsv"])
+            .pick_file()
+    }
+
+    /// A new chart of `data`, selected and with its panel open (S83-06).
+    fn chart_from(&mut self, engine: &mut Gafira, data: &[Vec<String>], name: String) {
+        let mut chart = crate::chart_templates::dressed(gafira_doc::ChartKind::GroupedColumns);
+        if !gafira_chart::from_grid(&mut chart, data) {
+            // An empty table: the sample shows what goes where.
+            let texts = Texts::new(engine.settings().locale().locale);
+            chart = crate::chart_templates::TEMPLATES[0].chart(&texts);
+        }
+        self.put_chart(engine, chart, name, None);
+        self.chart_edit = self
+            .selected
+            .single()
+            .map(|(page, node)| charts::Editing::new(page, node));
+    }
+
+    /// A new chart, centred where it was dropped or in the middle of the
+    /// current page, selected; one undo step.
+    fn put_chart(
+        &mut self,
+        engine: &mut Gafira,
+        chart: gafira_doc::ChartNode,
+        name: String,
+        at: Option<Pos2>,
+    ) {
+        self.put_table(engine, at, |page_px, _, point| {
+            crate::chart_templates::spec(chart, page_px, point, name)
+        });
+    }
+
+    /// The images of a frame (spec 084).
+    fn images(&mut self, engine: &mut Gafira, asked: &Asked) {
+        use crate::vision::Ask;
+        let store = Arc::clone(&engine.ports().store);
+        match asked.vision {
+            Some(Ask::Work(target, work)) => self.studio.work(&store, target, work),
+            Some(Ask::Erase(target)) => self.studio.open(&store, target),
+            Some(Ask::Background(target)) => {
+                let base = target.image.base();
+                set_image(engine, target, target.image.edited(base, base));
+            }
+            Some(Ask::Original(target)) => {
+                let original = target.image.original();
+                set_image(engine, target, gafira_doc::ImageNode::new(original));
+            }
+            Some(Ask::Cancel) => self.studio.cancel(),
+            Some(Ask::Models) => self.studio.open_models(),
+            None => {}
+        }
+        if let Some(answer) = asked.eraser
+            && let Some(eraser) = self.eraser.take()
+            && answer == crate::eraser::Answer::Done
+            && let Some(made) = eraser.result()
+        {
+            let target = crate::vision::Target {
+                page: eraser.page,
+                node: eraser.node,
+                image: eraser.image,
+            };
+            self.studio.keep(&store, target, made);
+        }
+    }
+
+    /// What the models made, if the image is still the one they took.
+    fn images_arrived(&mut self, ctx: &egui::Context, engine: &mut Gafira) {
+        use crate::vision::Arrived;
+        for arrived in self.studio.pump(ctx) {
+            let target = match &arrived {
+                Arrived::Image(target, _) | Arrived::Erase(target, _) => *target,
+            };
+            let now = engine
+                .edit()
+                .document()
+                .and_then(|d| image_of(&d, target.page, target.node));
+            if now != Some(target.image) {
+                continue;
+            }
+            match arrived {
+                Arrived::Image(target, image) => set_image(engine, target, image),
+                Arrived::Erase(target, opened) => {
+                    let at = (target.page, target.node, target.image);
+                    let (base, cut) = *opened;
+                    self.eraser = crate::eraser::Eraser::new(at, base, &cut);
+                }
+            }
+        }
+    }
+
+    /// The open undo step of a chart is over.
+    fn end_chart_step(&mut self, engine: &mut Gafira) {
+        if self.chart_gesture.take().is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
+    /// The charts of a frame (spec 083).
+    fn charts(&mut self, engine: &mut Gafira, asked: &Asked) {
+        use crate::chart_templates::Chosen;
+        // Another field, another chart, or the controls at rest.
+        if let Some((node, field, _)) = self.chart_gesture {
+            let same = asked
+                .chart
+                .as_ref()
+                .is_none_or(|(_, of, _)| *of == node && asked.chart_field == field);
+            if asked.chart_rest || !same {
+                self.end_chart_step(engine);
+            }
+        }
+        if let Some((page, node, chart)) = &asked.chart {
+            if self.chart_gesture.is_none() {
+                let gesture = engine.edit().begin_gesture().ok();
+                self.chart_gesture = gesture.map(|g| (*node, asked.chart_field, g));
+            }
+            let gesture = self.chart_gesture.map(|(_, _, gesture)| gesture);
+            set_chart(engine, (*page, *node), (**chart).clone(), gesture);
+        }
+        match &asked.chart_chosen {
+            Some(Chosen::Insert(template, at)) => {
+                let texts = Texts::new(engine.settings().locale().locale);
+                let name = plain(&texts, template.key);
+                self.put_chart(engine, template.chart(&texts), name, *at);
+            }
+            Some(Chosen::Data) => {
+                if let Some(path) = Self::pick_sheet() {
+                    let purpose = crate::sheets::Purpose::Chart;
+                    self.open_sheet(engine, &path, purpose, None);
+                }
+            }
+            None => {}
+        }
+        if asked.table_menu == Some(tables::Menu::Chart)
+            && let Some((page, node)) = self.selected.single()
+            && let Some(document) = engine.edit().document()
+            && let Some((table, _)) = table_of(&document, page, node)
+        {
+            let data: Vec<Vec<String>> = table
+                .cells
+                .chunks(table.columns.len().max(1))
+                .map(|row| row.iter().map(|cell| cell.text.clone()).collect())
+                .collect();
+            let name = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .and_then(|n| n.base.name.clone());
+            self.chart_from(engine, &data, name.unwrap_or_default());
+        }
+        if let Some((page, node)) = asked.chart_import
+            && let Some(path) = Self::pick_sheet()
+        {
+            let purpose = crate::sheets::Purpose::Data(page, node);
+            self.open_sheet(engine, &path, purpose, None);
+        }
+        if let Some((page, node)) = asked.chart_open {
+            self.chart_edit = Some(charts::Editing::new(page, node));
+        }
+        if asked.chart_close {
+            self.chart_edit = None;
+        }
+    }
+
+    /// The panel «Gráfico» in place of the one of the rail, and the wide
+    /// table of data; whether it is open (S83-07).
+    fn chart_panel_of(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) -> bool {
+        let Some(edit) = self.chart_edit.as_mut() else {
+            return false;
+        };
+        let at = (edit.page, edit.node);
+        let Some((chart, size)) = document.and_then(|d| {
+            let node = d.page(at.0)?.node(at.1)?;
+            let p = &node.base.placement;
+            Some((chart_of(d, at.0, at.1)?, (p.w, p.h)))
+        }) else {
+            return false;
+        };
+        let wide = edit.wide(ctx, theme, texts, (&chart, size));
+        take_chart(asked, at, wide);
+        egui::SidePanel::left("editor.chart")
+            .default_width(px(theme.tokens.size.panel_left).max(340.0))
+            .width_range(300.0..=520.0)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.c("bg"))
+                    .stroke(Stroke::new(1.0, theme.c("border")))
+                    .inner_margin(egui::Margin::same(16)),
+            )
+            .show(ctx, |ui| {
+                let asks = edit.panel(ui, theme, texts, &chart);
+                take_chart(asked, at, asks);
+            });
+        true
+    }
+
+    /// A sheet as a table, as [`Self::insert_table`] (S82-05).
+    fn insert_sheet(
+        &mut self,
+        engine: &mut Gafira,
+        sheet: gafira_io_xlsx::ReadSheet,
+        at: Option<Pos2>,
+    ) {
+        self.put_table(engine, at, |page_px, dpi, point| {
+            crate::table_templates::sheet_spec(sheet.table, page_px, dpi, point, sheet.name)
+        });
+    }
+
+    /// The table `spec` makes for the size of a page, its dpi and a point of
+    /// it, on that page.
+    fn put_table(
+        &mut self,
+        engine: &mut Gafira,
+        at: Option<Pos2>,
+        spec: impl FnOnce((f64, f64), f64, Option<(f64, f64)>) -> gafira_edit::NodeSpec,
+    ) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => Some(page),
+            None => self.current_page(&document).map(|p| p.id),
+        };
+        let Some(on) = page.and_then(|page| document.page(page)) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let spec = spec(
+            (size.width(), size.height()),
+            f64::from(document.dpi().get()),
+            dropped.map(|(_, point)| point),
+        );
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(on.id, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(on.id, next);
+                self.active = Some(on.id);
+                self.scope = None;
+                self.cells = None;
+            }
+            Err(error) => eprintln!("insert table: {error}"),
+        }
+    }
+
+    /// «Guardar como Excel…» of the selected table (S81-14).
+    fn save_excel(&self, engine: &mut Gafira) {
+        let Some((page, node)) = self.selected.single() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some((table, placement)) = table_of(&document, page, node) else {
+            return;
+        };
+        let name = document
+            .page(page)
+            .and_then(|p| p.node(node))
+            .and_then(|n| n.base.name.clone())
+            .unwrap_or_default();
+        let picked = rfd::FileDialog::new()
+            .add_filter("Excel", &["xlsx"])
+            .set_file_name(format!(
+                "{}.xlsx",
+                if name.is_empty() { "tabla" } else { &name }
+            ))
+            .save_file();
+        let Some(path) = picked else { return };
+        let sheet = gafira_io_xlsx::Sheet {
+            name: &name,
+            table: &table,
+            size: (placement.w.abs(), placement.h.abs()),
+            dpi: f64::from(document.dpi().get()),
+        };
+        let saved = gafira_io_xlsx::workbook(&[sheet])
+            .and_then(|bytes| std::fs::write(path.with_extension("xlsx"), bytes));
+        if let Err(error) = saved {
+            eprintln!("excel: {error}");
+        }
+    }
+
+    /// The QR codes asked for this frame (spec 080): a new one, a change in
+    /// Propiedades, a logo, or «Convertir en formas».
+    fn qr_codes(&mut self, engine: &mut Gafira, asked: &Asked) {
+        if let Some((code, at)) = &asked.insert_qr {
+            self.insert_qr(engine, (**code).clone(), *at);
+        }
+        if asked.qr_panel_logo
+            && let Some(logo) = self.pick_logo(engine)
+        {
+            self.qr_panel.borrow_mut().draft.logo = Some(logo);
+        }
+        let selected = self.selected.single();
+        if let (Some(code), Some((page, node))) = (&asked.qr, selected) {
+            self.set_qr(engine, page, node, (**code).clone());
+        }
+        if asked.qr_logo
+            && let Some((page, node)) = selected
+            && let Some(document) = engine.edit().document()
+            && let Some(mut code) = qr_of(&document, page, node)
+            && let Some(logo) = self.pick_logo(engine)
+        {
+            code.logo = Some(logo);
+            self.set_qr(engine, page, node, code);
+        }
+        // The changes end with the focus, or with the selection.
+        if let Some((node, _)) = self.qr_gesture
+            && (asked.qr_rest || asked.qr_to_shapes || selected.map(|s| s.1) != Some(node))
+        {
+            self.qr_gesture = None;
+            if let Err(error) = engine.edit().end_gesture() {
+                eprintln!("end gesture: {error}");
+            }
+        }
+        if asked.qr_to_shapes
+            && let Some((page, node)) = selected
+        {
+            self.qr_to_shapes(engine, page, node);
+        }
+    }
+
+    /// A new code, centred where it was dropped or in the middle of the
+    /// current page, selected; one undo step (S80-11).
+    fn insert_qr(&mut self, engine: &mut Gafira, mut code: gafira_doc::QrNode, at: Option<Pos2>) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        // A logo picked in another document is not in this one.
+        code.logo = code.logo.filter(|l| document.asset(&l.asset).is_some());
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => Some(page),
+            None => self.current_page(&document).map(|p| p.id),
+        };
+        let Some(on) = page.and_then(|page| document.page(page)) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let spec = crate::qr::spec(
+            code,
+            (size.width(), size.height()),
+            dropped.map(|(_, point)| point),
+        );
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(on.id, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(on.id, next);
+                self.active = Some(on.id);
+                self.scope = None;
+            }
+            Err(error) => eprintln!("insert QR code: {error}"),
+        }
+    }
+
+    /// Sets the code `node`, within the gesture of its fields.
+    fn set_qr(
+        &mut self,
+        engine: &mut Gafira,
+        page: PageId,
+        node: NodeId,
+        code: gafira_doc::QrNode,
+    ) {
+        if self.qr_gesture.is_none_or(|(of, _)| of != node) {
+            self.qr_gesture = engine.edit().begin_gesture().ok().map(|g| (node, g));
+        }
+        let gesture = self.qr_gesture.map(|(_, gesture)| gesture);
+        let command = SetProperty::new(page, vec![node], Property::Qr(Box::new(code)), gesture);
+        if let Err(error) = engine.edit().execute(Box::new(command)) {
+            eprintln!("QR code: {error}");
+        }
+    }
+
+    /// Asks for an image and brings it into the document (S80-10).
+    fn pick_logo(&mut self, engine: &mut Gafira) -> Option<gafira_doc::QrLogo> {
+        let path = rfd::FileDialog::new()
+            .add_filter("PNG, JPEG", &["png", "jpg", "jpeg"])
+            .pick_file()?;
+        let Ok(natural) = image::image_dimensions(&path) else {
+            eprintln!("logo: {} is not a readable image", path.display());
+            return None;
+        };
+        match engine.assets().import(&path) {
+            Ok(asset) => {
+                let hash = asset.as_hash();
+                self.photos
+                    .entry(hash)
+                    .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                Some(gafira_doc::QrLogo {
+                    asset,
+                    natural,
+                    share: 0.2,
+                    clear_behind: true,
+                })
+            }
+            Err(error) => {
+                eprintln!("logo: {error}");
+                None
+            }
+        }
+    }
+
+    /// «Convertir en formas» (S80-13): a group of shapes in the place of
+    /// the code, selected; one undo step.
+    fn qr_to_shapes(&mut self, engine: &mut Gafira, page: PageId, node: NodeId) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Some(found) = on.node(node) else { return };
+        let gafira_doc::NodeKind::Qr(code) = &found.kind else {
+            return;
+        };
+        let base = &found.base;
+        let Some(mut spec) = crate::qr::as_shapes(code, &base.placement) else {
+            return;
+        };
+        spec.name.clone_from(&base.name);
+        spec.opacity = base.opacity;
+        spec.blend = base.blend;
+        let Some((parent, list)) = group::siblings(on, &[node]) else {
+            return;
+        };
+        let index = list.iter().position(|id| *id == node).unwrap_or(0);
+        let next = NodeId::new(document.next_id());
+        let commands: Vec<Box<dyn Command>> = vec![
+            Box::new(InsertNodes::new(page, parent, index + 1, vec![spec])),
+            Box::new(RemoveNodes::new(page, vec![node])),
+        ];
+        let command = Transaction::new(MessageKey("edit.set_property"), commands);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => self.selected = Selection::one(page, next),
+            Err(error) => eprintln!("QR code to shapes: {error}"),
+        }
+    }
+
+    /// «Poner foto…» (spec 066, S66-06): pick an image, import it through
+    /// `AssetService` and make it the photo of the selected frames, in one
+    /// undo step; it fills them («Rellenar») unless they fit otherwise.
+    fn pick_frame_photo(&mut self, engine: &mut Gafira) {
+        let Some(page) = self.selected.page() else {
+            return;
+        };
+        let nodes = self.selected.nodes().to_vec();
         let picked = rfd::FileDialog::new()
             .add_filter("Imagen", &["png", "jpg", "jpeg"])
             .pick_file();
         let Some(path) = picked else { return };
-        let Ok(pixels) = image::image_dimensions(&path) else {
-            eprintln!("import image: {} is not a readable image", path.display());
+        let Ok(natural) = image::image_dimensions(&path) else {
+            eprintln!("frame photo: {} is not a readable image", path.display());
             return;
         };
-        let Some(page) = self.current_page(document) else {
-            return;
-        };
-        let Ok(size) = page.size.to_px(document.dpi()) else {
-            return;
-        };
-        let (page_id, index) = (page.id, page.roots.len());
         match engine.assets().import(&path) {
             Ok(asset) => {
-                let px = Vec2::new(size.width() as f32, size.height() as f32);
-                let spec = canvas::new_image(px, pixels, asset);
-                let next = engine.edit().document().map(|d| NodeId::new(d.next_id()));
-                match engine.edit().execute(Box::new(InsertNodes::new(
-                    page_id,
-                    None,
-                    index,
-                    vec![spec],
-                ))) {
-                    Ok(_) => {
-                        if let Some(node) = next {
-                            self.selected = Selection::one(page_id, node);
-                        }
-                    }
-                    Err(error) => eprintln!("insert image: {error}"),
+                let content = gafira_doc::FrameContent { asset, natural };
+                let command =
+                    SetProperty::new(page, nodes, Property::FrameContent(Some(content)), None);
+                if let Err(error) = engine.edit().execute(Box::new(command)) {
+                    eprintln!("frame photo: {error}");
                 }
             }
-            Err(error) => eprintln!("import image: {error}"),
+            Err(error) => eprintln!("frame photo: {error}"),
+        }
+    }
+
+    fn import_image(&mut self, engine: &mut Gafira, _document: &Document) {
+        // Images, SVG or PDF outlines for custom frames (spec 068), and
+        // spreadsheets as tables (spec 082).
+        let picked = rfd::FileDialog::new()
+            .add_filter(
+                "Imagen, SVG, PDF, Excel, CSV",
+                &[
+                    "png", "jpg", "jpeg", "svg", "pdf", "xlsx", "xlsm", "csv", "tsv",
+                ],
+            )
+            .pick_files();
+        if let Some(paths) = picked {
+            self.place_images(engine, &paths, None);
         }
     }
 }
@@ -3317,7 +9833,8 @@ fn group_change(origin: &Placement, to: &Placement, hold: Option<Hold>) -> Chang
             center: gafira_geom::Point::new(origin.x + origin.w / 2.0, origin.y + origin.h / 2.0),
             degrees: to.rotation_deg - origin.rotation_deg,
         },
-        None => Change::Move {
+        // A line end never drags a group; a move keeps it where it is.
+        None | Some(Hold::LineEnd(_)) => Change::Move {
             dx: to.x - origin.x,
             dy: to.y - origin.y,
         },
@@ -3426,6 +9943,260 @@ fn halo_line(painter: &egui::Painter, theme: &Theme, points: [Pos2; 2], color: C
     painter.line_segment(points, Stroke::new(1.0, color));
 }
 
+/// The pages, their boxes on screen and the zoom, as the canvas drew them.
+type CanvasView<'a> = (&'a [Arc<Page>], &'a [(PageId, Rect)], f32);
+
+impl Editor {
+    /// The tool that draws or erases on the canvas, when Dibujo is open
+    /// with a brush or the eraser in hand (spec 079).
+    fn drawing_tool(&self) -> Option<crate::draw::Tool> {
+        let open = self.rail.open && TABS[self.rail.tab].0 == "tab.drawing";
+        let tool = self.draw.borrow().tool;
+        (open && tool != crate::draw::Tool::Select).then_some(tool)
+    }
+
+    /// What the pointer does on the canvas in Dibujo (spec 079): a brush
+    /// follows the hand and, let go, asks for the stroke as one element; the
+    /// eraser gathers the strokes it goes over and, let go, asks to remove
+    /// them. The stroke being drawn is painted live.
+    fn draw_input(
+        &self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        response: &egui::Response,
+        (pages, page_rects, zoom): CanvasView<'_>,
+        (texts, tool): (&Texts, crate::draw::Tool),
+        asked: &mut Asked,
+    ) {
+        use crate::draw::{self, Live, Tool};
+        let mut state = self.draw.borrow_mut();
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let press = ui.input(|i| i.pointer.press_origin());
+        let on_page = |at: Pos2, page: Option<PageId>| {
+            page_rects
+                .iter()
+                .find(|(id, rect)| page.map_or(rect.contains(at), |p| p == *id))
+                .map(|(id, rect)| {
+                    let p = (at - rect.min) / zoom;
+                    (*id, *rect, [f64::from(p.x), f64::from(p.y)])
+                })
+        };
+        // The tool in hand is the cursor (spec 079).
+        if (response.hovered() || response.dragged())
+            && let Some(at) = pointer
+        {
+            draw::paint_cursor(ui.ctx(), at, tool, &state);
+        }
+        match tool {
+            Tool::Brush(index) => {
+                let setting = state.settings[index];
+                let brush = draw::BRUSHES[index];
+                let begin = response.drag_started() || response.clicked();
+                if begin
+                    && state.live.is_none()
+                    && let Some((page, _, point)) =
+                        press.or(pointer).and_then(|at| on_page(at, None))
+                {
+                    state.live = Some(Live {
+                        page,
+                        points: vec![point],
+                    });
+                    asked.select = Some(Selection::default());
+                }
+                if (response.dragged() || response.clicked())
+                    && let Some(at) = pointer
+                    && let Some(live) = state.live.as_mut()
+                    && let Some((_, _, point)) = on_page(at, Some(live.page))
+                    && live.points.last() != Some(&point)
+                {
+                    live.points.push(point);
+                }
+                if let Some(live) = &state.live
+                    && let Some((_, rect)) = page_rects.iter().find(|(id, _)| *id == live.page)
+                {
+                    let screen =
+                        |p: draw::Point| rect.min + Vec2::new(p[0] as f32, p[1] as f32) * zoom;
+                    let colour = setting.colour.gamma_multiply(setting.opacity);
+                    let mesh = draw::mesh(
+                        &live.points,
+                        (f64::from(setting.size), brush.cap, &setting.style),
+                        screen,
+                        colour,
+                    );
+                    painter.add(mesh);
+                }
+                let done = response.drag_stopped() || response.clicked();
+                if done && let Some(live) = state.live.take() {
+                    let outline = draw::outline(
+                        &live.points,
+                        f64::from(setting.size),
+                        brush.cap,
+                        &setting.style,
+                    );
+                    if let Some(((x, y, w, h), path)) = draw::to_path(&outline) {
+                        let mut shape = gafira_doc::ShapeNode::new(ShapeGeometry::Path(path));
+                        shape.fill = Some(canvas::document_color(setting.colour));
+                        shape.drawn_with = Some(brush.id.to_owned());
+                        let spec = gafira_edit::NodeSpec {
+                            name: Some(texts.t(&gafira_doc::msg::Message {
+                                key: MessageKey(brush.key),
+                                args: Vec::new(),
+                            })),
+                            opacity: setting.opacity.clamp(0.0, 1.0),
+                            blend: brush.blend,
+                            ..gafira_edit::NodeSpec::new(
+                                gafira_doc::NodeKind::Shape(shape),
+                                gafira_doc::Placement::new(x, y, w, h),
+                            )
+                        };
+                        asked.draw_stroke = Some((live.page, spec));
+                    }
+                }
+            }
+            Tool::Eraser => {
+                let reach = f64::from(8.0 / zoom);
+                let erasing = response.drag_started() || response.dragged() || response.clicked();
+                if erasing
+                    && let Some(at) = pointer
+                    && let Some((page_id, _, point)) =
+                        on_page(at, state.erasing.as_ref().map(|e| e.0))
+                    && let Some(page) = pages.iter().find(|p| p.id == page_id)
+                {
+                    let (_, gone) = state.erasing.get_or_insert_with(|| (page_id, Vec::new()));
+                    for id in &page.roots {
+                        let Some(node) = page.node(*id) else { continue };
+                        let gafira_doc::NodeKind::Shape(shape) = &node.kind else {
+                            continue;
+                        };
+                        let ShapeGeometry::Path(path) = &shape.geometry else {
+                            continue;
+                        };
+                        if shape.drawn_with.is_none() || node.base.locked || gone.contains(id) {
+                            continue;
+                        }
+                        let p = node.base.placement;
+                        let to_page = p.to_transform();
+                        let polygon = draw::flatten(path, |u| {
+                            let q = to_page * kurbo::Point::new(u[0] * p.w, u[1] * p.h);
+                            [q.x, q.y]
+                        });
+                        if draw::touches(&polygon, point, reach) {
+                            gone.push(*id);
+                        }
+                    }
+                }
+                if (response.drag_stopped() || response.clicked())
+                    && let Some(erased) = state.erasing.take()
+                {
+                    asked.erase = Some(erased);
+                }
+            }
+            Tool::Select => {}
+        }
+    }
+}
+
+/// «Añadir página» under the last page (spec 077): a wide button that adds
+/// a page at the end, and an arrow with a menu to add one or duplicate
+/// `last`.
+fn add_page_bar(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    bar: Rect,
+    last: PageId,
+    asked: &mut Asked,
+) {
+    let arrow_w = 40.0;
+    let main = Rect::from_min_max(bar.min, Pos2::new(bar.max.x - arrow_w, bar.max.y));
+    let arrow = Rect::from_min_max(Pos2::new(bar.max.x - arrow_w, bar.min.y), bar.max);
+    let main_r = ui.interact(main, ui.id().with("add_page.main"), egui::Sense::click());
+    let arrow_r = ui.interact(arrow, ui.id().with("add_page.more"), egui::Sense::click());
+    let painter = ui.painter();
+    let radius = theme.radius_md();
+    painter.rect_filled(bar, radius, theme.c("surface"));
+    let hover = theme.c("secondary.bg");
+    if main_r.hovered() {
+        painter.rect_filled(
+            main,
+            egui::CornerRadius {
+                ne: 0,
+                se: 0,
+                ..radius
+            },
+            hover,
+        );
+    }
+    if arrow_r.hovered() {
+        painter.rect_filled(
+            arrow,
+            egui::CornerRadius {
+                nw: 0,
+                sw: 0,
+                ..radius
+            },
+            hover,
+        );
+    }
+    painter.rect_stroke(
+        bar,
+        radius,
+        Stroke::new(1.0, theme.c("border.strong")),
+        egui::StrokeKind::Inside,
+    );
+    painter.line_segment(
+        [
+            Pos2::new(arrow.min.x, bar.min.y + 1.0),
+            Pos2::new(arrow.min.x, bar.max.y - 1.0),
+        ],
+        Stroke::new(1.0, theme.c("border.strong")),
+    );
+    let text = texts.t(&gafira_doc::msg!("page.add"));
+    let galley = painter.layout_no_wrap(text, theme.font("ui-label"), theme.c("text"));
+    let icon = 14.0;
+    let total = icon + 6.0 + galley.size().x;
+    let start = main.center().x - total / 2.0;
+    icons::paint(
+        painter,
+        Rect::from_center_size(
+            Pos2::new(start + icon / 2.0, main.center().y),
+            Vec2::splat(icon),
+        ),
+        Icon::ZoomIn,
+        icons::Weight::Regular,
+        theme.c("text"),
+    );
+    painter.galley(
+        Pos2::new(start + icon + 6.0, main.center().y - galley.size().y / 2.0),
+        galley,
+        theme.c("text"),
+    );
+    icons::paint(
+        painter,
+        Rect::from_center_size(arrow.center(), Vec2::splat(14.0)),
+        Icon::Expand,
+        icons::Weight::Regular,
+        theme.c("text"),
+    );
+    if main_r.hovered() || arrow_r.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if main_r.clicked() {
+        asked.add_page = true;
+    }
+    egui::Popup::menu(&arrow_r).show(|ui| {
+        if ui.button(texts.t(&gafira_doc::msg!("page.add"))).clicked() {
+            asked.add_page = true;
+        }
+        if ui
+            .button(texts.t(&gafira_doc::msg!("page.duplicate")))
+            .clicked()
+        {
+            asked.page_action = Some(PageAction::Duplicate(last));
+        }
+    });
+}
+
 /// The guides of `page_doc` on the page drawn at `page`: a vertical one
 /// along the page, a horizontal one across the canvas row `row` (FD-03).
 fn draw_guides(
@@ -3433,12 +10204,15 @@ fn draw_guides(
     theme: &Theme,
     page_doc: &Page,
     dpi: f64,
-    page: Rect,
-    row: Rect,
+    (page, row): (Rect, Rect),
     zoom: f32,
+    held: Option<usize>,
 ) {
     let color = theme.c("canvas.guide");
-    for guide in &page_doc.guides.0 {
+    for (index, guide) in page_doc.guides.0.iter().enumerate() {
+        if held == Some(index) {
+            continue;
+        }
         let Some(px) = ruler::guide_px(guide, dpi) else {
             continue;
         };
@@ -3453,7 +10227,23 @@ fn draw_guides(
                 Pos2::new(row.max.x, page.min.y + at),
             ],
         };
-        halo_line(painter, theme, points, color);
+        if guide.locked {
+            // A locked guide is a fold or a fixed line (spec 076): dashed.
+            painter.add(egui::Shape::dashed_line(
+                &points,
+                Stroke::new(3.0, theme.c("canvas.selection.halo")),
+                6.0,
+                4.0,
+            ));
+            painter.add(egui::Shape::dashed_line(
+                &points,
+                Stroke::new(1.0, color),
+                6.0,
+                4.0,
+            ));
+        } else {
+            halo_line(painter, theme, points, color);
+        }
     }
 }
 
@@ -3486,9 +10276,11 @@ fn draw_ruler(
     theme: &Theme,
     axis: GuideAxis,
     strip: Rect,
-    (origin, zoom): (Rect, f32),
+    (origin, zoom, (unit, px_per_unit)): (Rect, f32, (gafira_geom::Unit, f64)),
     band: Option<(f32, f32)>,
 ) {
+    let scale = f64::from(zoom) * px_per_unit;
+    let finest = ruler::finest(unit);
     painter.rect_filled(strip, 0.0, theme.c("surface"));
     let border = Stroke::new(1.0, theme.c("border"));
     let mut font = theme.font("caption");
@@ -3534,12 +10326,12 @@ fn draw_ruler(
         };
         painter.line_segment(points, border);
     };
-    for (at, middle) in ruler::minor_ticks(origin_at, zoom, from, to) {
+    for (at, middle) in ruler::minor_ticks_in(origin_at, scale, (from, to), finest) {
         tick(at, if middle { size / 2.0 } else { size / 4.0 });
     }
-    for (at, value) in ruler::ticks(origin_at, zoom, from, to) {
+    for (at, value) in ruler::ticks_in(origin_at, scale, (from, to), finest) {
         tick(at, size);
-        let galley = painter.layout_no_wrap(value.to_string(), font.clone(), color);
+        let galley = painter.layout_no_wrap(ruler::tick_label(value), font.clone(), color);
         if horizontal {
             painter.galley(Pos2::new(at + 3.0, strip.min.y + 1.0), galley, color);
         } else {
@@ -3603,6 +10395,358 @@ fn current_page_id(
         .or_else(|| pages.first().copied())
 }
 
+/// The key of the texture of a path shape: what it shows, its size and the
+/// zoom, but not where it is, so moving it draws the same texture.
+/// The preview of a file of Biblioteca and its size in px; `None` when it
+/// could not be read (spec 068).
+type Preview = Option<(egui::TextureHandle, (f64, f64))>;
+
+/// Whether `path` names a vector file whose outline makes a frame (spec
+/// 066, S66-10): SVG or PDF.
+fn is_vector_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "svg" | "pdf"))
+}
+
+/// Whether `path` names an SVG, which asks how to come in (spec 067).
+fn is_svg_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
+}
+
+/// Whether `path` names a file the canvas takes: an image, a vector file or
+/// a spreadsheet (specs 067 and 082).
+fn is_importable(path: &std::path::Path) -> bool {
+    is_image_path(path) || is_vector_path(path) || crate::sheets::is_sheet(path)
+}
+
+/// The outline of the vector file at `path` (spec 066, S66-10).
+fn vector_outline(path: &std::path::Path) -> Option<gafira_io_vector::Outline> {
+    let bytes = std::fs::read(path).ok()?;
+    let pdf = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+    let outline = if pdf {
+        gafira_io_vector::from_pdf(&bytes)
+    } else {
+        gafira_io_vector::from_svg(&bytes)
+    };
+    outline
+        .inspect_err(|error| eprintln!("frame from {}: {error}", path.display()))
+        .ok()
+}
+
+/// Whether `path` names an image Gafira imports (spec 067): PNG or JPEG.
+fn is_image_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg"))
+}
+
+/// The image files a pasted text names, one per line, as paths or
+/// `file://` URIs (what a file manager copies); empty when any line is not
+/// an existing image file (spec 067).
+fn image_paths(text: &str) -> Vec<std::path::PathBuf> {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#') && *l != "copy" && *l != "cut")
+        .collect();
+    let paths: Vec<std::path::PathBuf> = lines
+        .iter()
+        .filter_map(|line| {
+            let raw = line.strip_prefix("file://").unwrap_or(line);
+            let path = std::path::PathBuf::from(percent_decode(raw));
+            (path.is_absolute() && is_importable(&path) && path.is_file()).then_some(path)
+        })
+        .collect();
+    if paths.len() == lines.len() {
+        paths
+    } else {
+        Vec::new()
+    }
+}
+
+/// `%20` and the like decoded, as a `file://` URI writes them.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let Some(hex) = text.get(i + 1..i + 3)
+            && let Ok(byte) = u8::from_str_radix(hex, 16)
+        {
+            out.push(byte);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The frame `node` of `page`, if it is one.
+fn frame_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::FrameNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Frame(frame) => Some(frame.clone()),
+        _ => None,
+    }
+}
+
+/// The id of the field of a cell.
+fn cell_id(node: NodeId, cell: (usize, usize)) -> egui::Id {
+    egui::Id::new(("cell", node, cell))
+}
+
+/// Whether the menu of a table is done with: something was picked, or it
+/// was closed.
+fn picked_or_closed(act: &Option<tables::Act>, menu: Option<tables::Menu>, open: bool) -> bool {
+    act.is_some() || menu.is_some() || !open
+}
+
+/// Puts `table` in the box `placement` of the node, in one command.
+fn set_table(
+    engine: &mut Gafira,
+    (page, node): (PageId, NodeId),
+    table: gafira_doc::TableNode,
+    placement: Placement,
+    gesture: Option<GestureId>,
+) -> bool {
+    let commands: Vec<Box<dyn Command>> = vec![
+        Box::new(SetProperty::new(
+            page,
+            vec![node],
+            Property::Table(Box::new(table)),
+            gesture,
+        )),
+        Box::new(SetProperty::new(
+            page,
+            vec![node],
+            Property::Placement(placement),
+            gesture,
+        )),
+    ];
+    let command = Transaction::new(MessageKey("edit.set_property"), commands);
+    match engine.edit().execute(Box::new(command)) {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("table: {error}");
+            false
+        }
+    }
+}
+
+/// `placement` with `margin` px more on each side, about the same centre.
+fn grown(placement: &Placement, margin: f64) -> Placement {
+    Placement {
+        x: placement.x - margin,
+        y: placement.y - margin,
+        w: placement.w + 2.0 * margin,
+        h: placement.h + 2.0 * margin,
+        ..*placement
+    }
+}
+
+/// The looks of the words of a cell, as a text holds them.
+fn span_of(style: &gafira_doc::CellStyle) -> gafira_doc::SpanStyle {
+    gafira_doc::SpanStyle {
+        font: style.font.clone(),
+        size: style.size,
+        color: style.color,
+        bold: style.bold,
+        italic: style.italic,
+    }
+}
+
+/// The table `node` of `page` and its box, if it is one.
+fn table_of(
+    document: &Document,
+    page: PageId,
+    node: NodeId,
+) -> Option<(gafira_doc::TableNode, Placement)> {
+    let found = document.page(page)?.node(node)?;
+    match &found.kind {
+        gafira_doc::NodeKind::Table(table) => Some(((**table).clone(), found.base.placement)),
+        _ => None,
+    }
+}
+
+/// What the controls of the chart `at` asked for goes to `asked`.
+fn take_chart(asked: &mut Asked, at: (PageId, NodeId), asks: charts::Asks) {
+    if let Some(chart) = asks.chart {
+        asked.chart = Some((at.0, at.1, chart));
+    }
+    if asks.import {
+        asked.chart_import = Some(at);
+    }
+    if asks.font {
+        asked.font_panel = Some(true);
+    }
+    asked.chart_close |= asks.close;
+}
+
+/// Makes the image of `target` be `image`, its new assets in the document;
+/// one undo step.
+fn set_image(engine: &mut Gafira, target: crate::vision::Target, image: gafira_doc::ImageNode) {
+    let Some(document) = engine.edit().document() else {
+        return;
+    };
+    // Named after the image as it was brought in.
+    let name = document
+        .asset(&target.image.original())
+        .map(|entry| entry.name.clone())
+        .unwrap_or_default();
+    let mut commands: Vec<Box<dyn gafira_edit::Command>> = Vec::new();
+    let mut new: Vec<gafira_doc::AssetRef> = Vec::new();
+    for asset in image.assets() {
+        if document.asset(&asset).is_none() && !new.contains(&asset) {
+            new.push(asset);
+            let entry = gafira_doc::AssetEntry {
+                name: name.clone(),
+                storage: gafira_doc::AssetStorage::Embedded,
+            };
+            commands.push(Box::new(gafira_edit::InsertAsset::new(asset, entry)));
+        }
+    }
+    // A gesture of its own: two in a row are two steps.
+    let gesture = engine.edit().begin_gesture().ok();
+    commands.push(Box::new(SetProperty::new(
+        target.page,
+        vec![target.node],
+        Property::Image(image),
+        gesture,
+    )));
+    let label = MessageKey("edit.set_property");
+    if let Err(error) = engine
+        .edit()
+        .execute(Box::new(Transaction::new(label, commands)))
+    {
+        eprintln!("image: {error}");
+    }
+    if gesture.is_some()
+        && let Err(error) = engine.edit().end_gesture()
+    {
+        eprintln!("end gesture: {error}");
+    }
+}
+
+/// Sets the chart at `at`.
+fn set_chart(
+    engine: &mut Gafira,
+    (page, node): (PageId, NodeId),
+    chart: gafira_doc::ChartNode,
+    gesture: Option<GestureId>,
+) {
+    let property = Property::Chart(Box::new(chart));
+    let command = SetProperty::new(page, vec![node], property, gesture);
+    if let Err(error) = engine.edit().execute(Box::new(command)) {
+        eprintln!("chart: {error}");
+    }
+}
+
+/// The chart `node` of `page`, if it is one.
+fn chart_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::ChartNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Chart(chart) => Some((**chart).clone()),
+        _ => None,
+    }
+}
+
+/// The image `node` of `page`, if it is one.
+fn image_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::ImageNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Image(image) => Some(*image),
+        _ => None,
+    }
+}
+
+/// The QR code `node` of `page`, if it is one.
+fn qr_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::QrNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Qr(qr) => Some((**qr).clone()),
+        _ => None,
+    }
+}
+
+/// The size in px of the image `hash` of the store, read from its header.
+fn natural_size(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<(u32, u32)> {
+    let mut bytes = Vec::new();
+    let mut source = engine.ports().store.open(hash).ok()?;
+    std::io::Read::read_to_end(&mut source, &mut bytes).ok()?;
+    image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()
+}
+
+/// The key of the texture of a whole photo (crop mode, S66-07).
+fn photo_key(asset: gafira_doc::timeline::AssetRef) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("photo {}", asset.hex()).hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The key of the texture of a frame's photo (spec 066): the frame, its box
+/// and the zoom.
+fn frame_key(shape: &Shape, zoom: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!(
+        "frame {:?}{}{}{}",
+        shape.frame, shape.placement.w, shape.placement.h, zoom
+    )
+    .hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The key of the texture of a text drawn from its outline: its words,
+/// styles, bend, spacing and gradient, its box, where it is (the cover
+/// moves with it) and the zoom.
+fn curved_key(text: &gafira_doc::TextNode, placement: &Placement, zoom: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("curved {text:?}{placement:?}{zoom}").hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The key of the texture of a light (spec 065): the light, its box, the
+/// page it may spread over and the zoom.
+fn light_key(shape: &Shape, page_px: (f64, f64), zoom: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!(
+        "light {:?}{:?}{:?}{}",
+        shape.effect, shape.placement, page_px, zoom
+    )
+    .hash(&mut hasher);
+    hasher.finish()
+}
+
+fn path_key(shape: &Shape, zoom: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!(
+        "{:?}{:?}{:?}{:?}{}{}{}{}",
+        shape.geometry,
+        shape.fill,
+        shape.stroke,
+        shape.gradient,
+        shape.corner_radius,
+        shape.placement.w,
+        shape.placement.h,
+        zoom
+    )
+    .hash(&mut hasher);
+    hasher.finish()
+}
+
 /// What a move dropped wholly outside its page is deleted (S51-07,
 /// D-93), in one undo step with the move: the drag is undone and one
 /// command sets where it left everything and removes what is gone.
@@ -3630,6 +10774,309 @@ fn drop_outside(engine: &mut Gafira, drag: &Drag, moved: &[NodeId]) {
             eprintln!("drop: {error}");
         }
     }
+}
+
+/// An empty page of `size` at `at` of `document`, born with the guides of
+/// the first page (D-99), in one undo step.
+fn new_page(document: &Document, at: usize, size: gafira_doc::PageSize) -> Box<dyn Command> {
+    let insert = Box::new(InsertPage::new(at, String::new(), size));
+    let guides = document
+        .pages()
+        .first()
+        .map(|page| page.guides.clone())
+        .filter(|guides| !guides.0.is_empty());
+    match guides {
+        None => insert,
+        Some(guides) => {
+            // The new page takes the next id of the document.
+            let id = PageId::new(document.next_id());
+            Box::new(Transaction::new(
+                MessageKey("edit.insert_page"),
+                vec![
+                    insert,
+                    Box::new(SetProperty::page(id, Property::Guides(guides), None)),
+                ],
+            ))
+        }
+    }
+}
+
+/// The style of a new text of `preset`: its size, the display or the UI
+/// face, in the ink of the brand (spec 027).
+fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyle {
+    let (size, display) = preset.size_and_display();
+    let tokens = &theme.tokens;
+    gafira_doc::SpanStyle {
+        font: if display {
+            tokens.typography.display.clone()
+        } else {
+            tokens.typography.ui.clone()
+        },
+        size,
+        color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
+        bold: false,
+        italic: false,
+    }
+}
+
+/// The height of every row of the Fuente panel, so only the rows in view
+/// are laid out (spec 062).
+const FONT_ROW_HEIGHT: f32 = 32.0;
+
+/// One row of the Fuente panel.
+#[derive(Clone, Debug, PartialEq)]
+enum PanelRow {
+    /// The title of a section, by catalog key.
+    Title(&'static str),
+    /// A family, with the faces it has and whether it is of the system.
+    Family {
+        family: String,
+        faces: Vec<(bool, bool)>,
+        system: bool,
+    },
+    /// A face of an open family.
+    Face {
+        family: String,
+        bold: bool,
+        italic: bool,
+        system: bool,
+    },
+    /// A line of text under a section, by catalog key.
+    Note(&'static str),
+}
+
+/// The rows of the Fuente panel for `search` (S62-06): the families of the
+/// document, then those of Gafira, then those of the system (or a note while
+/// they are being looked for), each section with its title; the faces of the
+/// open families after them. A family of the system with the name of one of
+/// Gafira is left out.
+fn font_rows(
+    search: &str,
+    document: &[String],
+    open: &BTreeSet<String>,
+    system: &system_fonts::SystemFonts,
+) -> Vec<PanelRow> {
+    let needle = search.trim().to_lowercase();
+    let shown = |family: &str| needle.is_empty() || family.to_lowercase().contains(&needle);
+    let library = gafira_theme::library_families();
+    let faces = system.faces();
+    let faces_of = |family: &str| -> (Vec<(bool, bool)>, bool) {
+        let gafira: Vec<(bool, bool)> = gafira_theme::library()
+            .iter()
+            .filter(|f| f.family == family)
+            .map(|f| (f.bold, f.italic))
+            .collect();
+        if gafira.is_empty() {
+            let mut own: Vec<(bool, bool)> = faces
+                .iter()
+                .filter(|f| f.family == family)
+                .map(|f| (f.bold, f.italic))
+                .collect();
+            own.sort();
+            (own, true)
+        } else {
+            (gafira, false)
+        }
+    };
+    let mut rows = Vec::new();
+    let section = |rows: &mut Vec<PanelRow>, families: Vec<String>| {
+        for family in families {
+            let (family_faces, is_system) = faces_of(&family);
+            let is_open = open.contains(&family);
+            rows.push(PanelRow::Family {
+                family: family.clone(),
+                faces: family_faces.clone(),
+                system: is_system,
+            });
+            if is_open && family_faces.len() > 1 {
+                for (bold, italic) in family_faces {
+                    rows.push(PanelRow::Face {
+                        family: family.clone(),
+                        bold,
+                        italic,
+                        system: is_system,
+                    });
+                }
+            }
+        }
+    };
+    let used: Vec<String> = document.iter().filter(|f| shown(f)).cloned().collect();
+    if !used.is_empty() {
+        rows.push(PanelRow::Title("fonts.document"));
+        section(&mut rows, used);
+    }
+    rows.push(PanelRow::Title("fonts.gafira"));
+    let gafira: Vec<String> = library
+        .iter()
+        .filter(|f| shown(f))
+        .map(|f| (*f).to_owned())
+        .collect();
+    if gafira.is_empty() {
+        rows.push(PanelRow::Note("fonts.none"));
+    }
+    section(&mut rows, gafira);
+    rows.push(PanelRow::Title("fonts.system"));
+    if !system.ready() {
+        rows.push(PanelRow::Note("fonts.looking"));
+        return rows;
+    }
+    let own: Vec<String> = system
+        .families(&library)
+        .into_iter()
+        .filter(|f| shown(f))
+        .collect();
+    if own.is_empty() {
+        rows.push(PanelRow::Note("fonts.none"));
+    }
+    section(&mut rows, own);
+    rows
+}
+
+/// What a row of the Fuente panel shows: its indent, its chevron (`Some`
+/// open or closed when it has faces to show), its name in its face, a
+/// sample after it and the tick of the current font.
+struct FontRow {
+    indent: f32,
+    chevron: Option<bool>,
+    name: String,
+    face: egui::FontFamily,
+    sample: bool,
+    ticked: bool,
+}
+
+/// Where a row of the Fuente panel was clicked.
+enum RowClick {
+    Chevron,
+    Row,
+}
+
+/// A row of the Fuente panel across the whole width: its background lights
+/// up under the pointer, which turns into a hand; a click on the chevron
+/// opens or closes it, anywhere else picks the font.
+fn font_row(ui: &mut egui::Ui, theme: &Theme, row: FontRow) -> Option<RowClick> {
+    let height = 32.0;
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), height),
+        egui::Sense::click(),
+    );
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let painter = ui.painter();
+    if response.hovered() {
+        painter.rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
+    }
+    let mut x = rect.min.x + 8.0 + row.indent;
+    let chevron = Rect::from_min_size(Pos2::new(x, rect.center().y - 8.0), Vec2::splat(16.0));
+    if let Some(open) = row.chevron {
+        paint_chevron(painter, chevron, open, theme.c("text"));
+    }
+    x += 24.0;
+    let name = painter.layout_no_wrap(
+        row.name,
+        egui::FontId::new(15.0, row.face.clone()),
+        theme.c("text"),
+    );
+    let width = name.size().x;
+    painter.galley(
+        Pos2::new(x, rect.center().y - name.size().y / 2.0),
+        name,
+        theme.c("text"),
+    );
+    if row.sample {
+        let sample = painter.layout_no_wrap(
+            "AaBbCc".to_owned(),
+            egui::FontId::new(13.0, row.face),
+            theme.c("text.secondary"),
+        );
+        let at = Pos2::new(x + width + 8.0, rect.center().y - sample.size().y / 2.0);
+        painter.galley(at, sample, theme.c("text.secondary"));
+    }
+    if row.ticked {
+        let tick = Rect::from_center_size(
+            Pos2::new(rect.max.x - 16.0, rect.center().y),
+            Vec2::splat(14.0),
+        );
+        paint_tick(painter, tick, theme.c("text"));
+    }
+    if !response.clicked() {
+        return None;
+    }
+    let on_chevron = row.chevron.is_some()
+        && response
+            .interact_pointer_pos()
+            .is_some_and(|at| chevron.expand(6.0).contains(at));
+    Some(if on_chevron {
+        RowClick::Chevron
+    } else {
+        RowClick::Row
+    })
+}
+
+/// A thin chevron in `rect`: pointing right when closed, down when open.
+fn paint_chevron(painter: &egui::Painter, rect: Rect, open: bool, color: Color32) {
+    let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * rect.width();
+    let points = if open {
+        vec![at(0.25, 0.4), at(0.5, 0.65), at(0.75, 0.4)]
+    } else {
+        vec![at(0.4, 0.25), at(0.65, 0.5), at(0.4, 0.75)]
+    };
+    painter.add(egui::Shape::line(points, Stroke::new(1.5, color)));
+}
+
+/// A tick in `rect` drawn with lines.
+fn paint_tick(painter: &egui::Painter, rect: Rect, color: Color32) {
+    let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * rect.width();
+    painter.add(egui::Shape::line(
+        vec![at(0.15, 0.55), at(0.4, 0.8), at(0.85, 0.25)],
+        Stroke::new(2.0, color),
+    ));
+}
+
+/// The button of the Inspector that opens the Fuente panel (spec 062),
+/// named after the font of `style`.
+fn font_button(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    style: Option<&gafira_doc::SpanStyle>,
+    asked: &mut Asked,
+) {
+    let Some(style) = style else { return };
+    // One row, centred down, so the label and the button line up.
+    let row = Vec2::new(ui.available_width(), 28.0);
+    ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
+        ui.label(texts.t(&gafira_doc::msg!("fonts.title")));
+        let face = text_family(ui.ctx(), theme, style);
+        let button = ui.button(RichText::new(&style.font).font(egui::FontId::new(14.0, face)));
+        if button.clicked() {
+            asked.font_panel = Some(true);
+        }
+    });
+    ui.add_space(8.0);
+}
+
+/// The font families the texts of `document` use, each once, in order.
+fn document_fonts(document: &Document) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for page in document.pages() {
+        for node in page.nodes.values() {
+            if let gafira_doc::NodeKind::Chart(chart) = &node.kind
+                && !out.contains(&chart.text.font)
+            {
+                out.push(chart.text.font.clone());
+            }
+            let content = match &node.kind {
+                gafira_doc::NodeKind::Text(text) => Some(&text.content),
+                gafira_doc::NodeKind::Shape(shape) => shape.text.as_ref().map(|t| &t.content),
+                _ => None,
+            };
+            for span in content.into_iter().flat_map(gafira_doc::RichText::spans) {
+                if !out.contains(&span.style.font) {
+                    out.push(span.style.font.clone());
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The number «n de N» shows (S49-05): the place of `current` among
@@ -3695,14 +11142,37 @@ fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorI
 /// width) and, for a rectangle, its corner radius (spec 038). Each change
 /// is one command, so one undo step.
 /// «Relleno»: a colour picker showing `shape`'s fill and «Sin relleno».
+/// A shape, not an image, also has «Color sólido» and «Degradado» (spec
+/// 063).
 fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+    if shape.image.is_none() {
+        ui.horizontal(|ui| {
+            let solid = shape.gradient.is_none();
+            let label = |key| plain(texts, key);
+            if ui
+                .selectable_label(solid, label("inspector.solid"))
+                .clicked()
+                && !solid
+            {
+                asked.gradient = Some(None);
+            }
+            if ui
+                .selectable_label(!solid, label("inspector.gradient"))
+                .clicked()
+                && solid
+            {
+                asked.gradient = Some(Some(crate::gradients::start(shape.fill)));
+            }
+        });
+        if let Some(gradient) = &shape.gradient {
+            gradient_fields(ui, texts, gradient, asked);
+            return;
+        }
+    }
     ui.horizontal(|ui| {
         ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
-        let mut color = shape
-            .fill
-            .map_or(Color32::TRANSPARENT, canvas::screen_color);
-        if ui.color_edit_button_srgba(&mut color).changed() {
-            asked.fill = Some(Some(canvas::document_color(color)));
+        if let Some(color) = color_button(ui, shape.fill) {
+            asked.fill = Some(Some(color));
         }
         if shape.fill.is_some()
             && ui
@@ -3712,6 +11182,178 @@ fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked
             asked.fill = Some(None);
         }
     });
+}
+
+/// A colour picker with its transparency (spec 063) showing `color`; the
+/// colour picked this frame, if any.
+fn color_button(
+    ui: &mut egui::Ui,
+    color: Option<gafira_color::Color>,
+) -> Option<gafira_color::Color> {
+    let mut rgba = canvas::picker_rgba(color);
+    ui.color_edit_button_srgba_unmultiplied(&mut rgba)
+        .changed()
+        .then(|| canvas::picked_color(color, rgba))
+}
+
+/// «Degradado» (spec 063): a picker per colour (a right click removes one
+/// while more than two are left), «+» for one more, and the styles, each
+/// drawn as a swatch of the gradient in it.
+fn gradient_fields(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    gradient: &gafira_doc::Gradient,
+    asked: &mut Asked,
+) {
+    let label = |key| plain(texts, key);
+    ui.label(label("inspector.gradient_colors"));
+    ui.horizontal_wrapped(|ui| {
+        for index in 0..gradient.stops.len() {
+            if let Some(changed) = gradient_stop_button(ui, texts, gradient, index) {
+                asked.gradient = Some(changed);
+            }
+        }
+        if let Some(more) = crate::gradients::with_stop_added(gradient)
+            && ui
+                .button("+")
+                .on_hover_text(label("inspector.gradient_add"))
+                .clicked()
+        {
+            let added = more.stops.len() - 1;
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(gradient_pending_id(), added));
+            asked.gradient = Some(Some(more));
+        }
+    });
+    ui.label(label("inspector.gradient_style"));
+    ui.horizontal_wrapped(|ui| {
+        for (kind, key) in crate::gradients::STYLES
+            .into_iter()
+            .zip(GRADIENT_STYLE_KEYS)
+        {
+            let styled = gafira_doc::Gradient {
+                kind,
+                stops: gradient.stops.clone(),
+            };
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(36.0, 28.0), egui::Sense::click());
+            ui.painter().add(gradient_swatch(&styled, rect));
+            let stroke = if kind == gradient.kind {
+                egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
+            } else {
+                ui.visuals().widgets.noninteractive.bg_stroke
+            };
+            ui.painter()
+                .rect_stroke(rect, 4.0, stroke, egui::StrokeKind::Outside);
+            let response = response
+                .on_hover_text(label(key))
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if response.clicked() && kind != gradient.kind {
+                asked.gradient = Some(Some(styled));
+            }
+        }
+    });
+}
+
+/// The button of colour `index` of `gradient` (spec 063): a click opens
+/// its picker, and while more than two colours are left a right click
+/// offers «Quitar este color». What it changed this frame: the gradient
+/// with the colour picked, or without the colour (`None` never happens
+/// for a gradient of two or more).
+fn gradient_stop_button(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    gradient: &gafira_doc::Gradient,
+    index: usize,
+) -> Option<Option<gafira_doc::Gradient>> {
+    let stop = gradient.stops.get(index)?;
+    let mut changed = None;
+    // Each colour keeps its own picker id, so adding or removing one does
+    // not move another's picker.
+    ui.push_id(("gradient_stop", index), |ui| {
+        if ui
+            .ctx()
+            .data(|d| d.get_temp::<usize>(gradient_pending_id()))
+            == Some(index)
+        {
+            egui::Popup::open_id(ui.ctx(), ui.auto_id_with("popup"));
+            ui.ctx()
+                .data_mut(|d| d.remove::<usize>(gradient_pending_id()));
+        }
+        let mut rgba = canvas::picker_rgba(Some(stop.color));
+        let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
+        if response.changed() {
+            changed = Some(Some(crate::gradients::with_color(
+                gradient,
+                index,
+                canvas::picked_color(Some(stop.color), rgba),
+            )));
+        }
+        if gradient.stops.len() > gafira_doc::Gradient::MIN_STOPS {
+            // Its own id: egui's default for a menu is the picker's, and a
+            // left click on the button would close the picker it opens.
+            egui::Popup::context_menu(&response)
+                .id(response.id.with("remove_colour"))
+                .show(|ui| {
+                    if ui
+                        .button(plain(texts, "inspector.gradient_remove"))
+                        .clicked()
+                    {
+                        changed = Some(crate::gradients::with_stop_removed(gradient, index));
+                        ui.close();
+                    }
+                });
+        }
+    });
+    changed
+}
+
+/// The colour «+» added, whose picker opens when it is drawn (spec 063).
+fn gradient_pending_id() -> egui::Id {
+    egui::Id::new("gafira.gradient.open_stop")
+}
+
+/// The catalog keys of the styles of `gradients::STYLES`, in order.
+const GRADIENT_STYLE_KEYS: [&str; 7] = [
+    "inspector.gradient_left_right",
+    "inspector.gradient_right_left",
+    "inspector.gradient_top_bottom",
+    "inspector.gradient_bottom_top",
+    "inspector.gradient_diagonal_down",
+    "inspector.gradient_diagonal_up",
+    "inspector.gradient_radial",
+];
+
+/// `gradient` painted over `rect`: a grid of 12 × 12 cells whose corners
+/// take the gradient's colour there, blended across each cell.
+fn gradient_swatch(gradient: &gafira_doc::Gradient, rect: Rect) -> egui::Shape {
+    const CELLS: u32 = 12;
+    let mut mesh = egui::Mesh::default();
+    let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
+    for j in 0..=CELLS {
+        for i in 0..=CELLS {
+            let (u, v) = (
+                f64::from(i) / f64::from(CELLS),
+                f64::from(j) / f64::from(CELLS),
+            );
+            let color = canvas::screen_color(gafira_color::Color::Srgb(gradient.color_at(
+                u * w,
+                v * h,
+                w,
+                h,
+            )));
+            mesh.colored_vertex(rect.min + Vec2::new((u * w) as f32, (v * h) as f32), color);
+        }
+    }
+    let row = CELLS + 1;
+    for j in 0..CELLS {
+        for i in 0..CELLS {
+            let a = j * row + i;
+            mesh.add_triangle(a, a + 1, a + row);
+            mesh.add_triangle(a + 1, a + row + 1, a + row);
+        }
+    }
+    egui::Shape::mesh(mesh)
 }
 
 /// «Opacidad»: a slider showing `shape`'s opacity in percent.
@@ -3760,10 +11402,14 @@ fn many_fields(
     ui.add_space(16.0);
     arrange_buttons(ui, theme, texts, can, asked);
     ui.add_space(16.0);
-    if shapes
-        .iter()
-        .all(|shape| shape.text.is_none() && shape.image.is_none() && !shape.group)
-    {
+    if shapes.iter().all(|shape| {
+        shape.text.is_none()
+            && shape.image.is_none()
+            && shape.qr.is_none()
+            && shape.chart.is_none()
+            && shape.table.is_none()
+            && !shape.group
+    }) {
         fill_field(ui, texts, primary, asked);
         ui.add_space(8.0);
     }
@@ -3955,6 +11601,474 @@ fn arrange_menu(ui: &mut egui::Ui, texts: &Texts, can: CanArrange, asked: &mut A
     });
 }
 
+/// «Luz»: none, «Brillo» or «Destello de lente» (S65-06). Any shape turns
+/// into a light with it; switching kind keeps the settings of the light,
+/// «Recortar» (S66-07): the Inspector while a frame is cropped: close,
+/// zoom of the photo, «Restablecer» and how to move it.
+fn crop_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    frame: &gafira_doc::FrameNode,
+    asked: &mut Asked,
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(plain(texts, "crop.title"))
+                .font(theme.font("ui-label"))
+                .color(theme.c("text")),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button("×")
+                .on_hover_text(plain(texts, "crop.done"))
+                .clicked()
+            {
+                asked.end_crop = true;
+            }
+        });
+    });
+    ui.add_space(16.0);
+    ui.label(
+        RichText::new(plain(texts, "crop.zoom"))
+            .small()
+            .color(theme.c("text.secondary")),
+    );
+    ui.spacing_mut().slider_width = (ui.available_width() - 64.0).max(80.0);
+    let mut zoom = frame.content_scale * 100.0;
+    if ui
+        .add(egui::Slider::new(&mut zoom, 100.0..=400.0).suffix(" %"))
+        .changed()
+    {
+        asked.crop_set = Some((
+            frame.content_offset,
+            zoom / 100.0,
+            frame.content_rotation_deg,
+        ));
+    }
+    ui.add_space(12.0);
+    ui.label(
+        RichText::new(plain(texts, "crop.rotate"))
+            .small()
+            .color(theme.c("text.secondary")),
+    );
+    let mut degrees = frame.content_rotation_deg;
+    if ui
+        .add(egui::Slider::new(&mut degrees, -180.0..=180.0).suffix("°"))
+        .changed()
+    {
+        asked.crop_set = Some((frame.content_offset, frame.content_scale, degrees));
+    }
+    ui.add_space(12.0);
+    if ui.button(plain(texts, "crop.reset")).clicked() {
+        asked.crop_set = Some(((0.0, 0.0), 1.0, 0.0));
+    }
+    ui.add_space(12.0);
+    ui.label(
+        RichText::new(plain(texts, "crop.hint"))
+            .small()
+            .color(theme.c("text.secondary")),
+    );
+    ui.add_space(12.0);
+    if ui.button(plain(texts, "crop.done")).clicked() {
+        asked.end_crop = true;
+    }
+}
+
+/// A swatch of «Fondo de la página» (spec 069): 40 px, its look painted by
+/// `paint`, ringed under the pointer; click to pick it.
+fn swatch(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    paint: impl FnOnce(&egui::Painter, Rect),
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(40.0), egui::Sense::click());
+    let painter = ui.painter();
+    paint(painter, rect);
+    let ring = if response.hovered() {
+        Stroke::new(2.0, theme.c("primary.bg"))
+    } else {
+        Stroke::new(1.0, theme.c("border"))
+    };
+    painter.rect_stroke(rect, 6.0, ring, egui::StrokeKind::Inside);
+    response
+}
+
+/// A linear gradient from `a` to `b` at `angle_deg` over `rect`, as a mesh
+/// whose corners take the colour of where they fall along the direction.
+fn paint_gradient_swatch(
+    painter: &egui::Painter,
+    rect: Rect,
+    a: Color32,
+    b: Color32,
+    angle_deg: f64,
+) {
+    let (dy, dx) = angle_deg.to_radians().sin_cos();
+    let corners = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+    ];
+    let along = |p: Pos2| f64::from(p.x - rect.left()) * dx + f64::from(p.y - rect.top()) * dy;
+    let values = corners.map(along);
+    let (lo, hi) = values
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+    let mut mesh = egui::Mesh::default();
+    for (corner, value) in corners.into_iter().zip(values) {
+        let t = if hi > lo {
+            ((value - lo) / (hi - lo)) as f32
+        } else {
+            0.0
+        };
+        mesh.colored_vertex(corner, a.lerp_to_gamma(b, t));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(mesh);
+}
+
+/// Where a card of a side panel was let go: the page and the point on it.
+type Dropped = (PageId, (f64, f64));
+
+/// The locked element under `at` (D-110): the top one there, on the page
+/// under the pointer, as [`layers::locked_pick`] chooses it.
+fn locked_under(
+    pages: &[Arc<Page>],
+    page_rects: &[(PageId, Rect)],
+    zoom: f32,
+    at: Pos2,
+) -> Option<(PageId, NodeId)> {
+    let (id, rect) = page_rects.iter().find(|(_, rect)| rect.contains(at))?;
+    let page = pages.iter().find(|p| p.id == *id)?;
+    let locked: Vec<Shape> = canvas::shapes(page)
+        .into_iter()
+        .filter(|shape| shape.locked)
+        .map(|mut shape| {
+            shape.locked = false;
+            shape
+        })
+        .collect();
+    let leaf = canvas::hit(&locked, *rect, zoom, at)?;
+    Some((*id, layers::locked_pick(page, leaf)?))
+}
+
+/// The bend of «Arco arriba» and, negated, «Arco abajo» (FD-44).
+const CURVE_PRESET: f64 = 45.0;
+
+/// The title of a section of a side panel.
+fn section_title(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, key: &'static str) {
+    ui.label(
+        RichText::new(plain(texts, key))
+            .font(theme.font("ui-label"))
+            .color(theme.c("text")),
+    );
+    ui.add_space(8.0);
+}
+
+/// The rounded card of a side panel at `rect`, lighter under the pointer.
+fn card_frame(ui: &egui::Ui, theme: &Theme, rect: Rect, hovered: bool) {
+    let fill = if hovered {
+        theme.c("surface.sunken")
+    } else {
+        theme.c("surface")
+    };
+    ui.painter().rect(
+        rect,
+        theme.radius_md(),
+        fill,
+        Stroke::new(1.0, theme.c("border")),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// «Posición y tamaño» of the selected element.
+fn position_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    shape: &Shape,
+    asked: &mut Asked,
+) {
+    ui.label(
+        RichText::new(plain(texts, "inspector.position_size"))
+            .font(theme.font("body-sm"))
+            .color(theme.c("text.secondary")),
+    );
+    ui.add_space(4.0);
+    let mut placement = shape.placement;
+    let mut changed = false;
+    egui::Grid::new("inspector.position")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            for (key, value, min) in [
+                (gafira_doc::msg!("inspector.x"), &mut placement.x, f64::MIN),
+                (gafira_doc::msg!("inspector.y"), &mut placement.y, f64::MIN),
+                (gafira_doc::msg!("inspector.width"), &mut placement.w, 1.0),
+                (gafira_doc::msg!("inspector.height"), &mut placement.h, 1.0),
+            ] {
+                ui.label(texts.t(&key));
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(value)
+                            .speed(1.0)
+                            .range(min..=f64::MAX)
+                            .max_decimals(1),
+                    )
+                    .changed();
+                ui.end_row();
+            }
+            // «Giro», in degrees within one turn (spec 041). A
+            // group has no turn of its own: its box is upright
+            // around its children (spec 043).
+            if shape.group {
+                return;
+            }
+            ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
+            let mut degrees = rotation::normalized(placement.rotation_deg);
+            let field = egui::DragValue::new(&mut degrees)
+                .speed(1.0)
+                .max_decimals(1)
+                .custom_formatter(|value, _| degrees_text(texts, value));
+            if ui.add(field).changed() {
+                placement.rotation_deg = rotation::normalized(degrees);
+                changed = true;
+            }
+            ui.end_row();
+        });
+    if changed {
+        asked.place = Some(placement);
+    }
+}
+
+/// The title of «Propiedades» for `shape`: what kind of element it is.
+fn kind_title(shape: &Shape) -> &'static str {
+    if shape.table.is_some() {
+        "layers.table"
+    } else if shape.chart.is_some() {
+        "layers.chart"
+    } else if shape.qr.is_some() {
+        "layers.qr"
+    } else if shape.frame.is_some() {
+        "inspector.kind_frame"
+    } else if shape.effect.is_some() {
+        "inspector.kind_light"
+    } else if shape.group {
+        "inspector.kind_group"
+    } else if shape.line.is_some() {
+        "inspector.kind_line"
+    } else if shape.text.is_some() {
+        "inspector.kind_text"
+    } else if shape.image.is_some() {
+        "inspector.kind_image"
+    } else {
+        "inspector.kind_shape"
+    }
+}
+
+/// «Colores» of a group (spec 067): a swatch for each colour of its shapes;
+/// changing one changes it in all of them.
+fn group_colors(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    page: &gafira_doc::Page,
+    group: NodeId,
+    asked: &mut Asked,
+) {
+    let colors = crate::recolor::colors(page, group);
+    if colors.is_empty() {
+        return;
+    }
+    ui.label(plain(texts, "inspector.colors"));
+    ui.horizontal_wrapped(|ui| {
+        for old in colors {
+            if let Some(new) = color_button(ui, Some(old)) {
+                asked.recolor = Some((group, old, new));
+            }
+        }
+    });
+    ui.add_space(8.0);
+}
+
+/// The photo of a frame and how it sits (spec 066): «Poner foto…» or
+/// «Cambiar foto…», «Quitar foto» and «Encaje».
+fn frame_fields(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    frame: &gafira_doc::FrameNode,
+    asked: &mut Asked,
+) {
+    use gafira_doc::Fit;
+    ui.label(plain(texts, "frame.photo"));
+    ui.horizontal_wrapped(|ui| {
+        let pick = if frame.content.is_some() {
+            "frame.replace"
+        } else {
+            "frame.put"
+        };
+        if ui.button(plain(texts, pick)).clicked() {
+            asked.pick_frame_photo = true;
+        }
+        if frame.content.is_some() && ui.button(plain(texts, "frame.remove")).clicked() {
+            asked.frame_content = Some(None);
+        }
+    });
+    if frame.content.is_none() {
+        ui.label(
+            egui::RichText::new(plain(texts, "frame.empty"))
+                .small()
+                .color(ui.visuals().weak_text_color()),
+        );
+    }
+    ui.add_space(8.0);
+    ui.label(plain(texts, "frame.fit"));
+    let name = |fit: Fit| {
+        plain(
+            texts,
+            match fit {
+                Fit::Fill => "frame.fill",
+                Fit::Fit => "frame.whole",
+                Fit::Stretch => "frame.stretch",
+                Fit::None => "frame.original",
+            },
+        )
+    };
+    let mut fit = frame.fit;
+    egui::ComboBox::from_id_salt("inspector.frame_fit")
+        .width(ui.available_width())
+        .selected_text(name(fit))
+        .show_ui(ui, |ui| {
+            for option in [Fit::Fill, Fit::Fit, Fit::Stretch, Fit::None] {
+                ui.selectable_value(&mut fit, option, name(option));
+            }
+        });
+    if fit != frame.fit {
+        asked.frame_fit = Some(fit);
+    }
+    ui.add_space(8.0);
+}
+
+/// «Luz»: none or one of the lights (S65-06), as a list the width of the
+/// Inspector. Any shape turns into a light with it; switching kind keeps the
+/// settings of the light, and «Ninguna» takes it off.
+fn light_kind_row(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    effect: Option<&gafira_doc::ShapeEffect>,
+    asked: &mut Asked,
+) {
+    use elements::LightItem;
+    let current = effect.map(LightItem::of);
+    let name = |kind: Option<LightItem>| match kind {
+        Some(kind) => plain(texts, kind.key()),
+        None => plain(texts, "effect.none"),
+    };
+    ui.label(plain(texts, "effect.light"));
+    let mut chosen = current;
+    egui::ComboBox::from_id_salt("inspector.light")
+        .width(ui.available_width())
+        .selected_text(name(current))
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut chosen, None, name(None));
+            for kind in LightItem::ALL {
+                ui.selectable_value(&mut chosen, Some(kind), name(Some(kind)));
+            }
+        });
+    if chosen != current {
+        asked.effect = Some(chosen.map(|kind| match effect {
+            Some(effect) => kind.with(*effect.light()),
+            None => kind.effect(),
+        }));
+    }
+}
+
+/// The settings of a light (spec 065, S65-05), one under the other: the
+/// name of each setting over its slider, the slider the width of the
+/// Inspector, so nothing is cut or crowded.
+fn effect_fields(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    effect: &gafira_doc::ShapeEffect,
+    asked: &mut Asked,
+) {
+    use gafira_doc::{Light, ShapeEffect};
+    light_kind_row(ui, texts, Some(effect), asked);
+    ui.add_space(12.0);
+    // Room for the value box after the slider.
+    ui.spacing_mut().slider_width = (ui.available_width() - 64.0).max(80.0);
+    let setting =
+        |ui: &mut egui::Ui, key: &'static str, add: &mut dyn FnMut(&mut egui::Ui) -> bool| {
+            ui.label(
+                egui::RichText::new(plain(texts, key))
+                    .small()
+                    .color(ui.visuals().weak_text_color()),
+            );
+            let changed = add(ui);
+            ui.add_space(8.0);
+            changed
+        };
+    let mut next: Light = *effect.light();
+    let mut changed = false;
+    let (rays, width, colour) = match effect {
+        ShapeEffect::Streak(_) => (None, "effect.thickness", "effect.color"),
+        ShapeEffect::Bokeh(_) => (Some("effect.count"), "effect.size", "effect.color"),
+        ShapeEffect::SunRays(_) => (Some("effect.rays"), "effect.ray_width", "effect.color"),
+        ShapeEffect::Sparkle(_) | ShapeEffect::LensFlare(_) => {
+            (Some("effect.rays"), "effect.ray_width", "effect.halo")
+        }
+    };
+    if let Some(rays) = rays {
+        changed |= setting(ui, rays, &mut |ui| {
+            ui.add(egui::Slider::new(
+                &mut next.rays,
+                Light::MIN_RAYS..=Light::MAX_RAYS,
+            ))
+            .changed()
+        });
+    }
+    let mut thick = next.ray_width * 100.0;
+    changed |= setting(ui, width, &mut |ui| {
+        ui.add(egui::Slider::new(&mut thick, 0.0..=100.0).suffix(" %"))
+            .changed()
+    });
+    next.ray_width = thick / 100.0;
+    let mut intensity = next.intensity * 100.0;
+    changed |= setting(ui, "effect.intensity", &mut |ui| {
+        ui.add(egui::Slider::new(&mut intensity, 0.0..=100.0).suffix(" %"))
+            .changed()
+    });
+    next.intensity = intensity / 100.0;
+    changed |= setting(ui, "effect.angle", &mut |ui| {
+        ui.add(egui::Slider::new(&mut next.angle_deg, 0.0..=360.0).suffix("°"))
+            .changed()
+    });
+    changed |= setting(ui, colour, &mut |ui| {
+        ui.horizontal(|ui| {
+            let mut changed = false;
+            if let Some(color) = color_button(ui, next.halo) {
+                next.halo = Some(color);
+                changed = true;
+            }
+            if next.halo.is_some() && ui.small_button(plain(texts, "effect.no_halo")).clicked() {
+                next.halo = None;
+                changed = true;
+            }
+            changed
+        })
+        .inner
+    });
+    if changed {
+        asked.effect = Some(Some(effect.with_light(next)));
+    }
+    ui.add_space(4.0);
+    if ui.button(plain(texts, "effect.remove")).clicked() {
+        asked.effect = Some(None);
+    }
+    ui.add_space(12.0);
+}
+
 fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
     let px = |value: f64| {
         texts.t(&gafira_doc::msg!(
@@ -3964,17 +12078,11 @@ fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut A
     };
     ui.horizontal(|ui| {
         ui.label(texts.t(&gafira_doc::msg!("inspector.outline")));
-        let mut color = shape.stroke.map_or(Color32::TRANSPARENT, |stroke| {
-            canvas::screen_color(stroke.color)
-        });
-        if ui.color_edit_button_srgba(&mut color).changed() {
+        if let Some(color) = color_button(ui, shape.stroke.map(|stroke| stroke.color)) {
             let width = shape
                 .stroke
                 .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
-            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(
-                canvas::document_color(color),
-                width,
-            )));
+            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(color, width)));
         }
         if shape.stroke.is_some()
             && ui
@@ -4013,51 +12121,450 @@ fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut A
     }
 }
 
-/// The Inspector fields of a text element: its words, size and colour,
-/// applied to every span (one style per element for now, spec 027).
+/// The alignment of the text inside a shape (S55-05): across and down,
+/// shown once the shape has text.
+fn shape_text_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    shape: &Shape,
+    asked: &mut Asked,
+) {
+    let Some(text) = &shape.inner else {
+        return;
+    };
+    use gafira_doc::{TextAlign, VerticalAlign};
+    ui.label(texts.t(&gafira_doc::msg!("inspector.shape_text")));
+    ui.horizontal(|ui| {
+        for (icon, key, align) in [
+            (Icon::AlignLeft, "inspector.text_left", TextAlign::Left),
+            (
+                Icon::AlignCenter,
+                "inspector.text_center",
+                TextAlign::Center,
+            ),
+            (Icon::AlignRight, "inspector.text_right", TextAlign::Right),
+        ] {
+            let button = IconButton::new(icon, plain(texts, key))
+                .active(text.align == align)
+                .small()
+                .show(ui, theme);
+            if button.clicked() {
+                asked.shape_align = Some((Some(align), None));
+            }
+        }
+        ui.add_space(8.0);
+        for (icon, key, valign) in [
+            (Icon::AlignTop, "inspector.text_top", VerticalAlign::Top),
+            (
+                Icon::AlignMiddle,
+                "inspector.text_middle",
+                VerticalAlign::Middle,
+            ),
+            (
+                Icon::AlignBottom,
+                "inspector.text_bottom",
+                VerticalAlign::Bottom,
+            ),
+        ] {
+            let button = IconButton::new(icon, plain(texts, key))
+                .active(text.valign == valign)
+                .small()
+                .show(ui, theme);
+            if button.clicked() {
+                asked.shape_align = Some((None, Some(valign)));
+            }
+        }
+    });
+}
+
+/// The Inspector fields of a text element (spec 070): size, bold and
+/// italic, alignment, letter spacing, line height and its colour, from the
+/// picker, the colours of the design, the solid presets or the gradient
+/// presets. One style per element for now (spec 027).
 fn text_fields(
     ui: &mut egui::Ui,
     theme: &Theme,
     texts: &Texts,
-    text: &gafira_doc::TextNode,
+    (text, design): (&gafira_doc::TextNode, &DesignColors),
     asked: &mut Asked,
 ) {
+    use gafira_doc::TextAlign;
     let Some(style) = text.content.first_style().cloned() else {
         return;
     };
-    ui.label(
-        RichText::new(texts.t(&gafira_doc::msg!("inspector.text"))).font(theme.font("ui-label")),
-    );
-    let mut words = text.content.plain_text();
-    let edit = egui::TextEdit::multiline(&mut words)
-        .desired_rows(3)
-        .desired_width(f32::INFINITY);
-    if ui.add(edit).changed() {
+    let words = text.content.plain_text();
+    let restyle = |asked: &mut Asked, style: gafira_doc::SpanStyle| {
         asked.text = Some(gafira_doc::RichText::plain(&words, &style));
-    }
-    ui.add_space(8.0);
-    let mut size = style.size;
-    let mut color = canvas::screen_color(style.color);
+    };
+    // Size, bold and italic.
     ui.horizontal(|ui| {
-        ui.label(texts.t(&gafira_doc::msg!("inspector.font_size")));
-        let size_changed = ui
+        ui.label(plain(texts, "inspector.font_size"));
+        let mut size = style.size;
+        if ui
             .add(
                 egui::DragValue::new(&mut size)
                     .speed(1.0)
                     .range(1.0..=gafira_doc::TextNode::MAX_SIZE),
             )
-            .changed();
-        ui.label(texts.t(&gafira_doc::msg!("inspector.text_color")));
-        let color_changed = ui.color_edit_button_srgba(&mut color).changed();
-        if size_changed || color_changed {
-            let restyled = gafira_doc::SpanStyle {
-                size,
-                color: canvas::document_color(color),
+            .changed()
+        {
+            restyle(
+                asked,
+                gafira_doc::SpanStyle {
+                    size,
+                    ..style.clone()
+                },
+            );
+        }
+        ui.add_space(8.0);
+        if format_tile(
+            ui,
+            theme,
+            style.bold,
+            plain(texts, "inspector.bold"),
+            |p, r, c| {
+                // A heavy «B»: the letter twice, a pixel apart.
+                for dx in [0.0, 1.0] {
+                    p.text(
+                        r.center() + Vec2::new(dx - 0.5, 0.0),
+                        Align2::CENTER_CENTER,
+                        "B",
+                        egui::FontId::proportional(15.0),
+                        c,
+                    );
+                }
+            },
+        )
+        .clicked()
+        {
+            restyle(
+                asked,
+                gafira_doc::SpanStyle {
+                    bold: !style.bold,
+                    ..style.clone()
+                },
+            );
+        }
+        let italic = text_family(
+            ui.ctx(),
+            theme,
+            &gafira_doc::SpanStyle {
+                font: "Inter".to_owned(),
+                italic: true,
                 ..style.clone()
-            };
-            asked.text = Some(gafira_doc::RichText::plain(&words, &restyled));
+            },
+        );
+        if format_tile(
+            ui,
+            theme,
+            style.italic,
+            plain(texts, "inspector.italic"),
+            |p, r, c| {
+                p.text(
+                    r.center(),
+                    Align2::CENTER_CENTER,
+                    "I",
+                    egui::FontId::new(15.0, italic),
+                    c,
+                );
+            },
+        )
+        .clicked()
+        {
+            restyle(
+                asked,
+                gafira_doc::SpanStyle {
+                    italic: !style.italic,
+                    ..style.clone()
+                },
+            );
         }
     });
+    ui.add_space(6.0);
+    // Alignment: four lines each, set as the text sets them.
+    ui.horizontal(|ui| {
+        for (align, key) in [
+            (TextAlign::Left, "inspector.text_left"),
+            (TextAlign::Center, "inspector.text_center"),
+            (TextAlign::Right, "inspector.text_right"),
+            (TextAlign::Justify, "inspector.text_justify"),
+        ] {
+            let clicked = format_tile(
+                ui,
+                theme,
+                text.align == align,
+                plain(texts, key),
+                |p, r, c| {
+                    for (row, length) in [1.0_f32, 0.6, 1.0, 0.7].into_iter().enumerate() {
+                        let length = if align == TextAlign::Justify {
+                            1.0
+                        } else {
+                            length
+                        };
+                        let w = 16.0 * length;
+                        let y = r.top() + 10.0 + row as f32 * 4.0;
+                        let x = match align {
+                            TextAlign::Left | TextAlign::Justify => r.center().x - 8.0,
+                            TextAlign::Center => r.center().x - w / 2.0,
+                            TextAlign::Right => r.center().x + 8.0 - w,
+                        };
+                        p.line_segment([Pos2::new(x, y), Pos2::new(x + w, y)], Stroke::new(1.5, c));
+                    }
+                },
+            )
+            .clicked();
+            if clicked {
+                asked.text_align = Some(align);
+            }
+        }
+    });
+    ui.add_space(6.0);
+    // Letter spacing and line height (FD-41).
+    egui::Grid::new("inspector.text_spacing")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            let mut letters = text.letter_spacing;
+            let mut lines = text.line_height.unwrap_or(1.0);
+            let (lo, hi) = (
+                *gafira_doc::TextNode::LETTER_SPACING.start(),
+                *gafira_doc::TextNode::LETTER_SPACING.end(),
+            );
+            ui.label(plain(texts, "inspector.letter_spacing"));
+            let a = ui.add(egui::Slider::new(&mut letters, lo..=hi).step_by(1.0));
+            ui.end_row();
+            let (lo, hi) = (
+                *gafira_doc::TextNode::LINE_HEIGHT.start(),
+                *gafira_doc::TextNode::LINE_HEIGHT.end(),
+            );
+            ui.label(plain(texts, "inspector.line_height"));
+            let b = ui.add(egui::Slider::new(&mut lines, lo..=hi).step_by(0.05));
+            ui.end_row();
+            if a.changed() || b.changed() {
+                let lines = (b.changed() || text.line_height.is_some()).then_some(lines);
+                asked.text_spacing = Some((letters, lines));
+            }
+        });
+    // «Curva»: from a cup (-100) through straight (0) to an arch (100).
+    ui.add_space(6.0);
+    let mut curve = text.curve;
+    ui.horizontal(|ui| {
+        ui.label(plain(texts, "inspector.curve"));
+        let max = gafira_doc::TextNode::MAX_CURVE;
+        if ui
+            .add(egui::Slider::new(&mut curve, -max..=max).step_by(1.0))
+            .changed()
+        {
+            asked.text_curve = Some(curve);
+        }
+    });
+    ui.add_space(12.0);
+    text_color_fields(ui, theme, texts, (text, &style, design), asked);
+}
+
+/// The colours a design already uses (spec 070): the solid colours and the
+/// gradients of its shapes and texts, each once, in the order they appear.
+#[derive(Clone, Debug, Default)]
+struct DesignColors {
+    solid: Vec<gafira_color::Color>,
+    gradients: Vec<gafira_doc::Gradient>,
+}
+
+/// The colours of the design on `page`, at most twelve of each.
+fn design_colors(page: &gafira_doc::Page) -> DesignColors {
+    let mut out = DesignColors::default();
+    let solid = |color: gafira_color::Color, out: &mut DesignColors| {
+        if out.solid.len() < 12 && !out.solid.contains(&color) {
+            out.solid.push(color);
+        }
+    };
+    let gradient = |g: &gafira_doc::Gradient, out: &mut DesignColors| {
+        if out.gradients.len() < 12 && !out.gradients.contains(g) {
+            out.gradients.push(g.clone());
+        }
+    };
+    let mut ids: Vec<&NodeId> = page.nodes.keys().collect();
+    ids.sort();
+    for id in ids {
+        let Some(node) = page.nodes.get(id) else {
+            continue;
+        };
+        match &node.kind {
+            gafira_doc::NodeKind::Shape(shape) => {
+                match &shape.gradient {
+                    Some(g) => gradient(g, &mut out),
+                    None => {
+                        if let Some(fill) = shape.fill {
+                            solid(fill, &mut out);
+                        }
+                    }
+                }
+                if let Some(text) = &shape.text
+                    && let Some(style) = text.content.first_style()
+                {
+                    solid(style.color, &mut out);
+                }
+            }
+            gafira_doc::NodeKind::Text(text) => match &text.gradient {
+                Some(g) => gradient(g, &mut out),
+                None => {
+                    if let Some(style) = text.content.first_style() {
+                        solid(style.color, &mut out);
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+    out
+}
+
+/// «Color del texto» (spec 070): the picker, then the colours of the
+/// design, the solid presets and the gradient presets, as round swatches;
+/// the one in use is ringed.
+fn text_color_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    (text, style, design): (&gafira_doc::TextNode, &gafira_doc::SpanStyle, &DesignColors),
+    asked: &mut Asked,
+) {
+    let section = |ui: &mut egui::Ui, key: &'static str| {
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(plain(texts, key))
+                .font(theme.font("body-sm"))
+                .color(theme.c("text.secondary")),
+        );
+        ui.add_space(4.0);
+    };
+    ui.label(
+        RichText::new(plain(texts, "inspector.text_color"))
+            .font(theme.font("ui-label"))
+            .color(theme.c("text")),
+    );
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        if let Some(picked) = color_button(ui, Some(style.color)) {
+            asked.text_fill = Some(TextFill::Solid(picked));
+        }
+        ui.label(plain(texts, "inspector.custom_color"));
+    });
+    let in_use = |fill: &TextFill| match fill {
+        TextFill::Solid(c) => text.gradient.is_none() && *c == style.color,
+        TextFill::Gradient(g) => text.gradient.as_ref() == Some(g),
+    };
+    let row = |ui: &mut egui::Ui, fills: Vec<TextFill>, asked: &mut Asked| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::splat(6.0);
+            for fill in fills {
+                if dot(ui, theme, in_use(&fill), &fill).clicked() {
+                    asked.text_fill = Some(fill);
+                }
+            }
+        });
+    };
+    if !design.solid.is_empty() || !design.gradients.is_empty() {
+        section(ui, "inspector.design_colors");
+        let fills = design
+            .solid
+            .iter()
+            .copied()
+            .map(TextFill::Solid)
+            .chain(design.gradients.iter().cloned().map(TextFill::Gradient))
+            .collect();
+        row(ui, fills, asked);
+    }
+    section(ui, "inspector.solid_presets");
+    row(
+        ui,
+        crate::colors::TEXT_PALETTE
+            .iter()
+            .map(|code| TextFill::Solid(crate::colors::hex(*code)))
+            .collect(),
+        asked,
+    );
+    section(ui, "inspector.gradient_presets");
+    row(
+        ui,
+        crate::colors::TEXT_GRADIENTS
+            .iter()
+            .map(|(a, b, angle)| TextFill::Gradient(crate::colors::gradient(*a, *b, *angle)))
+            .collect(),
+        asked,
+    );
+}
+
+/// A colour for the letters of a text: one colour, or a gradient over the
+/// box (spec 070).
+#[derive(Clone, Debug, PartialEq)]
+enum TextFill {
+    Solid(gafira_color::Color),
+    Gradient(gafira_doc::Gradient),
+}
+
+/// A round swatch of `fill`, ringed when it is the one in use; a hand
+/// over it.
+fn dot(ui: &mut egui::Ui, theme: &Theme, on: bool, fill: &TextFill) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
+    let painter = ui.painter();
+    let inner = rect.shrink(2.0);
+    match fill {
+        TextFill::Solid(color) => {
+            painter.circle_filled(
+                inner.center(),
+                inner.width() / 2.0,
+                canvas::screen_color(*color),
+            );
+        }
+        TextFill::Gradient(gradient) => {
+            // The gradient swatch, cut round by the page colour around it.
+            painter.add(gradient_swatch(gradient, inner));
+            let ring = inner.width() / 2.0 + 4.0;
+            painter.circle_stroke(
+                inner.center(),
+                ring - 2.0,
+                Stroke::new(8.0, ui.visuals().panel_fill),
+            );
+        }
+    }
+    let ring = if on {
+        Stroke::new(2.0, theme.c("primary.bg"))
+    } else {
+        Stroke::new(1.0, theme.c("border"))
+    };
+    painter.circle_stroke(rect.center(), rect.width() / 2.0 - 1.0, ring);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response
+}
+
+/// A square button of the text formats, drawn by `paint` in the text colour
+/// (or the brand colour when `on`), with `hint` on hover and a hand.
+fn format_tile(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    on: bool,
+    hint: String,
+    paint: impl FnOnce(&egui::Painter, Rect, Color32),
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(30.0), egui::Sense::click());
+    let painter = ui.painter();
+    if on || response.hovered() {
+        painter.rect_filled(rect, 6.0, theme.c("surface.sunken"));
+    }
+    let color = if on {
+        theme.c("primary.bg")
+    } else {
+        theme.c("text")
+    };
+    paint(painter, rect, color);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.on_hover_text(hint)
 }
 
 /// Lay out a text element in its upright screen box `at`: one galley per
@@ -4084,11 +12591,7 @@ fn lay_text(
             .iter()
             .map(|span| span.text.as_str())
             .collect();
-        let family = if style.font == theme.tokens.typography.display {
-            egui::FontFamily::Name(crate::style::DISPLAY.into())
-        } else {
-            egui::FontFamily::Proportional
-        };
+        let family = text_family(painter.ctx(), theme, style);
         let size = (style.size as f32 * zoom).max(1.0);
         let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
         let galley = painter.layout(
@@ -4107,6 +12610,127 @@ fn lay_text(
         y += height;
     }
     laid
+}
+
+/// The text of a shape laid out in the upright box `at` (spec 055): in
+/// the box less its margin, each line aligned across, the whole block
+/// placed down by its vertical alignment.
+fn lay_inner(
+    painter: &egui::Painter,
+    theme: &Theme,
+    at: Rect,
+    zoom: f32,
+    opacity: f32,
+    text: &gafira_doc::ShapeText,
+) -> Vec<(Pos2, Arc<egui::Galley>, Color32)> {
+    let inner = canvas::text_box(at);
+    let mut laid = Vec::new();
+    let mut y = 0.0;
+    for paragraph in &text.content.paragraphs {
+        let Some(style) = paragraph.spans.first().map(|span| &span.style) else {
+            continue;
+        };
+        let words: String = paragraph
+            .spans
+            .iter()
+            .map(|span| span.text.as_str())
+            .collect();
+        let size = (style.size as f32 * zoom).max(1.0);
+        let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
+        let mut job = egui::text::LayoutJob::simple(
+            words,
+            egui::FontId::new(size, text_family(painter.ctx(), theme, style)),
+            color,
+            inner.width().max(1.0),
+        );
+        job.halign = match text.align {
+            gafira_doc::TextAlign::Center => Align::Center,
+            gafira_doc::TextAlign::Right => Align::RIGHT,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => Align::LEFT,
+        };
+        let galley = painter.layout_job(job);
+        let x = match text.align {
+            gafira_doc::TextAlign::Center => inner.center().x,
+            gafira_doc::TextAlign::Right => inner.max.x,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => inner.min.x,
+        };
+        let height = galley.size().y.max(size);
+        laid.push((Pos2::new(x, y), galley, color));
+        y += height;
+    }
+    let top = canvas::text_top(inner, y, text.valign);
+    for (pos, _, _) in &mut laid {
+        pos.y += top;
+    }
+    laid
+}
+
+/// The height of `laid` text in px of page: from the top of its box `at`
+/// to the bottom of its last line, at `zoom`.
+fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32) -> Option<f64> {
+    let (pos, galley, _) = laid.last()?;
+    // Before the fonts are ready a galley has no size: no measure yet.
+    if galley.size().y <= 0.0 {
+        return None;
+    }
+    Some(f64::from((pos.y + galley.size().y - at.min.y) / zoom))
+}
+
+/// The egui family of a document font: the display face or the UI one.
+fn text_family(
+    ctx: &egui::Context,
+    theme: &Theme,
+    style: &gafira_doc::SpanStyle,
+) -> egui::FontFamily {
+    // A family of the library: its face, or the nearest one (spec 062).
+    let library = gafira_theme::library();
+    if let Some((bold, italic)) = gafira_theme::nearest_face(
+        |b, i| {
+            library
+                .iter()
+                .any(|f| f.family == style.font && f.bold == b && f.italic == i)
+        },
+        style.bold,
+        style.italic,
+    ) {
+        let face = library_family(ctx, &gafira_theme::face_key(&style.font, bold, italic));
+        if face != egui::FontFamily::Proportional {
+            return face;
+        }
+    }
+    // A family of the system, once its faces are installed (spec 062).
+    let system = system_fonts::catalogue();
+    let faces = system.faces();
+    if let Some((bold, italic)) = gafira_theme::nearest_face(
+        |b, i| {
+            faces
+                .iter()
+                .any(|f| f.family == style.font && f.bold == b && f.italic == i)
+        },
+        style.bold,
+        style.italic,
+    ) {
+        let face = library_family(ctx, &gafira_theme::face_key(&style.font, bold, italic));
+        if face != egui::FontFamily::Proportional {
+            return face;
+        }
+    }
+    if style.font == theme.tokens.typography.display {
+        egui::FontFamily::Name(crate::style::DISPLAY.into())
+    } else {
+        egui::FontFamily::Proportional
+    }
+}
+
+/// The egui family a face of the library is installed under, or the
+/// interface family when this context did not install it (a test).
+fn library_family(ctx: &egui::Context, key: &str) -> egui::FontFamily {
+    let family = egui::FontFamily::Name(key.into());
+    if ctx.fonts(|f| f.definitions().families.contains_key(&family)) {
+        family
+    } else {
+        egui::FontFamily::Proportional
+    }
 }
 
 /// The text `laid` out in the upright box `at`, as one mesh mapped by
@@ -4196,7 +12820,7 @@ pub(crate) mod tests {
     use crate::format::StartFormat;
     use crate::shell::start;
 
-    struct Nothing;
+    pub(crate) struct Nothing;
 
     fn none() -> io::Error {
         io::ErrorKind::Unsupported.into()
@@ -4239,7 +12863,20 @@ pub(crate) mod tests {
         repository: Arc<dyn ProjectRepository>,
         store: Arc<dyn ContentStore>,
     ) -> Gafira {
-        let dir = std::env::temp_dir().join(format!("gafira-ui-{}", std::process::id()));
+        // A folder of its own: two tests saving their settings at once
+        // would race on the same `settings.json.tmp`.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("gafira-ui-{}-{n}", std::process::id()));
+        engine_in(&dir, repository, store)
+    }
+
+    /// An engine whose settings and instances live in `dir`.
+    pub(crate) fn engine_in(
+        dir: &std::path::Path,
+        repository: Arc<dyn ProjectRepository>,
+        store: Arc<dyn ContentStore>,
+    ) -> Gafira {
         let clock = Arc::new(SystemClock::new());
         let ports = Ports::new(
             repository,
@@ -4283,6 +12920,89 @@ pub(crate) mod tests {
         page_sizes(&engine.edit().document().expect("a document"))
     }
 
+    // S63-04: a click on a colour of a gradient of three opens its picker
+    // (the menu of its right click used the picker's id and closed it).
+    #[test]
+    fn s63_04_a_click_opens_the_picker_of_a_third_colour() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let stop = |offset| GradientStop {
+            offset,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(1.0, 0.0, 0.0, 1.0)),
+        };
+        let gradient = Gradient {
+            kind: GradientKind::Radial,
+            stops: vec![stop(0.0), stop(0.5), stop(1.0)],
+        };
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let at = std::cell::Cell::new(Pos2::ZERO);
+        let draw = |events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                events,
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = gradient_stop_button(ui, &texts, &gradient, 2);
+                    let last = ui.min_rect();
+                    at.set(last.min + Vec2::new(8.0, 8.0));
+                });
+            });
+        };
+        draw(Vec::new());
+        let pos = at.get();
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        draw(vec![egui::Event::PointerMoved(pos)]);
+        draw(vec![button(true)]);
+        draw(vec![button(false)]);
+        draw(Vec::new());
+        assert!(egui::Popup::is_any_open(&ctx), "the picker is open");
+    }
+
+    // S63-04: «+» asks for the picker of the colour it adds; the next frame
+    // that draws that colour opens it, once.
+    #[test]
+    fn s63_04_the_added_colour_opens_its_picker() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let stop = |offset| GradientStop {
+            offset,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(1.0, 0.0, 0.0, 1.0)),
+        };
+        let gradient = Gradient {
+            kind: GradientKind::Radial,
+            stops: vec![stop(0.0), stop(0.5), stop(1.0)],
+        };
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let draw = |ctx: &egui::Context| {
+            let mut asked = Asked::default();
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    gradient_fields(ui, &texts, &gradient, &mut asked);
+                });
+            });
+        };
+        draw(&ctx);
+        assert!(!egui::Popup::is_any_open(&ctx));
+        ctx.data_mut(|d| d.insert_temp(gradient_pending_id(), 2usize));
+        draw(&ctx);
+        assert!(
+            egui::Popup::is_any_open(&ctx),
+            "the picker of the new colour"
+        );
+        assert_eq!(
+            ctx.data(|d| d.get_temp::<usize>(gradient_pending_id())),
+            None
+        );
+    }
+
     #[test]
     fn s18_06_start_creates_one_page_of_the_format_with_an_identity() {
         let mut engine = engine();
@@ -4296,6 +13016,73 @@ pub(crate) mod tests {
         assert!(
             (a4.x - 793.7).abs() < 0.1 && (a4.y - 1122.5).abs() < 0.1,
             "{a4:?}"
+        );
+    }
+
+    // Spec 079: a hand stroke goes into the page as one vector element,
+    // kept as a freehand stroke with its brush; the eraser removes it in
+    // one step that undo brings back.
+    #[test]
+    fn s79_a_stroke_is_one_element_and_the_eraser_removes_it() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let snapshot = engine.edit().document();
+        let page = snapshot.as_ref().expect("doc").pages()[0].id;
+        let brush = crate::draw::BRUSHES[1];
+        let points: Vec<[f64; 2]> = (0..60)
+            .map(|k| {
+                [
+                    100.0 + f64::from(k) * 5.0,
+                    300.0 + 40.0 * (f64::from(k) / 9.0).sin(),
+                ]
+            })
+            .collect();
+        let outline = crate::draw::outline(&points, 10.0, brush.cap, &brush.style);
+        let ((x, y, w, h), path) = crate::draw::to_path(&outline).expect("path");
+        let mut shape = gafira_doc::ShapeNode::new(ShapeGeometry::Path(path));
+        shape.fill = Some(canvas::document_color(Color32::RED));
+        shape.drawn_with = Some(brush.id.to_owned());
+        let spec = gafira_edit::NodeSpec::new(
+            gafira_doc::NodeKind::Shape(shape),
+            gafira_doc::Placement::new(x, y, w, h),
+        );
+        let draw = Asked {
+            draw_stroke: Some((page, spec)),
+            ..Asked::default()
+        };
+        run(&mut engine, &snapshot, &draw);
+        let after = engine.edit().document();
+        let on = &after.as_ref().expect("doc").pages()[0];
+        assert_eq!(on.roots.len(), 1, "one element");
+        let id = on.roots[0];
+        let gafira_doc::NodeKind::Shape(drawn) = &on.node(id).expect("node").kind else {
+            panic!("a shape");
+        };
+        assert_eq!(drawn.drawn_with.as_deref(), Some("marker"));
+        let erase = Asked {
+            erase: Some((page, vec![id])),
+            ..Asked::default()
+        };
+        run(&mut engine, &after, &erase);
+        assert!(
+            engine.edit().document().as_ref().expect("doc").pages()[0]
+                .roots
+                .is_empty()
+        );
+        let snapshot = engine.edit().document();
+        run(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                undo: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            engine.edit().document().as_ref().expect("doc").pages()[0]
+                .roots
+                .len(),
+            1
         );
     }
 
@@ -4404,7 +13191,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                insert: Some(ShapeGeometry::Ellipse),
+                insert: Some(canvas::Piece::Circle),
                 ..Asked::default()
             },
             &theme,
@@ -4492,7 +13279,11 @@ pub(crate) mod tests {
     #[test]
     fn s21_02_dark_mode_is_asked_for_and_the_settings_keep_it() {
         use gafira_ports::settings::Appearance;
-        let mut engine = engine();
+        // Two engines over the same settings: the second reads what the
+        // first saved.
+        let dir = std::env::temp_dir().join(format!("gafira-ui-s21-{}", std::process::id()));
+        let fresh = || engine_in(&dir, Arc::new(Nothing), Arc::new(Nothing));
+        let mut engine = fresh();
         start(&mut engine, StartFormat::Social).expect("a new document");
         let snapshot = engine.edit().document();
         assert!(matches!(
@@ -4508,7 +13299,7 @@ pub(crate) mod tests {
         ));
         let settings = engine.settings().get().with_appearance(Appearance::Dark);
         engine.settings().set(settings).expect("saves");
-        let again = super::tests::engine();
+        let again = fresh();
         again.settings().start().expect("loads");
         assert_eq!(again.settings().get().appearance, Appearance::Dark);
         again.settings().set(Settings::default()).expect("resets");
@@ -4526,7 +13317,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
             &theme,
@@ -4588,7 +13379,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
             &theme,
@@ -4644,7 +13435,7 @@ pub(crate) mod tests {
             &mut editor,
             &mut engine,
             Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
         );
@@ -4700,7 +13491,10 @@ pub(crate) mod tests {
                 &mut engine,
                 &snapshot,
                 &Asked {
-                    insert: Some(geometry),
+                    insert: Some(match geometry {
+                        ShapeGeometry::Ellipse => canvas::Piece::Circle,
+                        _ => canvas::Piece::Square,
+                    }),
                     ..Asked::default()
                 },
                 &theme,
@@ -4854,6 +13648,1059 @@ pub(crate) mod tests {
         std::fs::remove_dir_all(dir).expect("clean up");
     }
 
+    // Spec 067: a text of image paths or file URIs (what a file manager
+    // copies) is a list of images; anything else is text.
+    #[test]
+    fn s67_pasted_paths_of_images_are_images() {
+        let dir = std::env::temp_dir().join(format!("gafira ui paths {}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("a b.png");
+        image::RgbaImage::new(2, 2).save(&png).expect("a png");
+        let uri = format!("file://{}", png.display()).replace(' ', "%20");
+        assert_eq!(image_paths(&uri), vec![png.clone()]);
+        assert_eq!(image_paths(&format!("copy\n{uri}")), vec![png.clone()]);
+        assert_eq!(image_paths(&png.display().to_string()), vec![png.clone()]);
+        assert!(image_paths("hola").is_empty());
+        assert!(
+            image_paths(&format!("{uri}\nhola")).is_empty(),
+            "all or nothing"
+        );
+        assert!(image_paths("/no/such/file.png").is_empty());
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // Spec 067: an image dropped from the system lands centred where it was
+    // dropped; dropped on a frame, it becomes the frame's photo.
+    #[test]
+    fn s67_a_dropped_image_lands_at_the_point_or_in_the_frame() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-drop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("drop.png");
+        image::RgbaImage::from_pixel(40, 20, image::Rgba([9, 9, 9, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let page = engine.edit().document().expect("doc").pages()[0].id;
+        // The page drawn at (0, 0) at 50 %.
+        editor.zoom = 0.5;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(540.0)))];
+        editor.place_images(
+            &mut engine,
+            std::slice::from_ref(&png),
+            Some(Pos2::new(100.0, 60.0)),
+        );
+        let document = engine.edit().document().expect("doc");
+        let on = &document.pages()[0];
+        let image = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the image");
+        let p = image.base.placement;
+        assert!(matches!(image.kind, gafira_doc::NodeKind::Image(_)));
+        assert!((p.x + p.w / 2.0 - 200.0).abs() < 1e-6 && (p.y + p.h / 2.0 - 120.0).abs() < 1e-6);
+        // A frame in the middle of the page takes the next one.
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_frame: Some(canvas::Piece::Square),
+                ..Asked::default()
+            },
+        );
+        let (_, frame) = editor.selected.single().expect("the frame");
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(540.0)))];
+        editor.place_images(&mut engine, &[png], Some(Pos2::new(270.0, 270.0)));
+        let document = engine.edit().document().expect("doc");
+        let photo = frame_of(&document, page, frame).and_then(|f| f.content);
+        assert_eq!(photo.map(|c| c.natural), Some((40, 20)));
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // Spec 067: an SVG brought in «tal cual» is a group of vector shapes
+    // with its colours, at its own size, centred where it was dropped.
+    #[test]
+    fn s67_an_svg_as_it_is_is_a_group_of_shapes() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-svgv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let svg = dir.join("logo.svg");
+        std::fs::write(
+            &svg,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="40" height="50" fill="#ff0000"/><circle cx="75" cy="25" r="25" fill="#0000ff"/></svg>"##,
+        )
+        .expect("an svg");
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        editor.place_images(&mut engine, &[svg], Some(Pos2::new(300.0, 200.0)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                svg_as_image: Some(true),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let on = &document.pages()[0];
+        let group = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the group");
+        assert!(matches!(group.kind, gafira_doc::NodeKind::Group(_)));
+        assert_eq!(group.children.len(), 2);
+        let p = group.base.placement;
+        assert_eq!((p.x, p.y, p.w, p.h), (250.0, 175.0, 100.0, 50.0));
+        let red = on.node(group.children[0]).expect("the first shape");
+        let gafira_doc::NodeKind::Shape(shape) = &red.kind else {
+            panic!("a shape")
+        };
+        assert!(matches!(shape.geometry, gafira_doc::ShapeGeometry::Path(_)));
+        assert!(shape.fill.is_some());
+        assert_eq!(red.base.placement.x, 250.0);
+        // Its colours: the red changed to green in one undo step.
+        let colors = crate::recolor::colors(on, group.base.id);
+        assert_eq!(colors.len(), 2, "red and blue");
+        let green = gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 1.0, 0.0, 1.0));
+        let depth = undo_depth(&mut engine);
+        editor.selected = Selection::one(page, group.base.id);
+        let group_id = group.base.id;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                recolor: Some((group_id, colors[0], green)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let after = crate::recolor::colors(&document.pages()[0], group_id);
+        assert!(after.iter().any(|c| crate::recolor::same(*c, green)));
+        assert!(!after.iter().any(|c| crate::recolor::same(*c, colors[0])));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // S82-05: a CSV dropped on a page is a table inside it, selected, one
+    // undo step; S82-06: a workbook of several sheets asks for one; S82-07:
+    // what cannot be read changes nothing.
+    #[test]
+    fn s82_05_a_dropped_spreadsheet_is_a_table() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-sheet-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let (csv, book, bad) = (dir.join("d.csv"), dir.join("l.xlsx"), dir.join("m.xlsx"));
+        std::fs::write(&csv, "Mes;Ventas\nEnero;12,5\n").expect("a csv");
+        std::fs::write(&bad, "nada").expect("a file");
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        let depth = undo_depth(&mut engine);
+        // Near the corner: it stays inside.
+        editor.place_images(&mut engine, &[csv], Some(Pos2::new(5.0, 5.0)));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let document = engine.edit().document().expect("doc");
+        let (on, id) = editor.selected.single().expect("the table");
+        let (table, placement) = table_of(&document, on, id).expect("a table");
+        assert_eq!(table.cells[3].text, "12,5");
+        assert!(placement.x >= 0.0 && placement.y >= 0.0);
+        let sheet = |name| gafira_io_xlsx::Sheet {
+            name,
+            table: &table,
+            size: (placement.w, placement.h),
+            dpi: 96.0,
+        };
+        let bytes = gafira_io_xlsx::workbook(&[sheet("Uno"), sheet("Dos")]).expect("a book");
+        std::fs::write(&book, bytes).expect("a book");
+        editor.place_images(&mut engine, &[book, bad], None);
+        assert_eq!(undo_depth(&mut engine), depth + 1, "it asks first");
+        let answer = |index| Asked {
+            sheet: Some(crate::sheets::Answer::Insert(index)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, answer(1));
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        let document = engine.edit().document().expect("doc");
+        let (on, id) = editor.selected.single().expect("the table");
+        let node = document.page(on).and_then(|p| p.node(id)).expect("a node");
+        assert_eq!(node.base.name.as_deref(), Some("Dos"));
+        assert!(!editor.sheets.is_empty(), "the one it could not read");
+        ask(&mut engine, &mut editor, answer(0));
+        assert!(editor.sheets.is_empty());
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // S83-06, S83-07: a chart inserted is selected, its field is one undo
+    // step, its panel closes with the selection, and a table makes one.
+    #[test]
+    fn s83_07_a_chart_is_inserted_and_edited() {
+        use crate::chart_templates::{Chosen, TEMPLATES};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        let insert = Asked {
+            chart_chosen: Some(Chosen::Insert(TEMPLATES[0], None)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, insert);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let at = editor.selected.single().expect("the chart");
+        assert_eq!(at.0, page);
+        let chart = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            chart_of(&document, at.0, at.1).expect("a chart")
+        };
+        let write = |engine: &mut Gafira, editor: &mut Editor, words: &str, field: u64| {
+            let mut next = chart(engine);
+            assert!(gafira_chart::set_cell(&mut next, 1, 1, words));
+            let asked = Asked {
+                chart: Some((at.0, at.1, Box::new(next))),
+                chart_field: field,
+                ..Asked::default()
+            };
+            ask(engine, editor, asked);
+        };
+        write(&mut engine, &mut editor, "2", 7);
+        write(&mut engine, &mut editor, "25", 7);
+        assert_eq!(undo_depth(&mut engine), depth + 2, "one field, one step");
+        write(&mut engine, &mut editor, "9", 8);
+        assert_eq!(undo_depth(&mut engine), depth + 3, "another field");
+        assert_eq!(chart(&mut engine).cell(1, 1), "9");
+        let rest = Asked {
+            chart_rest: true,
+            chart_open: Some(at),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, rest);
+        assert!(editor.chart_gesture.is_none() && editor.chart_edit.is_some());
+        engine.edit().undo().expect("an undo");
+        assert_eq!(chart(&mut engine).cell(1, 1), "25");
+        // S83-10: a table makes a chart of its data.
+        let texts = Texts::new(engine.settings().locale().locale);
+        let table = crate::table_templates::Template::ALL
+            .into_iter()
+            .find(|t| !t.table(&texts).cells[0].text.is_empty())
+            .expect("a table with words");
+        editor.insert_table(&mut engine, table, None);
+        let made = Asked {
+            table_menu: Some(tables::Menu::Chart),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, made);
+        let document = engine.edit().document().expect("doc");
+        let new = editor.selected.single().expect("the chart");
+        let made = chart_of(&document, new.0, new.1).expect("a chart");
+        assert_eq!(made.cell(0, 0), table.table(&texts).cells[0].text);
+        assert!(editor.chart_edit.is_some());
+    }
+
+    // S84-01: what the models make of an image is one undo step with its
+    // assets, in the same box; the original comes back, and an image that
+    // changed meanwhile is left as it is.
+    #[test]
+    fn s84_01_an_edited_image_is_one_step() {
+        use crate::vision::{Ask, Target};
+        use gafira_doc::{AssetRef, ContentHash, ImageNode};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        let original = AssetRef::new(ContentHash([7; 32]));
+        let entry = gafira_doc::AssetEntry {
+            name: "gato.png".to_owned(),
+            storage: gafira_doc::AssetStorage::Embedded,
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertAsset::new(original, entry)))
+            .expect("the asset");
+        editor.place_image(&mut engine, original, (200, 100), None, false);
+        let (page, node) = editor.selected.single().expect("the image");
+        let depth = undo_depth(&mut engine);
+        let image = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            image_of(&document, page, node).expect("an image")
+        };
+        let before = image(&mut engine);
+        let target = Target {
+            page,
+            node,
+            image: before,
+        };
+        let asset = |n: u8| AssetRef::new(ContentHash([n; 32]));
+        set_image(&mut engine, target, before.edited(asset(8), asset(9)));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let cut = image(&mut engine);
+        assert!(cut.is_cut() && cut.is_enhanced() && cut.original() == original);
+        let document = engine.edit().document().expect("doc");
+        assert_eq!(
+            document.asset(&asset(9)).expect("the base").name,
+            "gato.png"
+        );
+        // The background alone, then the original.
+        let target = Target {
+            page,
+            node,
+            image: cut,
+        };
+        for (vision, want) in [
+            (Ask::Background(target), cut.edited(asset(9), asset(9))),
+            (Ask::Original(target), ImageNode::new(original)),
+        ] {
+            let asked = Asked {
+                vision: Some(vision),
+                ..Asked::default()
+            };
+            ask(&mut engine, &mut editor, asked);
+            assert_eq!(image(&mut engine), want);
+        }
+        assert_eq!(undo_depth(&mut engine), depth + 3, "a step each");
+        for _ in 0..3 {
+            engine.edit().undo().expect("an undo");
+        }
+        assert_eq!(image(&mut engine), before);
+        assert!(
+            engine
+                .edit()
+                .document()
+                .expect("doc")
+                .asset(&asset(8))
+                .is_none()
+        );
+    }
+
+    // S66-10: an SVG dropped on the canvas becomes an empty frame of its
+    // outline, with its proportions, centred where it was dropped.
+    #[test]
+    fn s66_10_a_dropped_svg_is_a_custom_frame() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-svg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let svg = dir.join("dog.svg");
+        std::fs::write(
+            &svg,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><path d="M0 100 L100 0 L200 100 Z"/></svg>"#,
+        )
+        .expect("an svg");
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        editor.place_images(&mut engine, &[svg], Some(Pos2::new(300.0, 200.0)));
+        assert!(editor.pending_svg.is_some(), "it asks how to come in");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                svg_as_image: Some(false),
+                ..Asked::default()
+            },
+        );
+        assert!(editor.pending_svg.is_none());
+        let document = engine.edit().document().expect("doc");
+        let on = &document.pages()[0];
+        let node = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the frame");
+        let gafira_doc::NodeKind::Frame(frame) = &node.kind else {
+            panic!("a frame")
+        };
+        assert!(matches!(
+            frame.clip_shape,
+            gafira_doc::ShapeGeometry::Path(_)
+        ));
+        assert!(frame.content.is_none());
+        let p = node.base.placement;
+        assert!(
+            (p.w / p.h - 2.0).abs() < 1e-6,
+            "the proportions of the drawing"
+        );
+        assert!((p.x + p.w / 2.0 - 300.0).abs() < 1e-6 && (p.y + p.h / 2.0 - 200.0).abs() < 1e-6);
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    /// A Biblioteca in memory (spec 068).
+    #[derive(Default)]
+    struct MemoryLibrary(std::cell::RefCell<Vec<crate::LibraryEntry>>);
+
+    impl crate::LibraryStore for MemoryLibrary {
+        fn existing(&self) -> Vec<crate::LibraryEntry> {
+            self.0
+                .borrow()
+                .iter()
+                .filter(|e| e.path.is_file())
+                .cloned()
+                .collect()
+        }
+
+        fn record(&self, file: &std::path::Path, design: bool) {
+            self.0.borrow_mut().insert(
+                0,
+                crate::LibraryEntry {
+                    path: file.to_path_buf(),
+                    design,
+                    added: 0,
+                },
+            );
+        }
+
+        fn remove(&self, entries: &[(std::path::PathBuf, bool)]) {
+            self.0
+                .borrow_mut()
+                .retain(|e| !entries.contains(&(e.path.clone(), e.design)));
+        }
+    }
+
+    // S68-01, S68-04: an imported file is remembered by Biblioteca, and a
+    // file of Biblioteca added again lands on the page.
+    #[test]
+    fn s68_04_imports_are_remembered_and_added_again() {
+        use crate::LibraryStore as _;
+        let dir = std::env::temp_dir().join(format!("gafira-ui-lib-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("sol.png");
+        image::RgbaImage::from_pixel(30, 30, image::Rgba([250, 200, 0, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let library = std::rc::Rc::new(MemoryLibrary::default());
+        editor.library = Some(library.clone());
+        editor.place_images(&mut engine, std::slice::from_ref(&png), None);
+        let paths = |library: &MemoryLibrary| {
+            library
+                .existing()
+                .into_iter()
+                .map(|e| (e.path, e.design))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(paths(&library), [(png.clone(), false)]);
+        let count = |engine: &mut Gafira| {
+            engine.edit().document().expect("doc").pages()[0]
+                .roots
+                .len()
+        };
+        let before = count(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                library_add: Some((png.clone(), false, None)),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            count(&mut engine),
+            before + 1,
+            "added again from Biblioteca"
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                library_remove: vec![(png.clone(), false)],
+                ..Asked::default()
+            },
+        );
+        assert!(paths(&library).is_empty(), "taken out of the list");
+        assert!(png.is_file(), "the file stays on the disk");
+        library.record(&png, false);
+        std::fs::remove_file(&png).expect("deleted");
+        assert!(library.existing().is_empty(), "a deleted file is not shown");
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // Spec 070: alignment, spacing and a gradient go to the selected text,
+    // each one undo step; a solid colour takes the gradient off.
+    #[test]
+    fn s70_06_text_styles_from_the_inspector() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Title, "Hola".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the text");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let found = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node");
+            let gafira_doc::NodeKind::Text(text) = &found.kind else {
+                panic!("a text")
+            };
+            text.clone()
+        };
+        let gradient = crate::colors::gradient(0xFF0000, 0x0000FF, 45.0);
+        let depth = undo_depth(&mut engine);
+        for asked in [
+            Asked {
+                text_align: Some(gafira_doc::TextAlign::Center),
+                ..Asked::default()
+            },
+            Asked {
+                text_spacing: Some((120.0, Some(1.5))),
+                ..Asked::default()
+            },
+            Asked {
+                text_fill: Some(TextFill::Gradient(gradient.clone())),
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let text = read(&mut engine);
+        assert_eq!(text.align, gafira_doc::TextAlign::Center);
+        assert_eq!((text.letter_spacing, text.line_height), (120.0, Some(1.5)));
+        assert_eq!(text.gradient, Some(gradient));
+        assert_eq!(undo_depth(&mut engine), depth + 3);
+        let red = crate::colors::hex(0xFF3131);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                text_fill: Some(TextFill::Solid(red)),
+                ..Asked::default()
+            },
+        );
+        let text = read(&mut engine);
+        assert_eq!(text.gradient, None);
+        assert_eq!(text.content.first_style().map(|s| s.color), Some(red));
+        assert_eq!(undo_depth(&mut engine), depth + 4);
+    }
+
+    // Marcos (owner request): a letter comes in as one frame cut by its
+    // outline, a phone as a group holding a screen frame; each selected, in
+    // one undo step.
+    #[test]
+    fn frames_of_marcos_come_in() {
+        use crate::frames::{Holder, Kind};
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        for (kind, group) in [
+            (Kind::Glyph('A'), false),
+            (Kind::Holder(Holder::Phone), true),
+        ] {
+            let depth = undo_depth(&mut engine);
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    insert_frame_kind: Some((kind, None)),
+                    ..Asked::default()
+                },
+            );
+            let document = engine.edit().document().expect("doc");
+            let page = &document.pages()[0];
+            let (_, node) = editor.selected.single().expect("selected");
+            let node = page.node(node).expect("node");
+            match (&node.kind, group) {
+                (gafira_doc::NodeKind::Frame(frame), false) => {
+                    assert!(matches!(frame.clip_shape, ShapeGeometry::Path(_)));
+                }
+                (gafira_doc::NodeKind::Group(_), true) => {
+                    assert!(node.children.iter().any(|c| matches!(
+                        page.node(*c).map(|n| &n.kind),
+                        Some(gafira_doc::NodeKind::Frame(_))
+                    )));
+                }
+                (other, _) => panic!("{other:?}"),
+            }
+            assert_eq!(undo_depth(&mut engine), depth + 1);
+        }
+    }
+
+    // S66-09 (owner request): a Foto collage fills the whole current page,
+    // a group of frames, selected; one undo step.
+    #[test]
+    fn s66_09_a_collage_fills_the_current_page() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_collage: Some((9, None)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let (_, group) = editor.selected.single().expect("the collage");
+        let node = page.node(group).expect("group");
+        let p = node.base.placement;
+        assert_eq!(
+            (p.x, p.y, p.w, p.h),
+            (0.0, 0.0, size.width(), size.height())
+        );
+        assert_eq!(node.children.len(), 4);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // Spec 072: an illustration comes in as one selected group of vector
+    // shapes, 30 % of the page's shorter side, named by its credit; one
+    // undo step.
+    #[test]
+    fn an_illustration_is_a_group_of_shapes() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="40" fill="#e33"/><rect x="10" y="10" width="20" height="20" fill="#3a3"/></svg>"##;
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_illustration: Some((
+                    Arc::new(svg.to_vec()),
+                    "sunflower — Noto Emoji (Google, Apache 2.0)".to_owned(),
+                    None,
+                )),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let page = &document.pages()[0];
+        let (_, group) = editor.selected.single().expect("the group");
+        let node = page.node(group).expect("group");
+        assert!(matches!(node.kind, gafira_doc::NodeKind::Group(_)));
+        assert_eq!(node.children.len(), 2);
+        assert_eq!(
+            node.base.name.as_deref(),
+            Some("sunflower — Noto Emoji (Google, Apache 2.0)")
+        );
+        let side = page.size.to_px(document.dpi()).expect("px");
+        let shorter = side.width().min(side.height());
+        let p = node.base.placement;
+        assert!(
+            (p.w.max(p.h) - 0.3 * shorter).abs() < 1.0,
+            "{} vs {}",
+            p.w,
+            shorter
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // A font pairing comes in as one selected group of a heading and a
+    // body line, in one undo step.
+    #[test]
+    fn a_font_pairing_is_added_as_a_group() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((1, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let page = &document.pages()[0];
+        let (_, group) = editor.selected.single().expect("one selected");
+        let node = page.node(group).expect("the group");
+        assert!(matches!(node.kind, gafira_doc::NodeKind::Group(_)));
+        let children = node.children.clone();
+        assert_eq!(children.len(), 2);
+        assert!(children.iter().all(|c| matches!(
+            page.node(*c).map(|n| &n.kind),
+            Some(gafira_doc::NodeKind::Text(_))
+        )));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // FD-44: a curved text from the panel fits its box, either way: no
+    // letter outside it.
+    #[test]
+    fn s70_04_a_curved_text_fits_its_box() {
+        use kurbo::Shape as _;
+        for bend in [CURVE_PRESET, -CURVE_PRESET] {
+            let mut engine = engine();
+            start(&mut engine, StartFormat::Social).expect("a new document");
+            let mut editor = Editor::default();
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    insert_curved: Some((bend, "Texto curvo".to_owned(), None)),
+                    ..Asked::default()
+                },
+            );
+            let (page, node) = editor.selected.single().expect("the curved text");
+            let document = engine.edit().document().expect("doc");
+            let found = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node");
+            let gafira_doc::NodeKind::Text(text) = &found.kind else {
+                panic!("a text")
+            };
+            let p = found.base.placement;
+            let (path, _, _) =
+                gafira_render::text_outline(text, (p.w, p.h), canvas::text_fonts()).expect("drawn");
+            let b = path.bounding_box();
+            assert!(b.x0 >= -0.5 && b.y0 >= -0.5, "bend {bend}: {b:?}");
+            assert!(
+                b.x1 <= p.w + 0.5 && b.y1 <= p.h + 0.5,
+                "bend {bend}: {b:?} in {}x{}",
+                p.w,
+                p.h
+            );
+        }
+    }
+
+    // FD-44: «Curva» bends the text and its box takes the height of the arc,
+    // in one undo step; a curved text from the panel comes in bent.
+    #[test]
+    fn s70_04_curving_a_text_fits_its_box() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_curved: Some((45.0, "Texto curvo".to_owned(), None)),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the curved text");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let found = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node");
+            let gafira_doc::NodeKind::Text(text) = &found.kind else {
+                panic!("a text")
+            };
+            (text.curve, found.base.placement.h)
+        };
+        let (curve, arched) = read(&mut engine);
+        assert_eq!(curve, 45.0);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                text_curve: Some(0.0),
+                ..Asked::default()
+            },
+        );
+        let (curve, straight) = read(&mut engine);
+        assert_eq!(curve, 0.0);
+        assert!(straight < arched - 5.0, "{straight} < {arched}");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // «Usar como fondo de la página»: the image becomes its page's
+    // background and leaves the page, in one undo step.
+    #[test]
+    fn an_image_becomes_the_page_background() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-asbg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("fondo.png");
+        image::RgbaImage::from_pixel(64, 32, image::Rgba([10, 20, 30, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let asset = engine.assets().import(&png).expect("imports");
+        let page = engine.edit().document().expect("doc").pages()[0].id;
+        let next = NodeId::new(engine.edit().document().expect("doc").next_id());
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(
+                page,
+                None,
+                0,
+                vec![canvas::new_image(
+                    Vec2::new(1080.0, 1080.0),
+                    (64, 32),
+                    asset,
+                )],
+            )))
+            .expect("inserts");
+        let mut editor = Editor::default();
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                image_to_background: Some((page, next, asset)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let on = &document.pages()[0];
+        assert!(on.node(next).is_none(), "the element is gone");
+        assert_eq!(
+            on.background,
+            Some(gafira_doc::PageBackground::Image {
+                asset,
+                natural: (64, 32),
+                fit: gafira_doc::BackgroundFit::Fill,
+            })
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // S69-05: the background of the current page is set in one undo step,
+    // «Aplicar a todas las páginas» copies it to the others, and «Quitar
+    // fondo» makes the page white again.
+    #[test]
+    fn s69_05_a_background_for_one_page_or_all() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let size = engine.edit().document().expect("doc").pages()[0].size;
+        engine
+            .edit()
+            .execute(Box::new(InsertPage::new(1, String::new(), size)))
+            .expect("a second page");
+        editor.active = Some(page);
+        let blue = gafira_doc::PageBackground::Solid(crate::colors::hex(0x1E63E9));
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                page_background: Some(Some(blue.clone())),
+                ..Asked::default()
+            },
+        );
+        let backgrounds = |engine: &mut Gafira| {
+            engine
+                .edit()
+                .document()
+                .expect("doc")
+                .pages()
+                .iter()
+                .map(|p| p.background.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(backgrounds(&mut engine), [Some(blue.clone()), None]);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                background_all: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(backgrounds(&mut engine), [Some(blue.clone()), Some(blue)]);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                page_background: Some(None),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(backgrounds(&mut engine)[0], None, "white again");
+    }
+
+    // Spec 066: Suprimir on a frame with a photo empties it and keeps it;
+    // on an empty frame it deletes it.
+    #[test]
+    fn s66_delete_empties_a_full_frame_and_removes_an_empty_one() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-del-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("p.png");
+        image::RgbaImage::from_pixel(10, 10, image::Rgba([0, 255, 0, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let asset = engine.assets().import(&png).expect("imports");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_frame: Some(canvas::Piece::Circle),
+                ..Asked::default()
+            },
+        );
+        let (page, frame) = editor.selected.single().expect("the frame");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                frame_content: Some(Some(gafira_doc::FrameContent {
+                    asset,
+                    natural: (10, 10),
+                })),
+                ..Asked::default()
+            },
+        );
+        let depth = undo_depth(&mut engine);
+        let delete = || Asked {
+            delete: true,
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, delete());
+        let document = engine.edit().document().expect("a document");
+        let emptied = frame_of(&document, page, frame).expect("the frame stays");
+        assert!(emptied.content.is_none(), "the photo is gone");
+        assert_eq!(
+            editor.selected.single(),
+            Some((page, frame)),
+            "still selected"
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        ask(&mut engine, &mut editor, delete());
+        let document = engine.edit().document().expect("a document");
+        assert!(
+            document.pages()[0].node(frame).is_none(),
+            "the empty frame goes"
+        );
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // S66-06: an image dropped on a frame becomes its photo and leaves the
+    // page, in one undo step; S66-07: crop mode moves the photo, every
+    // move of the session in one undo step too.
+    #[test]
+    fn s66_06_s66_07_an_image_into_a_frame_then_cropped() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-frame-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("wide.png");
+        image::RgbaImage::from_pixel(400, 200, image::Rgba([0, 0, 255, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let asset = engine.assets().import(&png).expect("imports");
+        let page = engine.edit().document().expect("a document").pages()[0].id;
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_frame: Some(canvas::Piece::Circle),
+                ..Asked::default()
+            },
+        );
+        let (_, frame) = editor.selected.single().expect("the frame");
+        let spec = canvas::new_image(Vec2::new(1080.0, 1080.0), (400, 200), asset);
+        let next = NodeId::new(engine.edit().document().expect("doc").next_id());
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(page, None, 1, vec![spec])))
+            .expect("inserts");
+        // The drag of the image, then the drop on the frame.
+        engine
+            .edit()
+            .execute(Box::new(SetProperty::new(
+                page,
+                vec![next],
+                Property::Placement(gafira_doc::Placement::new(500.0, 500.0, 400.0, 200.0)),
+                None,
+            )))
+            .expect("moves");
+        let before_drag = undo_depth(&mut engine);
+        editor.drop_into_frame(
+            &mut engine,
+            FrameTarget {
+                page,
+                frame,
+                image: next,
+                asset,
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        assert!(
+            document.pages()[0].node(next).is_none(),
+            "the image is gone"
+        );
+        let photo = frame_of(&document, page, frame).and_then(|f| f.content);
+        assert_eq!(
+            photo.map(|c| (c.asset, c.natural)),
+            Some((asset, (400, 200)))
+        );
+        assert_eq!(
+            undo_depth(&mut engine),
+            before_drag,
+            "the move became the drop"
+        );
+        assert_eq!(editor.selected.single(), Some((page, frame)));
+
+        // Crop mode: two moves, one undo step; the photo stays covering.
+        let before_crop = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                begin_crop: Some((page, frame)),
+                ..Asked::default()
+            },
+        );
+        editor.zoom = 1.0;
+        for _ in 0..2 {
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    crop_drag: Some(Vec2::new(40.0, 0.0)),
+                    ..Asked::default()
+                },
+            );
+        }
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                end_crop: true,
+                ..Asked::default()
+            },
+        );
+        assert!(editor.cropping.is_none());
+        let document = engine.edit().document().expect("a document");
+        let cropped = frame_of(&document, page, frame).expect("the frame");
+        assert!(cropped.content_offset.0 > 0.0, "moved right");
+        let w = document.pages()[0]
+            .node(frame)
+            .expect("node")
+            .base
+            .placement
+            .w;
+        assert!(
+            cropped.content_offset.0 <= 0.5 + 1e-9,
+            "never uncovers the frame: {w}"
+        );
+        assert_eq!(undo_depth(&mut engine), before_crop + 1, "one step");
+        engine.edit().undo().expect("an undo");
+        let back = frame_of(&engine.edit().document().expect("doc"), page, frame).expect("frame");
+        assert_eq!(back.content_offset, (0.0, 0.0));
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
     /// One frame of the whole editor in a 1440 × 900 window, with Ctrl/Cmd
     /// and `key` pressed when given.
     fn frame(ctx: &egui::Context, editor: &mut Editor, engine: &mut Gafira, key: Option<Key>) {
@@ -4886,6 +14733,42 @@ pub(crate) mod tests {
         let _ = ctx.run(input, |ctx| {
             editor.show(ctx, engine, &theme, &texts, None, &mut None);
         });
+    }
+
+    // S84-08: in «Borrador de píxeles», Ctrl+Z is of the strokes, not of the
+    // document; Escape leaves it as it was.
+    #[test]
+    fn s84_08_undo_is_of_the_strokes() {
+        use crate::eraser::{Eraser, Mode};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        let base = gafira_ports::vision::Pixels::new(20, 20, vec![255; 1600]).expect("pixels");
+        let image =
+            gafira_doc::ImageNode::new(gafira_doc::AssetRef::new(gafira_doc::ContentHash([1; 32])));
+        let mut eraser = Eraser::new((page, rect, image), base, &[255; 400]).expect("an eraser");
+        eraser.paint.begin();
+        eraser
+            .paint
+            .line(Mode::Erase, (10.0, 10.0), (10.0, 10.0), 8.0);
+        eraser.paint.end();
+        editor.eraser = Some(eraser);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Z));
+        assert_eq!(undo_depth(&mut engine), depth, "the document stays");
+        let eraser = editor.eraser.as_ref().expect("still there");
+        assert!(eraser.paint.alpha().iter().all(|a| *a == 255));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Escape),
+            Modifiers::NONE,
+        );
+        assert!(editor.eraser.is_none());
+        assert_eq!(undo_depth(&mut engine), depth);
     }
 
     // S37-07: the shortcuts of 03 §9.2 move the canvas zoom.
@@ -4926,7 +14809,10 @@ pub(crate) mod tests {
                 engine,
                 &snapshot,
                 &Asked {
-                    insert: Some(geometry),
+                    insert: Some(match geometry {
+                        ShapeGeometry::Ellipse => canvas::Piece::Circle,
+                        _ => canvas::Piece::Square,
+                    }),
                     ..Asked::default()
                 },
                 &theme,
@@ -5040,7 +14926,7 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
         );
@@ -5409,6 +15295,144 @@ pub(crate) mod tests {
         assert_eq!(undo_depth(&mut engine), depth + 1);
     }
 
+    // Owner rule: a corner of a group scales every letter below it by one
+    // factor, so a large and a small one keep their proportion; one undo
+    // step.
+    #[test]
+    fn a_group_corner_scales_its_letters_in_proportion() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                ..Asked::default()
+            },
+        );
+        let (_, group) = editor.selected.single().expect("the group");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let page = &document.pages()[0];
+            let node = page.node(group).expect("group");
+            let sizes: Vec<f64> = node
+                .children
+                .iter()
+                .map(|c| match &page.node(*c).expect("child").kind {
+                    gafira_doc::NodeKind::Text(t) => t.content.first_style().expect("style").size,
+                    _ => panic!("a text"),
+                })
+                .collect();
+            (node.base.placement, sizes)
+        };
+        let (before, sizes) = read(&mut engine);
+        editor.zoom = 1.0;
+        let depth = undo_depth(&mut engine);
+        let corner = canvas::Handle { x: 1, y: 1 };
+        let steps = vec![
+            Asked {
+                drag_begin: Some(Some(Hold::Resize(corner))),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(before.w as f32, 0.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ];
+        gesture(&mut engine, &mut editor, steps);
+        let (after, bigger) = read(&mut engine);
+        let k = after.w / before.w;
+        assert!(k > 1.5, "the group grew: {k}");
+        for (a, b) in sizes.iter().zip(&bigger) {
+            assert!((b / a - k).abs() < 1e-6, "{a} -> {b}, k {k}");
+        }
+        assert!((bigger[0] / bigger[1] - sizes[0] / sizes[1]).abs() < 1e-9);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // Owner rule: a corner of a text box scales the box and its letters
+    // together, in one undo step; a side keeps room for one letter.
+    #[test]
+    fn a_text_box_corner_scales_its_letters() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.active = Some(page);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Body, "Hola".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (_, text) = editor.selected.single().expect("the text");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let node = document.pages()[0].node(text).expect("node").clone();
+            let gafira_doc::NodeKind::Text(t) = &node.kind else {
+                panic!("a text")
+            };
+            (
+                node.base.placement,
+                t.content.spans().next().expect("a span").style.size,
+            )
+        };
+        let (before, size) = read(&mut engine);
+        editor.zoom = 1.0;
+        let depth = undo_depth(&mut engine);
+        let corner = canvas::Handle { x: 1, y: 1 };
+        let steps = vec![
+            Asked {
+                drag_begin: Some(Some(Hold::Resize(corner))),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(before.w as f32, 0.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ];
+        gesture(&mut engine, &mut editor, steps);
+        let (after, bigger) = read(&mut engine);
+        let k = after.w / before.w;
+        assert!(k > 1.5, "the box grew: {k}");
+        assert!((bigger / size - k).abs() < 1e-6, "the letters grew as much");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        // A side never goes narrower than one letter.
+        let side = canvas::Handle { x: 1, y: 0 };
+        let steps = vec![
+            Asked {
+                drag_begin: Some(Some(Hold::Resize(side))),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(-10_000.0, 0.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ];
+        gesture(&mut engine, &mut editor, steps);
+        let (narrow, letter) = read(&mut engine);
+        assert!(
+            narrow.w >= letter * 1.2 - 1e-9,
+            "{} < {}",
+            narrow.w,
+            letter * 1.2
+        );
+    }
+
     // S41-14: a flipped text mirrors its glyphs about the box centre, with
     // the texture coordinates of the font atlas in [0, 1].
     #[test]
@@ -5422,6 +15446,8 @@ pub(crate) mod tests {
             font: theme.tokens.typography.ui.clone(),
             size: 20.0,
             color: canvas::document_color(Color32::BLACK),
+            bold: false,
+            italic: false,
         };
         let text = gafira_doc::TextNode::plain("Hola", &style);
         let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
@@ -5512,7 +15538,7 @@ pub(crate) mod tests {
             engine,
             editor,
             Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
         );
@@ -5997,7 +16023,7 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                drop_piece: Some((ShapeGeometry::Ellipse, page, (100.0, 120.0))),
+                drop_piece: Some((canvas::Piece::Circle, page, (100.0, 120.0))),
                 ..Asked::default()
             },
         );
@@ -6011,6 +16037,1017 @@ pub(crate) mod tests {
         assert_eq!(editor.selected.single(), Some((page, dropped.base.id)));
         assert_eq!(editor.active, Some(page));
         assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S66-08, D-105: a frame is added empty in the middle of the page with
+    // a click, or where it is dropped with a drag, selected, in one undo
+    // step each.
+    #[test]
+    fn s66_08_a_frame_is_added_by_click_or_drop() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                drop_frame: Some((canvas::Piece::Heart, page, (100.0, 120.0))),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        let dropped = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the frame");
+        let p = dropped.base.placement;
+        assert!((p.x + p.w / 2.0 - 100.0).abs() < 1e-9 && (p.y + p.h / 2.0 - 120.0).abs() < 1e-9);
+        let gafira_doc::NodeKind::Frame(frame) = &dropped.kind else {
+            panic!("a frame")
+        };
+        assert!(frame.content.is_none(), "a new frame is empty");
+        assert_eq!(editor.selected.single(), Some((page, dropped.base.id)));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_frame: Some(canvas::Piece::Circle),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+    }
+
+    // D-105: a light dragged from Elementos lands like a shape: on its
+    // page, centred where it was dropped, selected, in one undo step; a
+    // click adds one in the middle of the page.
+    #[test]
+    fn d105_a_dropped_light_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                drop_effect: Some((elements::LightItem::LensFlare, page, (100.0, 120.0))),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        let dropped = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the light");
+        let p = dropped.base.placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (100.0, 120.0));
+        let gafira_doc::NodeKind::Shape(shape) = &dropped.kind else {
+            panic!("a shape")
+        };
+        assert!(matches!(
+            shape.effect,
+            Some(gafira_doc::ShapeEffect::LensFlare(_))
+        ));
+        assert_eq!(editor.selected.single(), Some((page, dropped.base.id)));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_effect: Some(elements::LightItem::Bokeh),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+    }
+
+    /// An editor with the plain table (4 × 3) in the middle of its page.
+    fn with_table(engine: &mut Gafira) -> (Editor, PageId, NodeId) {
+        start(engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            engine,
+            &mut editor,
+            Asked {
+                insert_table: Some((crate::table_templates::Template::Grid, None)),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the table");
+        (editor, page, node)
+    }
+
+    fn the_table(engine: &mut Gafira, page: PageId, node: NodeId) -> gafira_doc::TableNode {
+        let document = engine.edit().document().expect("a document");
+        table_of(&document, page, node).expect("a table").0
+    }
+
+    // S81-07, D-105: a click puts the table in the middle of the page; a
+    // drop, where it was dropped; selected, one undo step each.
+    #[test]
+    fn d105_a_dropped_table_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        assert_eq!(undo_depth(&mut engine), 1);
+        editor.zoom = 0.5;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(540.0)))];
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_table: Some((
+                    crate::table_templates::Template::Budget,
+                    Some(Pos2::new(250.0, 260.0)),
+                )),
+                ..Asked::default()
+            },
+        );
+        let (_, dropped) = editor.selected.single().expect("the new table");
+        assert_ne!(dropped, node);
+        let document = engine.edit().document().expect("a document");
+        let p = document.pages()[0]
+            .node(dropped)
+            .expect("it")
+            .base
+            .placement;
+        assert!((p.x + p.w / 2.0 - 500.0).abs() < 1e-6);
+        assert!((p.y + p.h / 2.0 - 520.0).abs() < 1e-6);
+        assert_eq!(undo_depth(&mut engine), 2);
+    }
+
+    // S81-08: what is written in a cell is one undo step; Enter goes down
+    // and Tab on; Tab in the last cell adds a row.
+    #[test]
+    fn s81_08_writing_in_cells() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        let depth = undo_depth(&mut engine);
+        let cells = |cell| Some(Some(tables::Cells::one(page, node, cell)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                cells: cells((0, 0)),
+                write_cell: Some(Some("H".to_owned())),
+                ..Asked::default()
+            },
+        );
+        for words in ["Ho", "Hola"] {
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    cell_words: Some(words.to_owned()),
+                    ..Asked::default()
+                },
+            );
+        }
+        let end = |to| Asked {
+            end_cell: Some(to),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, end(CellMove::Down));
+        assert_eq!(the_table(&mut engine, page, node).cells[0].text, "Hola");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let at = |editor: &Editor| editor.cells.as_ref().map(|c| (c.from, c.writing.is_some()));
+        assert_eq!(at(&editor), Some(((1, 0), false)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                cells: cells((3, 2)),
+                write_cell: Some(None),
+                ..Asked::default()
+            },
+        );
+        ask(&mut engine, &mut editor, end(CellMove::Next));
+        assert_eq!(the_table(&mut engine, page, node).rows.len(), 5);
+        assert_eq!(at(&editor), Some(((4, 0), false)));
+        engine.edit().undo().expect("undo");
+        engine.edit().undo().expect("undo");
+        assert_eq!(the_table(&mut engine, page, node).cells[0].text, "");
+    }
+
+    // S81-06, S81-10: looks go to the cells chosen, or to the whole table;
+    // a colour being picked is one undo step.
+    #[test]
+    fn s81_10_looks_go_to_the_cells_chosen() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        let depth = undo_depth(&mut engine);
+        let mut cells = tables::Cells::one(page, node, (1, 0));
+        cells.to = (1, 2);
+        editor.cells = Some(cells);
+        for code in [0x0011_0000, 0x0022_0000] {
+            let act = tables::Act::Fill(Some(crate::colors::hex(code)));
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    table_act: Some(act),
+                    ..Asked::default()
+                },
+            );
+        }
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                table_rest: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let table = the_table(&mut engine, page, node);
+        let filled: Vec<bool> = table.cells.iter().map(|c| c.style.fill.is_some()).collect();
+        assert_eq!(filled.iter().filter(|f| **f).count(), 3);
+        assert!(filled[3] && filled[5]);
+        // The whole table, with no cell chosen.
+        editor.cells = None;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                table_act: Some(tables::Act::Bold(true)),
+                ..Asked::default()
+            },
+        );
+        let table = the_table(&mut engine, page, node);
+        assert!(table.cells.iter().all(|c| c.style.bold));
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        // The font panel too.
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                font: Some(("Manrope".to_owned(), false, true)),
+                ..Asked::default()
+            },
+        );
+        let table = the_table(&mut engine, page, node);
+        assert!(table.cells.iter().all(|c| c.style.font == "Manrope"));
+    }
+
+    // S81-08: with cells chosen the keys are theirs: Delete empties them and
+    // the table stays; Escape goes back to the table, whose Delete takes it.
+    #[test]
+    fn s81_08_the_keys_of_the_cells() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        let ctx = egui::Context::default();
+        editor.cells = Some(tables::Cells::one(page, node, (0, 0)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                table_act: Some(tables::Act::Paste(vec![vec![
+                    "a".to_owned(),
+                    "b".to_owned(),
+                ]])),
+                ..Asked::default()
+            },
+        );
+        let text =
+            |engine: &mut Gafira, i: usize| the_table(engine, page, node).cells[i].text.clone();
+        assert_eq!(
+            (text(&mut engine, 0), text(&mut engine, 1)),
+            ("a".into(), "b".into())
+        );
+        editor.cells = Some(tables::Cells::one(page, node, (0, 0)));
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Delete),
+            Modifiers::NONE,
+        );
+        assert_eq!(
+            (text(&mut engine, 0), text(&mut engine, 1)),
+            (String::new(), "b".into())
+        );
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowRight),
+            Modifiers::NONE,
+        );
+        assert_eq!(editor.cells.as_ref().map(|c| c.from), Some((0, 1)));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Escape),
+            Modifiers::NONE,
+        );
+        assert!(editor.cells.is_none());
+        assert_eq!(
+            editor.selected.single(),
+            Some((page, node)),
+            "still selected"
+        );
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Delete),
+            Modifiers::NONE,
+        );
+        let document = engine.edit().document().expect("a document");
+        assert!(table_of(&document, page, node).is_none(), "the table goes");
+    }
+
+    /// An editor with a QR code of `text` in the middle of its page.
+    fn with_qr(engine: &mut Gafira, text: &str) -> (Editor, PageId, NodeId, gafira_doc::QrNode) {
+        start(engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let mut code = crate::qr::fresh();
+        code.content = gafira_doc::QrContent::Text {
+            text: text.to_owned(),
+        };
+        ask(
+            engine,
+            &mut editor,
+            Asked {
+                insert_qr: Some((Box::new(code.clone()), None)),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the code");
+        (editor, page, node, code)
+    }
+
+    // S80-11, D-105: a click puts the code in the middle of the page, a
+    // quarter of its shorter side; a drop leaves it where it was dropped;
+    // selected, one undo step each.
+    #[test]
+    fn d105_a_dropped_qr_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let (mut editor, page, node, code) = with_qr(&mut engine, "hola");
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        let size = on.size.to_px(document.dpi()).expect("px");
+        let p = on.node(node).expect("the code").base.placement;
+        let side = size.width().min(size.height()) / 4.0;
+        assert_eq!((p.w, p.h), (side, side));
+        let middle = (size.width() / 2.0, size.height() / 2.0);
+        assert_eq!((p.x + side / 2.0, p.y + side / 2.0), middle);
+        assert_eq!(undo_depth(&mut engine), 1);
+        editor.zoom = 0.5;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(540.0)))];
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_qr: Some((Box::new(code), Some(Pos2::new(100.0, 150.0)))),
+                ..Asked::default()
+            },
+        );
+        let (_, dropped) = editor.selected.single().expect("the new code");
+        assert_ne!(dropped, node);
+        let document = engine.edit().document().expect("a document");
+        let p = document.pages()[0]
+            .node(dropped)
+            .expect("it")
+            .base
+            .placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (200.0, 300.0));
+        assert_eq!(undo_depth(&mut engine), 2);
+    }
+
+    // S80-12: a burst of changes in Propiedades is one undo step, until the
+    // fields come to rest; what is written next is another.
+    #[test]
+    fn s80_12_a_burst_of_changes_is_one_undo_step() {
+        let mut engine = engine();
+        let (mut editor, page, node, code) = with_qr(&mut engine, "a");
+        let depth = undo_depth(&mut engine);
+        let write = |engine: &mut Gafira, editor: &mut Editor, text: &str, rest: bool| {
+            let mut next = code.clone();
+            next.content = gafira_doc::QrContent::Text {
+                text: text.to_owned(),
+            };
+            let asked = Asked {
+                qr: Some(Box::new(next)),
+                qr_rest: rest,
+                ..Asked::default()
+            };
+            ask(engine, editor, asked);
+        };
+        for text in ["ab", "abc"] {
+            write(&mut engine, &mut editor, text, false);
+        }
+        write(&mut engine, &mut editor, "abcd", true);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        write(&mut engine, &mut editor, "x", true);
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        engine.edit().undo().expect("undo");
+        engine.edit().undo().expect("undo");
+        let document = engine.edit().document().expect("a document");
+        assert_eq!(qr_of(&document, page, node), Some(code));
+    }
+
+    // S80-13: «Convertir en formas» leaves a group of shapes in the place
+    // of the code, selected; one undo step.
+    #[test]
+    fn s80_13_converting_leaves_a_group_of_shapes() {
+        let mut engine = engine();
+        let (mut editor, page, node, _) = with_qr(&mut engine, "hola");
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                qr_to_shapes: true,
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        assert!(on.node(node).is_none(), "the code is gone");
+        let (_, group) = editor.selected.single().expect("the group");
+        let group = on.node(group).expect("the group");
+        assert!(matches!(group.kind, gafira_doc::NodeKind::Group(_)));
+        assert_eq!(group.children.len(), 4, "background, body and eyes");
+        assert_eq!(on.roots, vec![group.base.id]);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("undo");
+        let document = engine.edit().document().expect("a document");
+        assert!(qr_of(&document, page, node).is_some());
+    }
+
+    // S55-04: writing on a shape on the canvas stores its words as the
+    // shape's text, the whole edit in one undo step; emptying it leaves
+    // the shape without text; a text element takes its words too.
+    #[test]
+    fn s55_04_editing_writes_one_undo_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let inner = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("a document");
+            match &document.pages()[0].node(rect).expect("the shape").kind {
+                gafira_doc::NodeKind::Shape(shape) => shape.text.clone(),
+                _ => panic!("a shape"),
+            }
+        };
+        let depth = undo_depth(&mut engine);
+        let write = |engine: &mut Gafira, editor: &mut Editor, words: &[&str]| {
+            ask(
+                engine,
+                editor,
+                Asked {
+                    begin_edit: Some((page, rect)),
+                    ..Asked::default()
+                },
+            );
+            for words in words {
+                ask(
+                    engine,
+                    editor,
+                    Asked {
+                        edit_text: Some((*words).to_owned()),
+                        ..Asked::default()
+                    },
+                );
+            }
+            ask(
+                engine,
+                editor,
+                Asked {
+                    end_edit: true,
+                    ..Asked::default()
+                },
+            );
+        };
+        write(&mut engine, &mut editor, &["Ho", "Hola", "Hola mundo"]);
+        let text = inner(&mut engine).expect("a text");
+        assert_eq!(text.content.plain_text(), "Hola mundo");
+        assert_eq!(
+            (text.align, text.valign),
+            (
+                gafira_doc::TextAlign::Center,
+                gafira_doc::VerticalAlign::Middle
+            )
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        assert!(editor.editing.is_none());
+        write(&mut engine, &mut editor, &["Hola", ""]);
+        assert_eq!(inner(&mut engine), None, "emptied");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(inner(&mut engine), Some(text));
+        engine.edit().undo().expect("an undo");
+        assert_eq!(inner(&mut engine), None);
+    }
+
+    // S56-02: «Duplicar» in the header copies the page with everything on
+    // it: same number of elements, same kinds, same places.
+    #[test]
+    fn s56_02_duplicate_copies_the_content() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                begin_edit: Some((page, rect)),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                edit_text: Some("Hola".to_owned()),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                end_edit: true,
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                page_action: Some(PageAction::Duplicate(page)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let (source, copy) = (&document.pages()[0], &document.pages()[1]);
+        assert_eq!(copy.nodes.len(), source.nodes.len());
+        assert_eq!(copy.roots.len(), source.roots.len());
+        for (a, b) in source.roots.iter().zip(&copy.roots) {
+            let (a, b) = (source.node(*a).unwrap(), copy.node(*b).unwrap());
+            assert_eq!(a.base.placement, b.base.placement);
+            assert_eq!(a.kind, b.kind);
+        }
+    }
+
+    // S56-03: each action of a page header is one undo step: add a page
+    // after, duplicate, move, hide, lock, rename and delete.
+    #[test]
+    fn s56_03_page_header_actions() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let ids = |engine: &mut Gafira| -> Vec<PageId> {
+            engine
+                .edit()
+                .document()
+                .expect("a document")
+                .pages()
+                .iter()
+                .map(|p| p.id)
+                .collect()
+        };
+        let act = |engine: &mut Gafira, editor: &mut Editor, action| {
+            ask(
+                engine,
+                editor,
+                Asked {
+                    page_action: Some(action),
+                    ..Asked::default()
+                },
+            );
+        };
+        let first = ids(&mut engine)[0];
+        let depth = undo_depth(&mut engine);
+        act(&mut engine, &mut editor, PageAction::AddAfter(first));
+        let second = ids(&mut engine)[1];
+        assert_eq!(ids(&mut engine).len(), 2);
+        assert_eq!(editor.active, Some(second));
+        act(&mut engine, &mut editor, PageAction::Duplicate(first));
+        let copy = ids(&mut engine)[1];
+        assert_eq!(ids(&mut engine), [first, copy, second]);
+        assert_eq!(editor.active, Some(copy));
+        act(&mut engine, &mut editor, PageAction::Move(first, 1));
+        assert_eq!(ids(&mut engine), [copy, first, second]);
+        act(&mut engine, &mut editor, PageAction::Move(copy, -1));
+        assert_eq!(
+            ids(&mut engine),
+            [copy, first, second],
+            "the first stays first"
+        );
+        act(&mut engine, &mut editor, PageAction::Hide(second, true));
+        act(&mut engine, &mut editor, PageAction::Lock(second, true));
+        act(
+            &mut engine,
+            &mut editor,
+            PageAction::Rename(second, "  Contraportada ".to_owned()),
+        );
+        let document = engine.edit().document().expect("a document");
+        let page = document.page(second).expect("the page");
+        assert!(page.hidden && page.locked);
+        assert_eq!(page.name, "Contraportada");
+        act(&mut engine, &mut editor, PageAction::Delete(copy));
+        assert_eq!(ids(&mut engine), [first, second]);
+        assert_eq!(undo_depth(&mut engine), depth + 7, "one step each");
+    }
+
+    // S60-01, S60-02: a guide made on one page is on every page, in one
+    // undo step; a page added later is born with them.
+    #[test]
+    fn s60_01_guides_are_shared() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                add_page: true,
+                ..Asked::default()
+            },
+        );
+        let pages = |engine: &mut Gafira| {
+            engine
+                .edit()
+                .document()
+                .expect("a document")
+                .pages()
+                .to_vec()
+        };
+        let first = pages(&mut engine)[0].id;
+        let guides = GuideSet(vec![gafira_doc::Guide {
+            axis: GuideAxis::Vertical,
+            position: gafira_geom::Length::new(120.0, gafira_geom::Unit::Px),
+            locked: false,
+        }]);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                guides: Some((first, guides.clone())),
+                ..Asked::default()
+            },
+        );
+        assert!(
+            pages(&mut engine).iter().all(|p| p.guides == guides),
+            "on every page"
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                add_page: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            pages(&mut engine)[2].guides,
+            guides,
+            "a new page takes them"
+        );
+        let last = pages(&mut engine)[2].id;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                page_action: Some(PageAction::AddAfter(last)),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(pages(&mut engine)[3].guides, guides, "also from the header");
+        engine.edit().undo().expect("an undo");
+        engine.edit().undo().expect("an undo");
+        engine.edit().undo().expect("an undo");
+        assert!(pages(&mut engine).iter().all(|p| p.guides.0.is_empty()));
+    }
+
+    // S58-04: dragging the end of a line near the right point of a shape
+    // connects it there, in one undo step; moving the shape then moves the
+    // end with it.
+    #[test]
+    fn s58_04_a_dropped_end_connects() {
+        use gafira_doc::{Anchor, Attachment, LineCap, LineEnd, LineNode};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let target = placements(&mut engine, &[rect])[0];
+        let line = LineNode {
+            start: LineEnd::new([0.0, 0.0], LineCap::None),
+            end: LineEnd::new([1.0, 0.0], LineCap::Arrow),
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            width: 4.0,
+        };
+        let id = NodeId::new(engine.edit().document().expect("a document").next_id());
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(
+                page,
+                None,
+                2,
+                vec![gafira_edit::NodeSpec::new(
+                    gafira_doc::NodeKind::Line(line),
+                    Placement::new(10.0, 10.0, 50.0, 0.0),
+                )],
+            )))
+            .expect("a line");
+        editor.selected = Selection::one(page, id);
+        let depth = undo_depth(&mut engine);
+        // The end is at (60, 10); the right point of the shape is at
+        // (x + w, y + h / 2). Drop the end 5 px short of it.
+        let right = Vec2::new(
+            (target.x + target.w - 60.0 - 5.0) as f32,
+            (target.y + target.h / 2.0 - 10.0) as f32,
+        ) * editor.zoom;
+        for asked in [
+            Asked {
+                drag_begin: Some(Some(Hold::LineEnd(1))),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(right),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let end = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("a document");
+            let page = &document.pages()[0];
+            let node = page.node(id).expect("the line");
+            let gafira_doc::NodeKind::Line(line) = &node.kind else {
+                panic!("a line")
+            };
+            (line.end.attached, line.ends(page, &node.base.placement)[1])
+        };
+        let (attached, at) = end(&mut engine);
+        assert_eq!(attached, Some(Attachment::anchor(rect, Anchor::Right)));
+        assert!((at.x - (target.x + target.w)).abs() < 1e-6);
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        editor.selected = Selection::one(page, rect);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                nudge: Some((30.0, 0.0)),
+                ..Asked::default()
+            },
+        );
+        let (_, moved) = end(&mut engine);
+        assert!(
+            (moved.x - (target.x + target.w + 30.0)).abs() < 1e-6,
+            "the end follows"
+        );
+    }
+
+    // S61-01: text from outside Gafira pasted on the canvas becomes a body
+    // text box with those words on the current page, selected; the next
+    // frame fits its height to them.
+    #[test]
+    fn s61_01_foreign_text_pastes_a_text_box() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let mut session = None;
+        let before = the_shapes(&mut engine).len();
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Paste("Hola desde otra app".to_owned())],
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert_eq!(the_shapes(&mut engine).len(), before + 1);
+        let (on, node) = editor.selected.single().expect("the text");
+        assert_eq!(on, page);
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) =
+            &document.pages()[0].node(node).expect("a node").kind
+        else {
+            panic!("a text");
+        };
+        assert_eq!(text.content.plain_text(), "Hola desde otra app");
+    }
+
+    // S61-03: a text dropped from the Texto panel lands centred where it
+    // was dropped, selected, in one undo step.
+    #[test]
+    fn s61_03_a_dropped_text_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                drop_text: Some((
+                    canvas::TextPreset::Title,
+                    "Título".to_owned(),
+                    page,
+                    (300.0, 200.0),
+                )),
+                ..Asked::default()
+            },
+        );
+        let (_, node) = editor.selected.single().expect("the text");
+        let p = placements(&mut engine, &[node])[0];
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 200.0));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S61-02: a text whose letters grow takes the height of its words once
+    // the canvas has drawn it.
+    #[test]
+    fn s61_02_a_bigger_size_fits_the_box() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Body, "Hola".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (_, node) = editor.selected.single().expect("the text");
+        let before = placements(&mut engine, &[node])[0].h;
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) =
+            &document.pages()[0].node(node).expect("a node").kind
+        else {
+            panic!("a text");
+        };
+        let mut style = text.content.first_style().expect("a style").clone();
+        style.size *= 4.0;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                text: Some(gafira_doc::RichText::plain("Hola", &style)),
+                ..Asked::default()
+            },
+        );
+        // The window installs the theme fonts; so does this test, so the
+        // canvas can lay the words out.
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        for _ in 0..3 {
+            frame_with(&ctx, &mut editor, &mut engine, None, Modifiers::NONE);
+        }
+        let after = placements(&mut engine, &[node])[0].h;
+        assert!(after > before * 2.0, "{before} -> {after}");
+    }
+
+    // S62-06: the Fuente panel lists the document's families, then those of
+    // Gafira, then those of the system (a note while they are looked for),
+    // each under its title; an open family shows its faces; the search
+    // keeps the families whose name holds it; a system family named like
+    // one of Gafira is left out.
+    #[test]
+    fn s62_06_font_rows() {
+        let system = system_fonts::SystemFonts::new();
+        let none = BTreeSet::new();
+        let rows = font_rows("", &[], &none, &system);
+        assert_eq!(rows[0], PanelRow::Title("fonts.gafira"));
+        assert!(rows.contains(&PanelRow::Title("fonts.system")));
+        assert_eq!(rows.last(), Some(&PanelRow::Note("fonts.looking")));
+        system.set(vec![
+            system_fonts::SystemFont {
+                family: "Ubuntu".to_owned(),
+                bold: false,
+                italic: false,
+                path: "/f/u.ttf".into(),
+            },
+            system_fonts::SystemFont {
+                family: "Roboto".to_owned(),
+                bold: false,
+                italic: false,
+                path: "/f/r.ttf".into(),
+            },
+        ]);
+        let rows = font_rows("", &["Lato".to_owned()], &none, &system);
+        assert_eq!(rows[0], PanelRow::Title("fonts.document"));
+        assert!(
+            matches!(&rows[1], PanelRow::Family { family, system: false, .. } if family == "Lato")
+        );
+        let systems: Vec<&PanelRow> = rows
+            .iter()
+            .filter(|r| matches!(r, PanelRow::Family { system: true, .. }))
+            .collect();
+        assert_eq!(systems.len(), 1, "Roboto is one of Gafira");
+        let open: BTreeSet<String> = ["Lato".to_owned()].into();
+        let rows = font_rows("lat", &[], &open, &system);
+        assert_eq!(
+            rows.iter()
+                .filter(|r| matches!(r, PanelRow::Face { .. }))
+                .count(),
+            4,
+            "the four faces of Lato"
+        );
+        assert!(
+            rows.iter()
+                .all(|r| !matches!(r, PanelRow::Family { family, .. } if family == "Ubuntu"))
+        );
+        assert_eq!(
+            rows.last(),
+            Some(&PanelRow::Note("fonts.none")),
+            "no system font matches"
+        );
+    }
+
+    // S62-04: a font picked in the Fuente panel goes to every span of the
+    // selected text, or of the text of the selected shape, in one undo step.
+    #[test]
+    fn s62_04_the_font_changes_in_one_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Body, "Hola\nmundo".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (_, text) = editor.selected.single().expect("the text");
+        let spans = |engine: &mut Gafira, node: NodeId| -> Vec<gafira_doc::SpanStyle> {
+            let document = engine.edit().document().expect("a document");
+            let content = match &document.pages()[0].node(node).expect("a node").kind {
+                gafira_doc::NodeKind::Text(t) => t.content.clone(),
+                gafira_doc::NodeKind::Shape(s) => s.text.clone().expect("a text").content,
+                _ => panic!("no text"),
+            };
+            content.spans().map(|span| span.style.clone()).collect()
+        };
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                font: Some(("Lato".to_owned(), true, false)),
+                ..Asked::default()
+            },
+        );
+        let styles = spans(&mut engine, text);
+        assert_eq!(styles.len(), 2);
+        assert!(
+            styles
+                .iter()
+                .all(|s| s.font == "Lato" && s.bold && !s.italic)
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                begin_edit: Some((page, rect)),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                edit_text: Some("Forma".to_owned()),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                end_edit: true,
+                ..Asked::default()
+            },
+        );
+        editor.selected = Selection::one(page, rect);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                font: Some(("Pacifico".to_owned(), false, true)),
+                ..Asked::default()
+            },
+        );
+        assert!(
+            spans(&mut engine, rect)
+                .iter()
+                .all(|s| s.font == "Pacifico" && s.italic)
+        );
     }
 
     // S50-01: a press on an element activates its page, on a page's
@@ -6366,15 +17403,6 @@ pub(crate) mod tests {
         );
         let depth = undo_depth(&mut engine);
         let paste = |text: &str| vec![egui::Event::Paste(text.to_owned())];
-        frame_events(
-            &ctx,
-            &mut editor,
-            &mut engine,
-            paste("otra cosa"),
-            Modifiers::COMMAND,
-            &mut session,
-        );
-        assert_eq!(the_shapes(&mut engine).len(), 3, "other text is not pasted");
         frame_events(
             &ctx,
             &mut editor,
