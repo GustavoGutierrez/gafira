@@ -1565,15 +1565,17 @@ fn laid_text(
         ..gafira_text::TextStyle::default()
     };
     let dpi = 72.0 * style.size / size_pt;
-    let layout = gafira_text::layout_box_face(
-        &words,
-        &stack,
-        &layout_style,
-        (style.bold, style.italic),
-        dpi,
-        bounds,
-    )
-    .ok()?;
+    let layout = fonts.lay(&face, &stack, |stack| {
+        stack
+            .layout_box_face(
+                &words,
+                &layout_style,
+                (style.bold, style.italic),
+                dpi,
+                bounds,
+            )
+            .ok()
+    })?;
     let outlines = gafira_text::outline_text(&layout, &stack).ok()?;
     let curved = if curve == 0.0 {
         None

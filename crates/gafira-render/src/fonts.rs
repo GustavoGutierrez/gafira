@@ -3,7 +3,10 @@
 //! The crate reads no file (ARQ-02): the composition root hands the font
 //! bytes over, by family name.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+
+use gafira_text::FontStack;
 
 /// Where the faces the book does not hold come from (spec 062): the
 /// composition root reads the fonts of the system on demand, by face name.
@@ -25,7 +28,14 @@ pub struct FontBook {
     /// name (spec 062).
     loader: Option<FontLoader>,
     loaded: Arc<Mutex<Vec<Loaded>>>,
+    /// The stacks ready to lay text out, by face, for the next text that
+    /// asks for one (spec 081).
+    ready: Arc<Mutex<BTreeMap<String, Vec<FontStack>>>>,
 }
+
+/// The most faces, and stacks of a face, kept ready.
+const MAX_FACES: usize = 32;
+const MAX_STACKS: usize = 16;
 
 impl std::fmt::Debug for FontBook {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -42,6 +52,7 @@ impl FontBook {
     #[must_use]
     pub fn with_loader(mut self, loader: FontLoader) -> Self {
         self.loader = Some(loader);
+        self.ready = Arc::default();
         self
     }
 
@@ -74,6 +85,7 @@ impl FontBook {
     #[must_use]
     pub fn with(mut self, family: &str, bytes: impl Into<Arc<[u8]>>) -> Self {
         let bytes = bytes.into();
+        self.ready = Arc::default();
         match self.faces.iter_mut().find(|(name, _)| name == family) {
             Some(face) => face.1 = bytes,
             None => self.faces.push((family.to_owned(), bytes)),
@@ -107,6 +119,36 @@ impl FontBook {
             || family.to_owned(),
             |(b, i)| gafira_doc::face_key(family, b, i),
         )
+    }
+
+    /// Lays text out with the stack of `face`, made from `fonts` (the ones
+    /// of [`Self::stack`]) the first time and kept for the next ones. Each
+    /// caller has a stack of its own, so texts can be laid out at once.
+    pub(crate) fn lay<T>(
+        &self,
+        face: &str,
+        fonts: &[&[u8]],
+        lay: impl FnOnce(&mut FontStack) -> Option<T>,
+    ) -> Option<T> {
+        let ready = || {
+            self.ready
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        };
+        let kept = ready().get_mut(face).and_then(Vec::pop);
+        let mut stack = match kept {
+            Some(stack) => stack,
+            None => FontStack::new(fonts).ok()?,
+        };
+        let laid = lay(&mut stack);
+        let mut ready = ready();
+        if ready.len() < MAX_FACES || ready.contains_key(face) {
+            let own = ready.entry(face.to_owned()).or_default();
+            if own.len() < MAX_STACKS {
+                own.push(stack);
+            }
+        }
+        laid
     }
 
     /// The font stack for `family`: its file first, then the others in the

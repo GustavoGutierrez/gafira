@@ -19,7 +19,8 @@ pub use curve::{Arc, CurvedCluster, CurvedLine, CurvedText, curve_layout, layout
 pub use error::TextError;
 pub use fit::{FitBox, FitResult, FitRun, fit_box};
 pub use layout::{
-    Cluster, Decoration, Line, TextAlign, TextLayout, TextStyle, layout_box, layout_box_face,
+    Cluster, Decoration, FontStack, Line, TextAlign, TextLayout, TextStyle, layout_box,
+    layout_box_face,
 };
 pub use list::{ListEntry, ListItem, ListKind, layout_list};
 pub use outline::{ClusterOutline, outline_text};

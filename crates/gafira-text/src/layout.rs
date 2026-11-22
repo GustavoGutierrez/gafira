@@ -200,6 +200,36 @@ pub fn layout_box_face(
     layout_with(&mut stack, text, style, size_px, &[], bounds.width())
 }
 
+/// Fonts ready to lay many texts out (spec 081): registering them is the
+/// costly part of [`layout_box`], and it is done once. The result is the
+/// same.
+pub struct FontStack(Stack);
+
+impl FontStack {
+    /// Registers the fonts, in order; `InvalidFont` names the first that
+    /// cannot be read.
+    pub fn new(fonts: &[&[u8]]) -> Result<Self, TextError> {
+        if fonts.is_empty() {
+            return Err(TextError::NoFont);
+        }
+        Stack::new(fonts).map(Self)
+    }
+
+    /// [`layout_box_face`] with these fonts.
+    pub fn layout_box_face(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        face: (bool, bool),
+        dpi: f64,
+        bounds: Size,
+    ) -> Result<TextLayout, TextError> {
+        let size_px = check_input(style, dpi, bounds)?;
+        self.0.face = face;
+        layout_with(&mut self.0, text, style, size_px, &[], bounds.width())
+    }
+}
+
 /// The font stack of a call: registered once, so a search that lays the same text out many
 /// times does not register the fonts again.
 pub(crate) struct Stack {
