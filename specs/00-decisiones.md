@@ -987,3 +987,11 @@ Fecha: 22 de noviembre de 2026.
 - **Decisión** (titular): un código QR es `NodeKind::Qr` (`QrNode`), como los marcos y las líneas, en lugar del nodo `Extension` con `type_id = "gafira.qr"` que pedía FD-20. Así el documento valida el logotipo, la exportación lo decodifica y editarlo es un paso de deshacer.
 - **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con códigos QR. La técnica y FD-20 (c) quedan sustituidas. Los Gráficos (FD-22) siguen como estaban. Se aplica en la spec 080.
 - Precisa ADR-02 y FD-20.
+
+## D-114 El gráfico es un tipo de nodo propio
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un gráfico es `NodeKind::Chart` (`ChartNode`), como los QR (D-113) y las tablas, en lugar del nodo `Extension` con `type_id = "gafira.chart"` de FD-22: la infraestructura de extensiones no existe y el nodo propio se valida, se deshace y se exporta como vectores.
+- **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con gráficos. La técnica y FD-22 (c) quedan sustituidas. Se aplica en la spec 083.
+- Precisa ADR-02, FD-22 y D-113.

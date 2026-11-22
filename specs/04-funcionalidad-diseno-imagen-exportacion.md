@@ -250,9 +250,9 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: visualizar datos simples.
 - *Comportamiento y reglas*: barras, líneas, circular y anillo; editor de datos en una tabla; títulos, etiquetas, leyenda y paleta de la Identidad; los gráficos se redibujan al editar datos. Todos los colores llevan etiqueta o patrón además del color (DIS-33).
 - *UI*: Piezas → Gráficos.
-- *Técnica*: nodo `Extension` `type_id = "gafira.chart"`; `gafira-text`, `gafira-geom`.
+- *Técnica*: `ChartNode` (`NodeKind::Chart`, D-114); `gafira-chart`, `gafira-text`, `gafira-geom`.
 - *Presupuesto*: redibujar < 100 ms con 100 puntos.
-- *Aceptación*: (a) editar un valor actualiza el gráfico; (b) la exportación vectorial conserva la etiqueta de cada serie; (c) un gráfico abierto sin el registro se conserva intacto (ARQ-11).
+- *Aceptación*: (a) editar un valor actualiza el gráfico; (b) la exportación vectorial conserva la etiqueta de cada serie; (c) sustituida por D-114.
 
 **FD-23 · Nota adhesiva** (RF-16)
 - *Propósito*: anotar sobre el diseño sin que forme parte del resultado.
@@ -754,7 +754,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | `manifest.json` | FD-16 | Incorporado: objeto opcional `template { tags, pageFormat, style, color }` (D-81, §7.1); un lector que no lo conoce lo ignora |
 | Almacén de Versiones | FD-60 | Incorporado: `versions/index.json` y `versions/<version_id>/` (§7.1) |
 | QR | FD-20 | `NodeKind::Qr` (D-113, spec 080) |
-| Gráficos | FD-22 | `NodeExtension` interno `gafira.chart` registrado en el binario (ADR-02) |
+| Gráficos | FD-22 | `NodeKind::Chart` (D-114, spec 083) |
 | `TextAssistant` | FD-64 | Incorporado: trait en `gafira-ports` (§4.15, Fase 3) |
 | Exportador PPTX | FD-62 | Incorporado: crate `gafira-io-pptx` (Fase 2, §11.2) |
 | Medios vinculados | FD-30 | Incorporados: `manifest.assets[...].linked` y evento `LinksMissing` (§7.1) |
