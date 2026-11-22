@@ -31,6 +31,9 @@ pub fn value(words: &str) -> CellValue {
     if words.is_empty() {
         return CellValue::Empty;
     }
+    // The sign goes before the currency or after it: `-$5`, `$-5`.
+    let negative = words.starts_with('-');
+    let words = words.strip_prefix('-').map_or(words, str::trim_start);
     let (body, format) = if let Some(body) = words.strip_suffix('%') {
         (body.trim_end(), NumberFormat::Percent)
     } else if let Some((body, sign)) = currency(words) {
@@ -39,8 +42,8 @@ pub fn value(words: &str) -> CellValue {
         (words, NumberFormat::General)
     };
     let (negative, digits) = match body.strip_prefix('-') {
-        Some(rest) => (true, rest.trim_start()),
-        None => (false, body),
+        Some(rest) if !negative && format != NumberFormat::General => (true, rest.trim_start()),
+        _ => (negative, body),
     };
     let Some(number) = plain_number(digits) else {
         return CellValue::Text;
@@ -82,8 +85,9 @@ fn plain_number(text: &str) -> Option<f64> {
         (1, 0) | (0, 1) => {
             let (whole, decimals) = text.split_once(['.', ','])?;
             // Three digits after one sign: decimals here, thousands there.
-            // A lone zero before it can only be decimals.
-            if decimals.len() == 3 && whole != "0" {
+            // A lone zero, or more than three digits, before it can only be
+            // the whole part of a decimal.
+            if decimals.len() == 3 && whole.len() <= 3 && whole != "0" {
                 return None;
             }
             (whole, decimals, None)

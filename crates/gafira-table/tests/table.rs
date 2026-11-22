@@ -349,7 +349,15 @@ fn s81_14_values() {
     assert_eq!(value("12,5 %"), number(0.125, Percent));
     assert_eq!(value("$ 1,250.00"), number(1250.0, Currency('$')));
     assert_eq!(value("30 €"), number(30.0, Currency('€')));
+    // S82-01: more than three digits before it: it can only be a decimal sign.
+    assert_eq!(value("1234.567"), number(1234.567, General));
+    assert_eq!(value("12345,678"), number(12345.678, General));
+    assert_eq!(value("-$30.00"), number(-30.0, Currency('$')));
+    assert_eq!(value("$-30"), number(-30.0, Currency('$')));
+    assert_eq!(value("-30 €"), number(-30.0, Currency('€')));
     for words in [
+        "--5",
+        "-$-5",
         "007",
         "1.234",
         "1,234",
