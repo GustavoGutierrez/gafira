@@ -503,6 +503,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 **FD-43 · Efectos de texto** (RF-25)
 - *Propósito*: dar carácter gráfico al texto.
 - *Comportamiento y reglas*: **Contorno** (grosor, color, posición exterior/interior), **Sombra** (FD-35), brillo, eco, fondo (cuadro de color con relleno y radio), «sin relleno» (solo contorno), desalineado y neón (presets). Se combinan con degradado. Los efectos son estilos con datos y no destruyen el texto: el texto sigue siendo editable y seleccionable.
+- *Precisado por D-120 (spec 089)*: Paralela, Brillo, Eco, Contorno, Fondo, Desalineado, Sin relleno, Neón y Distorsión, con sus parámetros como proporción del tamaño de la letra, hasta cuatro a la vez, y doce estilos listos.
 - *UI*: Panel lateral → Texto → Efectos de texto; Inspector → Texto.
 - *Técnica*: `gafira-text` (contornos), `gafira-pathops` (trazo), `Effect`.
 - *Presupuesto*: aplicar < 100 ms (CAL-05).
