@@ -52,6 +52,16 @@ cargo build --release --locked -p gafira
 packaging/linux/install.sh [path/to/gafira]
 ```
 
+## Packages and releases
+
+| System | Command | Result in `dist/` |
+|---|---|---|
+| Linux | `packaging/linux/build-packages.sh` | `.deb` and AppImage |
+| Windows (or Linux with `mingw-w64` and `nsis`) | `packaging/windows/build.sh` | installer and portable `.zip` |
+| macOS | `packaging/macos/build.sh` | `.dmg`, not notarized |
+
+A tag `v<version>` on `main` builds Linux and Windows in `.github/workflows/release.yml` and publishes them, with the notes of `CHANGELOG.md` (spec 090). Run that workflow by hand on `develop` first: it checks the packages and leaves the cache the tag uses. macOS is built only when asked for.
+
 ## Repository layout
 
 | Path | Content |

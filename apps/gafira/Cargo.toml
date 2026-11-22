@@ -29,5 +29,9 @@ eframe.workspace = true
 # Spec 074: the export settings kept per format, as JSON.
 serde_json.workspace = true
 
+[build-dependencies]
+# Spec 090: the icon and the details of the Windows executable.
+winresource.workspace = true
+
 [lints]
 workspace = true

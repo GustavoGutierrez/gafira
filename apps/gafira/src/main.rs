@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+// No console behind the window of a release (spec 090).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 //! `gafira`: the desktop app (02 §2.1). Composition only: it builds the
 //! ports from the adapters, the engine over them, and hands both to the
@@ -225,6 +227,11 @@ fn language_flag() -> Option<LanguagePreference> {
 }
 
 fn main() -> eframe::Result {
+    // What a package is checked with (spec 090).
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("gafira {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let data_dir =
         gafira_platform::data_dir().unwrap_or_else(|| std::env::temp_dir().join("gafira"));
     let resolver = Arc::new(D08LocaleResolver::new(Arc::new(EnvLocale)));
