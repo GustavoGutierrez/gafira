@@ -340,7 +340,7 @@ const PHOTO: AssetRef = AssetRef::new(ContentHash([7; 32]));
 fn image_document(opacity: f32) -> Document {
     let mut base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 40.0, 20.0));
     base.opacity = opacity;
-    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode { asset: PHOTO })));
+    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode::new(PHOTO))));
     let mut assets = AssetTable::new();
     assets.insert(
         PHOTO,

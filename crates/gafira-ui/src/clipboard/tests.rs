@@ -67,7 +67,7 @@ fn document() -> Document {
         node(
             2,
             place(100.0, 100.0, 40.0, 30.0),
-            NodeKind::Image(ImageNode { asset: asset() }),
+            NodeKind::Image(ImageNode::new(asset())),
             &[],
         ),
         node(

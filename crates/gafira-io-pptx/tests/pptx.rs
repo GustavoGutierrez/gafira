@@ -121,7 +121,7 @@ fn document() -> Document {
         node(
             4,
             Placement::new(800.0, 100.0, 300.0, 200.0),
-            NodeKind::Image(ImageNode { asset: PHOTO }),
+            NodeKind::Image(ImageNode::new(PHOTO)),
         ),
         node(
             5,

@@ -57,7 +57,7 @@ pub fn parts(qr: &QrNode, placement: &Placement) -> Result<Vec<Part>, QrError> {
     }
     if let Some(logo) = drawing.logo {
         out.push(Part {
-            kind: NodeKind::Image(ImageNode { asset: logo.asset }),
+            kind: NodeKind::Image(ImageNode::new(logo.asset)),
             placement: centred(logo.rect.width() * k, logo.rect.height() * k),
         });
     }

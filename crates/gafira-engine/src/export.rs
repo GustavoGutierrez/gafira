@@ -901,7 +901,7 @@ mod tests {
                 .edit()
                 .execute(Box::new(InsertAsset::new(*asset, entry)));
             specs.push(NodeSpec::new(
-                NodeKind::Image(ImageNode { asset: *asset }),
+                NodeKind::Image(ImageNode::new(*asset)),
                 Placement::new(0.0, 0.0, 4.0, 4.0),
             ));
         }

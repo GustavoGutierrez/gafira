@@ -978,7 +978,10 @@ pub(crate) fn new_image(
         w,
         h,
     );
-    NodeSpec::new(NodeKind::Image(gafira_doc::ImageNode { asset }), placement)
+    NodeSpec::new(
+        NodeKind::Image(gafira_doc::ImageNode::new(asset)),
+        placement,
+    )
 }
 
 /// A document colour on screen (sRGB, 8 bits).
@@ -2058,7 +2061,7 @@ mod tests {
             "never enlarged"
         );
         assert!(
-            matches!(small.kind, NodeKind::Image(gafira_doc::ImageNode { asset: a }) if a == asset)
+            matches!(small.kind, NodeKind::Image(gafira_doc::ImageNode { asset: a, .. }) if a == asset)
         );
     }
 

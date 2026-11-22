@@ -591,10 +591,13 @@ pub(crate) fn top_ids(first: u64, specs: &[NodeSpec]) -> Vec<NodeId> {
 /// Every image asset `specs` show, each once, in order.
 pub(crate) fn assets(specs: &[NodeSpec]) -> Vec<gafira_doc::AssetRef> {
     fn visit(spec: &NodeSpec, out: &mut Vec<gafira_doc::AssetRef>) {
-        if let NodeKind::Image(image) = &spec.kind
-            && !out.contains(&image.asset)
-        {
-            out.push(image.asset);
+        if let NodeKind::Image(image) = &spec.kind {
+            // What it can go back to comes too (spec 084).
+            for asset in image.assets() {
+                if !out.contains(&asset) {
+                    out.push(asset);
+                }
+            }
         }
         for child in &spec.children {
             visit(child, out);

@@ -68,6 +68,8 @@ pub enum Property {
     Qr(Box<gafira_doc::QrNode>),
     /// A whole table (spec 081).
     Table(Box<gafira_doc::TableNode>),
+    /// What an image shows and where it comes from (spec 084).
+    Image(gafira_doc::ImageNode),
     /// A whole chart (spec 083).
     Chart(Box<gafira_doc::ChartNode>),
     PageName(String),
@@ -111,6 +113,7 @@ impl Property {
             Self::Qr(_) => "set_property.qr",
             Self::Table(_) => "set_property.table",
             Self::Chart(_) => "set_property.chart",
+            Self::Image(_) => "set_property.image",
             Self::TextContent(_) => "set_property.text_content",
             Self::TextCurve(_) => "set_property.text_curve",
             Self::TextAlign(_) => "set_property.text_align",
@@ -235,6 +238,7 @@ impl Property {
                 Self::FrameCrop(f.content_offset, f.content_scale, f.content_rotation_deg)
             }
             (Self::Table(_), NodeKind::Table(t)) => Self::Table(t.clone()),
+            (Self::Image(_), NodeKind::Image(i)) => Self::Image(*i),
             (Self::Chart(_), NodeKind::Chart(c)) => Self::Chart(c.clone()),
             (Self::Qr(_), NodeKind::Qr(q)) => Self::Qr(q.clone()),
             (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
@@ -277,6 +281,7 @@ impl Property {
                 f.content_rotation_deg = *degrees;
             }
             (Self::Table(v), NodeKind::Table(t)) => t.clone_from(v),
+            (Self::Image(v), NodeKind::Image(i)) => *i = *v,
             (Self::Chart(v), NodeKind::Chart(c)) => c.clone_from(v),
             (Self::Qr(v), NodeKind::Qr(q)) => q.clone_from(v),
             (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,

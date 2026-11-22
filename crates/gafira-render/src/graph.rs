@@ -3307,7 +3307,7 @@ mod tests {
         let mut base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 30.0, 40.0, 20.0));
         base.opacity = 0.5;
         base.blend = BlendMode::Multiply;
-        let kind = NodeKind::Image(gafira_doc::ImageNode { asset });
+        let kind = NodeKind::Image(gafira_doc::ImageNode::new(asset));
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
         page.roots = vec![NodeId::new(1)];

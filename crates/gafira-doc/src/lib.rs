@@ -52,7 +52,7 @@ pub use error::{NodeField, PathProblem, ValidationError};
 pub use frame::{Fit, FrameContent, FrameNode};
 pub use gradient::{Gradient, GradientKind, GradientProblem, GradientStop};
 pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
-pub use image::ImageNode;
+pub use image::{ImageEdit, ImageNode};
 pub use json::LoadError;
 pub use layout::{
     GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,

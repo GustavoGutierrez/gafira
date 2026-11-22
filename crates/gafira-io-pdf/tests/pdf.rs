@@ -224,7 +224,7 @@ fn s30_04_what_blocks_the_export_writes_nothing() {
 fn s32_06_a_page_with_an_image_exports_as_one_pdf_page() {
     let photo = AssetRef::new(ContentHash([7; 32]));
     let base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 40.0, 20.0));
-    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode { asset: photo })));
+    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode::new(photo))));
     let mut page = Arc::unwrap_or_clone(page(1, 100.0, 50.0, None));
     page.roots.push(image.base.id);
     page.nodes.insert(image.base.id, image);

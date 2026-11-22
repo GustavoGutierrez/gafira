@@ -197,8 +197,9 @@ impl Document {
     fn check_image_sources(&self) -> Result<(), ValidationError> {
         for page in &self.pages {
             for (id, node) in &page.nodes {
+                // What it can go back to is there too (spec 084).
                 if let NodeKind::Image(image) = &node.kind
-                    && self.asset(&image.asset).is_none()
+                    && image.assets().any(|asset| self.asset(&asset).is_none())
                 {
                     return Err(ValidationError::DanglingImage { node: *id });
                 }
@@ -1482,7 +1483,7 @@ mod tests {
         let mut page = page(1, &[]);
         page.nodes.insert(
             NodeId::new(2),
-            node(2, NodeKind::Image(ImageNode { asset })),
+            node(2, NodeKind::Image(ImageNode::new(asset))),
         );
         page.roots.push(NodeId::new(2));
         let mut doc =
