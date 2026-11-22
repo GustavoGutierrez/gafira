@@ -272,6 +272,15 @@ fn main() -> eframe::Result {
         // Iconify (spec 072), without an API key.
         photos: Some(Arc::clone(&catalog) as Arc<dyn gafira_ports::photos::PhotoCatalog>),
         illustrations: Some(catalog as Arc<dyn gafira_ports::photos::IllustrationCatalog>),
+        // D-115: the image models, the light ones inside and the others
+        // downloaded when the person asks.
+        vision: Some(Arc::new(gafira_vision::Vision::new(
+            data_dir.join("models"),
+            Box::new(gafira_vision::online::UreqFetch::new(env!(
+                "CARGO_PKG_VERSION"
+            ))),
+            gafira_vision::detect(),
+        ))),
         engine: Box::new(move |waker: Arc<dyn Waker>| {
             let clock = Arc::new(SystemClock::new());
             // Spec 026: imported and opened assets live in the content store,

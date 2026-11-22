@@ -61,6 +61,8 @@ pub struct UiConfig {
     pub photos: Option<std::sync::Arc<dyn gafira_ports::photos::PhotoCatalog>>,
     /// The vector illustrations of Elementos → Ilustraciones (spec 072).
     pub illustrations: Option<std::sync::Arc<dyn gafira_ports::photos::IllustrationCatalog>>,
+    /// The models that work on images (spec 084); none without them.
+    pub vision: Option<std::sync::Arc<dyn gafira_ports::vision::VisionModels>>,
     /// A project to open once the splash ends: the `.gaf` the system
     /// passed (a double click on a file, spec 078).
     pub open: Option<PathBuf>,
@@ -142,6 +144,7 @@ struct Shell {
     /// The imported files of Biblioteca, shared with every editor (spec 068).
     library: std::rc::Rc<dyn crate::LibraryStore>,
     /// The photo catalogues, shared with every editor (spec 071).
+    vision: Option<std::sync::Arc<dyn gafira_ports::vision::VisionModels>>,
     photos: Option<std::sync::Arc<dyn gafira_ports::photos::PhotoCatalog>>,
     illustrations: Option<std::sync::Arc<dyn gafira_ports::photos::IllustrationCatalog>>,
     export_presets: Box<dyn crate::ExportPresets>,
@@ -259,6 +262,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 photos: config.photos,
                 export_presets: config.export_presets,
                 illustrations: config.illustrations,
+                vision: config.vision,
                 theme,
                 texts: Texts::new(config.locale.unwrap_or(resolved.locale)),
                 version: config.version,
@@ -306,6 +310,7 @@ impl Shell {
             .illustration_panel
             .get_mut()
             .set_catalog(self.illustrations.clone());
+        editor.studio.set_models(self.vision.clone());
         editor
             .illustration_panel
             .get_mut()

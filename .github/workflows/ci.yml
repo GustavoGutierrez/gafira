@@ -138,7 +138,7 @@ jobs:
           # Adapters that do I/O have no domain clippy.toml and so no V5 row; ARQ-06 still holds for them:
           # no gafira-engine, gafira-render or gafira-media in their normal or build tree (dev-dependencies are not edges).
           status=0
-          for crate in gafira-assets gafira-format gafira-platform gafira-io-image gafira-io-pdf; do
+          for crate in gafira-assets gafira-format gafira-platform gafira-io-image gafira-io-pdf gafira-vision; do
             tree=$(cargo tree -p "$crate" -e normal,build --target all --prefix none -f '{p}' </dev/null)
             grep -q "^$crate v" <<<"$tree" || { echo "::error::empty cargo tree for $crate" >&2; status=1; continue; }
             if bad=$(grep -E '^(gafira-(engine|render|media|ui)|egui|eframe|winit|wgpu) v' <<<"$tree"); then

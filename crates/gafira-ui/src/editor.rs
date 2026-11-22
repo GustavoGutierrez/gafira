@@ -364,6 +364,9 @@ pub(crate) struct Editor {
     chart_panel: std::cell::RefCell<crate::chart_templates::Panel>,
     chart_edit: Option<charts::Editing>,
     chart_gesture: Option<(NodeId, u64, GestureId)>,
+    /// «Mejorar resolución», «Quitar fondo» and «Borrar píxeles» (spec 084).
+    pub(crate) studio: crate::vision::Studio,
+    eraser: Option<crate::eraser::Eraser>,
     /// Spreadsheets waiting for the sheet to insert (spec 082).
     sheets: crate::sheets::Asks,
     /// The frame an image dragged on the canvas would drop into (spec 066):
@@ -528,6 +531,8 @@ impl Default for Editor {
             paste_seen: false,
             pending_svg: None,
             sheets: crate::sheets::Asks::default(),
+            studio: crate::vision::Studio::default(),
+            eraser: None,
             chart_panel: std::cell::RefCell::default(),
             chart_edit: None,
             chart_gesture: None,
@@ -668,6 +673,9 @@ struct Asked {
     chart_field: u64,
     chart_rest: bool,
     chart_import: Option<(PageId, NodeId)>,
+    /// What is asked for an image (spec 084).
+    vision: Option<crate::vision::Ask>,
+    eraser: Option<crate::eraser::Answer>,
     /// The answer about the first spreadsheet that waits (spec 082).
     sheet: Option<crate::sheets::Answer>,
     /// A new empty frame of this outline in the middle of the page, and
@@ -1093,6 +1101,13 @@ impl Editor {
             self.shown_loaded = true;
         }
         let mut asked = Asked::default();
+        self.images_arrived(ctx, engine);
+        // «Borrador de píxeles» takes the whole window and its keys: Ctrl+Z
+        // is of its strokes (S84-08).
+        if let Some(eraser) = self.eraser.as_mut() {
+            asked.eraser = eraser.show(ctx, theme, texts);
+            return self.apply(engine, &document, &asked, theme);
+        }
         ctx.input(|i| {
             if i.modifiers.command && i.key_pressed(egui::Key::S) {
                 asked.file = Some(if i.modifiers.shift {
@@ -1339,6 +1354,7 @@ impl Editor {
                 })
                 .collect();
         }
+        self.studio.models_panel(ctx, theme, texts);
         self.can = CanArrange::of(document.as_deref(), &self.selected);
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         if let Some(ask) = asked.zoom {
@@ -2574,6 +2590,17 @@ impl Editor {
                         asked.image_to_background = Some((shape.page, shape.node, asset));
                     }
                     ui.add_space(12.0);
+                    if let Some(image) = document.and_then(|d| image_of(d, shape.page, shape.node))
+                    {
+                        let target = crate::vision::Target {
+                            page: shape.page,
+                            node: shape.node,
+                            image,
+                        };
+                        asked.vision =
+                            crate::vision::buttons(ui, theme, texts, &self.studio, target);
+                        ui.add_space(12.0);
+                    }
                 }
                 if let Some(text) = &shape.text {
                     font_button(ui, theme, texts, text.content.first_style(), asked);
@@ -5146,6 +5173,26 @@ impl Editor {
                                                 ));
                                             }
                                         }
+                                        // The models are at work on it
+                                        // (S84-07).
+                                        if self.studio.scanning(shape.node).is_some() {
+                                            let texture = self
+                                                .textures
+                                                .get(&asset.as_hash())
+                                                .and_then(Option::as_ref)
+                                                .map(egui::TextureHandle::id);
+                                            let time = ctx.input(|i| i.time);
+                                            let still = ctx.style().animation_time <= 0.0;
+                                            crate::vision::scan(
+                                                &clip,
+                                                theme,
+                                                texture,
+                                                (turn, &shape.placement),
+                                                time,
+                                                still,
+                                            );
+                                            ctx.request_repaint();
+                                        }
                                     }
                                     let edited =
                                         self.editing.as_ref().is_some_and(|e| e.node == shape.node);
@@ -6399,6 +6446,7 @@ impl Editor {
         self.qr_codes(engine, asked);
         self.tables(engine, asked);
         self.charts(engine, asked);
+        self.images(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine);
         }
@@ -9308,6 +9356,64 @@ impl Editor {
         });
     }
 
+    /// The images of a frame (spec 084).
+    fn images(&mut self, engine: &mut Gafira, asked: &Asked) {
+        use crate::vision::Ask;
+        let store = Arc::clone(&engine.ports().store);
+        match asked.vision {
+            Some(Ask::Work(target, work)) => self.studio.work(&store, target, work),
+            Some(Ask::Erase(target)) => self.studio.open(&store, target),
+            Some(Ask::Background(target)) => {
+                let base = target.image.base();
+                set_image(engine, target, target.image.edited(base, base));
+            }
+            Some(Ask::Original(target)) => {
+                let original = target.image.original();
+                set_image(engine, target, gafira_doc::ImageNode::new(original));
+            }
+            Some(Ask::Cancel) => self.studio.cancel(),
+            Some(Ask::Models) => self.studio.open_models(),
+            None => {}
+        }
+        if let Some(answer) = asked.eraser
+            && let Some(eraser) = self.eraser.take()
+            && answer == crate::eraser::Answer::Done
+            && let Some(made) = eraser.result()
+        {
+            let target = crate::vision::Target {
+                page: eraser.page,
+                node: eraser.node,
+                image: eraser.image,
+            };
+            self.studio.keep(&store, target, made);
+        }
+    }
+
+    /// What the models made, if the image is still the one they took.
+    fn images_arrived(&mut self, ctx: &egui::Context, engine: &mut Gafira) {
+        use crate::vision::Arrived;
+        for arrived in self.studio.pump(ctx) {
+            let target = match &arrived {
+                Arrived::Image(target, _) | Arrived::Erase(target, _) => *target,
+            };
+            let now = engine
+                .edit()
+                .document()
+                .and_then(|d| image_of(&d, target.page, target.node));
+            if now != Some(target.image) {
+                continue;
+            }
+            match arrived {
+                Arrived::Image(target, image) => set_image(engine, target, image),
+                Arrived::Erase(target, opened) => {
+                    let at = (target.page, target.node, target.image);
+                    let (base, cut) = *opened;
+                    self.eraser = crate::eraser::Eraser::new(at, base, &cut);
+                }
+            }
+        }
+    }
+
     /// The open undo step of a chart is over.
     fn end_chart_step(&mut self, engine: &mut Gafira) {
         if self.chart_gesture.take().is_some()
@@ -10484,6 +10590,51 @@ fn take_chart(asked: &mut Asked, at: (PageId, NodeId), asks: charts::Asks) {
     asked.chart_close |= asks.close;
 }
 
+/// Makes the image of `target` be `image`, its new assets in the document;
+/// one undo step.
+fn set_image(engine: &mut Gafira, target: crate::vision::Target, image: gafira_doc::ImageNode) {
+    let Some(document) = engine.edit().document() else {
+        return;
+    };
+    // Named after the image as it was brought in.
+    let name = document
+        .asset(&target.image.original())
+        .map(|entry| entry.name.clone())
+        .unwrap_or_default();
+    let mut commands: Vec<Box<dyn gafira_edit::Command>> = Vec::new();
+    let mut new: Vec<gafira_doc::AssetRef> = Vec::new();
+    for asset in image.assets() {
+        if document.asset(&asset).is_none() && !new.contains(&asset) {
+            new.push(asset);
+            let entry = gafira_doc::AssetEntry {
+                name: name.clone(),
+                storage: gafira_doc::AssetStorage::Embedded,
+            };
+            commands.push(Box::new(gafira_edit::InsertAsset::new(asset, entry)));
+        }
+    }
+    // A gesture of its own: two in a row are two steps.
+    let gesture = engine.edit().begin_gesture().ok();
+    commands.push(Box::new(SetProperty::new(
+        target.page,
+        vec![target.node],
+        Property::Image(image),
+        gesture,
+    )));
+    let label = MessageKey("edit.set_property");
+    if let Err(error) = engine
+        .edit()
+        .execute(Box::new(Transaction::new(label, commands)))
+    {
+        eprintln!("image: {error}");
+    }
+    if gesture.is_some()
+        && let Err(error) = engine.edit().end_gesture()
+    {
+        eprintln!("end gesture: {error}");
+    }
+}
+
 /// Sets the chart at `at`.
 fn set_chart(
     engine: &mut Gafira,
@@ -10502,6 +10653,14 @@ fn set_chart(
 fn chart_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::ChartNode> {
     match &document.page(page)?.node(node)?.kind {
         gafira_doc::NodeKind::Chart(chart) => Some((**chart).clone()),
+        _ => None,
+    }
+}
+
+/// The image `node` of `page`, if it is one.
+fn image_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::ImageNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Image(image) => Some(*image),
         _ => None,
     }
 }
@@ -13740,6 +13899,82 @@ pub(crate) mod tests {
         assert!(editor.chart_edit.is_some());
     }
 
+    // S84-01: what the models make of an image is one undo step with its
+    // assets, in the same box; the original comes back, and an image that
+    // changed meanwhile is left as it is.
+    #[test]
+    fn s84_01_an_edited_image_is_one_step() {
+        use crate::vision::{Ask, Target};
+        use gafira_doc::{AssetRef, ContentHash, ImageNode};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        let original = AssetRef::new(ContentHash([7; 32]));
+        let entry = gafira_doc::AssetEntry {
+            name: "gato.png".to_owned(),
+            storage: gafira_doc::AssetStorage::Embedded,
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertAsset::new(original, entry)))
+            .expect("the asset");
+        editor.place_image(&mut engine, original, (200, 100), None, false);
+        let (page, node) = editor.selected.single().expect("the image");
+        let depth = undo_depth(&mut engine);
+        let image = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            image_of(&document, page, node).expect("an image")
+        };
+        let before = image(&mut engine);
+        let target = Target {
+            page,
+            node,
+            image: before,
+        };
+        let asset = |n: u8| AssetRef::new(ContentHash([n; 32]));
+        set_image(&mut engine, target, before.edited(asset(8), asset(9)));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let cut = image(&mut engine);
+        assert!(cut.is_cut() && cut.is_enhanced() && cut.original() == original);
+        let document = engine.edit().document().expect("doc");
+        assert_eq!(
+            document.asset(&asset(9)).expect("the base").name,
+            "gato.png"
+        );
+        // The background alone, then the original.
+        let target = Target {
+            page,
+            node,
+            image: cut,
+        };
+        for (vision, want) in [
+            (Ask::Background(target), cut.edited(asset(9), asset(9))),
+            (Ask::Original(target), ImageNode::new(original)),
+        ] {
+            let asked = Asked {
+                vision: Some(vision),
+                ..Asked::default()
+            };
+            ask(&mut engine, &mut editor, asked);
+            assert_eq!(image(&mut engine), want);
+        }
+        assert_eq!(undo_depth(&mut engine), depth + 3, "a step each");
+        for _ in 0..3 {
+            engine.edit().undo().expect("an undo");
+        }
+        assert_eq!(image(&mut engine), before);
+        assert!(
+            engine
+                .edit()
+                .document()
+                .expect("doc")
+                .asset(&asset(8))
+                .is_none()
+        );
+    }
+
     // S66-10: an SVG dropped on the canvas becomes an empty frame of its
     // outline, with its proportions, centred where it was dropped.
     #[test]
@@ -14498,6 +14733,42 @@ pub(crate) mod tests {
         let _ = ctx.run(input, |ctx| {
             editor.show(ctx, engine, &theme, &texts, None, &mut None);
         });
+    }
+
+    // S84-08: in «Borrador de píxeles», Ctrl+Z is of the strokes, not of the
+    // document; Escape leaves it as it was.
+    #[test]
+    fn s84_08_undo_is_of_the_strokes() {
+        use crate::eraser::{Eraser, Mode};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        let base = gafira_ports::vision::Pixels::new(20, 20, vec![255; 1600]).expect("pixels");
+        let image =
+            gafira_doc::ImageNode::new(gafira_doc::AssetRef::new(gafira_doc::ContentHash([1; 32])));
+        let mut eraser = Eraser::new((page, rect, image), base, &[255; 400]).expect("an eraser");
+        eraser.paint.begin();
+        eraser
+            .paint
+            .line(Mode::Erase, (10.0, 10.0), (10.0, 10.0), 8.0);
+        eraser.paint.end();
+        editor.eraser = Some(eraser);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Z));
+        assert_eq!(undo_depth(&mut engine), depth, "the document stays");
+        let eraser = editor.eraser.as_ref().expect("still there");
+        assert!(eraser.paint.alpha().iter().all(|a| *a == 255));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Escape),
+            Modifiers::NONE,
+        );
+        assert!(editor.eraser.is_none());
+        assert_eq!(undo_depth(&mut engine), depth);
     }
 
     // S37-07: the shortcuts of 03 §9.2 move the canvas zoom.

@@ -20,3 +20,4 @@ pub mod repository;
 pub mod settings;
 pub mod store;
 pub mod system;
+pub mod vision;

@@ -24,6 +24,7 @@ gafira-io-pptx.workspace = true
 gafira-io-xlsx.workspace = true
 # D-111: Elementos → Fotos, the only network besides the licence.
 gafira-photos = { workspace = true, features = ["online"] }
+gafira-vision = { workspace = true, features = ["online", "onnx"] }
 eframe.workspace = true
 # Spec 074: the export settings kept per format, as JSON.
 serde_json.workspace = true

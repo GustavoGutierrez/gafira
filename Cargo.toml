@@ -41,6 +41,7 @@ gafira-io-pptx = { path = "crates/gafira-io-pptx" }
 gafira-io-vector = { path = "crates/gafira-io-vector" }
 gafira-table = { path = "crates/gafira-table" }
 gafira-chart = { path = "crates/gafira-chart" }
+gafira-vision = { path = "crates/gafira-vision" }
 gafira-io-xlsx = { path = "crates/gafira-io-xlsx" }
 gafira-qr = { path = "crates/gafira-qr" }
 gafira-photos = { path = "crates/gafira-photos" }
@@ -74,6 +75,10 @@ getrandom = "0.3"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 x11rb = { version = "0.13", default-features = false, features = ["randr"] }
 roxmltree = "0.20"
+# D-115: inference for the image models (spec 084).
+tract-onnx = { version = "0.23", default-features = false }
+tract-linalg = { version = "0.23", default-features = false, features = ["multithread-mm"] }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std", "webgpu", "api-22"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

@@ -25,6 +25,7 @@ mod dialogs;
 mod draw;
 mod editor;
 mod elements;
+mod eraser;
 mod export;
 mod files;
 mod format;
@@ -61,6 +62,7 @@ mod text;
 mod textbox;
 mod transfer;
 mod versions;
+mod vision;
 mod widgets;
 mod zoom;
 
