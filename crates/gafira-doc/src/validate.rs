@@ -202,6 +202,13 @@ impl Document {
                 {
                     return Err(ValidationError::DanglingImage { node: *id });
                 }
+                // The logo of a QR code is one too (spec 080).
+                if let NodeKind::Qr(qr) = &node.kind
+                    && let Some(logo) = qr.logo
+                    && self.asset(&logo.asset).is_none()
+                {
+                    return Err(ValidationError::InvalidQr { node: *id });
+                }
                 // A frame's photo is an asset of the table too (spec 066).
                 if let NodeKind::Frame(frame) = &node.kind
                     && let Some(content) = frame.content
@@ -451,6 +458,16 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     };
     if let Some(problem) = gradient.and_then(crate::Gradient::problem) {
         return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
+    if let NodeKind::Qr(qr) = &node.kind
+        && !qr.is_valid()
+    {
+        return Err(ValidationError::InvalidQr { node: id });
+    }
+    if let NodeKind::Table(table) = &node.kind
+        && !table.is_valid()
+    {
+        return Err(ValidationError::InvalidTable { node: id });
     }
     if let NodeKind::Frame(frame) = &node.kind
         && !frame.is_valid()

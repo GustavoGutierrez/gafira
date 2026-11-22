@@ -24,6 +24,8 @@ gafira-testkit.workspace = true
 gafira-render.workspace = true
 gafira-render-cpu.workspace = true
 resvg.workspace = true
+# Spec 080: the exported QR codes are read back.
+gafira-qr.workspace = true
 
 [lints]
 workspace = true

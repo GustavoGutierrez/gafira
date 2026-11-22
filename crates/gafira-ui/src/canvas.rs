@@ -32,6 +32,10 @@ pub(crate) struct Shape {
     pub(crate) effect: Option<gafira_doc::ShapeEffect>,
     /// A frame: its photo is drawn cut out by the shape (spec 066).
     pub(crate) frame: Option<gafira_doc::FrameNode>,
+    /// A QR code: it is drawn from its picture (spec 080).
+    pub(crate) qr: Option<Box<gafira_doc::QrNode>>,
+    /// A table: it is drawn from its picture (spec 081).
+    pub(crate) table: Option<Box<gafira_doc::TableNode>>,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
     /// The opacity of the groups above it, multiplied (spec 043); the
@@ -88,6 +92,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 shape.stroke = frame.stroke;
                 Some((shape, None, None))
             }
+            NodeKind::Qr(_) | NodeKind::Table(_) => Some((rect.clone(), None, None)),
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
@@ -113,6 +118,14 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                     NodeKind::Line(line) => {
                         Some((line.clone(), line.ends(page, &node.base.placement)))
                     }
+                    _ => None,
+                },
+                table: match &node.kind {
+                    NodeKind::Table(table) => Some(table.clone()),
+                    _ => None,
+                },
+                qr: match &node.kind {
+                    NodeKind::Qr(qr) => Some(qr.clone()),
                     _ => None,
                 },
                 frame: match &node.kind {
@@ -241,6 +254,8 @@ pub(crate) fn kind_key(kind: &NodeKind) -> &'static str {
         NodeKind::Image(_) => "layers.image",
         NodeKind::Line(_) => "layers.line",
         NodeKind::Frame(_) => "layers.frame",
+        NodeKind::Qr(_) => "layers.qr",
+        NodeKind::Table(_) => "layers.table",
         _ => "layers.element",
     }
 }
@@ -1510,7 +1525,7 @@ pub(crate) fn background_image(
 }
 
 /// `gafira_doc::Gradient::position` (spec 063).
-fn gradient_shader(
+pub(crate) fn gradient_shader(
     gradient: &gafira_doc::Gradient,
     (w, h): (f64, f64),
     (margin, scale): (f64, f64),
@@ -2252,6 +2267,8 @@ mod s41_tests {
             inner: None,
             line: None,
             frame: None,
+            qr: None,
+            table: None,
         };
         let (image, covered) = path_image(&shape, 1.0).expect("a texture");
         // One screen px of margin on each side.
@@ -2827,7 +2844,7 @@ pub(crate) fn curved_text_image(
 }
 
 /// `path` as a tiny-skia path.
-fn skia_path(path: &kurbo::BezPath) -> Option<tiny_skia::Path> {
+pub(crate) fn skia_path(path: &kurbo::BezPath) -> Option<tiny_skia::Path> {
     let mut builder = tiny_skia::PathBuilder::new();
     for el in path.elements() {
         match *el {

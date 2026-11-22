@@ -166,7 +166,10 @@ fn png() -> Vec<u8> {
 }
 
 fn pptx() -> Vec<u8> {
-    let document = document();
+    pptx_of(&document())
+}
+
+fn pptx_of(document: &Document) -> Vec<u8> {
     let request = ExportRequest {
         format_id: "pptx".to_owned(),
         scope: ExportScope::Pages(vec![PageId::new(1)]),
@@ -175,7 +178,7 @@ fn pptx() -> Vec<u8> {
     let store = OnePhoto(png());
     let job = ExportJob {
         request: &request,
-        document: &document,
+        document,
         store: &store,
         pages: &NoPixels,
     };
@@ -193,7 +196,7 @@ fn pptx() -> Vec<u8> {
 #[test]
 fn s75_01_an_editable_presentation() {
     let bytes = pptx();
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes.clone())).expect("a zip");
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("a zip");
     let names: Vec<String> = (0..zip.len())
         .map(|i| zip.by_index(i).expect("entry").name().to_owned())
         .collect();
@@ -237,5 +240,101 @@ fn s75_01_an_editable_presentation() {
         slide.contains("<p:cxnSp>") && slide.contains("tailEnd type=\"triangle\""),
         "the arrow"
     );
-    std::fs::write("/tmp/claude-1000/-home-meridian-Documentos-Proyectos-Personal-gafira/179540d4-f7d5-47ef-8ec2-5ebfe63ee702/scratchpad/sample.pptx", bytes).expect("written");
+}
+
+// S80-12: a QR code goes as its shapes, all in one square, and its logo.
+#[test]
+fn s80_12_a_qr_code_goes_as_shapes() {
+    use gafira_doc::{QrContent, QrLogo, QrNode};
+    let grey = |v: f32| Color::Srgb(Rgba::new(v, v, v, 1.0));
+    let url = "https://example.com".to_owned();
+    let mut qr = QrNode::new(QrContent::Url { url }, grey(0.0), grey(1.0));
+    qr.logo = Some(QrLogo {
+        asset: PHOTO,
+        natural: (8, 6),
+        share: 0.2,
+        clear_behind: true,
+    });
+    let base = document();
+    let mut page = (*base.pages()[0]).clone();
+    let code = node(
+        20,
+        Placement::new(100.0, 100.0, 300.0, 300.0),
+        NodeKind::Qr(Box::new(qr)),
+    );
+    page.nodes.clear();
+    page.roots = vec![code.base.id];
+    page.nodes.insert(code.base.id, Arc::new(code));
+    let mut assets = AssetTable::new();
+    assets.insert(
+        PHOTO,
+        AssetEntry {
+            name: "foto.png".to_owned(),
+            storage: AssetStorage::Embedded,
+        },
+    );
+    let document =
+        Document::from_parts_with_assets(21, Dpi::default(), vec![Arc::new(page)], assets)
+            .expect("valid");
+    let mut zip = zip::ZipArchive::new(Cursor::new(pptx_of(&document))).expect("a zip");
+    let mut slide = String::new();
+    zip.by_name("ppt/slides/slide1.xml")
+        .expect("the slide")
+        .read_to_string(&mut slide)
+        .expect("utf-8");
+    roxmltree::Document::parse(&slide).expect("XML");
+    assert!(slide.contains("prst=\"rect\""), "the background");
+    assert_eq!(slide.matches("<a:custGeom>").count(), 3, "body and eyes");
+    assert_eq!(slide.matches("<p:pic>").count(), 1, "the logo");
+}
+
+// S81-13: a table goes as a PowerPoint table.
+#[test]
+fn s81_13_a_table_goes_as_a_table() {
+    use gafira_doc::{CellMerge, CellStyle, ShapeStroke, TableNode};
+    let ink = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
+    let mut table = TableNode::new(2, 3, (100.0, 40.0), &CellStyle::new("Inter", 16.0, ink));
+    table.cells[0].text = "Uno & dos".to_owned();
+    table.cells[0].style.borders.right = Some(ShapeStroke::new(ink, 2.0));
+    table.merges.push(CellMerge {
+        row: 1,
+        col: 0,
+        rows: 1,
+        cols: 2,
+    });
+    table.header = true;
+    let base = document();
+    let mut page = (*base.pages()[0]).clone();
+    let code = node(
+        20,
+        Placement::new(100.0, 100.0, 300.0, 80.0),
+        NodeKind::Table(Box::new(table)),
+    );
+    page.nodes.clear();
+    page.roots = vec![code.base.id];
+    page.nodes.insert(code.base.id, Arc::new(code));
+    let document = Document::from_parts(21, Dpi::default(), vec![Arc::new(page)]).expect("valid");
+    let mut zip = zip::ZipArchive::new(Cursor::new(pptx_of(&document))).expect("a zip");
+    let mut slide = String::new();
+    zip.by_name("ppt/slides/slide1.xml")
+        .expect("the slide")
+        .read_to_string(&mut slide)
+        .expect("utf-8");
+    roxmltree::Document::parse(&slide).expect("XML");
+    for piece in [
+        "<a:tbl><a:tblPr firstRow=\"1\"/>",
+        "gridSpan=\"2\"",
+        "hMerge=\"1\"",
+        "<a:t>Uno &amp; dos</a:t>",
+        "<a:txBody>",
+    ] {
+        assert!(slide.contains(piece), "{piece}");
+    }
+    assert_eq!(slide.matches("<a:gridCol ").count(), 3);
+    assert_eq!(slide.matches("<a:tr ").count(), 2);
+    assert_eq!(
+        slide.matches("<a:tc").count() - slide.matches("<a:tcPr").count(),
+        6
+    );
+    assert!(!slide.contains("<p:txBody>"), "the text is of the table");
 }

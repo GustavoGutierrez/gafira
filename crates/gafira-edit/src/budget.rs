@@ -80,6 +80,18 @@ fn node_bytes(node: &Node) -> usize {
             }
             _ => 0,
         },
+        // A table keeps its sizes, cells and words (spec 081).
+        NodeKind::Table(table) => {
+            size_of::<gafira_doc::TableNode>()
+                + (table.columns.len() + table.rows.len()) * size_of::<f64>()
+                + table
+                    .cells
+                    .iter()
+                    .map(|c| size_of::<gafira_doc::TableCell>() + c.text.len() + c.style.font.len())
+                    .sum::<usize>()
+        }
+        // A code keeps the words it says on the heap (spec 080).
+        NodeKind::Qr(qr) => qr.content.fields().iter().map(|f| f.len()).sum(),
         NodeKind::Group(_) | NodeKind::Image(_) | NodeKind::Line(_) => 0,
     };
     size_of::<Node>()

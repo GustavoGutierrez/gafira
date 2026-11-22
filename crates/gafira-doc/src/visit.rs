@@ -196,6 +196,16 @@ pub trait NodeVisitor {
         self.visit_node(n)
     }
 
+    /// Receives a QR code (spec 080).
+    fn visit_qr(&mut self, n: &Node, _q: &crate::QrNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
+    /// Receives a table (spec 081).
+    fn visit_table(&mut self, n: &Node, _t: &crate::TableNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
     /// Receives an extension node.
     fn visit_extension(&mut self, n: &Node, _e: &ExtensionNode) -> Self::Out {
         self.visit_node(n)
@@ -271,6 +281,8 @@ fn dispatch<V: NodeVisitor>(v: &mut V, node: &Node) -> V::Out {
         NodeKind::Image(i) => v.visit_image(node, i),
         NodeKind::Line(l) => v.visit_line(node, l),
         NodeKind::Frame(f) => v.visit_frame(node, f),
+        NodeKind::Qr(q) => v.visit_qr(node, q),
+        NodeKind::Table(t) => v.visit_table(node, t),
         NodeKind::Extension(e) => v.visit_extension(node, e),
     }
 }

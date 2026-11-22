@@ -342,7 +342,7 @@ fn export_pages(clock: Arc<SystemClock>, system: gafira_ui::SystemFonts) -> Arc<
 /// WebP (spec 039), in the order the export dialog lists them.
 fn registries() -> Registries {
     let mut registries = Registries::new();
-    let exporters: [Arc<dyn Exporter>; 6] = [
+    let exporters: [Arc<dyn Exporter>; 7] = [
         Arc::new(gafira_io_image::PngExporter::new()),
         Arc::new(gafira_io_image::JpegExporter::new()),
         Arc::new(gafira_io_image::WebpExporter::new()),
@@ -351,6 +351,8 @@ fn registries() -> Registries {
         Arc::new(gafira_io_svg::SvgExporter::new()),
         // Spec 075: PowerPoint, editable.
         Arc::new(gafira_io_pptx::PptxExporter::new()),
+        // Spec 081: the tables, for Excel.
+        Arc::new(gafira_io_xlsx::XlsxExporter::new()),
     ];
     for exporter in exporters {
         if let Err(error) = registries.formats.register_exporter(exporter) {

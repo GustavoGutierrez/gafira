@@ -31,6 +31,8 @@ mod page;
 mod page_size;
 mod placement;
 mod project_id;
+mod qr;
+mod table;
 mod text;
 pub mod timeline;
 mod validate;
@@ -63,6 +65,11 @@ pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};
 pub use placement::{Flip, Placement};
 pub use project_id::{ProjectId, ProjectIdError};
+pub use qr::{
+    QrBody, QrCoin, QrContact, QrContactFormat, QrContent, QrEcc, QrEyeBall, QrEyeFrame, QrFill,
+    QrLogo, QrNode, QrStyle, QrWifiSecurity,
+};
+pub use table::{CellBorders, CellMerge, CellStyle, TableCell, TableNode};
 pub use text::{
     Paragraph, RichText, Span, SpanStyle, TextAlign, TextNode, TextSizing, face_key, nearest_face,
 };

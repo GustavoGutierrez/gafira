@@ -290,6 +290,16 @@ impl Writer<'_, '_, '_> {
                 );
             }
             NodeKind::Frame(frame) => self.frame(out, frame, (&p, &name, opacity)),
+            // A QR code goes as its shapes and its logo (spec 080); one that
+            // cannot be made draws nothing anywhere.
+            NodeKind::Qr(qr) => {
+                for part in gafira_qr::parts(qr, &p).unwrap_or_default() {
+                    let mut base = node.base.clone();
+                    base.placement = part.placement;
+                    self.node(out, &Node::new(base, part.kind));
+                }
+            }
+            NodeKind::Table(table) => self.table(out, table, (&p, &name, opacity)),
             // A plug-in's element has no PowerPoint form.
             NodeKind::Extension(_) => self.skipped = true,
             NodeKind::Line(line) => {
@@ -372,6 +382,139 @@ impl Writer<'_, '_, '_> {
                 );
             }
         }
+    }
+
+    /// A table as a PowerPoint table (S81-13): its grid, its merges, its
+    /// fills, borders and words.
+    fn table(
+        &mut self,
+        out: &mut String,
+        table: &gafira_doc::TableNode,
+        (p, name, opacity): (&Placement, &str, f32),
+    ) {
+        let id = self.id();
+        let layout = gafira_table::Layout::of(table, (p.w.abs(), p.h.abs()));
+        let _ = write!(
+            out,
+            "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>{}<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tblPr{}/><a:tblGrid>",
+            self.xfrm(p)
+                .replacen("<a:xfrm", "<p:xfrm", 1)
+                .replace("</a:xfrm>", "</p:xfrm>"),
+            if table.header { " firstRow=\"1\"" } else { "" }
+        );
+        for (x0, x1) in &layout.columns {
+            let _ = write!(out, "<a:gridCol w=\"{}\"/>", self.emu(x1 - x0).max(1));
+        }
+        out.push_str("</a:tblGrid>");
+        for (r, (y0, y1)) in layout.rows.iter().enumerate() {
+            let _ = write!(out, "<a:tr h=\"{}\">", self.emu(y1 - y0).max(1));
+            for c in 0..layout.columns.len() {
+                self.table_cell(out, table, (r, c), opacity);
+            }
+            out.push_str("</a:tr>");
+        }
+        out.push_str("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>");
+    }
+
+    fn table_cell(
+        &self,
+        out: &mut String,
+        table: &gafira_doc::TableNode,
+        (r, c): (usize, usize),
+        opacity: f32,
+    ) {
+        let Some(cell) = table.cell(r, c) else { return };
+        let style = &cell.style;
+        let mut spans = String::new();
+        if let Some(m) = table.merge_at(r, c) {
+            if (m.row, m.col) == (r, c) {
+                if m.cols > 1 {
+                    let _ = write!(spans, " gridSpan=\"{}\"", m.cols);
+                }
+                if m.rows > 1 {
+                    let _ = write!(spans, " rowSpan=\"{}\"", m.rows);
+                }
+            } else {
+                if c > m.col {
+                    spans.push_str(" hMerge=\"1\"");
+                }
+                if r > m.row {
+                    spans.push_str(" vMerge=\"1\"");
+                }
+            }
+        }
+        let content = gafira_doc::RichText::plain(
+            &cell.text,
+            &gafira_doc::SpanStyle {
+                font: style.font.clone(),
+                size: style.size,
+                color: style.color,
+                bold: style.bold,
+                italic: style.italic,
+            },
+        );
+        let body = self
+            .text_body(
+                "<a:bodyPr/>",
+                &content,
+                style.align,
+                (0.0, None, None, opacity),
+            )
+            .replacen("<p:txBody>", "<a:txBody>", 1)
+            .replace("</p:txBody>", "</a:txBody>");
+        let anchor = match style.valign {
+            VerticalAlign::Top => "t",
+            VerticalAlign::Middle => "ctr",
+            VerticalAlign::Bottom => "b",
+        };
+        let pad = self.emu(table.padding);
+        let _ = write!(
+            out,
+            "<a:tc{spans}>{body}<a:tcPr marL=\"{pad}\" marR=\"{pad}\" marT=\"{pad}\" marB=\"{pad}\" anchor=\"{anchor}\">"
+        );
+        let b = style.borders;
+        // The edge two cells share may be kept by either of them.
+        let next =
+            |r: Option<usize>, c: Option<usize>| table.cell(r?, c?).map(|cell| cell.style.borders);
+        let shared = table.spacing == 0.0;
+        for (tag, own, other) in [
+            (
+                "lnL",
+                b.left,
+                next(Some(r), c.checked_sub(1)).and_then(|o| o.right),
+            ),
+            (
+                "lnR",
+                b.right,
+                next(Some(r), Some(c + 1)).and_then(|o| o.left),
+            ),
+            (
+                "lnT",
+                b.top,
+                next(r.checked_sub(1), Some(c)).and_then(|o| o.bottom),
+            ),
+            (
+                "lnB",
+                b.bottom,
+                next(Some(r + 1), Some(c)).and_then(|o| o.top),
+            ),
+        ] {
+            let stroke = own.or(other.filter(|_| shared)).filter(|s| s.width > 0.0);
+            let _ = match stroke {
+                Some(stroke) => write!(
+                    out,
+                    "<a:{tag} w=\"{}\">{}</a:{tag}>",
+                    self.emu(stroke.width).max(1),
+                    solid_fill(stroke.color, opacity)
+                ),
+                None => write!(out, "<a:{tag} w=\"0\"><a:noFill/></a:{tag}>"),
+            };
+        }
+        match style.fill {
+            Some(color) => out.push_str(&solid_fill(color, opacity)),
+            None => out.push_str("<a:noFill/>"),
+        }
+        out.push_str("</a:tcPr></a:tc>");
     }
 
     /// `<a:ln>` of an outline, or none.

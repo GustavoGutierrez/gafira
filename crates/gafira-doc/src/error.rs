@@ -169,6 +169,11 @@ pub enum ValidationError {
     /// P4/P7: a frame has numbers it cannot draw or a photo missing from
     /// the asset table (spec 066).
     InvalidFrame { node: NodeId },
+    /// P4/P7: a QR code has numbers or colours it cannot draw, or a logo
+    /// missing from the asset table (spec 080).
+    InvalidQr { node: NodeId },
+    /// P4: a table whose sizes, cells and merges do not agree (spec 081).
+    InvalidTable { node: NodeId },
     /// P4: an effect is not well formed (spec 065).
     InvalidEffect {
         node: NodeId,
@@ -248,6 +253,12 @@ impl fmt::Display for ValidationError {
             Self::InvalidPath { node, problem } => write!(f, "node {node}: {problem}"),
             Self::InvalidBackground { page } => {
                 write!(f, "page {page}: the background is not valid")
+            }
+            Self::InvalidQr { node } => {
+                write!(f, "node {node}: the QR code is not valid")
+            }
+            Self::InvalidTable { node } => {
+                write!(f, "node {node}: the table is not valid")
             }
             Self::InvalidFrame { node } => {
                 write!(f, "node {node}: the frame is not valid")

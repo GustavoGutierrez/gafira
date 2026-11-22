@@ -261,6 +261,10 @@ enum RecordKind {
     Line(gafira_doc::LineNode),
     /// A frame: its photo cut out by its shape, and its outline (spec 066).
     Frame(gafira_doc::FrameNode),
+    /// A QR code: its background, its parts and its logo (spec 080).
+    Qr(Box<gafira_doc::QrNode>),
+    /// A table: its cells, their borders and their words (spec 081).
+    Table(Box<gafira_doc::TableNode>),
 }
 
 /// Builds the render graph of a page by walking it (02 §6.1).
@@ -856,6 +860,81 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             opacity: record.base.opacity,
                         });
                     }
+                    RecordKind::Qr(ref qr) => {
+                        // A code that cannot be made (half written, or too
+                        // long) draws nothing, and so does one without area.
+                        let placement = &record.base.placement;
+                        let ops = gafira_qr::draw(qr).ok().and_then(|drawing| {
+                            qr_ops(&drawing, placement, transform, &self.images)
+                        });
+                        let Some(ops) = ops else {
+                            sub.ops.truncate(mark);
+                            continue;
+                        };
+                        let key = self.node_key(
+                            NodeType::Shape,
+                            &[],
+                            &record.base,
+                            transform,
+                            &[KeyParam::Text(format!("qr {qr:?}"))],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Vector),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        sub.ops.extend(ops);
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
+                    RecordKind::Table(ref table) => {
+                        let placement = &record.base.placement;
+                        let box_of = (placement.w, placement.h);
+                        let ops = table_ops(table, box_of, transform, &self.fonts);
+                        if ops.is_empty() {
+                            sub.ops.truncate(mark);
+                            continue;
+                        }
+                        let key = self.node_key(
+                            NodeType::Shape,
+                            &[],
+                            &record.base,
+                            transform,
+                            &[KeyParam::Text(format!("table {box_of:?} {table:?}"))],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Vector),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        sub.ops.extend(ops);
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
                     RecordKind::Image(asset) => {
                         let placement = &record.base.placement;
                         let Some(image) = self.images.get(&asset) else {
@@ -1096,6 +1175,28 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         node.base.id
     }
 
+    fn visit_qr(&mut self, node: &Node, qr: &gafira_doc::QrNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Qr(Box::new(qr.clone())),
+            },
+        );
+        node.base.id
+    }
+
+    fn visit_table(&mut self, node: &Node, table: &gafira_doc::TableNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Table(Box::new(table.clone())),
+            },
+        );
+        node.base.id
+    }
+
     fn visit_line(&mut self, node: &Node, line: &gafira_doc::LineNode) -> NodeId {
         self.records.insert(
             node.base.id,
@@ -1122,6 +1223,165 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         // The seam of ARQ-137 is open: an extension draws nothing in this cut.
         node.base.id
     }
+}
+
+/// The operations of a table in a box of `w` × `h` px (spec 081): the fills
+/// of the cells, the borders over them and the words, each cell a text of
+/// its own, so a PDF keeps it as text (S81-12).
+fn table_ops(
+    table: &gafira_doc::TableNode,
+    (w, h): (f64, f64),
+    transform: Affine,
+    fonts: &FontBook,
+) -> Vec<RenderOp> {
+    if !(w > 0.0 && h > 0.0) {
+        return Vec::new();
+    }
+    let layout = gafira_table::Layout::of(table, (w, h));
+    let mut ops = Vec::new();
+    let fill = |rect: Rect, color: Color| RenderOp::FillPath {
+        path: Arc::new(rect.to_path(SHAPE_TOLERANCE)),
+        color,
+        transform,
+    };
+    for (r, c) in gafira_table::anchors(table) {
+        if let Some(color) = table.cell(r, c).and_then(|cell| cell.style.fill) {
+            ops.push(fill(layout.cell(table, r, c), color));
+        }
+    }
+    for edge in gafira_table::edges(table, &layout) {
+        // Half a width more at each end closes the corners.
+        let half = edge.stroke.width / 2.0;
+        let rect = Rect::from_points(edge.a, edge.b).inflate(half, half);
+        ops.push(fill(rect, edge.stroke.color));
+    }
+    for (r, c) in gafira_table::anchors(table) {
+        let Some(cell) = table.cell(r, c) else {
+            continue;
+        };
+        let rect = layout.cell(table, r, c);
+        if let Some(text) = cell_text(cell, (rect.width(), rect.height()), table.padding, fonts) {
+            let at = rect.origin().to_vec2() + text.offset;
+            ops.push(RenderOp::Text {
+                path: Arc::new(text.path),
+                color: cell.style.color,
+                transform: transform * Affine::translate(at),
+                runs: Arc::new(text.runs),
+            });
+        }
+    }
+    ops
+}
+
+/// The words of a cell laid out: their outline, where it goes in the cell
+/// and their height.
+struct CellText {
+    path: BezPath,
+    offset: kurbo::Vec2,
+    height: f64,
+    runs: Vec<GlyphRun>,
+}
+
+/// The words of `cell` in a box of `w` × `h` px less its `padding`.
+fn cell_text(
+    cell: &gafira_doc::TableCell,
+    (w, h): (f64, f64),
+    padding: f64,
+    fonts: &FontBook,
+) -> Option<CellText> {
+    let style = &cell.style;
+    let content = gafira_doc::RichText::plain(
+        &cell.text,
+        &gafira_doc::SpanStyle {
+            font: style.font.clone(),
+            size: style.size,
+            color: style.color,
+            bold: style.bold,
+            italic: style.italic,
+        },
+    );
+    let pad_x = padding.min(w / 2.0 - 0.5).max(0.0);
+    let inner = gafira_geom::Size::new((w - 2.0 * pad_x).max(1.0), h.max(1.0));
+    let laid = laid_text(&content, Laid::plain(style.align), inner, fonts)?;
+    let y = match style.valign {
+        gafira_doc::VerticalAlign::Top => padding,
+        gafira_doc::VerticalAlign::Middle => (h - laid.height) / 2.0,
+        gafira_doc::VerticalAlign::Bottom => h - padding - laid.height,
+    };
+    Some(CellText {
+        path: laid.path,
+        offset: kurbo::Vec2::new(pad_x, y),
+        height: laid.height,
+        runs: laid.runs,
+    })
+}
+
+/// The outline of the words of `cell` in its box, from its top left corner,
+/// as the export draws it, and the height of their lines (spec 081).
+#[must_use]
+pub fn cell_outline(
+    cell: &gafira_doc::TableCell,
+    size: (f64, f64),
+    padding: f64,
+    fonts: &FontBook,
+) -> Option<(BezPath, f64)> {
+    let text = cell_text(cell, size, padding, fonts)?;
+    Some((Affine::translate(text.offset) * text.path, text.height))
+}
+
+/// The operations of a QR code in the box of `placement`, back to front
+/// (spec 080): each part is one path, in px of the box, and a gradient spans
+/// the code without its margin. `None` for a box without area.
+fn qr_ops(
+    drawing: &gafira_qr::QrDrawing,
+    placement: &gafira_doc::Placement,
+    transform: Affine,
+    images: &ImagePixels,
+) -> Option<Vec<RenderOp>> {
+    let (k, corner) = drawing.fit(placement.w, placement.h)?;
+    let code = transform * Affine::translate(corner);
+    let side = drawing.size * k;
+    let mut ops = Vec::with_capacity(drawing.layers.len() + 2);
+    if let Some(color) = drawing.background {
+        let margin = drawing.margin * k;
+        let back = Rect::new(-margin, -margin, side + margin, side + margin);
+        ops.push(RenderOp::FillPath {
+            path: Arc::new(back.to_path(SHAPE_TOLERANCE)),
+            color,
+            transform: code,
+        });
+    }
+    for layer in &drawing.layers {
+        let path = Arc::new(Affine::scale(k) * &layer.path);
+        ops.push(match &layer.fill {
+            gafira_doc::QrFill::Solid(color) => RenderOp::FillPath {
+                path,
+                color: *color,
+                transform: code,
+            },
+            gafira_doc::QrFill::Gradient(gradient) => RenderOp::FillGradient {
+                path,
+                gradient: Arc::new(gradient.clone()),
+                size: (side, side),
+                transform: code,
+            },
+        });
+    }
+    if let Some(logo) = drawing.logo
+        && let Some(image) = images.get(&logo.asset)
+    {
+        let rect = logo.rect;
+        let fit = Affine::translate((rect.x0 * k, rect.y0 * k))
+            * Affine::scale_non_uniform(
+                rect.width() * k / f64::from(image.width().max(1)),
+                rect.height() * k / f64::from(image.height().max(1)),
+            );
+        ops.push(RenderOp::DrawImage {
+            image: Arc::clone(image),
+            transform: code * fit,
+        });
+    }
+    Some(ops)
 }
 
 /// An open node of the tree walk.
@@ -2274,6 +2534,45 @@ mod tests {
         );
         let far = line_box(300.0);
         assert!((far.x1 - 300.0).abs() < 3.0, "the line follows: {far:?}");
+    }
+
+    // S81-12: a table draws the fills, the borders and, each cell a text
+    // with its glyphs, the words; a cell a merge hides draws nothing.
+    #[test]
+    fn s81_12_a_table_keeps_its_words_as_text() {
+        use gafira_doc::{CellStyle, TableNode};
+        let ink = Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let mut table = TableNode::new(2, 2, (100.0, 40.0), &CellStyle::new("Inter", 16.0, ink));
+        for (cell, words) in table.cells.iter_mut().zip(["a", "b", "c", "d"]) {
+            cell.text = words.to_owned();
+        }
+        table.cells[0].style.fill = Some(ink);
+        let pen = gafira_doc::ShapeStroke::new(ink, 2.0);
+        let all = gafira_table::Range::all(&table);
+        gafira_table::set_borders(&mut table, all, gafira_table::BorderSet::Outer, Some(pen));
+        let layout = gafira_table::Range::new((1, 0), (1, 1));
+        gafira_table::merge(&mut table, layout);
+        let ops = table_ops(&table, (200.0, 80.0), Affine::IDENTITY, &fonts());
+        let words: Vec<String> = ops
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::Text { runs, .. } => Some(runs[0].text.to_string()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(words, ["a", "b", "c\nd"]);
+        let fills = ops.len() - words.len();
+        assert_eq!(fills, 5, "one fill and four borders");
+        // Every letter lies in its cell.
+        for op in &ops {
+            if let RenderOp::Text {
+                path, transform, ..
+            } = op
+            {
+                let bounds = (*transform * (**path).clone()).bounding_box();
+                assert!(Rect::new(0.0, 0.0, 200.0, 80.0).contains_rect(bounds));
+            }
+        }
     }
 
     /// A filled ellipse of 200 by 100 at (10, 20) with `words` inside it,

@@ -39,6 +39,9 @@ gafira-io-pdf = { path = "crates/gafira-io-pdf" }
 gafira-io-svg = { path = "crates/gafira-io-svg" }
 gafira-io-pptx = { path = "crates/gafira-io-pptx" }
 gafira-io-vector = { path = "crates/gafira-io-vector" }
+gafira-table = { path = "crates/gafira-table" }
+gafira-io-xlsx = { path = "crates/gafira-io-xlsx" }
+gafira-qr = { path = "crates/gafira-qr" }
 gafira-photos = { path = "crates/gafira-photos" }
 blake3 = "1"
 crossbeam-channel = "0.5"
@@ -49,6 +52,10 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1"
 png = "0.18"
+# Spec 080, FD-20: only the matrix of a QR code; no image, SVG or EPS output.
+qrcode = { version = "0.15", default-features = false, features = ["std"] }
+# Spec 080: the reader the tests of the QR codes use (FD-20 a, (MIT OR Apache-2.0) AND ISC); never in a product binary.
+rqrr = { version = "0.11", default-features = false }
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = ["std"] }

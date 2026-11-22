@@ -41,3 +41,32 @@ Thirty-three families from [google/fonts](https://github.com/google/fonts), comm
 - Illustrations by Pablo Stanley: 93 characters of Open Peeps (<https://www.openpeeps.com>) in `assets/illustrations/openpeeps/` and 33 drawings of Open Doodles (<https://www.opendoodles.com>) in `assets/illustrations/opendoodles/`, as published on their sites on 2026-11-21, unmodified (Open Doodles file names in lower case).
 - License: CC0 1.0 Universal, copied in each folder as `LICENSE.txt`. No attribution is required; it is given here as a courtesy.
 
+## GridCraft
+
+- Source: GridCraft (MIT OR Apache-2.0; used under MIT).
+- Use: the column letters, the stored column widths, the `_xHHHH_` escapes and the interning of styles of `crates/gafira-io-xlsx`, and the rules of the clipboard and of numbers written as text of `crates/gafira-table`, are adapted from it (spec 081). No file, asset or mark of it is bundled.
+- License: MIT.
+
+```text
+MIT License
+
+Copyright (c) 2026 ArtCraft Team and the GridCraft contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

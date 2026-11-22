@@ -64,6 +64,10 @@ pub enum Property {
     /// Where the photo of a frame sits, how large and how turned:
     /// `(offset, scale, degrees)` (S66-07: crop mode).
     FrameCrop((f64, f64), f64, f64),
+    /// A whole QR code (spec 080): what it says and how it looks.
+    Qr(Box<gafira_doc::QrNode>),
+    /// A whole table (spec 081).
+    Table(Box<gafira_doc::TableNode>),
     PageName(String),
     /// The background of a page (spec 069); `None` makes it white again.
     PageBackground(Option<gafira_doc::PageBackground>),
@@ -102,6 +106,8 @@ impl Property {
             Self::FrameContent(_) => "set_property.frame_content",
             Self::FrameFit(_) => "set_property.frame_fit",
             Self::FrameCrop(..) => "set_property.frame_crop",
+            Self::Qr(_) => "set_property.qr",
+            Self::Table(_) => "set_property.table",
             Self::TextContent(_) => "set_property.text_content",
             Self::TextCurve(_) => "set_property.text_curve",
             Self::TextAlign(_) => "set_property.text_align",
@@ -166,6 +172,8 @@ impl Property {
                     && *scale > 0.0
                     && degrees.is_finite(),
             ),
+            Self::Qr(qr) => ("qr", qr.is_valid()),
+            Self::Table(table) => ("table", table.is_valid()),
             Self::FrameContent(Some(content)) => (
                 "frame_content",
                 content.natural.0 > 0 && content.natural.1 > 0,
@@ -222,6 +230,8 @@ impl Property {
             (Self::FrameCrop(..), NodeKind::Frame(f)) => {
                 Self::FrameCrop(f.content_offset, f.content_scale, f.content_rotation_deg)
             }
+            (Self::Table(_), NodeKind::Table(t)) => Self::Table(t.clone()),
+            (Self::Qr(_), NodeKind::Qr(q)) => Self::Qr(q.clone()),
             (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
             (Self::CornerRadius(_), NodeKind::Frame(f)) => Self::CornerRadius(f.corner_radius),
             _ => return None,
@@ -261,6 +271,8 @@ impl Property {
                 f.content_scale = *scale;
                 f.content_rotation_deg = *degrees;
             }
+            (Self::Table(v), NodeKind::Table(t)) => t.clone_from(v),
+            (Self::Qr(v), NodeKind::Qr(q)) => q.clone_from(v),
             (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,
             (Self::CornerRadius(v), NodeKind::Frame(f)) => f.corner_radius = *v,
             _ => {}
@@ -794,6 +806,66 @@ mod tests {
         broken.rays = 2;
         let mut refused = set(&[A], Property::Effect(Some(ShapeEffect::Sparkle(broken))));
         assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
+    // S81-01: a table is changed as a whole and undone in one step; one that
+    // a document does not hold is refused.
+    #[test]
+    fn s81_01_the_table_is_changed_and_undone() {
+        use gafira_doc::{CellStyle, TableNode};
+        let ink = Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let table = |rows| TableNode::new(rows, 2, (9.0, 9.0), &CellStyle::new("Inter", 9.0, ink));
+        let mut original = fixture();
+        {
+            let token = EditToken::__new_for_gafira_edit_only();
+            let mut edit = original.edit(&token);
+            let page = Arc::make_mut(&mut edit.pages_mut()[0]);
+            let node = Arc::make_mut(page.nodes.get_mut(&A).expect("A"));
+            node.kind = NodeKind::Table(Box::new(table(2)));
+        }
+        let mut doc = original.clone();
+        let mut change = set(&[A], Property::Table(Box::new(table(3))));
+        assert_eq!(apply(&mut change, &mut doc), Ok(Applied::Changed));
+        assert_eq!(node(&doc, A).kind, NodeKind::Table(Box::new(table(3))));
+        revert(&mut change, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut refused = set(&[A], Property::Table(Box::new(table(51))));
+        assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
+    // S80-02: a QR code is changed as a whole and undone in one step; one
+    // that a document does not hold is refused, and a shape has none.
+    #[test]
+    fn s80_02_the_qr_is_changed_and_undone() {
+        use gafira_doc::{QrContent, QrNode};
+        let grey = |v: f32| Color::Srgb(Rgba::new(v, v, v, 1.0));
+        let qr = |text: &str| {
+            let text = text.to_owned();
+            QrNode::new(QrContent::Text { text }, grey(0.0), grey(1.0))
+        };
+        let mut original = fixture();
+        {
+            let token = EditToken::__new_for_gafira_edit_only();
+            let mut edit = original.edit(&token);
+            let page = Arc::make_mut(&mut edit.pages_mut()[0]);
+            let node = Arc::make_mut(page.nodes.get_mut(&A).expect("A"));
+            node.kind = NodeKind::Qr(Box::new(qr("a")));
+        }
+        let mut doc = original.clone();
+        let mut change = set(&[A], Property::Qr(Box::new(qr("b"))));
+        assert_eq!(apply(&mut change, &mut doc), Ok(Applied::Changed));
+        assert_eq!(node(&doc, A).kind, NodeKind::Qr(Box::new(qr("b"))));
+        revert(&mut change, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut wide = qr("c");
+        wide.quiet_zone = QrNode::MAX_QUIET_ZONE + 1;
+        let mut refused = set(&[A], Property::Qr(Box::new(wide)));
+        assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+        let mut elsewhere = set(&[B], Property::Qr(Box::new(qr("d"))));
+        assert_ne!(apply(&mut elsewhere, &mut doc), Ok(Applied::Changed));
         assert_eq!(doc, original);
     }
 

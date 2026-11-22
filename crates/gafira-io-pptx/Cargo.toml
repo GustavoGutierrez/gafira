@@ -11,6 +11,10 @@ gafira-ports.workspace = true
 gafira-doc.workspace = true
 gafira-color.workspace = true
 gafira-raster.workspace = true
+# Spec 080: a QR code goes as its shapes.
+gafira-qr.workspace = true
+# Spec 081: a table goes as a table.
+gafira-table.workspace = true
 # Decoding an image that is neither PNG nor JPEG (WebP) to re-encode it.
 gafira-io-image.workspace = true
 image.workspace = true

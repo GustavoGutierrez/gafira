@@ -37,6 +37,7 @@ use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
 use crate::system_fonts;
+use crate::tables;
 use crate::text::Texts;
 use crate::transfer;
 use crate::versions::Versions;
@@ -269,6 +270,24 @@ pub(crate) struct Editor {
     draw: std::cell::RefCell<crate::draw::DrawState>,
     /// Elementos → Ilustraciones (spec 072).
     pub(crate) illustration_panel: std::cell::RefCell<crate::illustrations::IllustrationsPanel>,
+    /// Elementos → Códigos QR and the QR fields of Propiedades (spec 080).
+    qr_panel: std::cell::RefCell<crate::qr::QrPanel>,
+    /// The changes to a QR code being made in Propiedades: one gesture, one
+    /// undo step, until its fields lose the focus (S80-12).
+    qr_gesture: Option<(NodeId, GestureId)>,
+    /// Elementos → Tablas and the tables on the canvas (spec 081): the
+    /// cells chosen, what is being dragged, the menu open and where, the
+    /// cell the pointer was over last, the pen of the borders, the looks
+    /// copied and the changes being made as one undo step.
+    table_panel: std::cell::RefCell<crate::table_templates::Panel>,
+    table_outlines: std::cell::RefCell<tables::Outlines>,
+    table_pen: std::cell::Cell<tables::Pen>,
+    table_style: Option<gafira_doc::CellStyle>,
+    table_drag: Option<TableDrag>,
+    table_menu: Option<(tables::Side, Pos2)>,
+    table_hover: Option<(NodeId, (usize, usize))>,
+    table_gesture: Option<GestureId>,
+    cells: Option<tables::Cells>,
     library_view: std::cell::RefCell<(crate::library::View, f64)>,
     /// Marcos: its search and the collection open with «Ver todo».
     frames_view: std::cell::RefCell<(String, Option<usize>)>,
@@ -461,6 +480,17 @@ impl Default for Editor {
             photo_panel: std::cell::RefCell::default(),
             draw: std::cell::RefCell::default(),
             illustration_panel: std::cell::RefCell::default(),
+            qr_panel: std::cell::RefCell::default(),
+            qr_gesture: None,
+            table_panel: std::cell::RefCell::default(),
+            table_outlines: std::cell::RefCell::default(),
+            table_pen: std::cell::Cell::default(),
+            table_style: None,
+            table_drag: None,
+            table_menu: None,
+            table_hover: None,
+            table_gesture: None,
+            cells: None,
             library_view: std::cell::RefCell::default(),
             frames_view: std::cell::RefCell::default(),
             background_query: std::cell::RefCell::default(),
@@ -643,6 +673,36 @@ struct Asked {
     /// An illustration to insert as vector shapes (spec 072): its SVG, its
     /// credit and where it was let go (screen).
     insert_illustration: Option<(Arc<Vec<u8>>, String, Option<Pos2>)>,
+    /// A QR code of Elementos, in the middle of the page or dropped at a
+    /// screen point (spec 080, D-105).
+    insert_qr: Option<(Box<gafira_doc::QrNode>, Option<Pos2>)>,
+    /// The selected QR code changed in Propiedades, and whether its fields
+    /// are at rest.
+    qr: Option<Box<gafira_doc::QrNode>>,
+    qr_rest: bool,
+    /// «Añadir logotipo»: of the panel's code, or of the selected one.
+    qr_panel_logo: bool,
+    qr_logo: bool,
+    /// «Convertir en formas» (S80-13).
+    qr_to_shapes: bool,
+    /// A table of Elementos, in the middle of the page or dropped at a
+    /// screen point (spec 081, D-105).
+    insert_table: Option<(crate::table_templates::Template, Option<Pos2>)>,
+    /// A change of the selected table; whether the controls are at rest, so
+    /// the next one is another undo step.
+    table_act: Option<tables::Act>,
+    table_rest: bool,
+    /// The border of a column or a row dragged: the table and its box now.
+    table_sized: Option<(gafira_doc::TableNode, Placement)>,
+    table_menu: Option<tables::Menu>,
+    /// The cells chosen from now on (`Some(None)` goes back to the table).
+    cells: Option<Option<tables::Cells>>,
+    /// Write in the first cell: the words it starts with, or its own.
+    write_cell: Option<Option<String>>,
+    /// The words written so far; and the end of the writing, with the move
+    /// to the next cell.
+    cell_words: Option<String>,
+    end_cell: Option<CellMove>,
     /// A Foto collage layout, by its index in [`crate::collage::LAYOUTS`],
     /// filling the current page or the one it was dropped on (S66-09).
     insert_collage: Option<(usize, Option<PageId>)>,
@@ -737,6 +797,32 @@ impl Asked {
     }
 }
 
+/// Where the writing in a cell goes on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CellMove {
+    Stay,
+    Down,
+    Next,
+    Before,
+}
+
+/// What is dragged on a table (spec 081): the border of a column or of a
+/// row, from where and over the table as it was, or a range of cells.
+#[derive(Clone, Debug)]
+enum TableDrag {
+    Column(usize, Box<TableStart>),
+    Row(usize, Box<TableStart>),
+    Cells,
+}
+
+/// What a drag on a table started from.
+#[derive(Clone, Debug)]
+struct TableStart {
+    table: gafira_doc::TableNode,
+    placement: Placement,
+    at: gafira_geom::Point,
+}
+
 /// What a page header asks for (spec 056, FD-02).
 #[derive(Clone, Debug, PartialEq)]
 enum PageAction {
@@ -816,6 +902,8 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         line: None,
 
         frame: None,
+        qr: None,
+        table: None,
     })
 }
 
@@ -897,6 +985,17 @@ impl Editor {
         let shapes = selected_shapes(document, &self.selected);
         self.selected
             .retain(|node| shapes.iter().any(|shape| shape.node == node));
+        // The cells chosen go with their table, and stay inside it.
+        let single = self.selected.single();
+        self.cells = self.cells.take().filter(|cells| {
+            single == Some((cells.page, cells.node))
+                && document
+                    .and_then(|d| table_of(d, cells.page, cells.node))
+                    .is_some_and(|(table, _)| {
+                        table.cell(cells.from.0, cells.from.1).is_some()
+                            && table.cell(cells.to.0, cells.to.1).is_some()
+                    })
+        });
         self.scope = self.scope.filter(|(page, node)| {
             document
                 .and_then(|d| d.page(*page))
@@ -1015,7 +1114,9 @@ impl Editor {
             asked.drop_at = i.pointer.latest_pos();
         });
         let typing = ctx.wants_keyboard_input();
-        if !typing {
+        // The cells chosen of a table take the keys (S81-08).
+        let in_cells = !typing && self.cell_keys(ctx, document.as_deref(), &mut asked);
+        if !typing && !in_cells {
             ctx.input(|i| {
                 if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
                     asked.delete = true;
@@ -1235,6 +1336,32 @@ impl Editor {
             &mut asked,
         );
         self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
+        match asked.table_menu {
+            Some(tables::Menu::Duplicate) => asked.duplicate = true,
+            Some(tables::Menu::Delete) => asked.delete = true,
+            Some(tables::Menu::Lock) => asked.toggle = Some(Flag::Locked),
+            Some(tables::Menu::Align(index)) => {
+                asked.align = ALIGNS.get(index).map(|(action, ..)| *action);
+            }
+            Some(tables::Menu::Copy) => {
+                if let Some((page, node)) = self.selected.single()
+                    && let Some((table, _)) =
+                        document.as_deref().and_then(|d| table_of(d, page, node))
+                {
+                    let range = self.cell_range(node, &table);
+                    ctx.copy_text(gafira_table::copy(&table, range));
+                }
+            }
+            _ => {}
+        }
+        // The controls of a table are at rest: the next change is another
+        // undo step.
+        asked.table_rest |= self.table_gesture.is_some()
+            && self.table_drag.is_none()
+            && asked.table_act.is_none()
+            && asked.table_sized.is_none()
+            && !ctx.input(|i| i.pointer.any_down())
+            && !egui::Popup::is_any_open(ctx);
         if asked.versions {
             self.versions.open_list();
         }
@@ -1242,7 +1369,57 @@ impl Editor {
             self.versions.ask_name();
         }
         asked.version = self.versions.show(ctx, engine, theme, texts);
-        self.apply(engine, &document, &asked, theme)
+        let field = |cells: &Option<tables::Cells>| {
+            cells
+                .as_ref()
+                .filter(|c| c.writing.is_some())
+                .map(|c| cell_id(c.node, c.from))
+        };
+        let before = field(&self.cells);
+        let go = self.apply(engine, &document, &asked, theme);
+        // The keyboard goes to the cell being written, and leaves the one
+        // before, in this very frame: no letter typed next is lost.
+        let now = field(&self.cells);
+        // Tab goes from cell to cell, not to another control.
+        let tabbed = ctx.input(|i| {
+            i.raw.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::Key {
+                        key: egui::Key::Tab,
+                        pressed: true,
+                        ..
+                    }
+                )
+            })
+        });
+        if tabbed && (in_cells || before.is_some()) {
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused().filter(|id| Some(*id) != now) {
+                    m.surrender_focus(id);
+                }
+            });
+            ctx.request_repaint();
+        }
+        if let Some(old) = before.filter(|old| Some(*old) != now) {
+            ctx.memory_mut(|m| m.surrender_focus(old));
+            ctx.request_repaint();
+        }
+        if let Some(id) = now
+            && let Some(writing) = self.cells.as_mut().and_then(|c| c.writing.as_mut())
+            && !std::mem::replace(&mut writing.focused, true)
+        {
+            // What was typed to start goes on at its end.
+            let mut state = egui::text_edit::TextEditState::load(ctx, id).unwrap_or_default();
+            let end = egui::text::CCursor::new(writing.words.chars().count());
+            state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::one(end)));
+            state.store(ctx, id);
+            ctx.memory_mut(|m| m.request_focus(id));
+            ctx.request_repaint();
+        }
+        go
     }
 
     fn bars(
@@ -1974,6 +2151,52 @@ impl Editor {
                         }
                         return;
                     }
+                    if category == Category::Tables {
+                        // Spec 081: a table is added with a click or a drag
+                        // (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let over = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.tables")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_max_width(ui.available_width() - 12.0);
+                                let mut panel = self.table_panel.borrow_mut();
+                                asked.insert_table = panel.show(ui, theme, texts, &over);
+                            });
+                        return;
+                    }
+                    if category == Category::QrCodes {
+                        // Spec 080: the code is added with a click or
+                        // dragged by its preview (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let over = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.qr")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                // Room for the scroll bar, beside the fields.
+                                ui.set_max_width(ui.available_width() - 12.0);
+                                let mut panel = self.qr_panel.borrow_mut();
+                                let logo = panel
+                                    .draft
+                                    .logo
+                                    .and_then(|l| self.photos.get(&l.asset.as_hash()))
+                                    .and_then(Option::as_deref);
+                                match panel.show(ui, theme, texts, logo, &over) {
+                                    Some(crate::qr::Chosen::Insert(code, at)) => {
+                                        asked.insert_qr = Some((code, at));
+                                    }
+                                    Some(crate::qr::Chosen::PickLogo) => {
+                                        asked.qr_panel_logo = true;
+                                    }
+                                    None => {}
+                                }
+                            });
+                        return;
+                    }
                     if category == Category::Frames {
                         self.frames_panel(ui, theme, texts, asked);
                         return;
@@ -2071,7 +2294,13 @@ impl Editor {
                 .text
                 .as_ref()
                 .and_then(|t| t.content.first_style())
-                .or_else(|| shape.inner.as_ref().and_then(|t| t.content.first_style()))?;
+                .or_else(|| shape.inner.as_ref().and_then(|t| t.content.first_style()))
+                .cloned()
+                .or_else(|| {
+                    let table = shape.table.as_ref()?;
+                    let range = self.cell_range(shape.node, table);
+                    Some(span_of(&table.cell(range.r0, range.c0)?.style))
+                })?;
             Some((style.font.clone(), style.bold, style.italic))
         });
         self.document_fonts = document.map(document_fonts).unwrap_or_default();
@@ -2172,6 +2401,67 @@ impl Editor {
                         .color(theme.c("text")),
                 );
                 ui.add_space(8.0);
+                // A table: the looks of its cells, then its box (spec 081).
+                if let Some(table) = &shape.table {
+                    let range = self.cell_range(shape.node, table);
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.table")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            let style = table
+                                .cell(range.r0, range.c0)
+                                .map(|cell| span_of(&cell.style));
+                            font_button(ui, theme, texts, style.as_ref(), asked);
+                            ui.add_space(8.0);
+                            let mut pen = self.table_pen.get();
+                            if let Some(act) =
+                                tables::inspector(ui, theme, texts, (table, range), &mut pen)
+                            {
+                                asked.table_act = Some(act);
+                            }
+                            self.table_pen.set(pen);
+                            ui.add_space(16.0);
+                            position_fields(ui, theme, texts, shape, asked);
+                            ui.add_space(8.0);
+                            turn_buttons(ui, theme, texts, asked);
+                            ui.add_space(16.0);
+                            arrange_buttons(ui, theme, texts, can, asked);
+                            ui.add_space(8.0);
+                            opacity_field(ui, texts, shape, asked);
+                        });
+                    return;
+                }
+                // A QR code: its own fields, then its box (spec 080).
+                if let Some(qr) = &shape.qr {
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.qr")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            // Room for the scroll bar, beside the fields.
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            let mut panel = self.qr_panel.borrow_mut();
+                            let (set, pick) = panel.inspector(ui, theme, texts, (shape.node, qr));
+                            asked.qr = set;
+                            asked.qr_logo = pick;
+                            ui.add_space(8.0);
+                            if ui.button(plain(texts, "qr.to_shapes")).clicked() {
+                                asked.qr_to_shapes = true;
+                            }
+                            ui.add_space(16.0);
+                            position_fields(ui, theme, texts, shape, asked);
+                            ui.add_space(8.0);
+                            turn_buttons(ui, theme, texts, asked);
+                            ui.add_space(16.0);
+                            arrange_buttons(ui, theme, texts, can, asked);
+                            ui.add_space(8.0);
+                            opacity_field(ui, texts, shape, asked);
+                        });
+                    asked.qr_rest = ctx.memory(|m| m.focused().is_none())
+                        && !ctx.input(|i| i.pointer.any_down())
+                        && !egui::Popup::is_any_open(ctx);
+                    return;
+                }
                 // An image: its file, and «Usar como fondo de la página».
                 if let Some(asset) = shape.image {
                     let name = document
@@ -2200,56 +2490,7 @@ impl Editor {
                     text_fields(ui, theme, texts, (text, &design), asked);
                     ui.add_space(16.0);
                 }
-                ui.label(
-                    RichText::new(plain(texts, "inspector.position_size"))
-                        .font(theme.font("body-sm"))
-                        .color(theme.c("text.secondary")),
-                );
-                ui.add_space(4.0);
-                let mut placement = shape.placement;
-                let mut changed = false;
-                egui::Grid::new("inspector.position")
-                    .num_columns(2)
-                    .spacing([12.0, 8.0])
-                    .show(ui, |ui| {
-                        for (key, value, min) in [
-                            (gafira_doc::msg!("inspector.x"), &mut placement.x, f64::MIN),
-                            (gafira_doc::msg!("inspector.y"), &mut placement.y, f64::MIN),
-                            (gafira_doc::msg!("inspector.width"), &mut placement.w, 1.0),
-                            (gafira_doc::msg!("inspector.height"), &mut placement.h, 1.0),
-                        ] {
-                            ui.label(texts.t(&key));
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(value)
-                                        .speed(1.0)
-                                        .range(min..=f64::MAX)
-                                        .max_decimals(1),
-                                )
-                                .changed();
-                            ui.end_row();
-                        }
-                        // «Giro», in degrees within one turn (spec 041). A
-                        // group has no turn of its own: its box is upright
-                        // around its children (spec 043).
-                        if shape.group {
-                            return;
-                        }
-                        ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
-                        let mut degrees = rotation::normalized(placement.rotation_deg);
-                        let field = egui::DragValue::new(&mut degrees)
-                            .speed(1.0)
-                            .max_decimals(1)
-                            .custom_formatter(|value, _| degrees_text(texts, value));
-                        if ui.add(field).changed() {
-                            placement.rotation_deg = rotation::normalized(degrees);
-                            changed = true;
-                        }
-                        ui.end_row();
-                    });
-                if changed {
-                    asked.place = Some(placement);
-                }
+                position_fields(ui, theme, texts, shape, asked);
                 ui.add_space(8.0);
                 turn_buttons(ui, theme, texts, asked);
                 ui.add_space(16.0);
@@ -2955,6 +3196,8 @@ impl Editor {
                     inner: None,
                     line: None,
                     frame: None,
+                    qr: None,
+                    table: None,
                 };
                 let cover = canvas::path_cover(&shape, 1.0);
                 let key = path_key(&shape, 1.0);
@@ -3241,6 +3484,7 @@ impl Editor {
                     .inner_margin(egui::Margin::symmetric(10, 6))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
+                            ui.set_min_height(32.0);
                             // Locked, the one thing to do is unlock it (D-110).
                             if locked {
                                 // The closed lock, lit, «Desbloquear» on hover.
@@ -3256,6 +3500,13 @@ impl Editor {
                                     asked.toggle = Some(Flag::Locked);
                                 }
                                 return;
+                            }
+                            if let Some((_, node)) = self.selected.single()
+                                && let Some(gafira_doc::NodeKind::Table(table)) =
+                                    page.node(node).map(|n| &n.kind)
+                            {
+                                self.table_bar(ui, theme, texts, (node, table), asked);
+                                bar_separator(ui, theme);
                             }
                             if self.can.ungroup && self.selected.len() == 1 {
                                 if ui.button(plain(texts, "editor.ungroup")).clicked() {
@@ -4001,7 +4252,7 @@ impl Editor {
 
     /// `family` in `bold` and `italic` for every span of the selected text,
     /// or of the text of the selected shape, one undo step (spec 062).
-    fn apply_font(&self, engine: &mut Gafira, (family, bold, italic): (&str, bool, bool)) {
+    fn apply_font(&mut self, engine: &mut Gafira, (family, bold, italic): (&str, bool, bool)) {
         let Some((page, node)) = self.selected.single() else {
             return;
         };
@@ -4024,6 +4275,11 @@ impl Editor {
             }
             content
         };
+        if matches!(found.kind, gafira_doc::NodeKind::Table(_)) {
+            let font = tables::Act::Font(family.to_owned(), bold, italic);
+            self.change_table(engine, &font, None);
+            return;
+        }
         let property = match &found.kind {
             gafira_doc::NodeKind::Text(text) => Property::TextContent(restyle(&text.content)),
             gafira_doc::NodeKind::Shape(shape) => match &shape.text {
@@ -4620,6 +4876,8 @@ impl Editor {
                         let single = self.selected.single();
                         let mut picked: Option<(PageId, NodeId)> = None;
                         let mut grabbed: Option<Hold> = None;
+                        // A press a table keeps for its cells (spec 081).
+                        let mut on_cells = false;
                         // Each page's id, screen box and shapes, for the marquee.
                         let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
                         let selection = theme.c("canvas.selection");
@@ -4920,6 +5178,71 @@ impl Editor {
                                                 Color32::WHITE.gamma_multiply(shape.alpha()),
                                             ));
                                         }
+                                    }
+                                    // A table is drawn from its picture,
+                                    // without the words being written
+                                    // (spec 081).
+                                    if let Some(table) = &shape.table {
+                                        let (w, h) = (shape.placement.w, shape.placement.h);
+                                        let writing = self
+                                            .cells
+                                            .as_ref()
+                                            .filter(|c| c.node == shape.node && c.writing.is_some())
+                                            .map(|c| c.from);
+                                        let key = tables::key(
+                                            table,
+                                            (w.to_bits(), h.to_bits(), zoom.to_bits(), writing),
+                                        );
+                                        let texture = self.path_texture(ctx, key, || {
+                                            let mut outlines = self.table_outlines.borrow_mut();
+                                            tables::image(
+                                                table,
+                                                (w, h),
+                                                zoom,
+                                                writing,
+                                                &mut outlines,
+                                            )
+                                        });
+                                        let margin = tables::overhang(table);
+                                        let cover = grown(&shape.placement, margin);
+                                        if let Some(texture) = texture {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
+                                    }
+                                    // A QR code is drawn from its picture
+                                    // (spec 080).
+                                    if let Some(qr) = &shape.qr {
+                                        let logo = qr
+                                            .logo
+                                            .and_then(|l| self.photos.get(&l.asset.as_hash()))
+                                            .and_then(Option::as_deref);
+                                        let (w, h) = (shape.placement.w, shape.placement.h);
+                                        let key = crate::qr::key(
+                                            qr,
+                                            (
+                                                w.to_bits(),
+                                                h.to_bits(),
+                                                zoom.to_bits(),
+                                                logo.is_some(),
+                                            ),
+                                        );
+                                        if let Some(texture) = self.path_texture(ctx, key, || {
+                                            crate::qr::image(qr, (w, h), zoom, logo)
+                                        }) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &shape.placement),
+                                                &shape.placement,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                        continue;
                                     }
                                     // A light is drawn from its picture
                                     // instead of the shape (spec 065).
@@ -5239,6 +5562,24 @@ impl Editor {
                                     }
                                 }
                             }
+                            // The cells, the borders and the buttons of the
+                            // selected table (spec 081).
+                            if let Some(shape) = chosen.iter().find(|shape| {
+                                single == Some((shape.page, shape.node))
+                                    && shape.table.is_some()
+                                    && !shape.locked
+                            }) && self.drag.is_none()
+                                && grabbed.is_none()
+                            {
+                                on_cells |= self.table_overlay(
+                                    ui,
+                                    (theme, texts),
+                                    (&response, pointer),
+                                    (page, zoom),
+                                    shape,
+                                    asked,
+                                );
+                            }
                             if self.selected.len() > 1 && self.selected.page() == Some(page_doc.id)
                             {
                                 // The box around a multi-selection (spec 040).
@@ -5365,6 +5706,7 @@ impl Editor {
                         // The field of a text being written on the
                         // canvas, over its element (spec 055).
                         self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
+                        self.cell_field(ui, theme, pages, &page_rects, zoom, asked);
                         if let Some(icon) = grip_cursor {
                             ui.ctx().set_cursor_icon(icon);
                         }
@@ -5398,6 +5740,8 @@ impl Editor {
                         } else if let Some(held) = guide_hit {
                             // Then a guide, over the elements (spec 044).
                             self.guide_drag = Some(held);
+                        } else if on_cells {
+                            // The table took it.
                         } else if response.clicked() {
                             // Click selects one; Shift+click toggles it.
                             let mut next = self.selected.clone();
@@ -5907,6 +6251,8 @@ impl Editor {
                 Err(error) => eprintln!("insert frame: {error}"),
             }
         }
+        self.qr_codes(engine, asked);
+        self.tables(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine);
         }
@@ -6951,6 +7297,13 @@ impl Editor {
                         .entry(hash)
                         .or_insert_with(|| decode(engine, hash).map(Arc::new));
                 }
+                // The logo of a QR code is decoded once (spec 080).
+                if let Some(logo) = shape.qr.as_ref().and_then(|qr| qr.logo) {
+                    let hash = logo.asset.as_hash();
+                    self.photos
+                        .entry(hash)
+                        .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                }
                 let Some(asset) = shape.image else { continue };
                 let hash = asset.as_hash();
                 // While an image is dragged its pixels are kept too, for the
@@ -7920,6 +8273,1029 @@ impl Editor {
         }
     }
 
+    /// The cells of the table `node` a change goes to: the chosen ones, or
+    /// all.
+    fn cell_range(&self, node: NodeId, table: &gafira_doc::TableNode) -> gafira_table::Range {
+        self.cells
+            .as_ref()
+            .filter(|cells| cells.node == node)
+            .map_or_else(
+                || gafira_table::Range::all(table),
+                |cells| cells.range(table),
+            )
+    }
+
+    /// The controls of a table in the bar over it (S81-10).
+    fn table_bar(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        (node, table): (NodeId, &gafira_doc::TableNode),
+        asked: &mut Asked,
+    ) {
+        use egui::containers::menu::{MenuButton, MenuConfig};
+        let range = self.cell_range(node, table);
+        let stay =
+            || MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+        // A menu holds choices; these hold controls, in their own looks.
+        let controls = |ui: &mut egui::Ui, width: f32| {
+            *ui.style_mut() = (*ui.ctx().style()).clone();
+            ui.set_width(width);
+        };
+        if let Some(act) = tables::look_controls(ui, theme, texts, table, range) {
+            asked.table_act = Some(act);
+        }
+        MenuButton::new(plain(texts, "table.align"))
+            .config(stay())
+            .ui(ui, |ui| {
+                controls(ui, 200.0);
+                if let Some(act) = tables::align_controls(ui, theme, texts, table, range) {
+                    asked.table_act = Some(act);
+                }
+            });
+        MenuButton::new(plain(texts, "table.borders"))
+            .config(stay())
+            .ui(ui, |ui| {
+                controls(ui, 200.0);
+                let mut pen = self.table_pen.get();
+                if let Some(act) = tables::border_controls(ui, theme, texts, &mut pen) {
+                    asked.table_act = Some(act);
+                }
+                self.table_pen.set(pen);
+            });
+        MenuButton::new(plain(texts, "table.room"))
+            .config(stay())
+            .ui(ui, |ui| {
+                controls(ui, 240.0);
+                if let Some(act) = tables::spacing_controls(ui, theme, texts, table) {
+                    asked.table_act = Some(act);
+                }
+            });
+    }
+
+    /// The selected table on the canvas (S81-08, S81-09): the cells chosen,
+    /// the borders that resize, the buttons of the row and the column, the
+    /// «+» at its ends and the one that moves it. Whether it took the press.
+    fn table_overlay(
+        &mut self,
+        ui: &mut egui::Ui,
+        (theme, texts): (&Theme, &Texts),
+        (response, pointer): (&egui::Response, Option<Pos2>),
+        (page, zoom): (Rect, f32),
+        shape: &Shape,
+        asked: &mut Asked,
+    ) -> bool {
+        use gafira_table::{Layout, Range};
+        let Some(table) = shape.table.as_deref() else {
+            return false;
+        };
+        let placement = shape.placement;
+        let (w, h) = (placement.w, placement.h);
+        let turn = rotation::to_screen(page, zoom, &placement);
+        let layout = Layout::of(table, (w, h));
+        let local = |at: Pos2| rotation::local(turn, at);
+        let cell_at = |at: Pos2| local(at).and_then(|p| layout.at(table, p.x, p.y));
+        let writing = self
+            .cells
+            .as_ref()
+            .is_some_and(|c| c.node == shape.node && c.writing.is_some());
+        let slack = f64::from(tables::EDGE_SLACK / zoom);
+        // The border of a column or a row near a point of the screen.
+        let edge_at = |at: Pos2| -> Option<(bool, usize)> {
+            if canvas::grip_hit(turn, &placement, at, false).is_some() {
+                return None;
+            }
+            let p = local(at)?;
+            let inside = p.x >= -slack && p.x <= w + slack && p.y >= -slack && p.y <= h + slack;
+            if !inside {
+                return None;
+            }
+            layout
+                .column_edge(p.x, slack)
+                .map(|i| (true, i))
+                .or_else(|| layout.row_edge(p.y, slack).map(|i| (false, i)))
+        };
+        let shift = ui.input(|i| i.modifiers.shift);
+        let mut took = self.table_drag.is_some();
+        if response.drag_started()
+            && let Some(at) = pointer
+        {
+            if let (Some((column, index)), Some(from)) = (edge_at(at), local(at)) {
+                let start = Box::new(TableStart {
+                    table: table.clone(),
+                    placement,
+                    at: from,
+                });
+                self.table_drag = Some(if column {
+                    TableDrag::Column(index, start)
+                } else {
+                    TableDrag::Row(index, start)
+                });
+                took = true;
+            } else if self.cells.as_ref().is_some_and(|c| c.node == shape.node)
+                && canvas::grip_hit(turn, &placement, at, false).is_none()
+                && let Some(cell) = cell_at(at)
+            {
+                asked.cells = Some(Some(tables::Cells::one(shape.page, shape.node, cell)));
+                self.table_drag = Some(TableDrag::Cells);
+                took = true;
+            }
+        }
+        if response.dragged()
+            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+        {
+            match &self.table_drag {
+                Some(TableDrag::Column(index, start) | TableDrag::Row(index, start)) => {
+                    let column = matches!(self.table_drag, Some(TableDrag::Column(..)));
+                    let turn = rotation::to_screen(page, zoom, &start.placement);
+                    if let Some(p) = rotation::local(turn, at) {
+                        let act = if column {
+                            tables::Act::ResizeColumn(*index, p.x - start.at.x)
+                        } else {
+                            tables::Act::ResizeRow(*index, p.y - start.at.y)
+                        };
+                        let all = Range::all(&start.table);
+                        asked.table_sized =
+                            tables::change(&start.table, &start.placement, all, &act)
+                                .map(|(table, placement, _)| (table, placement));
+                    }
+                }
+                Some(TableDrag::Cells) => {
+                    if let (Some(cell), Some(mut cells)) = (cell_at(at), self.cells.clone()) {
+                        cells.to = cell;
+                        asked.cells = Some(Some(cells));
+                    }
+                }
+                None => {}
+            }
+        }
+        if response.drag_stopped() && self.table_drag.take().is_some() {
+            asked.table_rest = true;
+        }
+        if response.clicked()
+            && let Some(at) = pointer
+            && let Some(cell) = cell_at(at)
+        {
+            took = true;
+            let mut cells = tables::Cells::one(shape.page, shape.node, cell);
+            if shift && let Some(now) = self.cells.as_ref().filter(|c| c.node == shape.node) {
+                cells.from = now.from;
+            }
+            asked.cells = Some(Some(cells));
+            if response.double_clicked() {
+                asked.write_cell = Some(None);
+            }
+        }
+        if response.secondary_clicked()
+            && let Some(at) = response.interact_pointer_pos()
+            && let Some(cell) = cell_at(at)
+        {
+            if !self.cell_range(shape.node, table).contains(cell.0, cell.1) || self.cells.is_none()
+            {
+                asked.cells = Some(Some(tables::Cells::one(shape.page, shape.node, cell)));
+            }
+            self.table_menu = Some((tables::Side::Cells, at));
+            took = true;
+        }
+        // The cells chosen.
+        let painter = ui.painter().clone();
+        let ring = tables::ring(theme);
+        let corners = |rect: kurbo::Rect| {
+            [
+                (rect.x0, rect.y0),
+                (rect.x1, rect.y0),
+                (rect.x1, rect.y1),
+                (rect.x0, rect.y1),
+            ]
+            .map(|(x, y)| rotation::screen(turn, x, y))
+            .to_vec()
+        };
+        let chosen = self.cells.as_ref().filter(|c| c.node == shape.node);
+        if let Some(cells) = chosen {
+            let range = cells.range(table);
+            let first = layout.cell(table, cells.from.0, cells.from.1);
+            let outline = corners(layout.range(range));
+            painter.add(egui::Shape::convex_polygon(
+                outline.clone(),
+                ring.gamma_multiply(if cells.from == cells.to { 0.0 } else { 0.15 }),
+                Stroke::NONE,
+            ));
+            // A white line under it, to be seen over any fill.
+            for (width, color) in [(4.0, Color32::WHITE), (2.0, ring)] {
+                let stroke = Stroke::new(width, color);
+                painter.add(egui::Shape::closed_line(outline.clone(), stroke));
+            }
+            painter.add(egui::Shape::closed_line(
+                corners(first),
+                Stroke::new(1.0, ring),
+            ));
+        }
+        let hover = response.hover_pos();
+        if !writing
+            && self.table_drag.is_none()
+            && let Some(at) = hover
+            && let Some((column, _)) = edge_at(at)
+        {
+            ui.ctx().set_cursor_icon(if column {
+                egui::CursorIcon::ResizeColumn
+            } else {
+                egui::CursorIcon::ResizeRow
+            });
+        }
+        // The row and the column at hand: the chosen ones, or those of the
+        // cell the pointer was over last, while it is near.
+        if let Some(cell) = hover.and_then(cell_at) {
+            self.table_hover = Some((shape.node, cell));
+        } else if ui.input(|i| i.pointer.latest_pos()).is_none_or(|at| {
+            !rotation::screen_box(page, zoom, &placement)
+                .expand(48.0)
+                .contains(at)
+        }) {
+            self.table_hover = None;
+        }
+        let at_hand = chosen.map(|c| c.range(table)).or_else(|| {
+            self.table_hover
+                .filter(|(node, _)| *node == shape.node)
+                .map(|(_, (r, c))| Range::cell(r, c).over(table))
+        });
+        if self.table_drag.is_some() {
+            return took;
+        }
+        let way = |x: f64, y: f64| {
+            let d = rotation::screen(turn, x, y) - rotation::screen(turn, 0.0, 0.0);
+            d / d.length().max(1e-3)
+        };
+        let (right, down) = (way(1.0, 0.0), way(0.0, 1.0));
+        let id = ui.id().with(("table", shape.node));
+        let all = Range::all(table);
+        if let Some(range) = at_hand {
+            let rect = layout.range(range);
+            let spots = [
+                (
+                    tables::Side::Columns,
+                    rotation::screen(turn, rect.center().x, 0.0) - down * 14.0,
+                    Vec2::new(30.0, 16.0),
+                    Vec2::new(6.0, 0.0),
+                    "table.column_menu",
+                ),
+                (
+                    tables::Side::Rows,
+                    rotation::screen(turn, 0.0, rect.center().y) - right * 14.0,
+                    Vec2::new(16.0, 30.0),
+                    Vec2::new(0.0, 6.0),
+                    "table.row_menu",
+                ),
+            ];
+            let knob = rotation::rotate_handle(turn, &placement);
+            for (side, mut centre, size, dots, key) in spots {
+                // Clear of the turn handle.
+                if centre.distance(knob) < 30.0 {
+                    centre += right * 34.0;
+                }
+                let spot = Rect::from_center_size(centre, size);
+                let name = plain(texts, key);
+                let mark = tables::Mark::Dots(dots);
+                if tables::pill(ui, theme, id.with(key), spot, mark, &name).clicked() {
+                    let (from, to) = if side == tables::Side::Columns {
+                        ((0, range.c0), (all.r1, range.c1))
+                    } else {
+                        ((range.r0, 0), (range.r1, all.c1))
+                    };
+                    let mut cells = tables::Cells::one(shape.page, shape.node, from);
+                    cells.to = to;
+                    asked.cells = Some(Some(cells));
+                    self.table_menu = Some((side, spot.right_bottom()));
+                    took = true;
+                }
+            }
+        }
+        let ends = [
+            (
+                tables::Act::ColumnLast,
+                rotation::screen(turn, w, h / 2.0) + right * 22.0,
+                "table.column_after",
+            ),
+            (
+                tables::Act::RowLast,
+                rotation::screen(turn, w / 2.0, h) + down * 22.0,
+                "table.row_after",
+            ),
+        ];
+        for (act, centre, key) in ends {
+            let spot = Rect::from_center_size(centre, Vec2::splat(22.0));
+            let name = plain(texts, key);
+            let button = id.with(("end", key));
+            if tables::change(table, &placement, all, &act).is_some()
+                && tables::pill(ui, theme, button, spot, tables::Mark::Plus, &name).clicked()
+            {
+                asked.table_act = Some(act);
+                took = true;
+            }
+        }
+        // The table moves as a whole, also while its cells are chosen.
+        let spot = Rect::from_center_size(
+            rotation::screen(turn, w / 2.0, h) + down * 22.0 + right * 30.0,
+            Vec2::splat(22.0),
+        );
+        let name = plain(texts, "table.move");
+        let moving = tables::pill(ui, theme, id.with("move"), spot, tables::Mark::Move, &name);
+        if moving.drag_started() {
+            asked.drag_begin = Some(None);
+            took = true;
+        }
+        self.table_menu(ui.ctx(), texts, (table, &placement), shape.node, asked);
+        took
+    }
+
+    /// The menu open over a table (S81-09).
+    fn table_menu(
+        &mut self,
+        ctx: &egui::Context,
+        texts: &Texts,
+        (table, placement): (&gafira_doc::TableNode, &Placement),
+        node: NodeId,
+        asked: &mut Asked,
+    ) {
+        let Some((side, at)) = self.table_menu else {
+            return;
+        };
+        let range = self.cell_range(node, table);
+        let mut open = true;
+        let mut picked = None;
+        let room = ctx.content_rect().height() - 48.0;
+        let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("table.menu"));
+        // The press that opened it does not close it.
+        let fresh = ctx.input(|i| i.pointer.any_click());
+        egui::Popup::new(
+            egui::Id::new("table.menu"),
+            ctx.clone(),
+            egui::PopupAnchor::Position(at),
+            layer,
+        )
+        .kind(egui::PopupKind::Menu)
+        .style(egui::containers::menu::menu_style)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .open_bool(&mut open)
+        .show(|ui| {
+            egui::ScrollArea::vertical()
+                .max_height(room)
+                .min_scrolled_height(room)
+                .show(ui, |ui| {
+                    picked = tables::menu(
+                        ui,
+                        texts,
+                        (table, placement),
+                        range,
+                        side,
+                        (
+                            self.table_style.is_some(),
+                            &ALIGNS.map(|(_, key, _, _)| key),
+                        ),
+                    );
+                });
+        });
+        match picked {
+            Some(tables::Picked::Act(act)) => asked.table_act = Some(act),
+            Some(tables::Picked::Menu(menu)) => asked.table_menu = Some(menu),
+            None => {}
+        }
+        let escaped = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if picked_or_closed(&asked.table_act, asked.table_menu, open || fresh) || escaped {
+            self.table_menu = None;
+        }
+    }
+
+    /// The keys of the cells chosen (S81-08, S81-11): moving, writing,
+    /// emptying, and the clipboard. Whether there are any.
+    fn cell_keys(
+        &mut self,
+        ctx: &egui::Context,
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) -> bool {
+        use egui::Key;
+        let Some(cells) = self.cells.clone().filter(|c| c.writing.is_none()) else {
+            return false;
+        };
+        let Some((table, _)) = document.and_then(|d| table_of(d, cells.page, cells.node)) else {
+            return false;
+        };
+        if self.selected.single() != Some((cells.page, cells.node)) {
+            return false;
+        }
+        let one = |cell| tables::Cells::one(cells.page, cells.node, cell);
+        let (events, modifiers) = ctx.input_mut(|i| {
+            // Tab stays here, it does not go to another control.
+            i.consume_key(Modifiers::NONE, Key::Tab);
+            i.consume_key(Modifiers::SHIFT, Key::Tab);
+            (i.raw.events.clone(), i.modifiers)
+        });
+        for event in events {
+            match event {
+                egui::Event::Copy if modifiers.alt => {
+                    asked.table_menu = Some(tables::Menu::CopyStyle)
+                }
+                egui::Event::Copy => asked.table_menu = Some(tables::Menu::Copy),
+                egui::Event::Cut => {
+                    asked.table_menu = Some(tables::Menu::Copy);
+                    asked.table_act = Some(tables::Act::Clear);
+                }
+                egui::Event::Paste(_) if modifiers.alt => {
+                    asked.table_menu = Some(tables::Menu::PasteStyle);
+                }
+                egui::Event::Paste(text) => {
+                    asked.table_act = Some(tables::Act::Paste(gafira_table::parse_grid(&text)));
+                }
+                egui::Event::Text(text) if !modifiers.command => {
+                    // Several letters may come in one frame.
+                    match &mut asked.write_cell {
+                        Some(Some(words)) => words.push_str(&text),
+                        _ if !text.trim().is_empty() => asked.write_cell = Some(Some(text)),
+                        _ => {}
+                    }
+                }
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => {
+                    let steps = match key {
+                        Key::ArrowUp => Some((-1, 0)),
+                        Key::ArrowDown => Some((1, 0)),
+                        Key::ArrowLeft => Some((0, -1)),
+                        Key::ArrowRight => Some((0, 1)),
+                        _ => None,
+                    };
+                    if let Some((rows, cols)) = steps {
+                        let mut next = cells.clone();
+                        if modifiers.shift {
+                            let end = one(cells.to).step(&table, rows, cols);
+                            next.to = end;
+                        } else {
+                            next = one(cells.step(&table, rows, cols));
+                        }
+                        asked.cells = Some(Some(next));
+                        continue;
+                    }
+                    match key {
+                        Key::Escape => asked.cells = Some(None),
+                        Key::Enter | Key::F2 => asked.write_cell = Some(None),
+                        Key::Tab => match cells.tab(&table, modifiers.shift) {
+                            Some(cell) => asked.cells = Some(Some(one(cell))),
+                            None if !modifiers.shift => {
+                                asked.table_act = Some(tables::Act::RowLast);
+                            }
+                            None => {}
+                        },
+                        Key::Delete | Key::Backspace => {
+                            asked.table_act = Some(tables::Act::Clear);
+                        }
+                        Key::A if modifiers.command => {
+                            let all = gafira_table::Range::all(&table);
+                            let mut next = one((0, 0));
+                            next.to = (all.r1, all.c1);
+                            asked.cells = Some(Some(next));
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
+    /// The field of the cell being written (S81-08), over it, in its looks.
+    fn cell_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        pages: &[Arc<Page>],
+        page_rects: &[(PageId, Rect)],
+        zoom: f32,
+        asked: &mut Asked,
+    ) {
+        let Some(cells) = self.cells.as_mut() else {
+            return;
+        };
+        let (page_id, node_id, (r, c)) = (cells.page, cells.node, cells.from);
+        let Some(writing) = cells.writing.as_mut() else {
+            return;
+        };
+        let Some((page, rect)) = pages.iter().find(|p| p.id == page_id).zip(
+            page_rects
+                .iter()
+                .find(|(id, _)| *id == page_id)
+                .map(|p| p.1),
+        ) else {
+            return;
+        };
+        let Some(node) = page.node(node_id) else {
+            return;
+        };
+        let gafira_doc::NodeKind::Table(table) = &node.kind else {
+            return;
+        };
+        let Some(cell) = table.cell(r, c) else {
+            return;
+        };
+        let placement = node.base.placement;
+        let layout = gafira_table::Layout::of(table, (placement.w, placement.h));
+        let own = layout.cell(table, r, c);
+        let turn = rotation::to_screen(rect, zoom, &placement);
+        let centre = rotation::screen(turn, own.center().x, own.center().y);
+        let size = Vec2::new(own.width() as f32, own.height() as f32) * zoom;
+        let pad = table.padding as f32 * zoom;
+        let place = Rect::from_center_size(centre, size);
+        let inner = Rect::from_min_max(
+            Pos2::new(place.left() + pad.min(size.x / 3.0), place.top()),
+            Pos2::new(place.right() - pad.min(size.x / 3.0), place.bottom()),
+        );
+        // Enter goes down, Tab on, Escape ends; Shift+Enter breaks the line.
+        let keys = ui.input_mut(|i| {
+            let shift_tab = i.consume_key(Modifiers::SHIFT, egui::Key::Tab);
+            (
+                i.consume_key(Modifiers::NONE, egui::Key::Escape),
+                shift_tab,
+                i.consume_key(Modifiers::NONE, egui::Key::Tab),
+                !i.modifiers.shift
+                    && !i.modifiers.alt
+                    && i.consume_key(Modifiers::NONE, egui::Key::Enter),
+            )
+        });
+        let ended = match keys {
+            (true, ..) => Some(CellMove::Stay),
+            (_, true, ..) => Some(CellMove::Before),
+            (_, _, true, _) => Some(CellMove::Next),
+            (.., true) => Some(CellMove::Down),
+            _ => None,
+        };
+        let style = span_of(&cell.style);
+        let font = egui::FontId::new(
+            (style.size as f32 * zoom).max(1.0),
+            text_family(ui.ctx(), theme, &style),
+        );
+        let halign = match cell.style.align {
+            gafira_doc::TextAlign::Center => Align::Center,
+            gafira_doc::TextAlign::Right => Align::RIGHT,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => Align::LEFT,
+        };
+        let valign = match cell.style.valign {
+            gafira_doc::VerticalAlign::Top => Align::TOP,
+            gafira_doc::VerticalAlign::Middle => Align::Center,
+            gafira_doc::VerticalAlign::Bottom => Align::BOTTOM,
+        };
+        let field = egui::TextEdit::multiline(&mut writing.words)
+            .id(cell_id(node_id, (r, c)))
+            .lock_focus(true)
+            .frame(false)
+            .margin(egui::Margin::ZERO)
+            .background_color(Color32::TRANSPARENT)
+            .font(font)
+            .text_color(canvas::screen_color(cell.style.color))
+            .horizontal_align(halign)
+            .vertical_align(valign)
+            .desired_rows(1)
+            .desired_width(inner.width());
+        let response = ui.put(inner, field);
+        if response.lost_focus() {
+            asked.end_cell = Some(CellMove::Stay);
+        }
+        if response.changed() {
+            asked.cell_words = Some(writing.words.clone());
+        }
+        if ended.is_some() {
+            asked.end_cell = ended;
+        }
+    }
+
+    /// Changes the selected table; the cells chosen follow. Within
+    /// `gesture`, the changes are one undo step.
+    fn change_table(
+        &mut self,
+        engine: &mut Gafira,
+        act: &tables::Act,
+        gesture: Option<GestureId>,
+    ) -> bool {
+        let Some((page, node)) = self.selected.single() else {
+            return false;
+        };
+        let Some((table, placement)) = engine
+            .edit()
+            .document()
+            .and_then(|d| table_of(&d, page, node))
+        else {
+            return false;
+        };
+        let range = self.cell_range(node, &table);
+        let Some((next, box_of, now)) = tables::change(&table, &placement, range, act) else {
+            return false;
+        };
+        let done = set_table(engine, (page, node), next, box_of, gesture);
+        if done && let Some(cells) = self.cells.as_mut().filter(|c| c.node == node) {
+            cells.from = (now.r0, now.c0);
+            cells.to = (now.r1, now.c1);
+        }
+        done
+    }
+
+    /// The tables asked for this frame (spec 081).
+    fn tables(&mut self, engine: &mut Gafira, asked: &Asked) {
+        if let Some((template, at)) = asked.insert_table {
+            self.insert_table(engine, template, at);
+        }
+        // The writing ends before anything else happens to the table.
+        if let Some(words) = &asked.cell_words
+            && let Some(cells) = self.cells.as_mut()
+            && let Some(writing) = cells.writing.as_mut()
+        {
+            writing.words.clone_from(words);
+            let (cell, gesture) = (cells.from, writing.gesture);
+            self.change_table(engine, &tables::Act::Words(cell, words.clone()), gesture);
+        }
+        if let Some(to) = asked.end_cell {
+            self.end_cell(engine, to);
+        }
+        if let Some(cells) = &asked.cells {
+            if self.cells.as_ref().is_some_and(|c| c.writing.is_some()) {
+                self.end_cell(engine, CellMove::Stay);
+            }
+            self.cells.clone_from(cells);
+        }
+        if let Some(words) = &asked.write_cell {
+            self.write_cell(engine, words.clone());
+        }
+        if let Some((table, placement)) = &asked.table_sized
+            && let Some(at) = self.selected.single()
+        {
+            let gesture = self.table_step(engine);
+            set_table(engine, at, table.clone(), *placement, gesture);
+        }
+        if let Some(act) = &asked.table_act {
+            // A slider or a colour picker goes on changing: one step until
+            // it is let go.
+            let gesture = match act {
+                tables::Act::Fill(_)
+                | tables::Act::Ink(_)
+                | tables::Act::Size(_)
+                | tables::Act::Spacing(_)
+                | tables::Act::Padding(_) => self.table_step(engine),
+                _ => {
+                    self.end_table_step(engine);
+                    None
+                }
+            };
+            self.change_table(engine, act, gesture);
+        }
+        match asked.table_menu {
+            Some(tables::Menu::CopyStyle) => {
+                self.table_style = self.first_cell(engine).map(|cell| cell.style);
+            }
+            Some(tables::Menu::PasteStyle) => {
+                if let Some(style) = self.table_style.clone() {
+                    let act = tables::Act::PasteStyle(Box::new(style));
+                    self.change_table(engine, &act, None);
+                }
+            }
+            Some(tables::Menu::Excel) => self.save_excel(engine),
+            // These are done elsewhere, in the same frame.
+            Some(
+                tables::Menu::Copy
+                | tables::Menu::Duplicate
+                | tables::Menu::Delete
+                | tables::Menu::Lock
+                | tables::Menu::Align(_),
+            )
+            | None => {}
+        }
+        if asked.table_rest {
+            self.end_table_step(engine);
+        }
+    }
+
+    /// The gesture of the changes being made to a table, opened if needed.
+    fn table_step(&mut self, engine: &mut Gafira) -> Option<GestureId> {
+        if self.table_gesture.is_none() {
+            self.table_gesture = engine.edit().begin_gesture().ok();
+        }
+        self.table_gesture
+    }
+
+    fn end_table_step(&mut self, engine: &mut Gafira) {
+        if self.table_gesture.take().is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
+    /// The first of the cells chosen in the selected table.
+    fn first_cell(&self, engine: &mut Gafira) -> Option<gafira_doc::TableCell> {
+        let (page, node) = self.selected.single()?;
+        let (table, _) = table_of(&*engine.edit().document()?, page, node)?;
+        let range = self.cell_range(node, &table);
+        table.cell(range.r0, range.c0).cloned()
+    }
+
+    /// Starts writing in the first cell chosen, over `words` or its own.
+    fn write_cell(&mut self, engine: &mut Gafira, words: Option<String>) {
+        self.end_table_step(engine);
+        let Some(cell) = self.cells.as_ref().map(|c| c.from) else {
+            return;
+        };
+        let own = self.cells.as_ref().and_then(|c| {
+            let (table, _) = table_of(&*engine.edit().document()?, c.page, c.node)?;
+            Some(table.cell(cell.0, cell.1)?.text.clone())
+        });
+        let gesture = engine.edit().begin_gesture().ok();
+        if let Some(cells) = self.cells.as_mut() {
+            cells.to = cells.from;
+            cells.writing = Some(tables::Writing {
+                words: words.clone().or(own).unwrap_or_default(),
+                gesture,
+                focused: false,
+            });
+        }
+        if let Some(words) = words {
+            self.change_table(engine, &tables::Act::Words(cell, words), gesture);
+        }
+    }
+
+    /// Ends the writing in a cell and goes on to another; Tab in the last
+    /// one adds a row (S81-08).
+    fn end_cell(&mut self, engine: &mut Gafira, to: CellMove) {
+        let Some(cells) = self.cells.as_mut() else {
+            return;
+        };
+        if cells.writing.take().is_some_and(|w| w.gesture.is_some()) {
+            let _ = engine.edit().end_gesture();
+        }
+        let cells = cells.clone();
+        let Some((table, _)) = engine
+            .edit()
+            .document()
+            .and_then(|d| table_of(&d, cells.page, cells.node))
+        else {
+            return;
+        };
+        let next = match to {
+            CellMove::Stay => None,
+            CellMove::Down => Some(cells.step(&table, 1, 0)),
+            CellMove::Before => cells.tab(&table, true),
+            CellMove::Next => match cells.tab(&table, false) {
+                Some(cell) => Some(cell),
+                None => {
+                    self.change_table(engine, &tables::Act::RowLast, None);
+                    None
+                }
+            },
+        };
+        if let Some(cell) = next {
+            self.cells = Some(tables::Cells::one(cells.page, cells.node, cell));
+        }
+    }
+
+    /// A new table, centred where it was dropped or in the middle of the
+    /// current page, selected; one undo step (S81-07).
+    fn insert_table(
+        &mut self,
+        engine: &mut Gafira,
+        template: crate::table_templates::Template,
+        at: Option<Pos2>,
+    ) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => Some(page),
+            None => self.current_page(&document).map(|p| p.id),
+        };
+        let Some(on) = page.and_then(|page| document.page(page)) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let texts = Texts::new(engine.settings().locale().locale);
+        let name = plain(&texts, template.key());
+        let spec = crate::table_templates::spec(
+            template.table(&texts),
+            (size.width(), size.height()),
+            dropped.map(|(_, point)| point),
+            name,
+        );
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(on.id, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(on.id, next);
+                self.active = Some(on.id);
+                self.scope = None;
+                self.cells = None;
+            }
+            Err(error) => eprintln!("insert table: {error}"),
+        }
+    }
+
+    /// «Guardar como Excel…» of the selected table (S81-14).
+    fn save_excel(&self, engine: &mut Gafira) {
+        let Some((page, node)) = self.selected.single() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some((table, placement)) = table_of(&document, page, node) else {
+            return;
+        };
+        let name = document
+            .page(page)
+            .and_then(|p| p.node(node))
+            .and_then(|n| n.base.name.clone())
+            .unwrap_or_default();
+        let picked = rfd::FileDialog::new()
+            .add_filter("Excel", &["xlsx"])
+            .set_file_name(format!(
+                "{}.xlsx",
+                if name.is_empty() { "tabla" } else { &name }
+            ))
+            .save_file();
+        let Some(path) = picked else { return };
+        let sheet = gafira_io_xlsx::Sheet {
+            name: &name,
+            table: &table,
+            size: (placement.w.abs(), placement.h.abs()),
+            dpi: f64::from(document.dpi().get()),
+        };
+        let saved = gafira_io_xlsx::workbook(&[sheet])
+            .and_then(|bytes| std::fs::write(path.with_extension("xlsx"), bytes));
+        if let Err(error) = saved {
+            eprintln!("excel: {error}");
+        }
+    }
+
+    /// The QR codes asked for this frame (spec 080): a new one, a change in
+    /// Propiedades, a logo, or «Convertir en formas».
+    fn qr_codes(&mut self, engine: &mut Gafira, asked: &Asked) {
+        if let Some((code, at)) = &asked.insert_qr {
+            self.insert_qr(engine, (**code).clone(), *at);
+        }
+        if asked.qr_panel_logo
+            && let Some(logo) = self.pick_logo(engine)
+        {
+            self.qr_panel.borrow_mut().draft.logo = Some(logo);
+        }
+        let selected = self.selected.single();
+        if let (Some(code), Some((page, node))) = (&asked.qr, selected) {
+            self.set_qr(engine, page, node, (**code).clone());
+        }
+        if asked.qr_logo
+            && let Some((page, node)) = selected
+            && let Some(document) = engine.edit().document()
+            && let Some(mut code) = qr_of(&document, page, node)
+            && let Some(logo) = self.pick_logo(engine)
+        {
+            code.logo = Some(logo);
+            self.set_qr(engine, page, node, code);
+        }
+        // The changes end with the focus, or with the selection.
+        if let Some((node, _)) = self.qr_gesture
+            && (asked.qr_rest || asked.qr_to_shapes || selected.map(|s| s.1) != Some(node))
+        {
+            self.qr_gesture = None;
+            if let Err(error) = engine.edit().end_gesture() {
+                eprintln!("end gesture: {error}");
+            }
+        }
+        if asked.qr_to_shapes
+            && let Some((page, node)) = selected
+        {
+            self.qr_to_shapes(engine, page, node);
+        }
+    }
+
+    /// A new code, centred where it was dropped or in the middle of the
+    /// current page, selected; one undo step (S80-11).
+    fn insert_qr(&mut self, engine: &mut Gafira, mut code: gafira_doc::QrNode, at: Option<Pos2>) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        // A logo picked in another document is not in this one.
+        code.logo = code.logo.filter(|l| document.asset(&l.asset).is_some());
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => Some(page),
+            None => self.current_page(&document).map(|p| p.id),
+        };
+        let Some(on) = page.and_then(|page| document.page(page)) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let spec = crate::qr::spec(
+            code,
+            (size.width(), size.height()),
+            dropped.map(|(_, point)| point),
+        );
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(on.id, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(on.id, next);
+                self.active = Some(on.id);
+                self.scope = None;
+            }
+            Err(error) => eprintln!("insert QR code: {error}"),
+        }
+    }
+
+    /// Sets the code `node`, within the gesture of its fields.
+    fn set_qr(
+        &mut self,
+        engine: &mut Gafira,
+        page: PageId,
+        node: NodeId,
+        code: gafira_doc::QrNode,
+    ) {
+        if self.qr_gesture.is_none_or(|(of, _)| of != node) {
+            self.qr_gesture = engine.edit().begin_gesture().ok().map(|g| (node, g));
+        }
+        let gesture = self.qr_gesture.map(|(_, gesture)| gesture);
+        let command = SetProperty::new(page, vec![node], Property::Qr(Box::new(code)), gesture);
+        if let Err(error) = engine.edit().execute(Box::new(command)) {
+            eprintln!("QR code: {error}");
+        }
+    }
+
+    /// Asks for an image and brings it into the document (S80-10).
+    fn pick_logo(&mut self, engine: &mut Gafira) -> Option<gafira_doc::QrLogo> {
+        let path = rfd::FileDialog::new()
+            .add_filter("PNG, JPEG", &["png", "jpg", "jpeg"])
+            .pick_file()?;
+        let Ok(natural) = image::image_dimensions(&path) else {
+            eprintln!("logo: {} is not a readable image", path.display());
+            return None;
+        };
+        match engine.assets().import(&path) {
+            Ok(asset) => {
+                let hash = asset.as_hash();
+                self.photos
+                    .entry(hash)
+                    .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                Some(gafira_doc::QrLogo {
+                    asset,
+                    natural,
+                    share: 0.2,
+                    clear_behind: true,
+                })
+            }
+            Err(error) => {
+                eprintln!("logo: {error}");
+                None
+            }
+        }
+    }
+
+    /// «Convertir en formas» (S80-13): a group of shapes in the place of
+    /// the code, selected; one undo step.
+    fn qr_to_shapes(&mut self, engine: &mut Gafira, page: PageId, node: NodeId) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Some(found) = on.node(node) else { return };
+        let gafira_doc::NodeKind::Qr(code) = &found.kind else {
+            return;
+        };
+        let base = &found.base;
+        let Some(mut spec) = crate::qr::as_shapes(code, &base.placement) else {
+            return;
+        };
+        spec.name.clone_from(&base.name);
+        spec.opacity = base.opacity;
+        spec.blend = base.blend;
+        let Some((parent, list)) = group::siblings(on, &[node]) else {
+            return;
+        };
+        let index = list.iter().position(|id| *id == node).unwrap_or(0);
+        let next = NodeId::new(document.next_id());
+        let commands: Vec<Box<dyn Command>> = vec![
+            Box::new(InsertNodes::new(page, parent, index + 1, vec![spec])),
+            Box::new(RemoveNodes::new(page, vec![node])),
+        ];
+        let command = Transaction::new(MessageKey("edit.set_property"), commands);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => self.selected = Selection::one(page, next),
+            Err(error) => eprintln!("QR code to shapes: {error}"),
+        }
+    }
+
     /// «Poner foto…» (spec 066, S66-06): pick an image, import it through
     /// `AssetService` and make it the photo of the selected frames, in one
     /// undo step; it fills them («Rellenar») unless they fit otherwise.
@@ -8630,6 +10006,92 @@ fn percent_decode(text: &str) -> String {
 fn frame_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::FrameNode> {
     match &document.page(page)?.node(node)?.kind {
         gafira_doc::NodeKind::Frame(frame) => Some(frame.clone()),
+        _ => None,
+    }
+}
+
+/// The id of the field of a cell.
+fn cell_id(node: NodeId, cell: (usize, usize)) -> egui::Id {
+    egui::Id::new(("cell", node, cell))
+}
+
+/// Whether the menu of a table is done with: something was picked, or it
+/// was closed.
+fn picked_or_closed(act: &Option<tables::Act>, menu: Option<tables::Menu>, open: bool) -> bool {
+    act.is_some() || menu.is_some() || !open
+}
+
+/// Puts `table` in the box `placement` of the node, in one command.
+fn set_table(
+    engine: &mut Gafira,
+    (page, node): (PageId, NodeId),
+    table: gafira_doc::TableNode,
+    placement: Placement,
+    gesture: Option<GestureId>,
+) -> bool {
+    let commands: Vec<Box<dyn Command>> = vec![
+        Box::new(SetProperty::new(
+            page,
+            vec![node],
+            Property::Table(Box::new(table)),
+            gesture,
+        )),
+        Box::new(SetProperty::new(
+            page,
+            vec![node],
+            Property::Placement(placement),
+            gesture,
+        )),
+    ];
+    let command = Transaction::new(MessageKey("edit.set_property"), commands);
+    match engine.edit().execute(Box::new(command)) {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("table: {error}");
+            false
+        }
+    }
+}
+
+/// `placement` with `margin` px more on each side, about the same centre.
+fn grown(placement: &Placement, margin: f64) -> Placement {
+    Placement {
+        x: placement.x - margin,
+        y: placement.y - margin,
+        w: placement.w + 2.0 * margin,
+        h: placement.h + 2.0 * margin,
+        ..*placement
+    }
+}
+
+/// The looks of the words of a cell, as a text holds them.
+fn span_of(style: &gafira_doc::CellStyle) -> gafira_doc::SpanStyle {
+    gafira_doc::SpanStyle {
+        font: style.font.clone(),
+        size: style.size,
+        color: style.color,
+        bold: style.bold,
+        italic: style.italic,
+    }
+}
+
+/// The table `node` of `page` and its box, if it is one.
+fn table_of(
+    document: &Document,
+    page: PageId,
+    node: NodeId,
+) -> Option<(gafira_doc::TableNode, Placement)> {
+    let found = document.page(page)?.node(node)?;
+    match &found.kind {
+        gafira_doc::NodeKind::Table(table) => Some(((**table).clone(), found.base.placement)),
+        _ => None,
+    }
+}
+
+/// The QR code `node` of `page`, if it is one.
+fn qr_of(document: &Document, page: PageId, node: NodeId) -> Option<gafira_doc::QrNode> {
+    match &document.page(page)?.node(node)?.kind {
+        gafira_doc::NodeKind::Qr(qr) => Some((**qr).clone()),
         _ => None,
     }
 }
@@ -9358,10 +10820,13 @@ fn many_fields(
     ui.add_space(16.0);
     arrange_buttons(ui, theme, texts, can, asked);
     ui.add_space(16.0);
-    if shapes
-        .iter()
-        .all(|shape| shape.text.is_none() && shape.image.is_none() && !shape.group)
-    {
+    if shapes.iter().all(|shape| {
+        shape.text.is_none()
+            && shape.image.is_none()
+            && shape.qr.is_none()
+            && shape.table.is_none()
+            && !shape.group
+    }) {
         fill_field(ui, texts, primary, asked);
         ui.add_space(8.0);
     }
@@ -9735,9 +11200,73 @@ fn card_frame(ui: &egui::Ui, theme: &Theme, rect: Rect, hovered: bool) {
     );
 }
 
+/// «Posición y tamaño» of the selected element.
+fn position_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    shape: &Shape,
+    asked: &mut Asked,
+) {
+    ui.label(
+        RichText::new(plain(texts, "inspector.position_size"))
+            .font(theme.font("body-sm"))
+            .color(theme.c("text.secondary")),
+    );
+    ui.add_space(4.0);
+    let mut placement = shape.placement;
+    let mut changed = false;
+    egui::Grid::new("inspector.position")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            for (key, value, min) in [
+                (gafira_doc::msg!("inspector.x"), &mut placement.x, f64::MIN),
+                (gafira_doc::msg!("inspector.y"), &mut placement.y, f64::MIN),
+                (gafira_doc::msg!("inspector.width"), &mut placement.w, 1.0),
+                (gafira_doc::msg!("inspector.height"), &mut placement.h, 1.0),
+            ] {
+                ui.label(texts.t(&key));
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(value)
+                            .speed(1.0)
+                            .range(min..=f64::MAX)
+                            .max_decimals(1),
+                    )
+                    .changed();
+                ui.end_row();
+            }
+            // «Giro», in degrees within one turn (spec 041). A
+            // group has no turn of its own: its box is upright
+            // around its children (spec 043).
+            if shape.group {
+                return;
+            }
+            ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
+            let mut degrees = rotation::normalized(placement.rotation_deg);
+            let field = egui::DragValue::new(&mut degrees)
+                .speed(1.0)
+                .max_decimals(1)
+                .custom_formatter(|value, _| degrees_text(texts, value));
+            if ui.add(field).changed() {
+                placement.rotation_deg = rotation::normalized(degrees);
+                changed = true;
+            }
+            ui.end_row();
+        });
+    if changed {
+        asked.place = Some(placement);
+    }
+}
+
 /// The title of «Propiedades» for `shape`: what kind of element it is.
 fn kind_title(shape: &Shape) -> &'static str {
-    if shape.frame.is_some() {
+    if shape.table.is_some() {
+        "layers.table"
+    } else if shape.qr.is_some() {
+        "layers.qr"
+    } else if shape.frame.is_some() {
         "inspector.kind_frame"
     } else if shape.effect.is_some() {
         "inspector.kind_light"
@@ -10706,7 +12235,7 @@ pub(crate) mod tests {
     use crate::format::StartFormat;
     use crate::shell::start;
 
-    struct Nothing;
+    pub(crate) struct Nothing;
 
     fn none() -> io::Error {
         io::ErrorKind::Unsupported.into()
@@ -13780,6 +15309,362 @@ pub(crate) mod tests {
             },
         );
         assert_eq!(undo_depth(&mut engine), depth + 2);
+    }
+
+    /// An editor with the plain table (4 × 3) in the middle of its page.
+    fn with_table(engine: &mut Gafira) -> (Editor, PageId, NodeId) {
+        start(engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            engine,
+            &mut editor,
+            Asked {
+                insert_table: Some((crate::table_templates::Template::Grid, None)),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the table");
+        (editor, page, node)
+    }
+
+    fn the_table(engine: &mut Gafira, page: PageId, node: NodeId) -> gafira_doc::TableNode {
+        let document = engine.edit().document().expect("a document");
+        table_of(&document, page, node).expect("a table").0
+    }
+
+    // S81-07, D-105: a click puts the table in the middle of the page; a
+    // drop, where it was dropped; selected, one undo step each.
+    #[test]
+    fn d105_a_dropped_table_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        assert_eq!(undo_depth(&mut engine), 1);
+        editor.zoom = 0.5;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(540.0)))];
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_table: Some((
+                    crate::table_templates::Template::Budget,
+                    Some(Pos2::new(250.0, 260.0)),
+                )),
+                ..Asked::default()
+            },
+        );
+        let (_, dropped) = editor.selected.single().expect("the new table");
+        assert_ne!(dropped, node);
+        let document = engine.edit().document().expect("a document");
+        let p = document.pages()[0]
+            .node(dropped)
+            .expect("it")
+            .base
+            .placement;
+        assert!((p.x + p.w / 2.0 - 500.0).abs() < 1e-6);
+        assert!((p.y + p.h / 2.0 - 520.0).abs() < 1e-6);
+        assert_eq!(undo_depth(&mut engine), 2);
+    }
+
+    // S81-08: what is written in a cell is one undo step; Enter goes down
+    // and Tab on; Tab in the last cell adds a row.
+    #[test]
+    fn s81_08_writing_in_cells() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        let depth = undo_depth(&mut engine);
+        let cells = |cell| Some(Some(tables::Cells::one(page, node, cell)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                cells: cells((0, 0)),
+                write_cell: Some(Some("H".to_owned())),
+                ..Asked::default()
+            },
+        );
+        for words in ["Ho", "Hola"] {
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    cell_words: Some(words.to_owned()),
+                    ..Asked::default()
+                },
+            );
+        }
+        let end = |to| Asked {
+            end_cell: Some(to),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, end(CellMove::Down));
+        assert_eq!(the_table(&mut engine, page, node).cells[0].text, "Hola");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let at = |editor: &Editor| editor.cells.as_ref().map(|c| (c.from, c.writing.is_some()));
+        assert_eq!(at(&editor), Some(((1, 0), false)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                cells: cells((3, 2)),
+                write_cell: Some(None),
+                ..Asked::default()
+            },
+        );
+        ask(&mut engine, &mut editor, end(CellMove::Next));
+        assert_eq!(the_table(&mut engine, page, node).rows.len(), 5);
+        assert_eq!(at(&editor), Some(((4, 0), false)));
+        engine.edit().undo().expect("undo");
+        engine.edit().undo().expect("undo");
+        assert_eq!(the_table(&mut engine, page, node).cells[0].text, "");
+    }
+
+    // S81-06, S81-10: looks go to the cells chosen, or to the whole table;
+    // a colour being picked is one undo step.
+    #[test]
+    fn s81_10_looks_go_to_the_cells_chosen() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        let depth = undo_depth(&mut engine);
+        let mut cells = tables::Cells::one(page, node, (1, 0));
+        cells.to = (1, 2);
+        editor.cells = Some(cells);
+        for code in [0x0011_0000, 0x0022_0000] {
+            let act = tables::Act::Fill(Some(crate::colors::hex(code)));
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    table_act: Some(act),
+                    ..Asked::default()
+                },
+            );
+        }
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                table_rest: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        let table = the_table(&mut engine, page, node);
+        let filled: Vec<bool> = table.cells.iter().map(|c| c.style.fill.is_some()).collect();
+        assert_eq!(filled.iter().filter(|f| **f).count(), 3);
+        assert!(filled[3] && filled[5]);
+        // The whole table, with no cell chosen.
+        editor.cells = None;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                table_act: Some(tables::Act::Bold(true)),
+                ..Asked::default()
+            },
+        );
+        let table = the_table(&mut engine, page, node);
+        assert!(table.cells.iter().all(|c| c.style.bold));
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        // The font panel too.
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                font: Some(("Manrope".to_owned(), false, true)),
+                ..Asked::default()
+            },
+        );
+        let table = the_table(&mut engine, page, node);
+        assert!(table.cells.iter().all(|c| c.style.font == "Manrope"));
+    }
+
+    // S81-08: with cells chosen the keys are theirs: Delete empties them and
+    // the table stays; Escape goes back to the table, whose Delete takes it.
+    #[test]
+    fn s81_08_the_keys_of_the_cells() {
+        let mut engine = engine();
+        let (mut editor, page, node) = with_table(&mut engine);
+        let ctx = egui::Context::default();
+        editor.cells = Some(tables::Cells::one(page, node, (0, 0)));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                table_act: Some(tables::Act::Paste(vec![vec![
+                    "a".to_owned(),
+                    "b".to_owned(),
+                ]])),
+                ..Asked::default()
+            },
+        );
+        let text =
+            |engine: &mut Gafira, i: usize| the_table(engine, page, node).cells[i].text.clone();
+        assert_eq!(
+            (text(&mut engine, 0), text(&mut engine, 1)),
+            ("a".into(), "b".into())
+        );
+        editor.cells = Some(tables::Cells::one(page, node, (0, 0)));
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Delete),
+            Modifiers::NONE,
+        );
+        assert_eq!(
+            (text(&mut engine, 0), text(&mut engine, 1)),
+            (String::new(), "b".into())
+        );
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowRight),
+            Modifiers::NONE,
+        );
+        assert_eq!(editor.cells.as_ref().map(|c| c.from), Some((0, 1)));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Escape),
+            Modifiers::NONE,
+        );
+        assert!(editor.cells.is_none());
+        assert_eq!(
+            editor.selected.single(),
+            Some((page, node)),
+            "still selected"
+        );
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Delete),
+            Modifiers::NONE,
+        );
+        let document = engine.edit().document().expect("a document");
+        assert!(table_of(&document, page, node).is_none(), "the table goes");
+    }
+
+    /// An editor with a QR code of `text` in the middle of its page.
+    fn with_qr(engine: &mut Gafira, text: &str) -> (Editor, PageId, NodeId, gafira_doc::QrNode) {
+        start(engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let mut code = crate::qr::fresh();
+        code.content = gafira_doc::QrContent::Text {
+            text: text.to_owned(),
+        };
+        ask(
+            engine,
+            &mut editor,
+            Asked {
+                insert_qr: Some((Box::new(code.clone()), None)),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the code");
+        (editor, page, node, code)
+    }
+
+    // S80-11, D-105: a click puts the code in the middle of the page, a
+    // quarter of its shorter side; a drop leaves it where it was dropped;
+    // selected, one undo step each.
+    #[test]
+    fn d105_a_dropped_qr_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let (mut editor, page, node, code) = with_qr(&mut engine, "hola");
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        let size = on.size.to_px(document.dpi()).expect("px");
+        let p = on.node(node).expect("the code").base.placement;
+        let side = size.width().min(size.height()) / 4.0;
+        assert_eq!((p.w, p.h), (side, side));
+        let middle = (size.width() / 2.0, size.height() / 2.0);
+        assert_eq!((p.x + side / 2.0, p.y + side / 2.0), middle);
+        assert_eq!(undo_depth(&mut engine), 1);
+        editor.zoom = 0.5;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(540.0)))];
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_qr: Some((Box::new(code), Some(Pos2::new(100.0, 150.0)))),
+                ..Asked::default()
+            },
+        );
+        let (_, dropped) = editor.selected.single().expect("the new code");
+        assert_ne!(dropped, node);
+        let document = engine.edit().document().expect("a document");
+        let p = document.pages()[0]
+            .node(dropped)
+            .expect("it")
+            .base
+            .placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (200.0, 300.0));
+        assert_eq!(undo_depth(&mut engine), 2);
+    }
+
+    // S80-12: a burst of changes in Propiedades is one undo step, until the
+    // fields come to rest; what is written next is another.
+    #[test]
+    fn s80_12_a_burst_of_changes_is_one_undo_step() {
+        let mut engine = engine();
+        let (mut editor, page, node, code) = with_qr(&mut engine, "a");
+        let depth = undo_depth(&mut engine);
+        let write = |engine: &mut Gafira, editor: &mut Editor, text: &str, rest: bool| {
+            let mut next = code.clone();
+            next.content = gafira_doc::QrContent::Text {
+                text: text.to_owned(),
+            };
+            let asked = Asked {
+                qr: Some(Box::new(next)),
+                qr_rest: rest,
+                ..Asked::default()
+            };
+            ask(engine, editor, asked);
+        };
+        for text in ["ab", "abc"] {
+            write(&mut engine, &mut editor, text, false);
+        }
+        write(&mut engine, &mut editor, "abcd", true);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        write(&mut engine, &mut editor, "x", true);
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        engine.edit().undo().expect("undo");
+        engine.edit().undo().expect("undo");
+        let document = engine.edit().document().expect("a document");
+        assert_eq!(qr_of(&document, page, node), Some(code));
+    }
+
+    // S80-13: «Convertir en formas» leaves a group of shapes in the place
+    // of the code, selected; one undo step.
+    #[test]
+    fn s80_13_converting_leaves_a_group_of_shapes() {
+        let mut engine = engine();
+        let (mut editor, page, node, _) = with_qr(&mut engine, "hola");
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                qr_to_shapes: true,
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        assert!(on.node(node).is_none(), "the code is gone");
+        let (_, group) = editor.selected.single().expect("the group");
+        let group = on.node(group).expect("the group");
+        assert!(matches!(group.kind, gafira_doc::NodeKind::Group(_)));
+        assert_eq!(group.children.len(), 4, "background, body and eyes");
+        assert_eq!(on.roots, vec![group.base.id]);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("undo");
+        let document = engine.edit().document().expect("a document");
+        assert!(qr_of(&document, page, node).is_some());
     }
 
     // S55-04: writing on a shape on the canvas stores its words as the

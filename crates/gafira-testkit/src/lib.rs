@@ -10,6 +10,7 @@ pub mod fonts;
 pub mod golden;
 mod harness;
 pub mod progress;
+pub mod qr;
 pub mod scenes;
 
 /// The port doubles of Gafira (ADR 0013, ARQ-112).
@@ -1000,6 +1001,12 @@ mod guards {
                         }
                         NodeKind::Frame(_) => {
                             seen.insert("frame");
+                        }
+                        NodeKind::Qr(_) => {
+                            seen.insert("qr");
+                        }
+                        NodeKind::Table(_) => {
+                            seen.insert("table");
                         }
                         NodeKind::Extension(e) => {
                             seen.insert("extension");

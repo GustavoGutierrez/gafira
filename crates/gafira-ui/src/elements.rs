@@ -48,9 +48,9 @@ impl Category {
         Self::Illustrations,
         Self::Photos,
         Self::Lights,
-        Self::Icons,
         Self::QrCodes,
         Self::Tables,
+        Self::Icons,
         Self::Charts,
     ];
 

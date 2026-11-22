@@ -121,7 +121,10 @@ fn document() -> Document {
 
 /// The SVG of the page with `options`.
 fn svg_of(options: &[(&'static str, bool)]) -> String {
-    let document = document();
+    svg_of_document(&document(), options)
+}
+
+fn svg_of_document(document: &Document, options: &[(&'static str, bool)]) -> String {
     let mut values = ParamValues::new();
     for (id, on) in options {
         values.set(*id, ParamValue::Bool(*on));
@@ -136,10 +139,10 @@ fn svg_of(options: &[(&'static str, bool)]) -> String {
         Arc::new(FixedClock),
         Arc::new(FontBook::new().with("Inter", gafira_testkit::fonts::INTER.bytes)),
     );
-    let pages = renderers.for_document(&document, ImagePixels::new());
+    let pages = renderers.for_document(document, ImagePixels::new());
     let job = ExportJob {
         request: &request,
-        document: &document,
+        document,
         store: &NoStore,
         pages: pages.as_ref(),
     };
@@ -178,4 +181,60 @@ fn s74_02_outlines_and_transparency() {
     assert!(!outlines.contains("@font-face"));
     let clear = svg_of(&[(TRANSPARENT, true)]);
     assert!(!clear.contains("fill=\"#ffffff\""));
+}
+
+// S80-12: a QR code goes to SVG as vectors with no outside references, and
+// the SVG, drawn and read, gives back what it says.
+#[test]
+fn s80_12_a_qr_code_reads_back_from_the_svg() {
+    use gafira_doc::{QrBody, QrContent, QrEyeFrame, QrFill, QrNode};
+    use resvg::{tiny_skia, usvg};
+    let text = "https://example.com/gafira";
+    let grey = |v: f32| Color::Srgb(Rgba::new(v, v, v, 1.0));
+    let url = text.to_owned();
+    let mut qr = QrNode::new(QrContent::Url { url }, grey(0.0), grey(1.0));
+    qr.style.body = QrBody::Fluid;
+    qr.style.eye_frame = QrEyeFrame::Leaf;
+    qr.style.fill = QrFill::Gradient(gafira_doc::Gradient {
+        kind: gafira_doc::GradientKind::Radial,
+        stops: [(0.0, 0.0), (1.0, 0.3)]
+            .map(|(offset, v)| gafira_doc::GradientStop {
+                offset,
+                color: grey(v),
+            })
+            .to_vec(),
+    });
+    let mut page = Page::new(
+        PageId::new(1),
+        "P".to_owned(),
+        PageSize {
+            width: Length::new(400.0, Unit::Px),
+            height: Length::new(400.0, Unit::Px),
+        },
+    );
+    let id = NodeId::new(2);
+    let base = ElementBase::new(id, Placement::new(50.0, 50.0, 300.0, 300.0));
+    page.nodes.insert(
+        id,
+        Arc::new(Node::new(base, NodeKind::Qr(Box::new(qr.clone())))),
+    );
+    page.roots.push(id);
+    let document = Document::from_parts(3, Dpi::default(), vec![Arc::new(page)]).expect("valid");
+    let svg = svg_of_document(&document, &[]);
+    assert!(!svg.contains("<image"), "vectors, not pixels");
+    assert!(!svg.contains("href=\"http"), "no outside references");
+    let tree = usvg::Tree::from_str(&svg, &usvg::Options::default()).expect("an SVG");
+    let mut pixmap = tiny_skia::Pixmap::new(400, 400).expect("a size");
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
+    let drawing = gafira_qr::draw(&qr).expect("drawn");
+    let (k, (x0, y0)) = drawing.fit(300.0, 300.0).expect("a box");
+    let found = gafira_testkit::qr::read(drawing.size as usize, |x, y| {
+        let at = |from: f64, v: f64| ((50.0 + from + v * k).max(0.0) as u32).min(399);
+        pixmap.data()[((at(y0, y) * 400 + at(x0, x)) * 4) as usize + 1]
+    });
+    assert_eq!(found.as_deref(), Some(text));
 }

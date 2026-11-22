@@ -306,6 +306,8 @@ pub(crate) enum Refusal {
     /// No format, or a document with no page.
     Nothing,
     Range(RangeError),
+    /// An Excel file of pages with no table (S81-14).
+    NoTables,
 }
 
 /// The page «Página actual» means: the page of the selection when it is
@@ -344,6 +346,9 @@ pub(crate) fn scope(dialog: &Dialog, document: &Document) -> Result<Vec<PageId>,
 pub(crate) fn request(dialog: &Dialog, document: &Document) -> Result<ExportRequest, Refusal> {
     let format = dialog.format().ok_or(Refusal::Nothing)?;
     let pages = scope(dialog, document)?;
+    if format.id == "xlsx" && !gafira_io_xlsx::has_tables(document, &pages) {
+        return Err(Refusal::NoTables);
+    }
     let mut options = ParamValues::new();
     for def in format.schema.params() {
         if let Some(value) = dialog.values.get(def.id) {
@@ -972,6 +977,14 @@ fn options_column(
                 });
                 ui.end_row();
             }
+            if matches!(refused, Err(Refusal::NoTables)) {
+                ui.label("");
+                ui.label(
+                    RichText::new(texts.t(&gafira_doc::msg!("export.no_tables")))
+                        .color(theme.c("error.fg")),
+                );
+                ui.end_row();
+            }
             let Some(format) = dialog.format().cloned() else {
                 return;
             };
@@ -1031,6 +1044,7 @@ fn format_label(id: &str) -> Message {
         "pdf" => gafira_doc::msg!("export.pdf"),
         "svg" => gafira_doc::msg!("export.svg"),
         "pptx" => gafira_doc::msg!("export.pptx"),
+        "xlsx" => gafira_doc::msg!("export.xlsx"),
         other => Message {
             key: gafira_doc::msg::MessageKey("export.format"),
             args: vec![("format", MsgArg::Text(other.to_owned()))],
@@ -1202,7 +1216,8 @@ pub(crate) mod tests {
         ))
     }
 
-    /// The registries the app composes: PNG, JPEG, WebP and PDF (spec 039).
+    /// The registries the app composes: PNG, JPEG, WebP and PDF (spec 039),
+    /// SVG (spec 074) and PowerPoint (spec 075).
     pub(crate) fn registries() -> Registries {
         let mut registries = Registries::new();
         for exporter in [
@@ -1210,6 +1225,9 @@ pub(crate) mod tests {
             Arc::new(JpegExporter::new()),
             Arc::new(WebpExporter::new()),
             Arc::new(PdfExporter::new()),
+            Arc::new(gafira_io_svg::SvgExporter::new()),
+            Arc::new(gafira_io_pptx::PptxExporter::new()),
+            Arc::new(gafira_io_xlsx::XlsxExporter::new()),
         ] {
             registries
                 .formats
@@ -1307,6 +1325,112 @@ pub(crate) mod tests {
         assert!(kept.load("pdf").is_none(), "forgotten");
     }
 
+    /// The text of `code`, drawn in `placement`, in the exported `image`.
+    fn scanned(
+        image: &image::DynamicImage,
+        code: &gafira_doc::QrNode,
+        placement: &gafira_doc::Placement,
+    ) -> Option<String> {
+        let drawing = gafira_qr::draw(code).expect("drawn");
+        let (k, (x0, y0)) = drawing.fit(placement.w, placement.h).expect("a box");
+        let grey = image.to_luma8();
+        let px = |v: f64, most: u32| (v.max(0.0) as u32).min(most - 1);
+        gafira_testkit::qr::read(drawing.size as usize, |x, y| {
+            let (x, y) = (placement.x + x0 + x * k, placement.y + y0 + y * k);
+            grey.get_pixel(px(x, grey.width()), px(y, grey.height()))[0]
+        })
+    }
+
+    // S80-12: a QR code with shapes, a gradient and a logo goes out in every
+    // format of the app, from the engine, and the files are read back.
+    #[test]
+    fn s80_12_a_qr_code_exports_in_every_format() {
+        use gafira_doc::{QrBody, QrEyeBall, QrEyeFrame, QrFill, QrLogo};
+        let dir = std::env::temp_dir().join(format!("gafira-s80-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let logo = dir.join("logo.png");
+        image::RgbaImage::from_pixel(32, 24, image::Rgba([220, 40, 40, 255]))
+            .save(&logo)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine =
+            crate::editor::tests::engine_with(Arc::new(crate::editor::tests::Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a document");
+        let asset = engine.assets().import(&logo).expect("imports");
+        let text = "https://example.com/gafira?qr=1";
+        let mut code = crate::qr::fresh();
+        code.content = gafira_doc::QrContent::Url {
+            url: text.to_owned(),
+        };
+        code.style.body = QrBody::FluidCorners;
+        code.style.eye_frame = QrEyeFrame::Leaf;
+        code.style.eye_ball = QrEyeBall::Flower;
+        code.style.fill = QrFill::Gradient(crate::colors::gradient(0x0018_243b, 0x004a_2c82, 90.0));
+        code.logo = Some(QrLogo {
+            asset,
+            natural: (32, 24),
+            share: 0.22,
+            clear_behind: true,
+        });
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let spec = crate::qr::spec(code.clone(), (size.width(), size.height()), None);
+        let placement = spec.placement;
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertNodes::new(
+                page.id,
+                None,
+                0,
+                vec![spec],
+            )))
+            .expect("the code");
+        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx"] {
+            let dialog = dialog_on(&engine, id, None);
+            let path = dir.join(format!("code.{id}"));
+            export_to(&mut engine, &dialog, &path).expect(id);
+            let bytes = std::fs::read(&path).expect("the file");
+            match id {
+                "png" | "jpeg" => {
+                    let image = image::load_from_memory(&bytes).expect("an image");
+                    assert_eq!(
+                        scanned(&image, &code, &placement).as_deref(),
+                        Some(text),
+                        "{id}"
+                    );
+                }
+                "webp" => assert_eq!(&bytes[8..12], b"WEBP"),
+                "pdf" => assert!(bytes.starts_with(b"%PDF")),
+                "svg" => {
+                    use resvg::{tiny_skia, usvg};
+                    let options = usvg::Options::default();
+                    let tree = usvg::Tree::from_data(&bytes, &options).expect("an SVG");
+                    let side = tree.size().to_int_size();
+                    let mut pixmap =
+                        tiny_skia::Pixmap::new(side.width(), side.height()).expect("a size");
+                    let at = tiny_skia::Transform::identity();
+                    resvg::render(&tree, at, &mut pixmap.as_mut());
+                    let image = image::RgbaImage::from_raw(
+                        side.width(),
+                        side.height(),
+                        pixmap.data().to_vec(),
+                    );
+                    let image = image::DynamicImage::from(image.expect("pixels"));
+                    assert_eq!(
+                        scanned(&image, &code, &placement).as_deref(),
+                        Some(text),
+                        "svg"
+                    );
+                }
+                _ => assert!(bytes.starts_with(b"PK"), "a package"),
+            }
+        }
+        if std::env::var_os("GAFIRA_KEEP_EXPORTS").is_none() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     // S39-03: `1-3, 5` is pages 1, 2, 3 and 5; spaces do not count and a
     // page named twice goes out once, in document order.
     #[test]
@@ -1316,6 +1440,58 @@ pub(crate) mod tests {
         assert_eq!(parse_range("3-3", 3), Ok(vec![2]));
         assert_eq!(parse_range("1,", 1), Ok(vec![0]));
         assert_eq!(parse_range("1-5", 5), Ok(vec![0, 1, 2, 3, 4]));
+    }
+
+    // S81-12 to S81-14: a table goes out in every format from the engine:
+    // Excel only with tables, the words of the PDF as text, not pixels.
+    #[test]
+    fn s81_14_a_table_exports_in_every_format() {
+        let mut engine = document_engine(1);
+        let dir = std::env::temp_dir().join(format!("gafira-s81-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let document = engine.edit().document().expect("a document");
+        let dialog = dialog_on(&engine, "xlsx", None);
+        assert_eq!(request(&dialog, &document).err(), Some(Refusal::NoTables));
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let spec = crate::table_templates::spec(
+            crate::table_templates::Template::Budget.table(&texts),
+            (size.width(), size.height()),
+            None,
+            "Presupuesto".to_owned(),
+        );
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertNodes::new(
+                page.id,
+                None,
+                0,
+                vec![spec],
+            )))
+            .expect("the table");
+        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"] {
+            let dialog = dialog_on(&engine, id, None);
+            let path = dir.join(format!("table.{id}"));
+            export_to(&mut engine, &dialog, &path).expect(id);
+            let bytes = std::fs::read(&path).expect("the file");
+            match id {
+                "svg" => {
+                    let svg = String::from_utf8(bytes).expect("utf-8");
+                    assert!(svg.contains("<text"), "the words are text");
+                    assert!(!svg.contains("<image"), "nothing is pixels");
+                }
+                "pdf" => {
+                    let has = |what: &[u8]| bytes.windows(what.len()).any(|w| w == what);
+                    assert!(has(b"/ToUnicode"), "the words can be copied");
+                    assert!(!has(b"/Subtype /Image") && !has(b"/Subtype/Image"));
+                }
+                _ => assert!(bytes.len() > 500, "{id}"),
+            }
+        }
+        if std::env::var_os("GAFIRA_KEEP_EXPORTS").is_none() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     // S39-03: an empty range, page 0, a page past the last one, a reversed
@@ -1407,7 +1583,7 @@ pub(crate) mod tests {
         let mut dialog = dialog_on(&engine, "png", None);
         assert_eq!(
             dialog.formats.iter().map(|f| f.id).collect::<Vec<_>>(),
-            ["png", "jpeg", "webp", "pdf"]
+            ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"]
         );
         dialog.values.set(SCALE, ParamValue::Float(3.0));
         dialog.values.set(TRANSPARENT, ParamValue::Bool(true));

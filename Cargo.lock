@@ -1626,6 +1626,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "g2gen"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5a7e0eb46f83a20260b850117d204366674e85d3a908d90865c78df9a6b1dfc"
+dependencies = [
+ "g2poly",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "g2p"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "539e2644c030d3bf4cd208cb842d2ce2f80e82e6e8472390bcef83ceba0d80ad"
+dependencies = [
+ "g2gen",
+ "g2poly",
+]
+
+[[package]]
+name = "g2poly"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "312d2295c7302019c395cfb90dacd00a82a2eabd700429bba9c7a3f38dbbe11b"
+
+[[package]]
 name = "gafira"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1638,6 +1666,7 @@ dependencies = [
  "gafira-io-pdf",
  "gafira-io-pptx",
  "gafira-io-svg",
+ "gafira-io-xlsx",
  "gafira-photos",
  "gafira-platform",
  "gafira-ports",
@@ -1820,7 +1849,9 @@ dependencies = [
  "gafira-geom",
  "gafira-io-image",
  "gafira-ports",
+ "gafira-qr",
  "gafira-raster",
+ "gafira-table",
  "image",
  "roxmltree",
  "zip",
@@ -1835,6 +1866,7 @@ dependencies = [
  "gafira-geom",
  "gafira-io-image",
  "gafira-ports",
+ "gafira-qr",
  "gafira-raster",
  "gafira-render",
  "gafira-render-cpu",
@@ -1854,6 +1886,18 @@ dependencies = [
  "hayro-syntax",
  "kurbo 0.13.1",
  "resvg",
+]
+
+[[package]]
+name = "gafira-io-xlsx"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "gafira-ports",
+ "gafira-table",
+ "roxmltree",
+ "zip",
 ]
 
 [[package]]
@@ -1929,6 +1973,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-qr"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "gafira-testkit",
+ "kurbo 0.13.1",
+ "proptest",
+ "qrcode",
+ "tiny-skia 0.12.0",
+]
+
+[[package]]
 name = "gafira-raster"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1952,7 +2009,9 @@ dependencies = [
  "gafira-geom",
  "gafira-pathops",
  "gafira-ports",
+ "gafira-qr",
  "gafira-raster",
+ "gafira-table",
  "gafira-testkit",
  "gafira-text",
  "gafira-time",
@@ -1969,8 +2028,10 @@ dependencies = [
  "gafira-doc",
  "gafira-geom",
  "gafira-ports",
+ "gafira-qr",
  "gafira-raster",
  "gafira-render",
+ "gafira-testkit",
  "kurbo 0.13.1",
  "png 0.18.1",
  "tiny-skia 0.12.0",
@@ -1991,6 +2052,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-table"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "kurbo 0.13.1",
+ "proptest",
+]
+
+[[package]]
 name = "gafira-testkit"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -2004,6 +2075,7 @@ dependencies = [
  "gafira-time",
  "png 0.18.1",
  "proptest",
+ "rqrr",
  "serde_json",
 ]
 
@@ -2059,17 +2131,24 @@ dependencies = [
  "gafira-i18n",
  "gafira-io-image",
  "gafira-io-pdf",
+ "gafira-io-pptx",
+ "gafira-io-svg",
  "gafira-io-vector",
+ "gafira-io-xlsx",
  "gafira-layout",
  "gafira-platform",
  "gafira-ports",
+ "gafira-qr",
  "gafira-raster",
  "gafira-render",
  "gafira-render-cpu",
+ "gafira-table",
+ "gafira-testkit",
  "gafira-theme",
  "image",
  "kurbo 0.13.1",
  "proptest",
+ "resvg",
  "rfd",
  "tiny-skia 0.12.0",
 ]
@@ -2873,6 +2952,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.18.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
 name = "md-5"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3668,6 +3756,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
+name = "qrcode"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ace1a365f55004297f2cf24acfd96d02966246ca423385273b58a7dc873ee14d"
+
+[[package]]
 name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3939,6 +4033,16 @@ name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
+
+[[package]]
+name = "rqrr"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d084c50c5cfa397a081850da329566c8667b0b6c4e81da16abff1fef27de93b"
+dependencies = [
+ "g2p",
+ "lru",
+]
 
 [[package]]
 name = "rustc-hash"

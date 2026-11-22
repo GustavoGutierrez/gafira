@@ -239,6 +239,10 @@ pub enum NodeKind {
     Line(crate::LineNode),
     /// A photo cut out by a shape (spec 066, FD-18).
     Frame(crate::FrameNode),
+    /// A QR code (spec 080, FD-20).
+    Qr(Box<crate::QrNode>),
+    /// A table (spec 081, FD-21).
+    Table(Box<crate::TableNode>),
     /// An opaque extension node.
     Extension(ExtensionNode),
 }
@@ -288,6 +292,8 @@ mod tests {
             NodeKind::Image(_) => "image",
             NodeKind::Line(_) => "line",
             NodeKind::Frame(_) => "frame",
+            NodeKind::Qr(_) => "qr",
+            NodeKind::Table(_) => "table",
             NodeKind::Extension(_) => "extension",
         };
         let geometry_name = |g: ShapeGeometry| match g {

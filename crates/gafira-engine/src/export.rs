@@ -330,6 +330,7 @@ fn decode_images_until(
                 .chain(page.nodes.values().filter_map(|node| match &node.kind {
                     NodeKind::Image(image) => Some(image.asset),
                     NodeKind::Frame(frame) => frame.content.map(|content| content.asset),
+                    NodeKind::Qr(qr) => qr.logo.map(|logo| logo.asset),
                     _ => None,
                 }))
         })
