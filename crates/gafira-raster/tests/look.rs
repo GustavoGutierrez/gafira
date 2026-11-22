@@ -2,10 +2,12 @@
 
 use gafira_color::{Color, Rgba};
 use gafira_doc::{
-    AssetRef, ColorShift, ContentHash, ImageAdjust, ImageFilter, ImageLook, ImageShadow, ImageZone,
-    ShadowKind, ZoneKind,
+    AssetRef, ColorShift, ContentHash, CropShape, ImageAdjust, ImageCrop, ImageFilter, ImageLook,
+    ImageShadow, ImageZone, ShadowKind, ZoneKind,
 };
-use gafira_raster::look::{FILTER_GROUPS, apply_look, cast, filter, reduced};
+use gafira_raster::look::{
+    FILTER_GROUPS, apply_look, cast, coverage, cropped, cropped_mask, filter, reduced,
+};
 use gafira_raster::{AlphaMask, ImageBuf, PixelBuf, PixelData, premultiply_u8};
 use proptest::prelude::*;
 
@@ -335,6 +337,72 @@ fn s85_07_reduced() {
     assert!(reduced(&image, 10).is_none() && reduced(&image, 0).is_none());
 }
 
+fn part(x: f64, y: f64, w: f64, h: f64, shape: CropShape) -> ImageCrop {
+    ImageCrop { x, y, w, h, shape }
+}
+
+// S88-02: the pixels of the part, whole; its mask the same part.
+#[test]
+fn s88_02_the_part_that_shows() {
+    let image = scene(40, 20);
+    let crop = part(0.25, 0.1, 0.5, 0.5, CropShape::Rect);
+    let out = cropped(&image, &crop);
+    assert_eq!((out.width(), out.height()), (20, 10));
+    for (x, y) in [(0, 0), (19, 9), (7, 4)] {
+        assert_eq!(at(&out, x, y), at(&image, x + 10, y + 2));
+    }
+    assert_eq!(cropped(&image, &ImageCrop::default()), image);
+    let least = part(0.999, 0.999, 0.001, 0.001, CropShape::Rect);
+    let out = cropped(&image, &least);
+    assert_eq!((out.width(), out.height()), (1, 1));
+    let mask = AlphaMask::new(4, 2, vec![0, 1, 2, 3, 4, 5, 6, 7]).unwrap();
+    let cut = cropped_mask(&mask, &part(0.5, 0.5, 0.5, 0.5, CropShape::Ellipse));
+    assert_eq!((cut.width(), cut.height(), cut.data()), (2, 1, &[6, 7][..]));
+}
+
+// S88-02: each shape keeps what is inside and clears what is out, its edge
+// soft, its area the one it should have.
+#[test]
+fn s88_02_shapes() {
+    let image = buf(200, 100, |_, _| [90, 90, 90, 255]);
+    let area = |shape: CropShape| {
+        let out = cropped(&image, &part(0.0, 0.0, 1.0, 1.0, shape));
+        let sum: u64 = bytes(&out).chunks(4).map(|p| u64::from(p[3])).sum();
+        assert!(bytes(&out).chunks(4).all(|p| p[0] <= p[3]), "premultiplied");
+        (out, sum as f64 / 255.0)
+    };
+    let (out, size) = area(CropShape::Ellipse);
+    assert!(
+        (size - std::f64::consts::PI * 100.0 * 50.0).abs() < 40.0,
+        "{size}"
+    );
+    assert_eq!(
+        (at(&out, 0, 0)[3], at(&out, 100, 50)),
+        (0, [90, 90, 90, 255])
+    );
+    assert!(
+        bytes(&out).chunks(4).any(|p| p[3] > 20 && p[3] < 230),
+        "soft"
+    );
+    let (out, size) = area(CropShape::Rounded(0.2));
+    let gone = (4.0 - std::f64::consts::PI) * 20.0 * 20.0;
+    assert!((size - (20_000.0 - gone)).abs() < 20.0, "{size}");
+    assert_eq!((at(&out, 0, 0)[3], at(&out, 0, 50)[3]), (0, 255));
+    let triangle = CropShape::Path(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]);
+    let (out, size) = area(triangle);
+    assert!((size - 10_000.0).abs() < 60.0, "{size}");
+    assert_eq!((at(&out, 10, 10)[3], at(&out, 190, 90)[3]), (255, 0));
+    // It may cross itself.
+    let (_, size) = area(CropShape::Path(vec![
+        [0.0, 0.0],
+        [1.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 1.0],
+    ]));
+    assert!((size - 10_000.0).abs() < 80.0, "{size}");
+    assert_eq!(coverage(&CropShape::Rect, 3, 2), vec![255; 6]);
+}
+
 proptest! {
     // S85-02: any look, any image: no failure, the same size, bytes in order.
     #[test]
@@ -353,5 +421,18 @@ proptest! {
         let m = (s.reach() * f64::from(w.min(h))).ceil() as u32;
         prop_assert_eq!((out.width(), out.height()), (w + 2 * m, h + 2 * m));
         prop_assert!(bytes(&out).chunks(4).all(|p| p[..3].iter().all(|c| *c <= p[3])), "premultiplied");
+    }
+
+    // S88-02: any part of any image.
+    #[test]
+    fn s88_02_any_part(w in 1_u32..40, h in 1_u32..40, x in 0.0..0.999_f64, y in 0.0..0.999_f64, a in 0.001..1.0_f64, b in 0.001..1.0_f64, round in 0.0..0.5_f64, points in prop::collection::vec(prop::array::uniform2(0.0..1.0_f64), 3..9)) {
+        let image = scene(w, h);
+        for shape in [CropShape::Rect, CropShape::Ellipse, CropShape::Rounded(round), CropShape::Path(points)] {
+            let crop = part(x, y, a.min(1.0 - x).max(0.001), b.min(1.0 - y).max(0.001), shape);
+            prop_assert!(crop.is_valid());
+            let out = cropped(&image, &crop);
+            prop_assert!(out.width() >= 1 && out.width() <= w && out.height() >= 1 && out.height() <= h);
+            prop_assert!(bytes(&out).chunks(4).all(|p| p[..3].iter().all(|c| *c <= p[3])));
+        }
     }
 }

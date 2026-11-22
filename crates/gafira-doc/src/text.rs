@@ -166,6 +166,9 @@ pub struct TextNode {
     /// the box (spec 070). Additive to schema 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gradient: Option<crate::Gradient>,
+    /// What is done to its letters (spec 089). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<crate::TextEffect>,
 }
 
 fn is_straight(curve: &f64) -> bool {
@@ -185,14 +188,15 @@ impl TextNode {
     /// The line height range, as a multiple of the size (FD-41).
     pub const LINE_HEIGHT: std::ops::RangeInclusive<f64> = 0.5..=4.0;
 
-    /// Whether it is drawn from its outline (curve, spacing, line height or
-    /// gradient) rather than as plain lines of words.
+    /// Whether it is drawn from its outline (curve, spacing, line height,
+    /// gradient or effects) rather than as plain lines of words.
     #[must_use]
     pub fn styled(&self) -> bool {
         self.curve != 0.0
             || self.letter_spacing != 0.0
             || self.line_height.is_some()
             || self.gradient.is_some()
+            || !self.effects.is_empty()
     }
 
     /// `text` in one style, left aligned, growing downwards.
@@ -206,6 +210,7 @@ impl TextNode {
             letter_spacing: 0.0,
             line_height: None,
             gradient: None,
+            effects: Vec::new(),
         }
     }
 }

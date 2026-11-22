@@ -15,7 +15,7 @@ use gafira_doc::msg::{Message, ToMessage};
 use gafira_doc::{AssetRef, Document, ImageNode, NodeId, PageId};
 use gafira_geom::IRect;
 use gafira_raster::ImageBuf;
-use gafira_raster::look::{apply_look, mask_of, reduced};
+use gafira_raster::look::{apply_look, cropped, cropped_mask, mask_of, reduced};
 use gafira_time::Flicks;
 
 use crate::format::FormatDescriptor;
@@ -195,8 +195,8 @@ pub trait ImageDecoder: Send + Sync {
     fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, MediaError>;
 }
 
-/// The pixels `image` shows: those of its asset, with its look when it has
-/// one (spec 085). A look drawn to be seen small is worked out on an image
+/// The pixels `image` shows: those of its asset, the part of them it is
+/// cropped to (spec 088), with its look when it has one (spec 085). A look drawn to be seen small is worked out on an image
 /// no longer than `most`, which takes a share of the time.
 ///
 /// # Errors
@@ -215,13 +215,15 @@ pub fn decode_image(
         Ok(images.decode(&bytes)?)
     };
     let pixels = read(image.asset)?;
+    let part = image.part();
+    let pixels = cropped(&pixels, &part);
     let Some(look) = &image.look else {
         return Ok(pixels);
     };
     let mut masks = BTreeMap::new();
     for zone in &look.zones {
         if let Some(mask) = mask_of(&read(zone.mask)?) {
-            masks.insert(zone.mask, mask);
+            masks.insert(zone.mask, cropped_mask(&mask, &part));
         }
     }
     let (pixels, scale) = most

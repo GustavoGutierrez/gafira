@@ -11,6 +11,7 @@
 pub mod catalog;
 mod cutout;
 pub mod fetch;
+mod inpaint;
 mod machine;
 #[cfg(feature = "online")]
 pub mod online;

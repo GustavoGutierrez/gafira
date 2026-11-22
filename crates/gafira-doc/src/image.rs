@@ -17,6 +17,9 @@ pub struct ImageNode {
     /// How it is made to look (spec 085). Additive to schema 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look: Option<Box<crate::ImageLook>>,
+    /// The part of it that shows (spec 088). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop: Option<Box<crate::ImageCrop>>,
 }
 
 /// What an image was before it was changed (spec 084): nothing is lost, so
@@ -38,6 +41,7 @@ impl ImageNode {
             asset,
             edit: None,
             look: None,
+            crop: None,
         }
     }
 
@@ -75,6 +79,7 @@ impl ImageNode {
             asset,
             edit,
             look: self.look.clone(),
+            crop: self.crop.clone(),
         }
     }
 
@@ -94,17 +99,39 @@ impl ImageNode {
             asset: self.asset,
             edit: self.edit,
             look: (!look.is_plain()).then(|| Box::new(look)),
+            crop: self.crop.clone(),
         }
     }
 
+    /// The image with the part `crop` of it; all of it when that is all.
+    #[must_use]
+    pub fn cropped(&self, crop: crate::ImageCrop) -> Self {
+        let mut image = self.clone();
+        image.crop = (!crop.is_whole()).then(|| Box::new(crop));
+        image
+    }
+
+    /// The part of it that shows.
+    #[must_use]
+    pub fn part(&self) -> crate::ImageCrop {
+        self.crop.as_deref().cloned().unwrap_or_default()
+    }
+
+    /// Whether its pixels show as they are.
+    #[must_use]
+    pub fn is_plain(&self) -> bool {
+        self.look.is_none() && self.crop.is_none()
+    }
+
     /// What its pixels are kept under once decoded: its asset, or, with a
-    /// look, one of that asset and that look.
+    /// look or a crop, one of that asset and them.
     #[must_use]
     pub fn shown(&self) -> AssetRef {
-        match &self.look {
-            None => self.asset,
-            Some(look) => look.key(self.asset),
+        if self.is_plain() {
+            return self.asset;
         }
+        let look = self.look.as_deref().cloned().unwrap_or_default();
+        look.key(self.asset, self.crop.as_deref())
     }
 }
 

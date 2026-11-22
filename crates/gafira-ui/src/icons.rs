@@ -79,7 +79,6 @@ pub(crate) enum Icon {
     CategoryShapes,
     CategoryCollage,
     CategoryFrames,
-    CategoryIcons,
     CategoryQrCodes,
     CategoryTables,
     CategoryCharts,
@@ -91,6 +90,8 @@ pub(crate) enum Icon {
     /// Elementos → Fotos (spec 071).
     CategoryPhotos,
     LensFlare,
+    /// «Recortar» (spec 088).
+    Crop,
     /// «Destello de cine», «Rayos de sol» and «Luces bokeh» (D-104).
     Streak,
     SunRays,
@@ -144,7 +145,6 @@ impl Icon {
         Self::CategoryShapes,
         Self::CategoryCollage,
         Self::CategoryFrames,
-        Self::CategoryIcons,
         Self::CategoryQrCodes,
         Self::CategoryTables,
         Self::CategoryCharts,
@@ -155,6 +155,7 @@ impl Icon {
         Self::LensFlare,
         Self::Streak,
         Self::SunRays,
+        Self::Crop,
         Self::Bokeh,
     ];
 
@@ -205,7 +206,6 @@ impl Icon {
             Self::CategoryShapes => "polygon",
             Self::CategoryCollage => "grid-four",
             Self::CategoryFrames => "frame-corners",
-            Self::CategoryIcons => "smiley",
             Self::CategoryQrCodes => "qr-code",
             Self::CategoryTables => "table",
             Self::CategoryCharts => "chart-bar",
@@ -216,6 +216,7 @@ impl Icon {
             Self::LensFlare => "sun",
             Self::Streak => "arrows-out-line-horizontal",
             Self::SunRays => "sun-horizon",
+            Self::Crop => "crop",
             Self::Bokeh => "circles-three",
         }
     }

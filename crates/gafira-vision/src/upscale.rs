@@ -127,7 +127,7 @@ impl Upscaler for Enlarger {
         let done = Mutex::new(0);
         let one = |piece: &Piece| -> Result<Vec<u8>, VisionError> {
             cancelled()?;
-            let out = self.session.run(self.input(image, *piece))?;
+            let out = self.session.run(vec![self.input(image, *piece)])?;
             let bytes = self.taken(&out, *piece)?;
             let mut count = done.lock().unwrap_or_else(PoisonError::into_inner);
             *count += 1;
@@ -201,14 +201,14 @@ mod tests {
     }
 
     impl Session for Again {
-        fn run(&self, input: Vec<f32>) -> Result<Vec<f32>, VisionError> {
+        fn run(&self, inputs: Vec<Vec<f32>>) -> Result<Vec<f32>, VisionError> {
             let side = self.tile * self.scale;
             let mut out = Vec::with_capacity(3 * side * side);
             for c in 0..3 {
                 for y in 0..side {
                     for x in 0..side {
                         let at = y / self.scale * self.tile + x / self.scale;
-                        out.push(input[c * self.tile * self.tile + at]);
+                        out.push(inputs[0][c * self.tile * self.tile + at]);
                     }
                 }
             }

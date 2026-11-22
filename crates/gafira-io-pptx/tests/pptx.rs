@@ -445,3 +445,49 @@ fn s85_08_an_image_goes_with_its_look() {
     );
     assert!((number("off", "x") / cx - 762.5 / 375.0).abs() < 1e-3);
 }
+
+// S89-03: the effects PowerPoint has go with the words, which stay words.
+#[test]
+fn s89_03_a_text_goes_with_its_effects() {
+    use gafira_doc::{TextEffect, TextEffectKind};
+    let slide = |kinds: &[TextEffectKind]| {
+        let plain = document();
+        let mut page = (*plain.pages()[0]).clone();
+        let mut node = (*page.nodes[&NodeId::new(3)]).clone();
+        let NodeKind::Text(text) = &mut node.kind else {
+            panic!("a text")
+        };
+        text.effects = kinds.iter().map(|kind| TextEffect::new(*kind)).collect();
+        page.nodes.insert(NodeId::new(3), Arc::new(node));
+        let mut assets = AssetTable::new();
+        assets.insert(
+            PHOTO,
+            AssetEntry {
+                name: "foto.png".to_owned(),
+                storage: AssetStorage::Embedded,
+            },
+        );
+        let pages = vec![Arc::new(page)];
+        let document =
+            Document::from_parts_with_assets(7, Dpi::default(), pages, assets).expect("valid");
+        let mut zip = zip::ZipArchive::new(Cursor::new(pptx_of(&document))).expect("a zip");
+        let mut slide = String::new();
+        zip.by_name("ppt/slides/slide1.xml")
+            .expect("the slide")
+            .read_to_string(&mut slide)
+            .expect("utf-8");
+        roxmltree::Document::parse(&slide).expect("xml");
+        assert!(slide.contains("<a:t>Hola &amp; mundo</a:t>"));
+        slide
+    };
+    use TextEffectKind as K;
+    assert!(slide(&[K::Drop]).contains("<a:outerShdw"));
+    assert!(slide(&[K::Neon]).contains("<a:glow"));
+    assert!(slide(&[K::Background]).contains("<a:highlight>"));
+    let hollow = slide(&[K::Hollow]);
+    assert!(hollow.contains("<a:noFill/><a:latin") && hollow.contains("<a:ln w="));
+    let both = slide(&[K::Outline, K::Glow, K::Drop]);
+    let at = |what: &str| both.find(what).expect(what);
+    assert!(at("<a:glow") < at("<a:outerShdw") && at("<a:ln w=") < at("<a:effectLst>"));
+    assert!(!slide(&[]).contains("effectLst"));
+}

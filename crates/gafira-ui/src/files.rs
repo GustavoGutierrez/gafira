@@ -94,6 +94,27 @@ pub(crate) fn plan(engine: &Gafira, action: FileAction) -> Plan {
     }
 }
 
+/// The extensions of the images Gafira imports (spec 087).
+pub(crate) const IMAGES: [&str; 5] = ["png", "jpg", "jpeg", "webp", "avif"];
+
+/// What the image `path` is, whatever its name says.
+fn reader(path: &std::path::Path) -> Option<image::ImageReader<std::io::BufReader<std::fs::File>>> {
+    image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()
+}
+
+/// The size of the image `path`.
+pub(crate) fn dimensions(path: &std::path::Path) -> Option<(u32, u32)> {
+    reader(path)?.into_dimensions().ok()
+}
+
+/// The image `path`.
+pub(crate) fn open(path: &std::path::Path) -> Option<image::DynamicImage> {
+    reader(path)?.decode().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

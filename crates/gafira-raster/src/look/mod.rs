@@ -2,6 +2,7 @@
 //! those of its zones, its filter and its shadow, in that order.
 
 mod cast;
+mod crop;
 mod filters;
 
 use gafira_doc::contract::{ParamValue, ParamValues};
@@ -16,6 +17,7 @@ use crate::{
 };
 
 pub use cast::cast;
+pub use crop::{coverage, cropped, cropped_mask};
 pub use filters::{FILTER_GROUPS, Filter, FilterGroup, filter};
 
 /// `image` (8-bit) as `look` says; `mask` gives the mask of a zone, and a zone

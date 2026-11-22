@@ -36,6 +36,7 @@ mod project_id;
 mod qr;
 mod table;
 mod text;
+mod text_effect;
 pub mod timeline;
 mod validate;
 pub mod visit;
@@ -55,7 +56,8 @@ pub use gradient::{Gradient, GradientKind, GradientProblem, GradientStop};
 pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
 pub use image::{ImageEdit, ImageNode};
 pub use image_look::{
-    ColorShift, ImageAdjust, ImageFilter, ImageLook, ImageShadow, ImageZone, ShadowKind, ZoneKind,
+    ColorShift, CropShape, ImageAdjust, ImageCrop, ImageFilter, ImageLook, ImageShadow, ImageZone,
+    ShadowKind, ZoneKind,
 };
 pub use json::LoadError;
 pub use layout::{
@@ -79,6 +81,7 @@ pub use table::{CellBorders, CellMerge, CellStyle, TableCell, TableNode};
 pub use text::{
     Paragraph, RichText, Span, SpanStyle, TextAlign, TextNode, TextSizing, face_key, nearest_face,
 };
+pub use text_effect::{TextEffect, TextEffectKind, TextEffectNumber};
 pub use timeline::{
     AssetEntry, AssetRef, AssetStorage, AssetTable, Clip, ClipSource, Marker, PixelSize, Sequence,
     Speed, TimelineError, Track, TrackKind,

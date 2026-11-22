@@ -802,17 +802,17 @@ version = "2.1.1"
 source_file = "assets/regular/frame-corners.svg"
 
 [[asset]]
-path = "assets/icons/phosphor/regular/smiley.svg"
-hash = "a1ab23f1cfbac9ac10c2eff13a0873f17e7c1972b44cb2733fe11e3712540b3a"
+path = "assets/icons/phosphor/regular/crop.svg"
+hash = "b24ca7f3e19a1630050bf6da7414abbe442214e3542ee9544ce4d9a576ed3236"
 license = "MIT"
 "autoría" = "Copyright (c) 2023 Phosphor Icons"
-origin = "npm @phosphor-icons/core 2.1.1, assets/regular/smiley.svg (https://github.com/phosphor-icons/core)"
+origin = "npm @phosphor-icons/core 2.1.1, assets/regular/crop.svg (https://github.com/phosphor-icons/core)"
 "exige atribución" = "true"
 modificado = "false"
 license_file = "assets/icons/phosphor/LICENSE"
 upstream = "https://github.com/phosphor-icons/core"
 version = "2.1.1"
-source_file = "assets/regular/smiley.svg"
+source_file = "assets/regular/crop.svg"
 
 [[asset]]
 path = "assets/icons/phosphor/regular/qr-code.svg"

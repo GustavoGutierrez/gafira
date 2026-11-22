@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use gafira_color::{Color, Rgba};
 use gafira_doc::{
-    AssetEntry, AssetRef, AssetStorage, AssetTable, ColorShift, ContentHash, Document, Dpi,
-    ElementBase, ImageAdjust, ImageFilter, ImageLook, ImageNode, ImageShadow, ImageZone, Node,
-    NodeId, NodeKind, Page, PageId, PageSize, Placement, ShadowKind, ValidationError, ZoneKind,
+    AssetEntry, AssetRef, AssetStorage, AssetTable, ColorShift, ContentHash, CropShape, Document,
+    Dpi, ElementBase, Flip, ImageAdjust, ImageCrop, ImageFilter, ImageLook, ImageNode, ImageShadow,
+    ImageZone, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShadowKind,
+    ValidationError, ZoneKind,
 };
 use gafira_geom::{Length, Unit};
 
@@ -190,5 +191,116 @@ fn s85_04_bleed() {
             assert!((y / h - margin / 200.0).abs() < 0.01, "{kind:?} {y}");
         }
         assert_eq!(s.bleed((0, 0), (10.0, 10.0)), (0.0, 0.0));
+    }
+}
+
+fn part(shape: CropShape) -> ImageCrop {
+    ImageCrop {
+        x: 0.2,
+        y: 0.1,
+        w: 0.5,
+        h: 0.25,
+        shape,
+    }
+}
+
+// S88-01: a crop round-trips with its shape, keeps its own key, and is not
+// written when all of the image shows.
+#[test]
+fn s88_01_round_trip() {
+    let path = CropShape::Path(vec![[0.0, 0.0], [1.0, 0.2], [0.4, 1.0]]);
+    let image = ImageNode::new(asset(1));
+    let mut keys = vec![image.shown()];
+    for shape in [
+        CropShape::Rect,
+        CropShape::Rounded(0.2),
+        CropShape::Ellipse,
+        path,
+    ] {
+        let cropped = image.cropped(part(shape));
+        let doc = document(cropped.clone()).expect("valid");
+        let json = doc.to_json().expect("json");
+        assert_eq!(Document::from_json(json.as_bytes()).expect("loads"), doc);
+        assert!(!keys.contains(&cropped.shown()) && !cropped.is_plain());
+        keys.push(cropped.shown());
+        assert_eq!(cropped.looking(look()).crop, cropped.crop);
+        assert_eq!(cropped.edited(asset(3), asset(2)).crop, cropped.crop);
+    }
+    assert_eq!(image.cropped(ImageCrop::default()), image);
+    assert!(
+        !document(image)
+            .expect("valid")
+            .to_json()
+            .expect("json")
+            .contains("crop")
+    );
+}
+
+// S88-01: each limit, inside and outside.
+#[test]
+fn s88_01_validation() {
+    let ok = |change: &dyn Fn(&mut ImageCrop)| {
+        let mut crop = part(CropShape::Rect);
+        change(&mut crop);
+        let mut image = ImageNode::new(asset(1));
+        image.crop = Some(Box::new(crop));
+        document(image).is_ok()
+    };
+    assert!(ok(&|_| ()) && ok(&|c| (c.x, c.w) = (0.0, 1.0)) && ok(&|c| c.w = ImageCrop::LEAST));
+    // Sums of shares are not exact.
+    assert!(ok(&|c| (c.x, c.w) = (0.1 + 0.2, 0.7)));
+    for wrong in [-0.01, f64::NAN, f64::INFINITY] {
+        assert!(!ok(&|c| c.x = wrong) && !ok(&|c| c.y = wrong));
+        assert!(!ok(&|c| c.w = wrong) && !ok(&|c| c.h = wrong));
+        assert!(!ok(&|c| c.shape = CropShape::Rounded(wrong)));
+        let points = vec![[0.0, 0.0], [wrong, 0.0], [1.0, 1.0]];
+        assert!(!ok(&|c| c.shape = CropShape::Path(points.clone())));
+    }
+    assert!(!ok(&|c| c.w = 0.0) && !ok(&|c| c.w = 0.9) && !ok(&|c| c.h = 0.95));
+    assert!(
+        ok(&|c| c.shape = CropShape::Rounded(0.5)) && !ok(&|c| c.shape = CropShape::Rounded(0.51))
+    );
+    let points = |n: usize| CropShape::Path(vec![[0.5, 0.5]; n]);
+    assert!(!ok(&|c| c.shape = points(2)) && ok(&|c| c.shape = points(3)));
+    assert!(ok(&|c| c.shape = points(512)) && !ok(&|c| c.shape = points(513)));
+}
+
+// S88-03: what is seen stays where it is, turned, skewed or mirrored; and
+// the whole box comes back.
+#[test]
+fn s88_03_what_is_seen_stays() {
+    for (degrees, skew, x, y) in [
+        (0.0, 0.0, false, false),
+        (30.0, 0.0, true, false),
+        (-100.0, 12.0, false, true),
+    ] {
+        let mut whole = Placement::new(40.0, -10.0, 300.0, 200.0);
+        (whole.rotation_deg, whole.skew) = (degrees, skew);
+        whole.flip = Flip { x, y };
+        let crop = part(CropShape::Ellipse);
+        let seen = crop.part_box(&whole);
+        assert!((seen.w - 150.0).abs() < 1e-9 && (seen.h - 50.0).abs() < 1e-9);
+        assert_eq!(
+            (seen.rotation_deg, seen.skew, seen.flip),
+            (degrees, skew, whole.flip)
+        );
+        for (u, v) in [(0.0, 0.0), (1.0, 0.0), (0.3, 0.8)] {
+            let in_part = seen.to_transform() * gafira_geom::Point::new(u * seen.w, v * seen.h);
+            let (u, v) = (crop.x + u * crop.w, crop.y + v * crop.h);
+            let in_whole = whole.to_transform() * gafira_geom::Point::new(u * whole.w, v * whole.h);
+            assert!(
+                (in_part - in_whole).hypot() < 1e-9,
+                "{degrees} {in_part:?} {in_whole:?}"
+            );
+        }
+        let back = crop.whole_box(&seen);
+        for (a, b) in [
+            (back.x, whole.x),
+            (back.y, whole.y),
+            (back.w, whole.w),
+            (back.h, whole.h),
+        ] {
+            assert!((a - b).abs() < 1e-9);
+        }
     }
 }

@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use egui::{Color32, Pos2, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, Vec2};
 use gafira_doc::{
-    AssetRef, ColorShift, ImageAdjust, ImageFilter, ImageLook, ImageNode, ImageShadow, NodeId,
-    PageId, Placement, ShadowKind, ZoneKind,
+    AssetRef, ColorShift, CropShape, ImageAdjust, ImageFilter, ImageLook, ImageNode, ImageShadow,
+    NodeId, PageId, Placement, ShadowKind, ZoneKind,
 };
 use gafira_ports::store::ContentStore;
 use gafira_ports::vision::VisionModels;
@@ -16,6 +16,7 @@ use kurbo::Affine;
 
 use crate::canvas;
 use crate::charts::plain;
+use crate::crop::{Cropper, RATIOS};
 use crate::eraser::{Mode, Paint};
 use crate::icons::Icon;
 use crate::looks::{Facts, Looks, SHADOWS, Set, shadow_id, white};
@@ -34,6 +35,10 @@ enum View {
     Adjust,
     Filters,
     Shadows,
+    /// «Borrador mágico» (spec 086).
+    Magic,
+    /// «Recortar» (spec 088).
+    Crop,
 }
 
 /// The sizes of the brush, in px of the screen.
@@ -61,6 +66,19 @@ struct Brush {
     stroke: Vec<[f32; 2]>,
 }
 
+/// What is marked to be erased (spec 086). It is not of the document.
+struct Magic {
+    /// The image when the page was opened.
+    before: ImageNode,
+    /// It was opened to take a watermark off.
+    stamp: bool,
+    /// A click takes an element.
+    pick: bool,
+    brush: Box<Brush>,
+    /// The image being worked on: another one by now clears what is marked.
+    sent: Option<AssetRef>,
+}
+
 /// The image being edited.
 pub(crate) struct Editing {
     pub page: PageId,
@@ -71,6 +89,14 @@ pub(crate) struct Editing {
     /// Whether the zone is seen over the image.
     veil: bool,
     tool: Option<Tool>,
+    magic: Option<Magic>,
+    crop: Option<Cropper>,
+    /// «Recortar» opens as soon as there is an image to crop.
+    to_crop: bool,
+    cropped: Option<(ImageNode, Placement)>,
+    /// The size of the box all of the image has, and «Aplicar».
+    whole: (f64, f64),
+    accept: bool,
     brush_size: f32,
     adding: bool,
     detect: bool,
@@ -112,6 +138,8 @@ pub(crate) struct With<'a> {
     pub looks: &'a mut Looks,
     pub studio: &'a Studio,
     pub store: &'a Arc<dyn ContentStore>,
+    /// The texture of all of the image, as it was brought in.
+    pub plain: Option<egui::TextureId>,
 }
 
 impl With<'_> {
@@ -222,7 +250,7 @@ struct Control {
 
 /// The colours along a track.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Track {
+pub(crate) enum Track {
     Plain,
     Temperature,
     Tint,
@@ -300,7 +328,7 @@ const TEXTURE: [Control; 3] = [
 
 /// A slider with its name and its number; a double click on it goes back to
 /// `rest`.
-fn slider(
+pub(crate) fn slider(
     ui: &mut Ui,
     theme: &Theme,
     name: String,
@@ -408,7 +436,7 @@ fn chip_if(ui: &mut Ui, theme: &Theme, text: String, (on, enabled): (bool, bool)
 }
 
 /// The name of a part of the panel.
-fn heading(ui: &mut Ui, theme: &Theme, text: String) {
+pub(crate) fn heading(ui: &mut Ui, theme: &Theme, text: String) {
     ui.add_space(12.0);
     ui.label(RichText::new(text).font(theme.font("ui-label")));
     ui.add_space(6.0);
@@ -432,6 +460,36 @@ fn heading_with(ui: &mut Ui, theme: &Theme, (text, link): (String, String), on: 
         .inner;
     ui.add_space(6.0);
     pressed
+}
+
+/// A square with a shape to cut to, and its name under it.
+fn shape_tile(
+    ui: &mut Ui,
+    theme: &Theme,
+    (shape, name): (&CropShape, String),
+    (side, on): (f32, bool),
+) -> Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(side, side + 22.0), Sense::click());
+    let square = Rect::from_min_size(rect.min, Vec2::splat(side));
+    let (fill, edge) = if on {
+        (theme.c("accent").gamma_multiply(0.25), theme.c("accent"))
+    } else if response.hovered() {
+        (theme.c("surface.sunken"), theme.c("border"))
+    } else {
+        (theme.c("surface"), theme.c("border"))
+    };
+    let stroke = Stroke::new(if on { 2.0 } else { 1.0 }, edge);
+    let painter = ui.painter();
+    painter.rect(square, theme.radius_md(), fill, stroke, StrokeKind::Inside);
+    let icon = Rect::from_center_size(square.center(), Vec2::splat(side * 0.42));
+    crate::crop::shape_icon(painter, icon, shape, theme.c("text"));
+    let galley = painter.layout_no_wrap(name.clone(), theme.font("caption"), theme.c("text"));
+    let x = square.center().x - galley.size().x / 2.0;
+    painter.galley(Pos2::new(x, square.bottom() + 4.0), galley, theme.c("text"));
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, name.clone())
+    });
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// The room between two tiles of a row of three, and the side of each.
@@ -502,9 +560,16 @@ fn tool_tile(
     (icon, name): (Icon, String),
     (side, enabled): (f32, bool),
 ) -> bool {
-    let size = Vec2::new(side, 66.0);
-    ui.add_enabled_ui(enabled, |ui| {
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    // Room for a name of two rows, whole.
+    let size = Vec2::new(side, 84.0);
+    // Not in a scope of its own: it goes to the next row when it does not fit.
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    {
+        let (rect, response) = ui.allocate_exact_size(size, sense);
         let fill = if response.hovered() && enabled {
             theme.c("surface.sunken")
         } else {
@@ -527,21 +592,23 @@ fn tool_tile(
             Vec2::splat(22.0),
         );
         crate::icons::paint(ui.painter(), at, icon, crate::icons::Weight::Regular, ink);
-        let galley = ui
-            .painter()
-            .layout(name.clone(), theme.font("caption"), ink, side - 8.0);
-        let x = rect.center().x - galley.size().x / 2.0;
-        ui.painter().with_clip_rect(rect.shrink(2.0)).galley(
-            Pos2::new(x, rect.top() + 42.0),
-            galley,
-            ink,
-        );
+        let mut job =
+            egui::text::LayoutJob::simple(name.clone(), theme.font("caption"), ink, side - 10.0);
+        job.halign = egui::Align::Center;
+        let galley = ui.painter().layout_job(job);
+        // In the middle of what is left under the icon.
+        let middle = rect.top() + 60.0;
+        let top = (middle - galley.size().y / 2.0).max(rect.top() + 38.0);
+        let at = Pos2::new(rect.center().x, top);
+        ui.painter().galley(at, galley, ink);
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone())
         });
-        response.clicked()
-    })
-    .inner
+        enabled
+            && response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+    }
 }
 
 impl Editing {
@@ -553,6 +620,12 @@ impl Editing {
             zone: None,
             veil: true,
             tool: None,
+            magic: None,
+            crop: None,
+            to_crop: false,
+            cropped: None,
+            whole: (1.0, 1.0),
+            accept: false,
             brush_size: 40.0,
             adding: true,
             detect: false,
@@ -561,6 +634,41 @@ impl Editing {
             note: None,
             step: None,
         }
+    }
+
+    /// One that opens on «Recortar».
+    pub fn cropping(page: PageId, node: NodeId) -> Self {
+        Self {
+            to_crop: true,
+            ..Self::new(page, node)
+        }
+    }
+
+    pub fn is_cropping(&self) -> bool {
+        self.crop.is_some()
+    }
+
+    /// The image cropped and its box, to set in one step.
+    pub fn take_crop(&mut self) -> Option<(ImageNode, Placement)> {
+        self.cropped.take()
+    }
+
+    /// «Aplicar», when it crops.
+    pub fn accept(&mut self) {
+        self.accept = self.crop.is_some();
+    }
+
+    /// «Aplicar» of «Recortar».
+    pub fn apply_crop(&mut self, image: &ImageNode, placement: &Placement) {
+        let Some(cropper) = self.crop.take() else {
+            return;
+        };
+        let whole = image.part().whole_box(placement);
+        let next = image.cropped(cropper.crop.clone());
+        if next != *image {
+            self.cropped = Some((next, cropper.crop.part_box(&whole)));
+        }
+        self.home_again();
     }
 
     /// The zone chosen goes when the document has it no more; one on its way
@@ -574,12 +682,65 @@ impl Editing {
 
     /// Whether the pointer chooses a zone instead of moving the image.
     pub fn choosing(&self) -> bool {
-        self.tool.is_some()
+        match &self.magic {
+            _ if self.crop.is_some() => true,
+            Some(magic) => magic.sent.is_none(),
+            None => self.tool.is_some(),
+        }
     }
 
     /// Leaves the tool; whether there was one.
     pub fn leave(&mut self) -> bool {
-        self.tool.take().is_some()
+        if self.crop.is_some() {
+            self.home_again();
+            return true;
+        }
+        match &mut self.magic {
+            Some(magic) if magic.sent.is_some() => true,
+            Some(magic) if magic.brush.is_marked() => {
+                magic.brush.clear();
+                true
+            }
+            Some(_) => {
+                self.home_again();
+                true
+            }
+            None => self.tool.take().is_some(),
+        }
+    }
+
+    fn home_again(&mut self) {
+        self.view = View::Home;
+        self.tool = None;
+        self.magic = None;
+        self.crop = None;
+        self.note = None;
+    }
+
+    /// Takes back, or does again, a stroke of what is marked to be erased;
+    /// whether there was one: the document's step otherwise.
+    pub fn unmark(&mut self, again: bool) -> bool {
+        let Some(magic) = self.magic.as_mut().filter(|m| m.sent.is_none()) else {
+            return false;
+        };
+        let changed = if again {
+            magic.brush.paint.redo()
+        } else {
+            magic.brush.paint.undo()
+        };
+        if changed.is_some() {
+            magic.brush.texture = None;
+        }
+        changed.is_some()
+    }
+
+    /// The brush there is.
+    fn brush(&mut self) -> Option<&mut Brush> {
+        match (&mut self.magic, &mut self.tool) {
+            (Some(magic), _) => Some(&mut magic.brush),
+            (None, Some(Tool::Brush(brush))) => Some(brush),
+            _ => None,
+        }
     }
 
     /// A change that is a step of its own, to make.
@@ -592,6 +753,9 @@ impl Editing {
         let mut asks = Asks::default();
         // A step undone may have taken the zone with it.
         self.settle(image);
+        if std::mem::take(&mut self.to_crop) {
+            self.open_crop(image);
+        }
         let facts = with.looks.facts(ui.ctx(), with.store, image.asset);
         self.header(ui, with, &mut asks);
         ui.add_space(8.0);
@@ -614,6 +778,8 @@ impl Editing {
                     View::Adjust => self.adjust(ui, with, (image, facts.as_deref()), &mut asks),
                     View::Filters => filters(ui, with, image, &mut asks),
                     View::Shadows => shadows(ui, with, image, &mut asks),
+                    View::Magic => self.magic(ui, with, image, &mut asks),
+                    View::Crop => self.crop_page(ui, with, facts.as_deref()),
                 }
                 ui.add_space(16.0);
             });
@@ -627,13 +793,16 @@ impl Editing {
             View::Adjust => "image.adjust",
             View::Filters => "image.filters",
             View::Shadows => "image.shadows",
+            View::Magic if self.magic.as_ref().is_some_and(|m| m.stamp) => "image.stamp",
+            View::Magic => "image.magic",
+            View::Crop => "image.crop",
         };
         ui.horizontal(|ui| {
             if self.view != View::Home {
                 let back = IconButton::new(Icon::Back, with.t("image.back"));
-                if back.small().show(ui, theme).clicked() {
-                    self.view = View::Home;
-                    self.tool = None;
+                let free = self.magic.as_ref().is_none_or(|m| m.sent.is_none());
+                if back.small().show(ui, theme).clicked() && free {
+                    self.home_again();
                 }
             }
             ui.label(RichText::new(with.t(title)).font(theme.font("h3")));
@@ -659,6 +828,18 @@ impl Editing {
             ),
             View::Filters => ("image.remove", look.is_some_and(|l| l.filter.is_some())),
             View::Shadows => ("image.remove", look.is_some_and(|l| l.shadow.is_some())),
+            View::Magic => ("image.back_to", self.changed(image) && !with.studio.busy()),
+            View::Crop => (
+                "image.crop_whole",
+                self.crop.as_ref().is_some_and(|c| !c.crop.is_whole()),
+            ),
+        };
+        // What «Comparar» shows: the image without its look, or as it was
+        // when it began to be erased.
+        let against = match (&self.magic, look) {
+            (Some(magic), _) => self.changed(image).then_some(magic.before.asset),
+            (None, Some(_)) if self.crop.is_none() => Some(image.asset),
+            _ => None,
         };
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
@@ -680,13 +861,29 @@ impl Editing {
                     }),
                     View::Filters => asks.edit(image, |l| l.filter = None),
                     View::Shadows => asks.edit(image, |l| l.shadow = None),
+                    View::Crop => {
+                        if let Some(cropper) = &mut self.crop {
+                            cropper.whole();
+                        }
+                    }
+                    View::Magic => {
+                        if let Some(magic) = &mut self.magic {
+                            magic.brush.clear();
+                            let target = Target {
+                                page: self.page,
+                                node: self.node,
+                                image: image.clone(),
+                            };
+                            asks.vision = Some(Ask::Back(target, magic.before.clone()));
+                        }
+                    }
                 }
             }
-            ui.add_enabled_ui(look.is_some(), |ui| {
+            ui.add_enabled_ui(against.is_some(), |ui| {
                 let held = widgets::secondary(ui, theme, with.t("image.compare"))
                     .on_hover_text(with.t("image.compare_hint"))
                     .is_pointer_button_down_on();
-                with.looks.compare = held.then_some(self.node);
+                with.looks.compare = against.filter(|_| held).map(|a| (self.node, a));
             });
         });
     }
@@ -749,6 +946,21 @@ impl Editing {
                 }
             }
         });
+        self.finding(ui, with, asks);
+        match &self.tool {
+            Some(Tool::Pick) => {
+                ui.add_space(8.0);
+                hint(ui, theme, with.t("image.pick_hint"));
+            }
+            Some(Tool::Brush(_)) => self.brush_controls(ui, with),
+            None => {}
+        }
+        self.zone_list(ui, with, image, asks);
+    }
+
+    /// A mask on its way, and what is said of the last one.
+    fn finding(&mut self, ui: &mut Ui, with: &With<'_>, asks: &mut Asks) {
+        let theme = with.theme;
         if self.masks.busy() {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -770,15 +982,6 @@ impl Editing {
                 asks.vision = Some(Ask::Models);
             }
         }
-        match &self.tool {
-            Some(Tool::Pick) => {
-                ui.add_space(8.0);
-                hint(ui, theme, with.t("image.pick_hint"));
-            }
-            Some(Tool::Brush(_)) => self.brush_controls(ui, with),
-            None => {}
-        }
-        self.zone_list(ui, with, image, asks);
     }
 
     /// The zones there are: to choose one, or take it off.
@@ -887,6 +1090,8 @@ impl Editing {
         };
         let free = !with.studio.busy();
         let models = with.studio.available();
+        let mut opened = None;
+        let mut crop = false;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::splat(GAP);
             let tool = |ui: &mut Ui, icon, key, enabled| {
@@ -895,6 +1100,9 @@ impl Editing {
             if tool(ui, Icon::Identity, "image.adjust", true) {
                 self.view = View::Adjust;
             }
+            if tool(ui, Icon::Crop, "image.crop", true) {
+                crop = true;
+            }
             if models {
                 if tool(ui, Icon::CategoryPhotos, "image.cut", free) {
                     asks.vision = Some(Ask::Work(target.clone(), Work::Cut));
@@ -902,14 +1110,28 @@ impl Editing {
                 if tool(ui, Icon::CategoryLights, "image.enhance", free) {
                     asks.vision = Some(Ask::Work(target.clone(), Work::Enhance(2)));
                 }
-                if image.is_cut() && tool(ui, Icon::Drawing, "image.erase", free) {
+                if image.is_cut() && tool(ui, Icon::Pieces, "image.erase", free) {
                     asks.vision = Some(Ask::Erase(target.clone()));
+                }
+            }
+            if models {
+                if tool(ui, Icon::Drawing, "image.magic", free) {
+                    opened = Some(false);
+                }
+                if tool(ui, Icon::CategoryFrames, "image.stamp", free) {
+                    opened = Some(true);
                 }
             }
             if image.edit.is_some() && tool(ui, Icon::Versions, "image.original", free) {
                 asks.vision = Some(Ask::Original(target.clone()));
             }
         });
+        if crop {
+            self.open_crop(image);
+        }
+        if let (Some(stamp), Some(facts)) = (opened, facts) {
+            self.open_magic(image, facts.size, stamp);
+        }
         if let Some(ask) = vision::progress(ui, theme, with.texts, with.studio) {
             asks.vision = Some(ask);
         }
@@ -1066,6 +1288,246 @@ impl Editing {
         }
     }
 
+    /// What was marked is erased: it begins again.
+    pub fn erased(&mut self) {
+        if let Some(magic) = &mut self.magic
+            && magic.sent.take().is_some()
+        {
+            magic.brush.clear();
+        }
+    }
+
+    fn open_crop(&mut self, image: &ImageNode) {
+        self.view = View::Crop;
+        self.tool = None;
+        self.zone = None;
+        self.magic = None;
+        self.note = None;
+        self.crop = Some(Cropper::new(image.part()));
+    }
+
+    fn crop_page(&mut self, ui: &mut Ui, with: &mut With<'_>, facts: Option<&Facts>) {
+        let theme = with.theme;
+        let Some(cropper) = &mut self.crop else {
+            return;
+        };
+        // The proportions of the box are the ones that are seen.
+        let size = self.whole;
+        heading(ui, theme, with.t("image.crop_shape"));
+        let side = ((ui.available_width() - 3.0 * GAP) / 4.0).floor().max(40.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = GAP;
+            let shapes = [
+                ("image.crop_rect", CropShape::Rect),
+                ("image.crop_rounded", CropShape::Rounded(0.15)),
+                ("image.crop_circle", CropShape::Ellipse),
+                ("image.crop_hand", CropShape::Path(Vec::new())),
+            ];
+            for (key, shape) in shapes {
+                let now = &cropper.crop.shape;
+                let same = std::mem::discriminant(now) == std::mem::discriminant(&shape);
+                let by_hand = matches!(shape, CropShape::Path(_));
+                let on = if cropper.drawing { by_hand } else { same };
+                if shape_tile(ui, theme, (&shape, with.t(key)), (side, on)).clicked() {
+                    cropper.cut(shape, size);
+                }
+            }
+        });
+        if cropper.drawing {
+            ui.add_space(8.0);
+            hint(ui, theme, with.t("image.crop_draw"));
+        }
+        if let CropShape::Rounded(radius) = &mut cropper.crop.shape {
+            ui.add_space(10.0);
+            let mut shown = (*radius * 200.0).round();
+            let what = (&mut shown, UP, 30.0);
+            if slider(ui, theme, with.t("image.crop_radius"), what, Track::Plain) {
+                *radius = shown / 200.0;
+            }
+        }
+        heading(ui, theme, with.t("image.crop_ratio"));
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            for (at, (name, _)) in RATIOS.iter().enumerate() {
+                let name = match at {
+                    0 | 1 => with.t(name),
+                    _ => (*name).to_owned(),
+                };
+                if chip(ui, theme, name, cropper.ratio == at).clicked() {
+                    cropper.keep(at, size);
+                }
+            }
+        });
+        if let Some(facts) = facts {
+            let of = |side: u32, share: f64| (f64::from(side) * share).round();
+            let (w, h) = facts.size;
+            let text = format!("{} × {} px", of(w, cropper.crop.w), of(h, cropper.crop.h));
+            ui.add_space(12.0);
+            hint(ui, theme, text);
+        }
+        ui.add_space(14.0);
+        self.accept |= main_button(ui, theme, with.t("image.crop_apply"), true);
+        ui.add_space(8.0);
+        let wide = Vec2::new(ui.available_width(), 38.0);
+        let cancel = egui::Button::new(with.t("vision.cancel"));
+        if ui.add_sized(wide, cancel).clicked() {
+            self.home_again();
+        }
+        ui.add_space(8.0);
+        hint(ui, theme, with.t("image.crop_hint"));
+    }
+
+    /// Whether it is not as it was when it began to be erased.
+    fn changed(&self, image: &ImageNode) -> bool {
+        self.magic.as_ref().is_some_and(|magic| {
+            (magic.before.asset, magic.before.edit) != (image.asset, image.edit)
+        })
+    }
+
+    /// «Borrador mágico», or «Quitar marca de agua».
+    fn open_magic(&mut self, image: &ImageNode, size: (u32, u32), stamp: bool) {
+        let Some(brush) = Brush::blank(size) else {
+            return;
+        };
+        self.view = View::Magic;
+        self.tool = None;
+        self.zone = None;
+        self.note = None;
+        self.veil = true;
+        self.adding = true;
+        self.brush_size = 24.0;
+        self.magic = Some(Magic {
+            before: image.clone(),
+            stamp,
+            pick: false,
+            brush: Box::new(brush),
+            sent: None,
+        });
+    }
+
+    fn magic(&mut self, ui: &mut Ui, with: &mut With<'_>, image: &ImageNode, asks: &mut Asks) {
+        let theme = with.theme;
+        if let Some(magic) = &mut self.magic
+            && magic.sent.is_some()
+            && !with.studio.busy()
+        {
+            // It failed, or was cancelled: what is marked stays.
+            magic.sent = None;
+        }
+        let Some((stamp, pick, marked, working)) = self.magic.as_ref().map(|magic| {
+            let marked = magic.brush.is_marked();
+            (magic.stamp, magic.pick, marked, magic.sent.is_some())
+        }) else {
+            return;
+        };
+        if working {
+            ui.add_space(8.0);
+            if let Some(ask) = vision::progress(ui, theme, with.texts, with.studio) {
+                asks.vision = Some(ask);
+            }
+            ui.add_space(8.0);
+            hint(ui, theme, with.t("image.magic_working"));
+            return;
+        }
+        let link = (with.t("image.magic_choose"), with.t("image.deselect"));
+        if heading_with(ui, theme, link, marked)
+            && let Some(magic) = &mut self.magic
+        {
+            magic.brush.clear();
+        }
+        let free = !self.masks.busy() && !with.studio.busy();
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            let area = chip(ui, theme, with.t("image.area"), !pick).clicked();
+            let element = chip(ui, theme, with.t("image.element"), pick).clicked();
+            if (area || element)
+                && let Some(magic) = &mut self.magic
+            {
+                magic.pick = element;
+                self.note = None;
+            }
+            let name = with.t("image.foreground");
+            if chip_if(ui, theme, name, (false, free)).clicked() {
+                self.note = None;
+                let what = (self.node, image.asset, ZoneKind::Foreground);
+                let models = with.studio.models();
+                self.masks.subject(ui.ctx(), what, with.store, models);
+            }
+        });
+        self.finding(ui, with, asks);
+        if pick {
+            ui.add_space(8.0);
+            hint(ui, theme, with.t("image.magic_pick"));
+        } else {
+            self.brush_controls(ui, with);
+        }
+        ui.add_space(14.0);
+        self.erase_button(ui, with, (image, marked && free), asks);
+        ui.add_space(8.0);
+        let key = if stamp {
+            "image.stamp_note"
+        } else {
+            "image.magic_note"
+        };
+        hint(ui, theme, with.t(key));
+    }
+
+    /// «Borrar», or what is missing to.
+    fn erase_button(
+        &mut self,
+        ui: &mut Ui,
+        with: &With<'_>,
+        (image, able): (&ImageNode, bool),
+        asks: &mut Asks,
+    ) {
+        let theme = with.theme;
+        let model = with.studio.inpainting();
+        let Some(model) = model.filter(|model| !model.installed) else {
+            if main_button(ui, theme, with.t("image.magic_erase"), able)
+                && let Some(magic) = &mut self.magic
+            {
+                magic.sent = Some(image.asset);
+                let target = Target {
+                    page: self.page,
+                    node: self.node,
+                    image: image.clone(),
+                };
+                let marked = vision::Marked {
+                    alpha: magic.brush.paint.alpha().to_vec(),
+                    size: magic.brush.size,
+                };
+                asks.vision = Some(Ask::Fill(target, Arc::new(marked)));
+            }
+            // Nothing runs: what was said of the last one.
+            vision::progress(ui, theme, with.texts, with.studio);
+            return;
+        };
+        ui.label(RichText::new(with.t("image.magic_model")).font(theme.font("body-sm")));
+        ui.add_space(8.0);
+        if let Some(share) = with.studio.downloading() {
+            vision::bar(ui, theme, share);
+            ui.add_space(6.0);
+            if ui.button(with.t("vision.cancel")).clicked() {
+                asks.vision = Some(Ask::Cancel);
+            }
+            return;
+        }
+        let name = format!(
+            "{} {} ({})",
+            with.t("vision.download"),
+            model.name,
+            vision::size(model.download_bytes)
+        );
+        if main_button(ui, theme, name, !with.studio.busy()) {
+            asks.vision = Some(Ask::Install(model.id));
+        }
+        ui.add_space(6.0);
+        if ui.button(with.t("vision.models")).clicked() {
+            asks.vision = Some(Ask::Models);
+        }
+        vision::progress(ui, theme, with.texts, with.studio);
+    }
+
     /// The zone of the subject, or of what is not it.
     fn subject(&mut self, ctx: &egui::Context, with: &With<'_>, image: &ImageNode, kind: ZoneKind) {
         let look = image.look.as_deref().cloned().unwrap_or_default();
@@ -1154,6 +1616,10 @@ impl Editing {
         self.note = (!mask.reliable).then_some("image.unsure");
         let size = (mask.mask.width(), mask.mask.height());
         match made.purpose {
+            // What is found is marked to be erased.
+            Purpose::Zone(_) if self.magic.is_some() => {
+                self.mark(mask.mask.data(), size, true);
+            }
             Purpose::Zone(kind) => {
                 if let Some(asset) = stored(store, mask.mask.data(), size) {
                     self.tool = None;
@@ -1161,33 +1627,24 @@ impl Editing {
                 }
             }
             Purpose::Stroke(adding) => {
-                let Some(Tool::Brush(brush)) = &mut self.tool else {
-                    return;
-                };
-                let Some(found) = stretched(mask.mask.data(), size, brush.size) else {
-                    return;
-                };
-                let alpha: Vec<u8> = brush
-                    .paint
-                    .alpha()
-                    .iter()
-                    .zip(found)
-                    .map(|(now, found)| {
-                        if adding {
-                            (*now).max(found)
-                        } else {
-                            (*now).min(255 - found)
-                        }
-                    })
-                    .collect();
-                let whole = vec![255; alpha.len()];
-                if let Some(paint) = Paint::new(brush.size, alpha, whole) {
-                    brush.paint = paint;
-                    brush.texture = None;
+                if self.mark(mask.mask.data(), size, adding) && self.magic.is_none() {
                     self.keep_brush(store, image);
                 }
             }
         }
+    }
+
+    /// Adds `found` to what is painted, or takes it away; whether it could.
+    fn mark(&mut self, found: &[u8], size: (u32, u32), adding: bool) -> bool {
+        let Some(brush) = self.brush() else {
+            return false;
+        };
+        let Some(found) = stretched(found, size, brush.size) else {
+            return false;
+        };
+        brush.paint.put(&found, adding);
+        brush.texture = None;
+        true
     }
 
     /// What is painted goes to the document.
@@ -1219,6 +1676,27 @@ impl Editing {
         (response, turn, placement): (&Response, Affine, &Placement),
         image: &ImageNode,
     ) -> bool {
+        let part = image.part();
+        if let Some(cropper) = &mut self.crop {
+            let whole = part.whole_box(placement);
+            self.whole = (whole.w, whole.h);
+            let turn = turn * placement.to_transform().inverse() * whole.to_transform();
+            let mut all = image.clone();
+            all.crop = None;
+            if let Some(look) = &mut all.look {
+                look.shadow = None;
+            }
+            let ctx = ui.ctx();
+            let settled = !ui.input(|i| i.pointer.any_down());
+            with.looks.want(ctx, with.store, (self.node, &all), settled);
+            let picture = with.looks.exact(&all).or(with.plain);
+            let what = (response, turn, &whole);
+            let done = cropper.overlay(ui, painter, with.theme, what, picture);
+            if std::mem::take(&mut self.accept) || done.is_some() {
+                self.apply_crop(image, placement);
+            }
+            return true;
+        }
         let zones = image.look.as_ref().map_or(&[][..], |look| &look.zones);
         self.settle(image);
         self.sync(
@@ -1226,11 +1704,12 @@ impl Editing {
             zones.get(self.zone.unwrap_or(usize::MAX)).map(|z| z.mask),
         );
         let mint = with.theme.c("accent").gamma_multiply(VEIL);
-        let texture = match &mut self.tool {
-            Some(Tool::Brush(brush)) => self.veil.then(|| brush.texture(ui.ctx())),
-            _ => self
-                .zone
-                .filter(|_| self.veil && with.looks.compare.is_none())
+        let veil = self.veil && with.looks.compare.is_none();
+        let zone = self.zone;
+        let texture = match self.brush() {
+            Some(brush) => veil.then(|| brush.texture(ui.ctx())),
+            None => zone
+                .filter(|_| veil)
                 .and_then(|at| zones.get(at))
                 .and_then(|zone| {
                     let store = &**with.store;
@@ -1238,89 +1717,99 @@ impl Editing {
                 }),
         };
         if let Some(texture) = texture {
-            painter.add(canvas::image_mesh(texture, turn, placement, mint));
+            let seen = ((part.x, part.y), (part.w, part.h));
+            let mesh = canvas::image_mesh_part(texture, turn, placement, seen, mint);
+            painter.add(mesh);
         }
         let hover = response.hover_pos();
         let share = |at: Pos2| {
             let p = rotation::local(turn, at)?;
             // Shares of the sides: small numbers.
-            Some([(p.x / placement.w) as f32, (p.y / placement.h) as f32])
+            let of = |v: f64, side: f64, from: f64, size: f64| (from + v / side * size) as f32;
+            Some([
+                of(p.x, placement.w, part.x, part.w),
+                of(p.y, placement.h, part.y, part.h),
+            ])
         };
         let inside = |p: &[f32; 2]| p.iter().all(|v| (0.0..=1.0).contains(v));
-        match &mut self.tool {
-            None => false,
-            Some(Tool::Pick) => {
-                if hover.and_then(share).is_some_and(|p| inside(&p)) {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
-                }
-                if response.clicked()
-                    && let Some(at) = response.interact_pointer_pos().and_then(share)
-                    && inside(&at)
-                {
-                    let what = (self.node, image.asset, Purpose::Zone(ZoneKind::Element));
-                    let seed = (vec![at], 0.012);
-                    self.masks.element(ui.ctx(), what, with.store, seed);
-                }
-                true
+        if self.magic.as_ref().is_some_and(|m| m.sent.is_some()) {
+            // At work: nothing is chosen, and nothing moves.
+            return true;
+        }
+        let picking = match &self.magic {
+            Some(magic) => magic.pick,
+            None => matches!(self.tool, Some(Tool::Pick)),
+        };
+        if picking {
+            if hover.and_then(share).is_some_and(|p| inside(&p)) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
             }
-            Some(Tool::Brush(brush)) => {
-                // The size of the brush on the mask, as large as it is seen.
-                let side = |x: f64, y: f64| rotation::screen(turn, x, y);
-                let wide = side(0.0, 0.0).distance(side(placement.w, 0.0)).max(1.0);
-                let size = self.brush_size * brush.size.0 as f32 / wide;
-                let mode = if self.adding {
-                    Mode::Restore
-                } else {
-                    Mode::Erase
-                };
-                if let Some(at) = hover.or(response.interact_pointer_pos()) {
-                    let ring = self.brush_size / 2.0;
-                    painter.circle_stroke(
-                        at,
-                        ring,
-                        Stroke::new(2.5, Color32::from_white_alpha(200)),
-                    );
-                    painter.circle_stroke(at, ring, Stroke::new(1.0, with.theme.c("topbar.bg")));
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+            if response.clicked()
+                && let Some(at) = response.interact_pointer_pos().and_then(share)
+                && inside(&at)
+            {
+                let what = (self.node, image.asset, Purpose::Zone(ZoneKind::Element));
+                let seed = (vec![at], 0.012);
+                self.masks.element(ui.ctx(), what, with.store, seed);
+            }
+            return true;
+        }
+        let (brush_size, adding) = (self.brush_size, self.adding);
+        let Some(brush) = self.brush() else {
+            return false;
+        };
+        // The size of the brush on the mask, as large as it is seen.
+        let side = |x: f64, y: f64| rotation::screen(turn, x, y);
+        let wide = side(0.0, 0.0).distance(side(placement.w, 0.0)).max(1.0);
+        // As wide as all of the image would be.
+        let wide = wide / part.w as f32;
+        let size = brush_size * brush.size.0 as f32 / wide;
+        let mode = if adding { Mode::Restore } else { Mode::Erase };
+        if let Some(at) = hover.or(response.interact_pointer_pos()) {
+            let ring = brush_size / 2.0;
+            let light = Stroke::new(2.5, Color32::from_white_alpha(200));
+            painter.circle_stroke(at, ring, light);
+            painter.circle_stroke(at, ring, Stroke::new(1.0, with.theme.c("topbar.bg")));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+        }
+        if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+            let at = ui.input(|i| i.pointer.latest_pos()).and_then(share);
+            if let Some(at) = at {
+                let to = (at[0] * brush.size.0 as f32, at[1] * brush.size.1 as f32);
+                if brush.from.is_none() {
+                    brush.paint.begin();
+                    brush.stroke.clear();
                 }
-                if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
-                    let at = ui.input(|i| i.pointer.latest_pos()).and_then(share);
-                    if let Some(at) = at {
-                        let to = (at[0] * brush.size.0 as f32, at[1] * brush.size.1 as f32);
-                        if brush.from.is_none() {
-                            brush.paint.begin();
-                            self.veil = true;
-                            brush.stroke.clear();
-                        }
-                        let from = brush.from.unwrap_or(to);
-                        if brush.paint.line(mode, from, to, size).is_some() {
-                            brush.texture = None;
-                        }
-                        brush.from = Some(to);
-                        if inside(&at) {
-                            brush.stroke.push(at);
-                        }
-                    }
-                    ui.ctx().request_repaint();
-                } else if brush.from.take().is_some() {
-                    brush.paint.end();
-                    let stroke = std::mem::take(&mut brush.stroke);
-                    if !stroke.is_empty() && self.detect {
-                        let radius = self.brush_size / 2.0 / wide;
-                        let what = (self.node, image.asset, Purpose::Stroke(self.adding));
-                        self.masks
-                            .element(ui.ctx(), what, with.store, (stroke, radius));
-                    }
-                    self.keep_brush(&**with.store, image);
+                let from = brush.from.unwrap_or(to);
+                if brush.paint.line(mode, from, to, size).is_some() {
+                    brush.texture = None;
                 }
-                true
+                brush.from = Some(to);
+                if inside(&at) {
+                    brush.stroke.push(at);
+                }
+                self.veil = true;
+            }
+            ui.ctx().request_repaint();
+        } else if brush.from.take().is_some() {
+            brush.paint.end();
+            let stroke = std::mem::take(&mut brush.stroke);
+            if !stroke.is_empty() && self.detect {
+                let radius = brush_size / 2.0 / wide;
+                let what = (self.node, image.asset, Purpose::Stroke(adding));
+                self.masks
+                    .element(ui.ctx(), what, with.store, (stroke, radius));
+            }
+            if self.magic.is_none() {
+                self.keep_brush(&**with.store, image);
             }
         }
+        true
     }
 
     /// The brush follows the document: a step undone or done again.
     fn sync(&mut self, with: &With<'_>, mask: Option<AssetRef>) {
-        let waits = self.step.is_some();
+        let waits = self.step.is_some() || self.magic.is_some();
         let Some(Tool::Brush(brush)) = &mut self.tool else {
             return;
         };
@@ -1341,6 +1830,30 @@ impl Editing {
 }
 
 impl Brush {
+    /// One with nothing painted, for an image of `size`.
+    fn blank(size: (u32, u32)) -> Option<Self> {
+        let size = mask_size(size);
+        let count = size.0 as usize * size.1 as usize;
+        Some(Self {
+            paint: Paint::new(size, vec![0; count], vec![255; count])?,
+            size,
+            of: None,
+            texture: None,
+            from: None,
+            stroke: Vec::new(),
+        })
+    }
+
+    fn is_marked(&self) -> bool {
+        self.paint.alpha().iter().any(|a| *a >= 64)
+    }
+
+    fn clear(&mut self) {
+        let all = vec![255; self.paint.alpha().len()];
+        self.paint.put(&all, false);
+        self.texture = None;
+    }
+
     fn texture(&mut self, ctx: &egui::Context) -> egui::TextureId {
         let (alpha, size) = (self.paint.alpha(), self.size);
         self.texture
@@ -1371,6 +1884,19 @@ fn stretched(alpha: &[u8], (w, h): (u32, u32), to: (u32, u32)) -> Option<Vec<u8>
     let image = image::GrayImage::from_raw(w, h, alpha.to_vec())?;
     let filter = image::imageops::FilterType::Triangle;
     Some(image::imageops::resize(&image, to.0, to.1, filter).into_raw())
+}
+
+/// The one thing to do in a page, from side to side.
+pub(crate) fn main_button(ui: &mut Ui, theme: &Theme, text: String, enabled: bool) -> bool {
+    let text = RichText::new(text)
+        .font(theme.font("ui-label"))
+        .color(theme.c("primary.fg"));
+    let button = egui::Button::new(text)
+        .fill(theme.c("primary.bg"))
+        .corner_radius(theme.radius_md());
+    let wide = Vec2::new(ui.available_width(), 40.0);
+    ui.add_enabled_ui(enabled, |ui| ui.add_sized(wide, button).clicked())
+        .inner
 }
 
 fn hint(ui: &mut Ui, theme: &Theme, text: String) {

@@ -1041,6 +1041,7 @@ fn format_label(id: &str) -> Message {
         "png" => gafira_doc::msg!("export.png"),
         "jpeg" => gafira_doc::msg!("export.jpeg"),
         "webp" => gafira_doc::msg!("export.webp"),
+        "avif" => gafira_doc::msg!("export.avif"),
         "pdf" => gafira_doc::msg!("export.pdf"),
         "svg" => gafira_doc::msg!("export.svg"),
         "pptx" => gafira_doc::msg!("export.pptx"),
@@ -1151,6 +1152,7 @@ fn hint_of(id: &str) -> Option<&'static str> {
         "png_quality" => Some("export.png_quality_hint"),
         "quality" => Some("export.jpeg_quality_hint"),
         "webp_quality" => Some("export.webp_quality_hint"),
+        "avif_quality" => Some("export.avif_quality_hint"),
         _ => None,
     }
 }
@@ -1177,7 +1179,7 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use gafira_engine::Registries;
-    use gafira_io_image::{JpegExporter, PngExporter, WebpExporter};
+    use gafira_io_image::{AvifExporter, JpegExporter, PngExporter, WebpExporter};
     use gafira_io_pdf::PdfExporter;
     use gafira_ports::common::UnixTime;
     use gafira_ports::export::{Exporter, PageRenderers};
@@ -1224,6 +1226,7 @@ pub(crate) mod tests {
             Arc::new(PngExporter::new()) as Arc<dyn Exporter>,
             Arc::new(JpegExporter::new()),
             Arc::new(WebpExporter::new()),
+            Arc::new(AvifExporter::new()),
             Arc::new(PdfExporter::new()),
             Arc::new(gafira_io_svg::SvgExporter::new()),
             Arc::new(gafira_io_pptx::PptxExporter::new()),
@@ -1401,6 +1404,7 @@ pub(crate) mod tests {
                     );
                 }
                 "webp" => assert_eq!(&bytes[8..12], b"WEBP"),
+                "avif" => assert_eq!(&bytes[4..12], b"ftypavif"),
                 "pdf" => assert!(bytes.starts_with(b"%PDF")),
                 "svg" => {
                     use resvg::{tiny_skia, usvg};
@@ -1470,7 +1474,7 @@ pub(crate) mod tests {
                 vec![spec],
             )))
             .expect("the table");
-        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"] {
+        for id in ["png", "jpeg", "webp", "avif", "pdf", "svg", "pptx", "xlsx"] {
             let dialog = dialog_on(&engine, id, None);
             let path = dir.join(format!("table.{id}"));
             export_to(&mut engine, &dialog, &path).expect(id);
@@ -1532,7 +1536,7 @@ pub(crate) mod tests {
             .collect();
         let insert = gafira_edit::InsertNodes::new(page.id, None, 0, specs);
         engine.edit().execute(Box::new(insert)).expect("the charts");
-        for id in ["png", "jpeg", "webp", "pdf", "svg", "pptx"] {
+        for id in ["png", "jpeg", "webp", "avif", "pdf", "svg", "pptx"] {
             let dialog = dialog_on(&engine, id, None);
             let path = dir.join(format!("charts.{id}"));
             export_to(&mut engine, &dialog, &path).expect(id);
@@ -1645,7 +1649,7 @@ pub(crate) mod tests {
         let mut dialog = dialog_on(&engine, "png", None);
         assert_eq!(
             dialog.formats.iter().map(|f| f.id).collect::<Vec<_>>(),
-            ["png", "jpeg", "webp", "pdf", "svg", "pptx", "xlsx"]
+            ["png", "jpeg", "webp", "avif", "pdf", "svg", "pptx", "xlsx"]
         );
         dialog.values.set(SCALE, ParamValue::Float(3.0));
         dialog.values.set(TRANSPARENT, ParamValue::Bool(true));
@@ -1682,17 +1686,63 @@ pub(crate) mod tests {
         );
     }
 
+    // S89-03: a text with effects is drawn in every format, and its words
+    // stay text in SVG and PDF, also with no inside.
+    #[test]
+    fn s89_03_a_text_with_effects_exports_in_every_format() {
+        use gafira_doc::{NodeKind, Placement, SpanStyle, TextEffect, TextEffectKind, TextNode};
+        let dir = std::env::temp_dir().join(format!("gafira-ui-effects-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let style = SpanStyle {
+            font: "Inter".to_owned(),
+            size: 60.0,
+            color: crate::colors::hex(0x18_24_3B),
+            bold: true,
+            italic: false,
+        };
+        for kind in TextEffectKind::ALL {
+            let mut engine = document_engine(1);
+            let document = engine.edit().document().expect("a snapshot");
+            let page = document.pages()[0].id;
+            let mut text = TextNode::plain("Hola", &style);
+            text.effects = vec![TextEffect::new(kind)];
+            let place = Placement::new(40.0, 40.0, 300.0, 120.0);
+            let spec = gafira_edit::NodeSpec::new(NodeKind::Text(text), place);
+            let insert = gafira_edit::InsertNodes::new(page, None, 0, vec![spec]);
+            engine.edit().execute(Box::new(insert)).expect("the text");
+            for id in ["png", "pdf", "svg", "pptx"] {
+                let dialog = dialog_on(&engine, id, None);
+                let path = dir.join(format!("text.{id}"));
+                export_to(&mut engine, &dialog, &path).expect(id);
+                let bytes = std::fs::read(&path).expect("the file");
+                match id {
+                    "svg" => {
+                        let svg = String::from_utf8(bytes).expect("utf-8");
+                        assert!(svg.contains("<text"), "{kind:?}");
+                    }
+                    "pdf" => {
+                        let has = |what: &[u8]| bytes.windows(what.len()).any(|w| w == what);
+                        assert!(has(b"/Font"), "{kind:?}");
+                    }
+                    _ => assert!(!bytes.is_empty()),
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // S39-04: the pages follow the format until the person chose them.
     #[test]
     fn s39_04_the_pages_follow_the_format_until_they_are_chosen() {
         let engine = document_engine(1);
         let mut dialog = dialog_on(&engine, "png", None);
         assert_eq!(dialog.pages, Pages::Current);
-        dialog.pick(3);
+        let pdf = dialog.formats.iter().position(|f| f.id == "pdf").unwrap();
+        dialog.pick(pdf);
         assert_eq!(dialog.pages, Pages::All, "PDF");
         dialog.choose_pages(Pages::Current);
         dialog.pick(0);
-        dialog.pick(3);
+        dialog.pick(pdf);
         assert_eq!(dialog.pages, Pages::Current, "chosen");
     }
 
@@ -1749,6 +1799,7 @@ pub(crate) mod tests {
             ("png", dir.join("cartel.png"), b"\x89PNG"),
             ("jpeg", dir.join("cartel.jpg"), &[0xFF, 0xD8, 0xFF]),
             ("webp", dir.join("cartel.webp"), b"RIFF"),
+            ("avif", dir.join("cartel.avif"), b"\0\0\0"),
             ("pdf", dir.join("cartel.pdf"), b"%PDF-"),
         ];
         let result: Result<(), EngineError> = outputs.iter().try_for_each(|(id, path, _)| {
@@ -1767,7 +1818,7 @@ pub(crate) mod tests {
         for ((id, _, signature), bytes) in outputs.iter().zip(written) {
             assert!(bytes.expect(id).starts_with(signature), "{id}");
         }
-        assert_eq!(left.len(), 4, "no temporary is left: {left:?}");
+        assert_eq!(left.len(), outputs.len(), "no temporary is left: {left:?}");
     }
 
     // S30-07: the notice of a finished export is the brand's.

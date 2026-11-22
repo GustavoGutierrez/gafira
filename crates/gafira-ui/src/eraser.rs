@@ -208,6 +208,28 @@ impl Paint {
         (old, bounds)
     }
 
+    /// Adds `alpha`, or takes it away, as a stroke that can be undone.
+    pub fn put(&mut self, alpha: &[u8], adding: bool) {
+        if alpha.len() != self.alpha.len() {
+            return;
+        }
+        self.begin();
+        for ((now, whole), put) in self.alpha.iter_mut().zip(&self.whole).zip(alpha) {
+            *now = if adding {
+                (*now).max(*put).min(*whole)
+            } else {
+                (*now).min(255 - put)
+            };
+        }
+        self.touched = Some(Bounds {
+            x0: 0,
+            y0: 0,
+            x1: self.width,
+            y1: self.height,
+        });
+        self.end();
+    }
+
     /// The stroke before goes; where.
     pub fn undo(&mut self) -> Option<Bounds> {
         let patch = self.undo.pop()?;

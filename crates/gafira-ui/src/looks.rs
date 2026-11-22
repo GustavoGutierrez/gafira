@@ -9,10 +9,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use egui::{ColorImage, TextureHandle, TextureId, TextureOptions};
 use gafira_color::Color;
-use gafira_doc::{AssetRef, ImageFilter, ImageLook, ImageNode, ImageShadow, NodeId, ShadowKind};
+use gafira_doc::{
+    AssetRef, ImageCrop, ImageFilter, ImageLook, ImageNode, ImageShadow, NodeId, ShadowKind,
+};
 use gafira_ports::store::ContentStore;
 use gafira_raster::effects::{AutoAdjust, auto_adjust};
-use gafira_raster::look::{FILTER_GROUPS, apply_look, mask_of};
+use gafira_raster::look::{FILTER_GROUPS, apply_look, cropped, cropped_mask, mask_of};
 use gafira_raster::{AlphaMask, ImageBuf, PixelBuf, dominant_colors, premultiply_u8};
 
 /// The longest side of an image while a control moves, and at rest.
@@ -129,8 +131,8 @@ pub(crate) struct Looks {
     facts: BTreeMap<AssetRef, Option<Arc<Facts>>>,
     asked_facts: BTreeSet<AssetRef>,
     masks: BTreeMap<(AssetRef, bool), Option<TextureHandle>>,
-    /// The element shown as it was brought in, for «Comparar».
-    pub compare: Option<NodeId>,
+    /// The element shown as this asset, for «Comparar».
+    pub compare: Option<(NodeId, AssetRef)>,
 }
 
 impl Default for Looks {
@@ -240,6 +242,27 @@ fn mask(cache: &Mutex<Cache>, store: &dyn ContentStore, asset: AssetRef) -> Opti
     Some(made)
 }
 
+/// The part `part` of the image `asset`, no longer than [`WHOLE`], and how
+/// much smaller than the image it is.
+fn part_of(store: &dyn ContentStore, asset: AssetRef, part: &ImageCrop) -> Option<(ImageBuf, f32)> {
+    let image = image::load_from_memory(&bytes_of(store, asset)?).ok()?;
+    let pixels = cropped(&fitted(&image, u32::MAX)?, part);
+    let longest = pixels.width().max(pixels.height());
+    if longest <= WHOLE {
+        return Some((pixels, 1.0));
+    }
+    let PixelBuf::Rgba8(bytes) = pixels.data() else {
+        return None;
+    };
+    let pixels = image::RgbaImage::from_raw(pixels.width(), pixels.height(), bytes.clone())?;
+    let pixels = image::DynamicImage::ImageRgba8(pixels).thumbnail(WHOLE, WHOLE);
+    let pixels = pixels.into_rgba8();
+    let (w, h) = pixels.dimensions();
+    let made = ImageBuf::new(w, h, PixelBuf::Rgba8(pixels.into_raw())).ok()?;
+    // Sizes of images: the casts lose nothing that counts.
+    Some((made, WHOLE as f32 / longest as f32))
+}
+
 fn color_image(image: &ImageBuf) -> Option<ColorImage> {
     let PixelBuf::Rgba8(bytes) = image.data() else {
         return None;
@@ -330,15 +353,16 @@ impl Looks {
         (node, image): (NodeId, &ImageNode),
         settled: bool,
     ) {
-        let Some(look) = image.look.as_deref() else {
+        if image.is_plain() {
             return;
-        };
+        }
+        let shadow = image.look.as_ref().and_then(|look| look.shadow);
         let key = image.shown();
         self.wanted.insert(key);
         self.seen.insert(node);
         let whole = match self.shown.get(&key) {
             Some(shown) => {
-                self.last.insert(node, (key, look.shadow));
+                self.last.insert(node, (key, shadow));
                 if shown.whole || !settled {
                     return;
                 }
@@ -350,17 +374,20 @@ impl Looks {
             return;
         }
         self.busy.insert(node);
-        let (asset, look) = (image.asset, look.clone());
+        let image = image.clone();
         let (store, cache) = (Arc::clone(store), Arc::clone(&self.cache));
         self.spawn(ctx, move || {
-            let image = source(&cache, &*store, asset).and_then(|source| {
-                let (image, scale) = if whole {
-                    (&source.whole, source.whole_scale)
-                } else {
-                    (&source.facts.small, source.small_scale)
+            let part = image.part();
+            let look = image.look.as_deref().cloned().unwrap_or_default();
+            let image = source(&cache, &*store, image.asset).and_then(|source| {
+                let (pixels, scale) = match (whole, image.crop.is_some()) {
+                    // A part of a large image has pixels to spare.
+                    (true, true) => part_of(&*store, image.asset, &part)?,
+                    (true, false) => (source.whole.clone(), source.whole_scale),
+                    (false, _) => (cropped(&source.facts.small, &part), source.small_scale),
                 };
-                let mask = |asset| mask(&cache, &*store, asset);
-                let made = apply_look(&look, image, &mask, scale).ok()?;
+                let mask = |asset| Some(cropped_mask(&mask(&cache, &*store, asset)?, &part));
+                let made = apply_look(&look, &pixels, &mask, scale).ok()?;
                 color_image(&made)
             });
             Message::Drawn {
@@ -383,8 +410,11 @@ impl Looks {
     /// What to draw for `image` of `node`: it with its look, or the last one
     /// there was while it comes; none to draw it as it is.
     pub fn picture(&self, node: NodeId, image: &ImageNode) -> Option<Picture> {
-        let look = image.look.as_deref()?;
-        if self.compare == Some(node) {
+        if image.is_plain() {
+            return None;
+        }
+        let shadow = image.look.as_ref().and_then(|look| look.shadow);
+        if self.compare.is_some_and(|(of, _)| of == node) {
             return None;
         }
         let of = |key: &AssetRef, shadow| {
@@ -396,7 +426,7 @@ impl Looks {
                 shadow,
             })
         };
-        of(&image.shown(), look.shadow).or_else(|| {
+        of(&image.shown(), shadow).or_else(|| {
             let (key, shadow) = self.last.get(&node)?;
             of(key, *shadow)
         })
@@ -419,6 +449,12 @@ impl Looks {
         self.facts.get(&asset).cloned().flatten()
     }
 
+    /// The picture of `image` as it is now and no other; it is drawn when it
+    /// is wanted.
+    pub fn exact(&self, image: &ImageNode) -> Option<TextureId> {
+        Some(self.shown.get(&image.shown())?.texture.id())
+    }
+
     /// The thumbnail `id` of `set` for `image`, the last one while it comes.
     pub fn thumb(&self, set: Set, id: &str) -> Option<&TextureHandle> {
         self.thumbs.get(&set)?.textures.get(id)
@@ -437,7 +473,8 @@ impl Looks {
         if set == Set::Filters {
             look.filter = None;
         }
-        let key = look.key(image.asset);
+        let part = image.part();
+        let key = look.key(image.asset, image.crop.as_deref());
         let thumbs = self.thumbs.entry(set).or_default();
         if thumbs.busy || thumbs.key == Some(key) {
             return;
@@ -447,8 +484,8 @@ impl Looks {
         let (store, cache) = (Arc::clone(store), Arc::clone(&self.cache));
         self.spawn(ctx, move || {
             let made = source(&cache, &*store, asset).and_then(|source| {
-                let (small, share) = thumbnail(&source.facts.small)?;
-                let mask = |asset| mask(&cache, &*store, asset);
+                let (small, share) = thumbnail(&cropped(&source.facts.small, &part))?;
+                let mask = |asset| Some(cropped_mask(&mask(&cache, &*store, asset)?, &part));
                 let scale = share * source.small_scale;
                 let base = apply_look(&look, &small, &mask, scale).ok()?;
                 Some(thumbs_of(set, &base, scale))

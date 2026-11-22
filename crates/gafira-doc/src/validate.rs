@@ -465,8 +465,15 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     {
         return Err(ValidationError::InvalidQr { node: id });
     }
+    if let NodeKind::Text(text) = &node.kind
+        && (text.effects.len() > crate::TextEffect::MAX
+            || !text.effects.iter().all(crate::TextEffect::is_valid))
+    {
+        return Err(ValidationError::InvalidText { node: id });
+    }
     if let NodeKind::Image(image) = &node.kind
-        && image.look.as_ref().is_some_and(|look| !look.is_valid())
+        && (image.look.as_ref().is_some_and(|look| !look.is_valid())
+            || image.crop.as_ref().is_some_and(|crop| !crop.is_valid()))
     {
         return Err(ValidationError::InvalidImage { node: id });
     }

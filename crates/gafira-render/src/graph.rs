@@ -31,6 +31,7 @@ use kurbo::{BezPath, Ellipse, Rect, RoundedRect, Shape};
 use crate::fonts::FontBook;
 use crate::key::{KeyParam, NodeType, content_key};
 use crate::pool::WorkerPool;
+use crate::text_effects::{self, TextPiece};
 
 /// The identifier of a node of the render graph.
 ///
@@ -744,9 +745,15 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             &[],
                             &[
                                 KeyParam::Quality(self.params.quality),
-                                KeyParam::Text(match &text.gradient {
-                                    Some(gradient) => format!("{canonical}\u{0}{gradient:?}"),
-                                    None => canonical,
+                                KeyParam::Text({
+                                    let mut key = canonical;
+                                    if let Some(gradient) = &text.gradient {
+                                        key = format!("{key}\u{0}{gradient:?}");
+                                    }
+                                    if !text.effects.is_empty() {
+                                        key = format!("{key}\u{0}{:?}", text.effects);
+                                    }
+                                    key
                                 }),
                                 KeyParam::Fill(Some(color)),
                                 KeyParam::Transform(transform.as_coeffs()),
@@ -769,23 +776,42 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         if let Some(frame) = stack.last_mut() {
                             frame.inputs.push(node_id);
                         }
-                        // A gradient fills the letters over the box (spec 070).
                         let placement = &record.base.placement;
-                        sub.ops.push(match &text.gradient {
-                            Some(gradient) => RenderOp::FillGradient {
-                                path: Arc::new(path),
-                                gradient: Arc::new(gradient.clone()),
-                                size: (placement.w.abs(), placement.h.abs()),
-                                transform,
-                            },
-                            // Its glyphs go with it, for the PDF (spec 073).
-                            None => RenderOp::Text {
-                                path: Arc::new(path),
-                                color,
-                                transform,
-                                runs: Arc::new(runs),
-                            },
-                        });
+                        let size = (placement.w.abs(), placement.h.abs());
+                        let (path, runs) = (Arc::new(path), Arc::new(runs));
+                        for piece in
+                            effect_pieces(text, (&path, color), &runs, density_of(&transform))
+                        {
+                            sub.ops.push(match (piece, &text.gradient) {
+                                (TextPiece::Fill { path, color }, _) => RenderOp::FillPath {
+                                    path: Arc::new(path),
+                                    color,
+                                    transform,
+                                },
+                                (TextPiece::Soft { image, at }, _) => RenderOp::DrawImage {
+                                    image,
+                                    transform: transform * at,
+                                },
+                                // A gradient fills the letters over the box
+                                // (spec 070).
+                                (TextPiece::Letters(None), Some(gradient)) => {
+                                    RenderOp::FillGradient {
+                                        path: Arc::clone(&path),
+                                        gradient: Arc::new(gradient.clone()),
+                                        size,
+                                        transform,
+                                    }
+                                }
+                                // Its glyphs go with it, for the PDF (spec
+                                // 073).
+                                (TextPiece::Letters(other), _) => RenderOp::Text {
+                                    path: Arc::clone(&path),
+                                    color: other.unwrap_or(color),
+                                    transform,
+                                    runs: Arc::clone(&runs),
+                                },
+                            });
+                        }
                         sub.ops.push(RenderOp::PopLayer {
                             blend: record.base.blend,
                             opacity: record.base.opacity,
@@ -1920,6 +1946,47 @@ pub fn text_outline(
     let bounds = gafira_geom::Size::new(width.abs(), height.abs());
     laid_text(&text.content, Laid::of(text), bounds, fonts)
         .map(|laid| (laid.path, laid.color, laid.height))
+}
+
+/// How many pixels a unit is seen at.
+fn density_of(transform: &Affine) -> f64 {
+    let [a, b, c, d, _, _] = transform.as_coeffs();
+    a.hypot(b).max(c.hypot(d))
+}
+
+/// The pieces of a text laid out, with its effects (spec 089).
+fn effect_pieces(
+    text: &TextNode,
+    (path, color): (&BezPath, Color),
+    runs: &[GlyphRun],
+    density: f64,
+) -> Vec<TextPiece> {
+    if text.effects.is_empty() {
+        return vec![TextPiece::Letters(None)];
+    }
+    let spans = text.content.paragraphs.iter().flat_map(|p| &p.spans);
+    let em = spans.map(|span| span.style.size).fold(0.0, f64::max);
+    let lines: Vec<(f64, f64)> = runs
+        .iter()
+        .filter_map(|run| Some((f64::from(run.glyphs.first()?.y), f64::from(run.size))))
+        .collect();
+    let lines = text_effects::line_boxes(&lines, path);
+    text_effects::pieces(&text.effects, (path, color), &lines, em, density)
+}
+
+/// The pieces of `text` in a box `width` × `height` px, seen at `density`
+/// pixels a unit: what the export draws, for the canvas to draw the same.
+#[must_use]
+pub fn text_pieces(
+    text: &TextNode,
+    (width, height): (f64, f64),
+    fonts: &FontBook,
+    density: f64,
+) -> Option<Vec<TextPiece>> {
+    let bounds = gafira_geom::Size::new(width.abs(), height.abs());
+    let laid = laid_text(&text.content, Laid::of(text), bounds, fonts)?;
+    let letters = (&laid.path, laid.color);
+    Some(effect_pieces(text, letters, &laid.runs, density))
 }
 
 /// The text of a shape (spec 055) in the shape's box `rect`: laid out in

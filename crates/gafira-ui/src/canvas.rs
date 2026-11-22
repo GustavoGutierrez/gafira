@@ -1601,6 +1601,26 @@ pub(crate) fn image_mesh(
     image_mesh_with(texture, transform, placement, (0.0, 0.0), tint)
 }
 
+/// [`image_mesh`] of the part of the texture from `from`, `size` of it, in
+/// shares of its sides (spec 088).
+pub(crate) fn image_mesh_part(
+    texture: egui::TextureId,
+    transform: Affine,
+    placement: &Placement,
+    (from, size): ((f64, f64), (f64, f64)),
+    tint: Color32,
+) -> egui::Mesh {
+    let mut mesh = image_mesh(texture, transform, placement, tint);
+    for vertex in &mut mesh.vertices {
+        let part = |uv: f32, from: f64, size: f64| (from + f64::from(uv) * size) as f32;
+        vertex.uv = Pos2::new(
+            part(vertex.uv.x, from.0, size.0),
+            part(vertex.uv.y, from.1, size.1),
+        );
+    }
+    mesh
+}
+
 /// [`image_mesh`] that reaches past its box, across and down (spec 085).
 pub(crate) fn image_mesh_with(
     texture: egui::TextureId,
@@ -2787,14 +2807,14 @@ pub(crate) fn curved_text_image(
     placement: &Placement,
     zoom: f32,
 ) -> Option<(egui::ColorImage, Placement)> {
-    use kurbo::Shape as _;
     let (w, h) = (placement.w.abs(), placement.h.abs());
     let zoom = f64::from(zoom);
     if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
         return None;
     }
     let (path, color, _) = gafira_render::text_outline(text, (w, h), text_fonts())?;
-    let bbox = path.bounding_box();
+    let pieces = gafira_render::text_pieces(text, (w, h), text_fonts(), zoom)?;
+    let bbox = gafira_render::pieces_bounds(&pieces, &path);
     let margin = [-bbox.x0, -bbox.y0, bbox.x1 - w, bbox.y1 - h]
         .into_iter()
         .fold(0.0_f64, f64::max)
@@ -2810,54 +2830,62 @@ pub(crate) fn curved_text_image(
     let side = |v: f64| (v * scale).round().max(1.0) as u32;
     let (pw, ph) = (side(cover.w), side(cover.h));
     let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
-    let at = |p: kurbo::Point| {
-        (
-            ((p.x + margin) * scale) as f32,
-            ((p.y + margin) * scale) as f32,
-        )
+    let place = kurbo::Affine::scale(scale) * kurbo::Affine::translate((margin, margin));
+    let fill =
+        |pixmap: &mut tiny_skia::Pixmap, path: &kurbo::BezPath, paint: &tiny_skia::Paint<'_>| {
+            if let Some(outline) = skia_path(&(place * path.clone())) {
+                let rule = tiny_skia::FillRule::Winding;
+                pixmap.fill_path(
+                    &outline,
+                    paint,
+                    rule,
+                    tiny_skia::Transform::identity(),
+                    None,
+                );
+            }
+        };
+    let painted = |color: Color| {
+        let c = screen_color(color).to_srgba_unmultiplied();
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(c[0], c[1], c[2], c[3]);
+        paint.anti_alias = true;
+        paint
     };
-    let mut builder = tiny_skia::PathBuilder::new();
-    for el in path.elements() {
-        match *el {
-            kurbo::PathEl::MoveTo(p) => {
-                let (x, y) = at(p);
-                builder.move_to(x, y);
+    for piece in &pieces {
+        match piece {
+            gafira_render::TextPiece::Fill { path, color } => {
+                fill(&mut pixmap, path, &painted(*color));
             }
-            kurbo::PathEl::LineTo(p) => {
-                let (x, y) = at(p);
-                builder.line_to(x, y);
+            gafira_render::TextPiece::Soft { image, at } => {
+                let gafira_raster::PixelBuf::Rgba8(bytes) = image.data() else {
+                    continue;
+                };
+                let size = tiny_skia::IntSize::from_wh(image.width(), image.height())?;
+                let soft = tiny_skia::Pixmap::from_vec(bytes.clone(), size)?;
+                // Sizes of a picture: the casts lose nothing seen.
+                let t = (place * *at).as_coeffs().map(|v| v as f32);
+                let t = tiny_skia::Transform::from_row(t[0], t[1], t[2], t[3], t[4], t[5]);
+                let paint = tiny_skia::PixmapPaint {
+                    quality: tiny_skia::FilterQuality::Bilinear,
+                    ..tiny_skia::PixmapPaint::default()
+                };
+                pixmap.draw_pixmap(0, 0, soft.as_ref(), &paint, t, None);
             }
-            kurbo::PathEl::QuadTo(c, p) => {
-                let ((cx, cy), (x, y)) = (at(c), at(p));
-                builder.quad_to(cx, cy, x, y);
+            gafira_render::TextPiece::Letters(other) => {
+                let mut paint = painted(other.unwrap_or(color));
+                // A gradient over the box, as the export fills it (spec 070).
+                if other.is_none()
+                    && let Some(shader) = text
+                        .gradient
+                        .as_ref()
+                        .and_then(|g| gradient_shader(g, (w, h), (margin, scale)))
+                {
+                    paint.shader = shader;
+                }
+                fill(&mut pixmap, &path, &paint);
             }
-            kurbo::PathEl::CurveTo(c1, c2, p) => {
-                let ((ax, ay), (bx, by), (x, y)) = (at(c1), at(c2), at(p));
-                builder.cubic_to(ax, ay, bx, by, x, y);
-            }
-            kurbo::PathEl::ClosePath => builder.close(),
         }
     }
-    let outline = builder.finish()?;
-    let c = screen_color(color);
-    let mut paint = tiny_skia::Paint::default();
-    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
-    paint.anti_alias = true;
-    // A gradient over the box, as the export fills it (spec 070).
-    if let Some(shader) = text
-        .gradient
-        .as_ref()
-        .and_then(|g| gradient_shader(g, (w, h), (margin, scale)))
-    {
-        paint.shader = shader;
-    }
-    pixmap.fill_path(
-        &outline,
-        &paint,
-        tiny_skia::FillRule::Winding,
-        tiny_skia::Transform::identity(),
-        None,
-    );
     let image =
         egui::ColorImage::from_rgba_premultiplied([pw as usize, ph as usize], pixmap.data());
     Some((image, cover))

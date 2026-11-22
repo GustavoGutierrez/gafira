@@ -112,6 +112,7 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "qr.rs",
     "table.rs",
     "text.rs",
+    "text_effect.rs",
     "validate.rs",
     "visit.rs",
 ];

@@ -30,7 +30,7 @@ fn cancelled(cancel: &CancelToken) -> Result<(), VisionError> {
 }
 
 /// The colours of `image`, over white where it is see-through.
-fn opaque(image: &Pixels) -> RgbImage {
+pub(crate) fn opaque(image: &Pixels) -> RgbImage {
     let (w, h) = image.size();
     let over = |c: u8, a: u8| {
         let (c, a) = (u16::from(c), u16::from(a));
@@ -185,7 +185,7 @@ impl BackgroundRemover for Cutter {
         let input = input(&rgb, self.side, self.mean, self.deviation);
         progress.report(0.1);
         cancelled(cancel)?;
-        let out = self.session.run(input)?;
+        let out = self.session.run(vec![input])?;
         progress.report(0.8);
         cancelled(cancel)?;
         if out.len() != self.side * self.side {
@@ -210,8 +210,8 @@ mod tests {
     struct Light(usize);
 
     impl Session for Light {
-        fn run(&self, input: Vec<f32>) -> Result<Vec<f32>, VisionError> {
-            Ok(input[..self.0 * self.0].to_vec())
+        fn run(&self, inputs: Vec<Vec<f32>>) -> Result<Vec<f32>, VisionError> {
+            Ok(inputs[0][..self.0 * self.0].to_vec())
         }
     }
 
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(stretched(&[f32::NAN, 0.0, 2.0]), [0.0, 0.0, 1.0]);
         struct Odd;
         impl Session for Odd {
-            fn run(&self, _: Vec<f32>) -> Result<Vec<f32>, VisionError> {
+            fn run(&self, _: Vec<Vec<f32>>) -> Result<Vec<f32>, VisionError> {
                 Ok(vec![1.0])
             }
         }

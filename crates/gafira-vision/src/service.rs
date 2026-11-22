@@ -7,7 +7,8 @@ use std::time::Instant;
 
 use gafira_doc::contract::{CancelToken, Progress};
 use gafira_ports::vision::{
-    BackgroundRemover, Machine, ModelInfo, Upscaler, VisionError, VisionModels, VisionTask,
+    BackgroundRemover, Inpainter, Machine, ModelInfo, Upscaler, VisionError, VisionModels,
+    VisionTask,
 };
 
 use rayon::prelude::*;
@@ -17,6 +18,7 @@ use crate::catalog::{
 };
 use crate::cutout::Cutter;
 use crate::fetch::Fetch;
+use crate::inpaint::Filler;
 use crate::runtime::tract::Tract;
 use crate::runtime::{Runtime, Session};
 use crate::store::{Settings, Store};
@@ -34,6 +36,7 @@ struct State {
     /// One for each task, the last one used.
     cutout: Option<Loaded>,
     upscale: Option<Loaded>,
+    inpaint: Option<Loaded>,
 }
 
 /// The adapter of [`VisionModels`].
@@ -51,6 +54,7 @@ fn name(task: VisionTask) -> &'static str {
     match task {
         VisionTask::Cutout => "cutout",
         VisionTask::Upscale => "upscale",
+        VisionTask::Inpaint => "inpaint",
     }
 }
 
@@ -99,6 +103,11 @@ impl Vision {
         let id = self.state().settings.chosen.get(name(task)).cloned();
         id.and_then(|id| model(&id))
             .filter(|m| m.task() == task && self.store.has(m))
+            // None chosen: the first one there is.
+            .or_else(|| {
+                let mut all = MODELS.iter();
+                all.find(|m| m.task() == task && self.store.has(m))
+            })
             .unwrap_or_else(|| default_of(task))
     }
 
@@ -111,6 +120,7 @@ impl Vision {
             let slot = match task {
                 VisionTask::Cutout => &state.cutout,
                 VisionTask::Upscale => &state.upscale,
+                VisionTask::Inpaint => &state.inpaint,
             };
             slot.as_ref()
                 .filter(|loaded| loaded.id == chosen.id)
@@ -144,6 +154,7 @@ impl Vision {
         match task {
             VisionTask::Cutout => state.cutout = loaded,
             VisionTask::Upscale => state.upscale = loaded,
+            VisionTask::Inpaint => state.inpaint = loaded,
         }
         Ok((chosen, session))
     }
@@ -153,6 +164,7 @@ impl Vision {
         let mut state = self.state();
         state.cutout = None;
         state.upscale = None;
+        state.inpaint = None;
         state.settings.measured.clear();
         self.store.save(&state.settings)
     }
@@ -178,7 +190,7 @@ fn fastest(
         let mut order: Vec<&Box<dyn Runtime>> = runtimes.iter().collect();
         order.sort_by_key(|r| known.get(r.id()).copied().unwrap_or(u32::MAX));
         for runtime in order {
-            match runtime.load(bytes, shape.input()) {
+            match runtime.load(bytes, &shape.inputs()) {
                 Ok(session) => return Ok((session, known)),
                 Err(failed) => error = failed,
             }
@@ -195,7 +207,7 @@ fn fastest(
             continue;
         }
         match runtime
-            .load(bytes, shape.input())
+            .load(bytes, &shape.inputs())
             .and_then(|s| timed(s, shape))
         {
             Ok((ms, session)) => {
@@ -217,13 +229,17 @@ fn fastest(
 /// How long a piece of work takes `session`, once warm: one among as many as
 /// it does at once, for the models that work on pieces.
 fn timed(session: Box<dyn Session>, shape: Shape) -> Result<(u32, Box<dyn Session>), VisionError> {
-    let input = vec![0.5_f32; shape.input().iter().product()];
+    let input: Vec<Vec<f32>> = shape
+        .inputs()
+        .iter()
+        .map(|input| vec![if input.bytes { 128.0 } else { 0.5 }; input.count()])
+        .collect();
     let start = Instant::now();
     session.run(input.clone())?;
     let first = start.elapsed();
     let at_once = match shape {
         Shape::Upscale { .. } => session.at_once(),
-        Shape::Cutout { .. } => 1,
+        Shape::Cutout { .. } | Shape::Inpaint { .. } => 1,
     };
     // The first one prepares the graphics card; a slow one is slow.
     let warm = if at_once > 1 {
@@ -279,7 +295,7 @@ impl VisionModels for Vision {
                     download_bytes: if m.bundled.is_some() { 0 } else { m.bytes },
                     bundled: m.bundled.is_some(),
                     installed: self.store.has(m),
-                    chosen: self.chosen(task).id == m.id,
+                    chosen: self.chosen(task).id == m.id && self.store.has(m),
                     recommended: right_for(task, &self.machine).id == m.id,
                     measured,
                 }
@@ -375,6 +391,18 @@ impl VisionModels for Vision {
             scale,
         }))
     }
+
+    fn inpainter(&self) -> Result<Arc<dyn Inpainter>, VisionError> {
+        let (model, session) = self.ready(VisionTask::Inpaint)?;
+        let Shape::Inpaint { side, kind } = model.shape else {
+            return Err(VisionError::Unavailable(model.id.to_owned()));
+        };
+        Ok(Arc::new(Filler {
+            session,
+            side,
+            kind,
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -386,6 +414,7 @@ mod tests {
 
     use super::*;
     use crate::fetch::NoNetwork;
+    use crate::runtime::Input;
 
     /// A runtime that takes some ms, or fails, and counts its loads.
     struct Fake(&'static str, Option<u64>, Arc<AtomicUsize>);
@@ -393,9 +422,9 @@ mod tests {
     struct Takes(u64);
 
     impl Session for Takes {
-        fn run(&self, input: Vec<f32>) -> Result<Vec<f32>, VisionError> {
+        fn run(&self, inputs: Vec<Vec<f32>>) -> Result<Vec<f32>, VisionError> {
             std::thread::sleep(Duration::from_millis(self.0));
-            Ok(input)
+            Ok(inputs.into_iter().flatten().collect())
         }
     }
 
@@ -404,7 +433,7 @@ mod tests {
             self.0
         }
 
-        fn load(&self, _: &[u8], _: [usize; 4]) -> Result<Box<dyn Session>, VisionError> {
+        fn load(&self, _: &[u8], _: &[Input]) -> Result<Box<dyn Session>, VisionError> {
             self.2.fetch_add(1, Ordering::Relaxed);
             let ms = self.1.ok_or(VisionError::Model("no".into()))?;
             Ok(Box::new(Takes(ms)))

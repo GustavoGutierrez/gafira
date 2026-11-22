@@ -299,6 +299,43 @@ impl Studio {
         );
     }
 
+    /// Fills what is marked of `target`, on a thread.
+    pub fn fill(&mut self, store: &Arc<dyn ContentStore>, target: Target, marked: Arc<Marked>) {
+        let Some(models) = self.models.clone() else {
+            return;
+        };
+        let store = Arc::clone(store);
+        let ctx = self.ctx.clone();
+        self.start(
+            ctx.as_ref(),
+            (Some(target.clone()), true),
+            move |progress, cancel| {
+                let image = &target.image;
+                let result = filled(&*models, &*store, image, &marked, progress, cancel);
+                Message::Made { target, result }
+            },
+        );
+    }
+
+    /// The models that fill: the one in use, or the one to download.
+    pub fn inpainting(&self) -> Option<ModelInfo> {
+        let listed = self.listed();
+        let of = || {
+            let all = listed.models.iter();
+            all.filter(|m| m.task == Some(VisionTask::Inpaint))
+        };
+        of().find(|m| m.chosen)
+            .or_else(|| of().find(|m| m.recommended))
+            .or_else(|| of().next())
+            .cloned()
+    }
+
+    /// How far a download is.
+    pub fn downloading(&self) -> Option<f32> {
+        let job = self.job.as_ref().filter(|job| job.target.is_none())?;
+        Some(job.progress.share())
+    }
+
     /// Opens `target` to erase pixels of it.
     pub fn open(&mut self, store: &Arc<dyn ContentStore>, target: Target) {
         let store = Arc::clone(store);
@@ -325,7 +362,7 @@ impl Studio {
     }
 
     /// Downloads `ids`, one after the other, and uses the models among them.
-    fn install(&mut self, ids: Vec<&'static str>) {
+    pub fn install(&mut self, ids: Vec<&'static str>) {
         let Some(models) = self.models.clone() else {
             return;
         };
@@ -427,11 +464,56 @@ fn message(error: &VisionError) -> &'static str {
     }
 }
 
+/// What is marked of an image, at a size of its own.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Marked {
+    pub alpha: Vec<u8>,
+    pub size: (u32, u32),
+}
+
+/// The image without what is marked: it, and what was cut out of it, as they
+/// were elsewhere.
+fn filled(
+    models: &dyn VisionModels,
+    store: &dyn ContentStore,
+    image: &ImageNode,
+    marked: &Marked,
+    progress: &dyn Progress,
+    cancel: &CancelToken,
+) -> Result<ImageNode, VisionError> {
+    let base = decoded(store, image.base())?;
+    let cut = image.is_cut().then(|| decoded(store, image.asset));
+    let cut = cut.transpose()?;
+    let (w, h) = base.size();
+    let (mw, mh) = marked.size;
+    let mask = image::GrayImage::from_raw(mw, mh, marked.alpha.clone());
+    let mask = mask.ok_or(VisionError::TooLarge)?;
+    let mask = image::imageops::resize(&mask, w, h, image::imageops::FilterType::Triangle);
+    let mask = gafira_raster::AlphaMask::new(w, h, mask.into_raw());
+    let mask = mask.map_err(|_| VisionError::TooLarge)?;
+    let made = models.inpainter()?.fill(&base, &mask, progress, cancel)?;
+    cancel.check().map_err(|_| VisionError::Cancelled)?;
+    let shown = match cut {
+        Some(cut) => {
+            let cut = with_opacity_of(&made, &cut).ok_or(VisionError::TooLarge)?;
+            Some(stored(store, cut)?)
+        }
+        None => None,
+    };
+    let base = stored(store, made)?;
+    Ok(image.edited(shown.unwrap_or(base), base))
+}
+
 /// What the person asked for in Propiedades.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Ask {
     Work(Target, Work),
     Erase(Target),
+    /// Fill what is marked with what is around it (spec 086).
+    Fill(Target, Arc<Marked>),
+    /// The image as it was before, its look as it is.
+    Back(Target, ImageNode),
+    Install(&'static str),
     /// The whole image back, at its better resolution.
     Background(Target),
     Original(Target),
@@ -543,7 +625,7 @@ fn said(ui: &mut Ui, theme: &Theme, texts: &Texts, studio: &Studio) {
     }
 }
 
-fn bar(ui: &mut Ui, theme: &Theme, share: f32) {
+pub(crate) fn bar(ui: &mut Ui, theme: &Theme, share: f32) {
     let size = Vec2::new(ui.available_width(), 6.0);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter();
@@ -556,7 +638,7 @@ fn bar(ui: &mut Ui, theme: &Theme, share: f32) {
 // ---- The models ----------------------------------------------------------
 
 /// A count of bytes, for the person.
-fn size(bytes: u64) -> String {
+pub(crate) fn size(bytes: u64) -> String {
     // Megabytes: the cast loses nothing seen.
     let mb = bytes as f64 / 1e6;
     if mb < 10.0 {
@@ -617,6 +699,7 @@ impl Studio {
                     let groups = [
                         ("vision.group_cut", Some(VisionTask::Cutout)),
                         ("vision.group_enhance", Some(VisionTask::Upscale)),
+                        ("vision.group_fill", Some(VisionTask::Inpaint)),
                         ("vision.group_speed", None),
                     ];
                     for (key, task) in groups {
@@ -957,6 +1040,29 @@ mod tests {
         fn upscaler(&self) -> Result<Arc<dyn gafira_ports::vision::Upscaler>, VisionError> {
             Ok(Arc::new(Fake))
         }
+        fn inpainter(&self) -> Result<Arc<dyn gafira_ports::vision::Inpainter>, VisionError> {
+            Ok(Arc::new(Fake))
+        }
+    }
+
+    /// Fills in green.
+    impl gafira_ports::vision::Inpainter for Fake {
+        fn fill(
+            &self,
+            image: &Pixels,
+            mask: &gafira_raster::AlphaMask,
+            _: &dyn Progress,
+            _: &CancelToken,
+        ) -> Result<Pixels, VisionError> {
+            let (w, h) = image.size();
+            let mut rgba = image.rgba().to_vec();
+            for (px, m) in rgba.chunks_exact_mut(4).zip(mask.data()) {
+                if *m > 128 {
+                    px[..3].copy_from_slice(&[0, 255, 0]);
+                }
+            }
+            Pixels::new(w, h, rgba).ok_or(VisionError::TooLarge)
+        }
     }
 
     // S84-01, S84-02: a poor image is made better and cut; the better one
@@ -986,6 +1092,38 @@ mod tests {
         assert_eq!(better.original(), start.asset);
         let whole = run(start.clone(), Work::Enhance(2));
         assert!(whole.is_enhanced() && !whole.is_cut());
+    }
+
+    // S86-05: what is marked is filled in the base and in what was cut out
+    // of it, which keeps its opacity; the original stays.
+    #[test]
+    fn s86_05_what_is_filled() {
+        let store = Contents::default();
+        let photo = Pixels::new(4, 2, [200, 0, 0, 255].repeat(8)).unwrap();
+        let start = ImageNode::new(stored(&store, photo).unwrap());
+        let run = |image: &ImageNode| {
+            let marked = Marked {
+                alpha: vec![255, 0],
+                size: (2, 1),
+            };
+            let token = CancelToken::new();
+            let no = gafira_doc::contract::NoProgress;
+            filled(&Fake, &store, image, &marked, &no, &token).unwrap()
+        };
+        let whole = run(&start);
+        assert_eq!(whole.original(), start.asset);
+        assert!(!whole.is_cut());
+        let pixels = decoded(&store, whole.asset).unwrap();
+        assert_eq!(pixels.rgba()[..4], [0, 255, 0, 255]);
+        assert_eq!(pixels.rgba()[12..16], [200, 0, 0, 255]);
+        let half: Vec<u8> = (0..8)
+            .flat_map(|i| [200, 0, 0, if i % 4 == 0 { 0 } else { 255 }])
+            .collect();
+        let half = stored(&store, Pixels::new(4, 2, half).unwrap()).unwrap();
+        let cut = run(&start.edited(half, start.asset));
+        assert!(cut.is_cut() && cut.original() == start.asset);
+        let pixels = decoded(&store, cut.asset).unwrap();
+        assert_eq!(pixels.rgba()[..8], [0, 255, 0, 0, 0, 255, 0, 255]);
     }
 
     // S84-05: sizes are read at a glance.

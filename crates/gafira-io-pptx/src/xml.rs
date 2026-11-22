@@ -7,7 +7,7 @@ use gafira_color::Color;
 use gafira_doc::{
     BackgroundFit, Document, FrameNode, Gradient, GradientKind, ImageNode, LineCap, Node, NodeKind,
     Page, PageBackground, PatternKind, Placement, RichText, ShapeGeometry, ShapePath, ShapeStroke,
-    TextAlign, VerticalAlign,
+    SpanStyle, TextAlign, TextEffect, TextEffectKind, VerticalAlign,
 };
 use gafira_doc::{PathCommand, timeline::AssetRef};
 use gafira_ports::export::ExportError;
@@ -255,7 +255,7 @@ impl Writer<'_, '_, '_> {
                         let body = format!(
                             "<a:bodyPr wrap=\"square\" lIns=\"{pad}\" tIns=\"{pad}\" rIns=\"{pad}\" bIns=\"{pad}\" anchor=\"{anchor}\" rtlCol=\"0\"><a:noAutofit/></a:bodyPr>"
                         );
-                        self.text_body(&body, &text.content, text.align, (0.0, None, None, opacity))
+                        self.text_body(&body, &text.content, text.align, (0.0, None, None, opacity), &[])
                     })
                     .unwrap_or_default();
                 let _ = write!(
@@ -287,6 +287,7 @@ impl Writer<'_, '_, '_> {
                         fill.as_deref(),
                         opacity,
                     ),
+                    &text.effects,
                 );
                 let _ = write!(
                     out,
@@ -295,9 +296,10 @@ impl Writer<'_, '_, '_> {
                 );
             }
             NodeKind::Image(image) => {
-                let found = match &image.look {
-                    None => self.picture(image.asset),
-                    Some(_) => self.looked(image),
+                let found = if image.is_plain() {
+                    self.picture(image.asset)
+                } else {
+                    self.looked(image)
                 };
                 let Some(rid) = found else {
                     self.skipped = true;
@@ -490,6 +492,7 @@ impl Writer<'_, '_, '_> {
                 &content,
                 style.align,
                 (0.0, None, None, opacity),
+                &[],
             )
             .replacen("<p:txBody>", "<a:txBody>", 1)
             .replace("</p:txBody>", "</a:txBody>");
@@ -569,6 +572,7 @@ impl Writer<'_, '_, '_> {
         content: &RichText,
         align: TextAlign,
         (spacing, line_height, gradient, opacity): (f64, Option<f64>, Option<&str>, f32),
+        effects: &[TextEffect],
     ) -> String {
         let algn = match align {
             TextAlign::Left => "l",
@@ -600,9 +604,15 @@ impl Writer<'_, '_, '_> {
                     .map(str::to_owned)
                     .unwrap_or_else(|| solid_fill(style.color, opacity));
                 let font = escape(&style.font);
+                let (line, hollow, list) = self.text_effects(effects, style, opacity);
+                let fill = if hollow {
+                    "<a:noFill/>".to_owned()
+                } else {
+                    fill
+                };
                 let _ = write!(
                     runs,
-                    "<a:r><a:rPr lang=\"es-ES\" sz=\"{size}\" b=\"{}\" i=\"{}\"{} dirty=\"0\">{fill}<a:latin typeface=\"{font}\"/><a:cs typeface=\"{font}\"/></a:rPr><a:t>{}</a:t></a:r>",
+                    "<a:r><a:rPr lang=\"es-ES\" sz=\"{size}\" b=\"{}\" i=\"{}\"{} dirty=\"0\">{line}{fill}{list}<a:latin typeface=\"{font}\"/><a:cs typeface=\"{font}\"/></a:rPr><a:t>{}</a:t></a:r>",
                     u8::from(style.bold),
                     u8::from(style.italic),
                     if spc == 0 {
@@ -622,6 +632,76 @@ impl Writer<'_, '_, '_> {
             paragraphs.push_str("<a:p><a:endParaRPr lang=\"es-ES\" dirty=\"0\"/></a:p>");
         }
         format!("<p:txBody>{body_pr}<a:lstStyle/>{paragraphs}</p:txBody>")
+    }
+
+    /// What PowerPoint has nearest to the effects of a text (S89-03): its
+    /// outline, whether its inside is not drawn, and its shadow, its glow and
+    /// what is behind its line.
+    fn text_effects(
+        &self,
+        effects: &[TextEffect],
+        style: &SpanStyle,
+        opacity: f32,
+    ) -> (String, bool, String) {
+        let share = |v: f64| v / 100.0 * style.size;
+        let emu = |v: f64| self.emu(v).max(0);
+        let (mut line, mut glow, mut shadow, mut mark) =
+            (String::new(), String::new(), String::new(), String::new());
+        let mut hollow = false;
+        for effect in effects {
+            let stroke = |width: f64, color: Color| {
+                let color = solid_fill(color, opacity);
+                format!("<a:ln w=\"{}\">{color}</a:ln>", emu(width).max(1))
+            };
+            let cast = |blur: f64, far: f64, color: String| {
+                let turn = (effect.angle_deg.rem_euclid(360.0) * 60_000.0).round() as i64;
+                format!(
+                    "<a:outerShdw blurRad=\"{}\" dist=\"{}\" dir=\"{turn}\" algn=\"ctr\" rotWithShape=\"0\">{color}</a:outerShdw>",
+                    emu(blur),
+                    emu(far)
+                )
+            };
+            let seen = (effect.opacity / 100.0) as f32 * opacity;
+            match effect.kind {
+                TextEffectKind::Drop => {
+                    let color = srgb(effect.color, seen);
+                    shadow = cast(
+                        share(effect.blur) * 0.3,
+                        share(effect.distance) * 0.4,
+                        color,
+                    );
+                }
+                TextEffectKind::Echo | TextEffectKind::Glitch => {
+                    let color = srgb(effect.color, 0.6 * opacity);
+                    shadow = cast(0.0, share(effect.distance) * 0.2, color);
+                }
+                TextEffectKind::Glow | TextEffectKind::Neon => {
+                    let around = (0.05 + 0.2 * effect.intensity / 100.0) * style.size;
+                    let color = srgb(effect.color, 0.6 * opacity);
+                    glow = format!("<a:glow rad=\"{}\">{color}</a:glow>", emu(around));
+                }
+                TextEffectKind::Outline => {
+                    line = stroke(share(effect.thickness) * 0.16, effect.color);
+                }
+                TextEffectKind::Offset | TextEffectKind::Hollow => {
+                    hollow = true;
+                    line = stroke(
+                        share(effect.thickness) * 0.07 + 0.012 * style.size,
+                        style.color,
+                    );
+                }
+                TextEffectKind::Background => {
+                    mark = format!("<a:highlight>{}</a:highlight>", srgb(effect.color, 1.0));
+                }
+            }
+        }
+        // In the order the schema asks for: the glow, then the shadow.
+        let list = if glow.is_empty() && shadow.is_empty() {
+            String::new()
+        } else {
+            format!("<a:effectLst>{glow}{shadow}</a:effectLst>")
+        };
+        (line, hollow, format!("{list}{mark}"))
     }
 
     /// The background of the slide.

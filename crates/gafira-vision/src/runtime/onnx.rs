@@ -7,9 +7,10 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 use gafira_ports::vision::VisionError;
 use ort::environment::Environment;
 use ort::session::Session as OrtSession;
+use ort::session::SessionInputValue;
 use ort::value::Tensor;
 
-use super::{Runtime, Session};
+use super::{Input, Runtime, Session, as_bytes};
 
 /// What it runs on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,7 +58,7 @@ impl Runtime for Onnx {
         }
     }
 
-    fn load(&self, bytes: &[u8], shape: [usize; 4]) -> Result<Box<dyn Session>, VisionError> {
+    fn load(&self, bytes: &[u8], inputs: &[Input]) -> Result<Box<dyn Session>, VisionError> {
         let environment = environment(&self.library)?;
         let mut builder = OrtSession::builder(environment).map_err(failed)?;
         if self.device == Device::Gpu {
@@ -65,32 +66,46 @@ impl Runtime for Onnx {
             builder = builder.with_execution_providers([gpu]).map_err(failed)?;
         }
         let session = builder.commit_from_memory(bytes).map_err(failed)?;
-        let input = session
+        let names: Vec<String> = session
             .inputs()
-            .first()
+            .iter()
             .map(|input| input.name().to_owned())
-            .ok_or_else(|| failed("no input"))?;
+            .collect();
+        if names.len() < inputs.len() {
+            return Err(failed("not the inputs there should be"));
+        }
+        let inputs = names.into_iter().zip(inputs.iter().copied()).collect();
         Ok(Box::new(Ready {
             session: Mutex::new(session),
-            input,
-            shape,
+            inputs,
         }))
     }
 }
 
 struct Ready {
     session: Mutex<OrtSession>,
-    input: String,
-    shape: [usize; 4],
+    inputs: Vec<(String, Input)>,
 }
 
 impl Session for Ready {
-    fn run(&self, input: Vec<f32>) -> Result<Vec<f32>, VisionError> {
-        let tensor = Tensor::from_array((self.shape, input)).map_err(failed)?;
+    fn run(&self, inputs: Vec<Vec<f32>>) -> Result<Vec<f32>, VisionError> {
+        let mut given: Vec<(&str, SessionInputValue<'_>)> = Vec::new();
+        for ((name, input), values) in self.inputs.iter().zip(inputs) {
+            let value: SessionInputValue<'_> = if input.bytes {
+                let tensor = Tensor::from_array((input.shape, as_bytes(values)));
+                tensor.map_err(failed)?.into()
+            } else {
+                Tensor::from_array((input.shape, values))
+                    .map_err(failed)?
+                    .into()
+            };
+            given.push((name.as_str(), value));
+        }
         let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
-        let out = session
-            .run(ort::inputs![self.input.as_str() => tensor])
-            .map_err(failed)?;
+        let out = session.run(given).map_err(failed)?;
+        if let Ok((_, values)) = out[0].try_extract_tensor::<u8>() {
+            return Ok(values.iter().copied().map(f32::from).collect());
+        }
         let (_, values) = out[0].try_extract_tensor::<f32>().map_err(failed)?;
         Ok(values.to_vec())
     }

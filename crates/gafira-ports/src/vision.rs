@@ -53,6 +53,8 @@ pub enum VisionTask {
     Cutout,
     /// A better resolution.
     Upscale,
+    /// Filling what is erased with its surroundings.
+    Inpaint,
 }
 
 /// What went wrong.
@@ -116,6 +118,22 @@ pub trait Upscaler: Send + Sync {
         &self,
         image: &Pixels,
         factor: u32,
+        progress: &dyn Progress,
+        cancel: &CancelToken,
+    ) -> Result<Pixels, VisionError>;
+}
+
+/// Erases a part of an image and makes up what is behind it.
+pub trait Inpainter: Send + Sync {
+    /// `image` without what `mask`, of its size, covers. Away from it every
+    /// pixel is the same, and so is the opacity.
+    ///
+    /// # Errors
+    /// [`VisionError`]; a cancelled one leaves nothing behind.
+    fn fill(
+        &self,
+        image: &Pixels,
+        mask: &AlphaMask,
         progress: &dyn Progress,
         cancel: &CancelToken,
     ) -> Result<Pixels, VisionError>;
@@ -207,6 +225,12 @@ pub trait VisionModels: Send + Sync {
     /// # Errors
     /// [`VisionError`] when it cannot be run.
     fn upscaler(&self) -> Result<Arc<dyn Upscaler>, VisionError>;
+
+    /// The one in use.
+    ///
+    /// # Errors
+    /// [`VisionError::Unavailable`] when none is installed.
+    fn inpainter(&self) -> Result<Arc<dyn Inpainter>, VisionError>;
 }
 
 #[cfg(test)]

@@ -339,7 +339,7 @@ fn decode_images_until(
                 .and_then(gafira_doc::PageBackground::asset)
                 .into_iter()
                 .chain(page.nodes.values().filter_map(|node| match &node.kind {
-                    NodeKind::Image(image) if image.look.is_none() => Some(image.asset),
+                    NodeKind::Image(image) if image.is_plain() => Some(image.asset),
                     NodeKind::Frame(frame) => frame.content.map(|content| content.asset),
                     NodeKind::Qr(qr) => qr.logo.map(|logo| logo.asset),
                     _ => None,
@@ -354,7 +354,7 @@ fn decode_images_until(
         let pixels = images.decode(&bytes)?;
         decoded.insert(asset, Arc::new(pixels));
     }
-    // An image with a look is kept as it looks (spec 085).
+    // An image with a look, or cropped, is kept as it looks (specs 085, 088).
     for node in pages
         .iter()
         .filter_map(|page| document.page(*page))
@@ -364,7 +364,7 @@ fn decode_images_until(
             continue;
         };
         let shown = image.shown();
-        if image.look.is_none() || decoded.contains_key(&shown) {
+        if image.is_plain() || decoded.contains_key(&shown) {
             continue;
         }
         cancel.check()?;

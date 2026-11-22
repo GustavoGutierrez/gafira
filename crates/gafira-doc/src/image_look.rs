@@ -5,7 +5,9 @@
 use gafira_color::{Color, Rgba};
 use serde::{Deserialize, Serialize};
 
-use crate::{AssetRef, ContentHash};
+use gafira_geom::Point;
+
+use crate::{AssetRef, ContentHash, Placement};
 
 fn none(v: &f64) -> bool {
     *v == 0.0
@@ -284,13 +286,14 @@ impl ImageLook {
             && self.shadow.as_ref().is_none_or(ImageShadow::is_valid)
     }
 
-    /// What the pixels of `asset` with this look are kept under.
+    /// What the pixels of `asset`, its part `crop` with this look, are kept
+    /// under.
     #[must_use]
-    pub fn key(&self, asset: AssetRef) -> AssetRef {
+    pub fn key(&self, asset: AssetRef, crop: Option<&ImageCrop>) -> AssetRef {
         // Four runs of FNV-1a from as many starts: a name for what is kept in
         // memory, not a proof of content.
         const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let written = serde_json::to_vec(self).unwrap_or_default();
+        let written = serde_json::to_vec(&(self, crop)).unwrap_or_default();
         let mut out = [0; 32];
         for (lane, bytes) in out.chunks_exact_mut(8).enumerate() {
             // Four lanes: the cast is exact.
@@ -301,5 +304,106 @@ impl ImageLook {
             bytes.copy_from_slice(&hash.to_le_bytes());
         }
         AssetRef::new(ContentHash(out))
+    }
+}
+
+/// The shapes an image is cut to.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CropShape {
+    #[default]
+    Rect,
+    /// Its corners are round: a share of its smaller side.
+    Rounded(f64),
+    Ellipse,
+    /// Drawn by hand: points, as shares of the sides of the part.
+    Path(Vec<[f64; 2]>),
+}
+
+/// The part of an image that shows (spec 088): shares of its sides, so a
+/// better resolution does not change it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ImageCrop {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    #[serde(default, skip_serializing_if = "is_rect")]
+    pub shape: CropShape,
+}
+
+fn is_rect(shape: &CropShape) -> bool {
+    *shape == CropShape::Rect
+}
+
+impl Default for ImageCrop {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+            shape: CropShape::Rect,
+        }
+    }
+}
+
+impl ImageCrop {
+    /// The least of a side that shows.
+    pub const LEAST: f64 = 0.001;
+    /// The most points of a shape drawn by hand.
+    pub const MAX_POINTS: usize = 512;
+
+    /// Whether all of the image shows.
+    #[must_use]
+    pub fn is_whole(&self) -> bool {
+        *self == Self::default()
+    }
+
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        // Shares are sums of others: not exact.
+        let most = 1.0 + 1e-9;
+        let side = |from: f64, size: f64| {
+            from >= 0.0 && size >= Self::LEAST && from + size <= most && from.is_finite()
+        };
+        side(self.x, self.w)
+            && side(self.y, self.h)
+            && match &self.shape {
+                CropShape::Rect | CropShape::Ellipse => true,
+                CropShape::Rounded(radius) => (0.0..=0.5).contains(radius),
+                CropShape::Path(points) => {
+                    (3..=Self::MAX_POINTS).contains(&points.len())
+                        && points.iter().flatten().all(|v| (0.0..=1.0).contains(v))
+                }
+            }
+    }
+
+    /// The box all of the image has, when its part has the box `part`: what
+    /// is seen stays where it is, however it is turned.
+    #[must_use]
+    pub fn whole_box(&self, part: &Placement) -> Placement {
+        let (w, h) = (part.w / self.w, part.h / self.h);
+        boxed(part, (-self.x * w, -self.y * h), (w, h))
+    }
+
+    /// The box its part has, when all of the image has the box `whole`.
+    #[must_use]
+    pub fn part_box(&self, whole: &Placement) -> Placement {
+        let at = (self.x * whole.w, self.y * whole.h);
+        boxed(whole, at, (self.w * whole.w, self.h * whole.h))
+    }
+}
+
+/// The box of `size` that begins at `from` inside the one of `placement`,
+/// turned as it is.
+fn boxed(placement: &Placement, from: (f64, f64), (w, h): (f64, f64)) -> Placement {
+    let middle = placement.to_transform() * Point::new(from.0 + w / 2.0, from.1 + h / 2.0);
+    Placement {
+        x: middle.x - w / 2.0,
+        y: middle.y - h / 2.0,
+        w,
+        h,
+        ..*placement
     }
 }
