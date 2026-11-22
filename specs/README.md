@@ -46,6 +46,16 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 067 | [Importar desde el sistema](067-system-import.md) | in-progress: soltar y pegar imágenes (PNG, JPEG) y formas (SVG, PDF) en el lienzo |
 | 068 | [Biblioteca: archivos importados con vista previa](068-library-panel.md) | in-progress: importados recientes con miniaturas, búsqueda, pestañas Imágenes y Diseños, clic y arrastre |
 | 069 | [Fondo de la página](069-page-background.md) | in-progress: color, degradado, patrón o imagen de fondo; búsqueda de colores (D-108) |
+| 070 | [Propiedades, barra de la selección y panel Texto](070-properties-selection-bar-text.md) | in-progress: pestaña Propiedades, barra flotante, texto curvo y combinaciones de fuentes (FD-44) |
+| 071 | [Catálogo de fotos remotas](071-catalogo-fotos-remotas.md) | in-progress: Elementos → Fotos con Openverse y Wikimedia sin clave (D-111) |
+| 072 | [Ilustraciones](072-ilustraciones.md) | in-progress: ilustraciones vectoriales libres, a color y en blanco y negro, de Iconify (D-111) |
+| 073 | [PDF vectorial](073-pdf-vectorial.md) | in-progress: vectores y texto real, comprimir, aplanar, contraseña, RGB/CMYK y diálogo de exportación (D-112) |
+| 074 | [SVG, recordar configuración y calidad](074-svg-presets-calidad.md) | in-progress: exportar SVG, configuración por formato y calidad de PNG/JPEG/WebP |
+| 075 | [Exportar a PowerPoint](075-exportar-pptx.md) | in-progress: PPTX editable con formas, textos, imágenes, marcos, líneas, grupos y fondo |
+| 076 | [Crear un diseño](076-crear-un-diseno.md) | in-progress: categorías, filtros, búsqueda, miniaturas SVG, tamaño propio y guías por formato |
+| 077 | [Añadir página bajo la última](077-anadir-pagina-bajo-la-ultima.md) | in-progress: botón con menú bajo la última página; fuera de la barra de estado |
+| 078 | [Paquetes de Linux](078-paquetes-linux.md) | in-progress: .deb, AppImage, icono y asociación de los .gaf |
+| 079 | [Dibujo a mano](079-dibujo-a-mano.md) | in-progress: 16 pinceles con estilo propio, trazo vectorial único, borrador de trazos y cursor por herramienta |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -113,4 +123,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
 
-Siguiente ID libre: **070**.
+Siguiente ID libre: **080**.

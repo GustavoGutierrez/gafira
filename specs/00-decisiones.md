@@ -816,6 +816,7 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo: el clic pasa a lo que está debajo, y el marco y `Ctrl/Cmd+A` lo saltan. Se selecciona solo desde Capas. Seleccionado así, no muestra tiradores ni asa de giro y no se mueve con arrastre ni con flechas; girar, voltear, alinear (D-29) y eliminar desde los menús siguen actuando sobre él.
 - **Consecuencia**: un fondo bloqueado deja de tapar los clics sobre la página. Se aplica en la spec 048.
 - Precisa 04 FD-13. Aplicado a 04 (FD-13).
+- **Sustituida en parte** por D-110: un clic sí elige lo bloqueado.
 
 ## D-92 Lo que sobresale de una página se recorta en el lienzo
 
@@ -954,3 +955,27 @@ Fecha: 21 de noviembre de 2026.
 
 - **Decisión** (titular, con una captura): una caja de texto tiene tiradores en sus cuatro esquinas y en el centro de sus lados, no en el centro de arriba ni de abajo. Una esquina escala la caja y el tamaño de letra en la misma proporción (la letra más pequeña no baja de 6 px); un lado cambia solo el ancho, nunca por debajo de lo que necesita una letra (1,2 veces la letra más grande).
 - **Consecuencia**: 03 DIS-89. Aplicado en `gafira-ui` (`textbox.rs`).
+
+## D-110 Un clic elige lo bloqueado para desbloquearlo
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con dos capturas): un clic sobre un elemento bloqueado lo selecciona (o el grupo bloqueado de más arriba), y la barra sobre la selección muestra solo el candado cerrado, resaltado, con «Desbloquear» al pasar el puntero. Sigue sin moverse ni mostrar tiradores. Un arrastre que empieza sobre él dibuja el marco de selección, y el marco y `Ctrl/Cmd+A` siguen saltándolo, así que un fondo bloqueado no estorba.
+- **Consecuencia**: sustituye en D-91 «el clic pasa a lo que está debajo» y «se selecciona solo desde Capas»; lo demás de D-91 sigue. Se aplica en la spec 070.
+
+## D-111 Fotos remotas: la segunda conexión de red
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): Elementos → Fotos busca e inserta fotos de catálogos públicos. Es la segunda conexión de red de la app, acotada: solo la abre el panel Fotos al buscar, cargar miniaturas o insertar una foto, desde el adaptador `gafira-photos`, con su cliente HTTP (`ureq`, TLS con `rustls` y el almacén de certificados del sistema) tras la feature `online`, activada solo en el binario. Editar, guardar y exportar siguen sin red: una foto insertada se guarda en el almacén del proyecto como cualquier imagen.
+- **Fuentes**: Openverse y Wikimedia Commons, sin clave de API (el titular pidió servicios gratuitos sin clave). Solo licencias que permiten uso comercial y modificación (CC0, dominio público, CC BY y CC BY-SA). Pixabay, Unsplash y Pexels quedan para cuando haya intermediario o clave (spec 071 §7). Ninguna clave en el código, el ejecutable ni el `.gaf`.
+- **Privacidad**: las peticiones llevan un `User-Agent` genérico de Gafira, sin datos de la persona; la consulta no se guarda en disco.
+- **Consecuencia**: precisa ARQ-04 y D-01: «la única conexión es la de licencias» pasa a «licencias y el panel Fotos». Se aplica en la spec 071.
+- **Ampliación** (titular, 2026-11-21): Elementos → Ilustraciones usa la misma conexión con Iconify (`api.iconify.design`), sin clave, solo con colecciones MIT o Apache 2.0 (spec 072).
+
+## D-112 PDF con vectores, texto real y contraseña
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): el PDF se escribe por defecto con vectores y texto real con su fuente incrustada; «Aplanar PDF» conserva el PDF de imagen. La contraseña cifra con AES-256 mediante `lopdf` 0.47 (MIT, sin sus funciones por defecto) sobre el PDF que escribe krilla, que no cifra; la clave del archivo sale de `getrandom`. El perfil CMYK es una conversión directa sin perfil ICC: los perfiles de imprenta (FOGRA, GRACoL) tienen licencias que no se han revisado.
+- **Consecuencia**: `RenderOp::Text` y `PageRenderer::vectors` en `gafira-ports`; `ParamKind::Text` en el contrato de opciones. Se aplica en la spec 073.

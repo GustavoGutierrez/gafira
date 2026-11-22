@@ -494,7 +494,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
     "control": { "sm": 28, "md": 32, "lg": 40 },
     "icon": { "sm": 16, "md": 20, "lg": 24 },
     "target.min": 24,
-    "panel.left": 320, "panel.right": 296, "rail": 64, "topbar": 48, "bottombar": 40, "timeline.min": 220
+    "panel.left": 320, "panel.right": 296, "rail": 68, "topbar": 48, "bottombar": 40, "timeline.min": 220
   },
   "border": { "width": 1, "focus": 2, "focus.offset": 2 },
   "shadow": {
@@ -1073,7 +1073,7 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 | **Tooltip** | `text` sobre `surface` invertido, 500 ms de retardo, 12 px | — | Aparece al enfocar con teclado | — | — | Incluye el atajo («Dividir · S») |
 | **Lista con arrastre** (Capas, pistas, páginas) | Fila 32 px con asa ⋮⋮, visibilidad, bloqueo | `secondary.bg` | Anillo en la fila; `Alt+↑/↓` reordena | Línea de inserción coral de 2 px al arrastrar | Fila bloqueada atenuada | — |
 | **Chip** | Radio `pill`, 24 px, `secondary.bg` | `secondary.bg.hover` | Anillo | `secondary.bg.pressed` | Atenuado | Seleccionado: borde `text` 1 px + icono de visto (no solo color) |
-| **Pestaña del riel** | Icono 24 px + etiqueta, `topbar.fg.muted` | `topbar.hover` | Anillo | — | — | Activo: `topbar.fg` + indicador coral |
+| **Pestaña del riel** | Icono 24 px + etiqueta (un punto menor que `caption`, con 6 px a cada lado en un riel de 68 px), `topbar.fg.muted` | `topbar.hover` | Anillo | — | — | Activo: `topbar.fg` + indicador coral |
 | **Miniatura (plantilla, medio)** | Radio `md`, borde `border` | Sombra 1 + acciones | Anillo | — | — | Etiqueta accesible con tipo, formato, estilo y color |
 | **Barra de progreso** | Pista `secondary.bg`, relleno `accent` + texto con porcentaje | — | — | — | — | Error: relleno `error.fg` + mensaje |
 

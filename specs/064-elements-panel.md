@@ -52,3 +52,8 @@ Tests anteriores en verde; catálogos y glosario cambiados; iconos nuevos regist
 
 - Las categorías sin biblioteca se ven pero llevan a «Disponible pronto.»; cada una tendrá su spec.
 - Nombres largos («Ilustraciones», «Códigos QR») en tres columnas a 280 px de panel: se recortan con puntos suspensivos y el nombre completo va en el texto de ayuda.
+
+## Orden del riel (titular, 2026-11-21)
+
+Elementos, Texto, Biblioteca, Marca, Dibujo y Plantillas: Elementos es la primera y la que está abierta al entrar en un diseño, Marca la antepenúltima y Plantillas la última (`editor::TABS`).
+
