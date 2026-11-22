@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Remote photo catalogues (spec 071, D-111): Openverse and Wikimedia
 //! Commons, without an API key. Implements [`PhotoCatalog`] over an
 //! [`Http`] transport; the real one ([`online::UreqHttp`]) is behind the

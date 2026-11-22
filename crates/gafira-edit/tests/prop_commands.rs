@@ -9,9 +9,9 @@ use gafira_doc::{
     NodeId, NodeKind, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
 };
 use gafira_edit::{
-    Applied, Command, CommandError, DirtySet, GestureId, InsertAsset, InsertNodes, InsertPage,
-    NodeSpec, Property, RemoveNodes, RemovePage, Reorder, Reparent, RestoreVersion, SetProperty,
-    Transaction,
+    Applied, Command, CommandError, DirtySet, DuplicatePage, GestureId, InsertAsset, InsertNodes,
+    InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder, ReorderPage, Reparent,
+    RestoreVersion, SetProperty, Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -347,6 +347,36 @@ fn remove_page(doc: &Document) -> BoxedStrategy<RemovePage> {
 #[test]
 fn remove_page_obeys_the_command_laws() {
     prop_command(remove_page);
+}
+
+/// A page of `doc` (or a missing one now and then) and an index that is
+/// sometimes past the end.
+fn reorder_page(doc: &Document) -> BoxedStrategy<ReorderPage> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    let len = pages.len();
+    pages.push(PageId::new(u64::MAX));
+    (prop::sample::select(pages), 0..=len)
+        .prop_map(|(page, index)| ReorderPage::new(page, index))
+        .boxed()
+}
+
+#[test]
+fn reorder_page_obeys_the_command_laws() {
+    prop_command(reorder_page);
+}
+
+/// A page of `doc`, or a missing one now and then.
+fn duplicate_page(doc: &Document) -> BoxedStrategy<DuplicatePage> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    pages.push(PageId::new(u64::MAX));
+    prop::sample::select(pages)
+        .prop_map(DuplicatePage::new)
+        .boxed()
+}
+
+#[test]
+fn duplicate_page_obeys_the_command_laws() {
+    prop_command(duplicate_page);
 }
 
 /// A reference the document already has now and then, so the `Unchanged`
