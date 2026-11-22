@@ -21,6 +21,8 @@ blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zip.workspace = true
+# The backend of `zip`; not used directly.
+flate2.workspace = true
 rayon.workspace = true
 image.workspace = true
 # Inference in pure Rust, always there (MIT OR Apache-2.0).

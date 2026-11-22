@@ -14,6 +14,8 @@ gafira-raster.workspace = true
 image-webp.workspace = true
 serde_json.workspace = true
 zip.workspace = true
+# The backend of `zip`; not used directly.
+flate2.workspace = true
 
 [dev-dependencies]
 gafira-assets.workspace = true

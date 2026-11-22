@@ -22,6 +22,8 @@ gafira-io-image.workspace = true
 image.workspace = true
 # The OPC package is a ZIP (already in the tree for .gaf).
 zip.workspace = true
+# The backend of `zip`; not used directly.
+flate2.workspace = true
 
 [dev-dependencies]
 gafira-geom.workspace = true

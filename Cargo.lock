@@ -2049,6 +2049,7 @@ name = "gafira-format"
 version = "0.1.0-beta.3"
 dependencies = [
  "blake3",
+ "flate2",
  "gafira-assets",
  "gafira-doc",
  "gafira-ports",
@@ -2127,6 +2128,7 @@ dependencies = [
 name = "gafira-io-pptx"
 version = "0.1.0-beta.3"
 dependencies = [
+ "flate2",
  "gafira-chart",
  "gafira-color",
  "gafira-doc",
@@ -2176,6 +2178,7 @@ dependencies = [
 name = "gafira-io-xlsx"
 version = "0.1.0-beta.3"
 dependencies = [
+ "flate2",
  "gafira-color",
  "gafira-doc",
  "gafira-ports",
@@ -2447,6 +2450,7 @@ name = "gafira-vision"
 version = "0.1.0-beta.3"
 dependencies = [
  "blake3",
+ "flate2",
  "gafira-doc",
  "gafira-ports",
  "gafira-raster",

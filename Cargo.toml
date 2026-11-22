@@ -79,7 +79,10 @@ roxmltree = "0.20"
 tract-onnx = { version = "0.23", default-features = false }
 tract-linalg = { version = "0.23", default-features = false, features = ["multithread-mm"] }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std", "webgpu", "api-22"] }
-zip = { version = "9", default-features = false, features = ["deflate"] }
+# Its `deflate` would switch flate2 to zlib-rs in the whole workspace, and with
+# it the bytes of every PNG (CAL-11): the Rust backend, as before.
+zip = { version = "9", default-features = false, features = ["deflate-flate2", "deflate-zopfli"] }
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 # WebP: spec 087, with `image-webp`, already in the tree.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
