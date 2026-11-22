@@ -38,6 +38,8 @@ defaults:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # The test binaries with debug information do not fit in the disk of a runner.
+  CARGO_PROFILE_DEV_DEBUG: none
 
 jobs:
   linux:
