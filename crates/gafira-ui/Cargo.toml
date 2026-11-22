@@ -18,6 +18,8 @@ gafira-i18n.workspace = true
 gafira-layout.workspace = true
 # Spec 065: the lights are drawn with the pixels of gafira-raster, as the export draws them.
 gafira-raster.workspace = true
+# FD-44: a curved text is drawn from the outline the export draws.
+gafira-render.workspace = true
 # Spec 054: shape paths are built with kurbo and drawn on the canvas with tiny-skia.
 kurbo.workspace = true
 tiny-skia.workspace = true
@@ -41,7 +43,6 @@ gafira-assets.workspace = true
 gafira-platform.workspace = true
 gafira-format.workspace = true
 # Spec 030: the export tests compose the engine as the app does.
-gafira-render.workspace = true
 gafira-render-cpu.workspace = true
 gafira-io-image.workspace = true
 gafira-io-pdf.workspace = true

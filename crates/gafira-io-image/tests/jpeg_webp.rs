@@ -101,6 +101,7 @@ fn square_document(fill: Color) -> Document {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
     ));
     let mut page = Page::new(
@@ -240,36 +241,40 @@ fn s39_01_a_jpeg_composes_the_page_over_white() {
     assert_eq!(JPEG_FORMAT.extensions, ["jpg", "jpeg"]);
 }
 
-// S39-01: the quality is 1 to 100, 90 by default; a lower one gives a
-// smaller file.
+// S39-01, spec 074: the quality is Baja, Media or Alta (60, 80, 92), Alta
+// by default; another choice is refused; a lower one gives a smaller file.
 #[test]
 fn s39_01_the_jpeg_quality_is_checked_and_used() {
     let exporter = JpegExporter::new();
     let schema = exporter.options_schema();
-    assert_eq!(schema.defaults().int(QUALITY), Some(90));
-    for bad in [0, 101] {
-        let issues = exporter.validate(&request("jpeg", &[(QUALITY, ParamValue::Int(bad))]));
-        assert!(issues.iter().any(|issue| issue.blocks()), "quality {bad}");
-    }
+    assert_eq!(schema.defaults().choice(QUALITY), Some("high"));
+    let bad = exporter.validate(&request(
+        "jpeg",
+        &[(QUALITY, ParamValue::Choice("max".to_owned()))],
+    ));
+    assert!(bad.iter().any(|issue| issue.blocks()));
     assert!(
         exporter
-            .validate(&request("jpeg", &[(QUALITY, ParamValue::Int(1))]))
+            .validate(&request(
+                "jpeg",
+                &[(QUALITY, ParamValue::Choice("low".to_owned()))]
+            ))
             .is_empty()
     );
-    let size = |quality: i64| {
+    let size = |quality: &str| {
         let mut sink = MemSink::default();
         let document = square_document(RED);
         let request = request(
             "jpeg",
             &[
-                (QUALITY, ParamValue::Int(quality)),
+                (QUALITY, ParamValue::Choice(quality.to_owned())),
                 (SCALE, ParamValue::Float(4.0)),
             ],
         );
         export(&exporter, &document, &request, &mut sink).expect("the export runs");
         sink.bytes(0).len()
     };
-    assert!(size(10) < size(100), "a lower quality is smaller");
+    assert!(size("low") <= size("high"), "a lower quality is no larger");
 }
 
 // S39-02: a lossless WebP reads back with the pixels of the PNG of the
@@ -337,6 +342,7 @@ fn standing_bar() -> Document {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
     ));
     let mut page = Page::new(

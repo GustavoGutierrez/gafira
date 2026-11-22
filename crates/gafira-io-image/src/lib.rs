@@ -17,6 +17,6 @@ pub use decode::RasterDecoder;
 /// Moved to `gafira-raster` (spec 033); kept here for the exporters.
 pub use gafira_raster::straight_srgb8;
 pub use jpeg_export::{JPEG_FORMAT, JpegExporter, QUALITY};
-pub use png_export::{PNG_FORMAT, PngExporter};
+pub use png_export::{PNG_FORMAT, PNG_QUALITY, PngExporter};
 pub use raster::{MAX_SIDE, SCALE, TRANSPARENT, page_pixels};
-pub use webp_export::{WEBP_FORMAT, WebpExporter};
+pub use webp_export::{WEBP_FORMAT, WEBP_QUALITY, WebpExporter};

@@ -15,5 +15,9 @@ serde_json.workspace = true
 # Spec 062: the names and faces of the fonts installed on the system.
 skrifa.workspace = true
 
+# Spec 078: the monitor under the pointer, to centre the splash there.
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb.workspace = true
+
 [lints]
 workspace = true

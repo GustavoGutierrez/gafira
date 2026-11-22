@@ -293,6 +293,7 @@ fn shape(
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
     )
 }

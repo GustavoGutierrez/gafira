@@ -64,6 +64,12 @@ pub enum NodeField {
     TextColorAlpha,
     /// A coordinate of a point of a shape path (spec 054).
     PathCoordinate,
+    /// How much a text bends (FD-44).
+    TextCurve,
+    /// The letter spacing of a text (FD-41).
+    LetterSpacing,
+    /// The line height of a text (FD-41).
+    LineHeight,
 }
 
 impl fmt::Display for NodeField {
@@ -82,6 +88,9 @@ impl fmt::Display for NodeField {
             Self::StrokeAlpha => "stroke alpha",
             Self::StrokeWidth => "stroke width",
             Self::PathCoordinate => "path coordinate",
+            Self::TextCurve => "text curve",
+            Self::LetterSpacing => "letter spacing",
+            Self::LineHeight => "line height",
             Self::CornerRadius => "corner radius",
             Self::FontSize => "font size",
             Self::TextColorChannel => "text color channel",

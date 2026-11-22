@@ -13,6 +13,7 @@ pub mod format;
 pub mod i18n;
 pub mod license;
 pub mod media;
+pub mod photos;
 pub mod registry;
 pub mod render;
 pub mod repository;

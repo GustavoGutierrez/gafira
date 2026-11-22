@@ -392,6 +392,7 @@ fn build_node(id: NodeId, spec: &NodeSpec) -> Node {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
         KindSpec::Extension(type_id, schema_version, payload) => {
             NodeKind::Extension(ExtensionNode {
@@ -748,6 +749,7 @@ pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
                     text: None,
                     gradient: None,
                     effect: None,
+                    drawn_with: None,
                 });
                 let node = fresh(&mut edit, kind);
                 add_root(&mut edit, page, node);

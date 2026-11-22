@@ -128,6 +128,7 @@ fn square_document() -> Document {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
     );
     Document::from_parts(3, Dpi::default(), vec![page(1, 100.0, 50.0, vec![square])])

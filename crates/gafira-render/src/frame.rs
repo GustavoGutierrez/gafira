@@ -645,6 +645,7 @@ mod tests {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));

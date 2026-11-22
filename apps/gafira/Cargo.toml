@@ -19,7 +19,13 @@ gafira-render-cpu.workspace = true
 gafira-theme.workspace = true
 gafira-io-image.workspace = true
 gafira-io-pdf.workspace = true
+gafira-io-svg.workspace = true
+gafira-io-pptx.workspace = true
+# D-111: Elementos → Fotos, the only network besides the licence.
+gafira-photos = { workspace = true, features = ["online"] }
 eframe.workspace = true
+# Spec 074: the export settings kept per format, as JSON.
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -444,7 +444,7 @@ const ARROW: [(f64, f64); 7] = [
 ];
 
 /// A closed polygon through `points`.
-fn poly(points: &[(f64, f64)]) -> BezPath {
+pub(crate) fn poly(points: &[(f64, f64)]) -> BezPath {
     let mut path = BezPath::new();
     for (i, p) in points.iter().enumerate() {
         if i == 0 {
@@ -481,7 +481,7 @@ fn regular(n: usize, start: f64) -> Vec<(f64, f64)> {
 
 /// A star of `n` points, its inner corners at `inner` of the outer radius,
 /// a point straight up.
-fn star(n: usize, inner: f64) -> Vec<(f64, f64)> {
+pub(crate) fn star(n: usize, inner: f64) -> Vec<(f64, f64)> {
     (0..2 * n)
         .map(|i| {
             let r = if i % 2 == 0 { 1.0 } else { inner };
@@ -573,7 +573,7 @@ fn union(parts: Vec<BezPath>) -> BezPath {
 
 /// `path` scaled so its exact bounds are the unit box, as a document path,
 /// with the width over the height it had.
-fn finished(mut path: BezPath) -> (ShapePath, f64) {
+pub(crate) fn finished(mut path: BezPath) -> (ShapePath, f64) {
     let b = path.bounding_box();
     let (w, h) = (b.width(), b.height());
     path.apply_affine(
@@ -592,6 +592,15 @@ fn finished(mut path: BezPath) -> (ShapePath, f64) {
         })
         .collect();
     (ShapePath::new(commands), w / h)
+}
+
+/// The outline of `piece` as a `kurbo` path, its own proportions kept (a
+/// unit square for the shapes drawn without a path).
+pub(crate) fn piece_path(piece: Piece) -> kurbo::BezPath {
+    match built(piece) {
+        Some((path, aspect)) => bez(&path, aspect, 1.0),
+        None => kurbo::Rect::new(0.0, 0.0, 1.0, 1.0).to_path(TOLERANCE),
+    }
 }
 
 /// `path` as a `kurbo` path of `w` × `h`, from the top-left corner.

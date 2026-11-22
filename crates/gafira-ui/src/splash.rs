@@ -44,6 +44,15 @@ pub(crate) fn main_size(default: Vec2, min: Vec2, monitor: Option<Vec2>) -> Vec2
     }
 }
 
+/// Where a splash of `size` goes to sit in the middle of the monitor
+/// `(x, y, width, height)` (spec 078).
+pub(crate) fn centred_on((x, y, w, h): (i32, i32, u32, u32), size: (u32, u32)) -> Pos2 {
+    Pos2::new(
+        x as f32 + (w as f32 - size.0 as f32) / 2.0,
+        y as f32 + (h as f32 - size.1 as f32) / 2.0,
+    )
+}
+
 /// Where the main window goes so that it keeps the centre of the splash.
 pub(crate) fn grown_from(splash: Rect, size: Vec2) -> Pos2 {
     splash.center() - size / 2.0

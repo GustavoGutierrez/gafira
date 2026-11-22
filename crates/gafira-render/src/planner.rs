@@ -353,7 +353,7 @@ fn centre(rect: IRect) -> (i32, i32) {
 /// `RenderOp` is not `Clone` (the port is closed on purpose), so the copy is
 /// built field by field. A new variant of the port breaks this function, and
 /// that is the point.
-fn copy_op(op: &RenderOp) -> RenderOp {
+pub(crate) fn copy_op(op: &RenderOp) -> RenderOp {
     match op {
         RenderOp::PushLayer => RenderOp::PushLayer,
         RenderOp::PopLayer { blend, opacity } => RenderOp::PopLayer {
@@ -368,6 +368,17 @@ fn copy_op(op: &RenderOp) -> RenderOp {
             path: Arc::clone(path),
             color: *color,
             transform: *transform,
+        },
+        RenderOp::Text {
+            path,
+            color,
+            transform,
+            runs,
+        } => RenderOp::Text {
+            path: Arc::clone(path),
+            color: *color,
+            transform: *transform,
+            runs: Arc::clone(runs),
         },
         RenderOp::FillGradient {
             path,
@@ -451,6 +462,7 @@ mod tests {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
@@ -469,6 +481,7 @@ mod tests {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(id), Arc::new(Node::new(base, kind)));
@@ -593,6 +606,8 @@ mod tests {
             RenderOp::PushLayer => "push",
             RenderOp::PopLayer { .. } => "pop",
             RenderOp::FillPath { .. } => "fill",
+            // Text draws as its outline (spec 073).
+            RenderOp::Text { .. } => "fill",
             RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
             RenderOp::ClipPath { .. } => "clip",

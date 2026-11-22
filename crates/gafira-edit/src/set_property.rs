@@ -36,6 +36,16 @@ pub enum Property {
     CornerRadius(f64),
     /// The rich text of a text element (spec 027).
     TextContent(RichText),
+    /// How much a text element bends (FD-44), in `[-100, 100]`.
+    TextCurve(f64),
+    /// Where the lines of a text element sit across its box.
+    TextAlign(gafira_doc::TextAlign),
+    /// The letter spacing (thousandths of an em) and line height (`None`
+    /// for the font's own) of a text element (FD-41).
+    TextSpacing(f64, Option<f64>),
+    /// The gradient of a text element's letters; `None` fills them with
+    /// their colour again (spec 070).
+    TextGradient(Option<gafira_doc::Gradient>),
     /// The text inside a shape; `None` leaves it empty (spec 055).
     ShapeText(Option<ShapeText>),
     /// A whole line: its ends, caps, connections, colour and width (spec
@@ -93,6 +103,10 @@ impl Property {
             Self::FrameFit(_) => "set_property.frame_fit",
             Self::FrameCrop(..) => "set_property.frame_crop",
             Self::TextContent(_) => "set_property.text_content",
+            Self::TextCurve(_) => "set_property.text_curve",
+            Self::TextAlign(_) => "set_property.text_align",
+            Self::TextSpacing(..) => "set_property.text_spacing",
+            Self::TextGradient(_) => "set_property.text_gradient",
             Self::PageName(_) => "set_property.page_name",
             Self::PageBackground(_) => "set_property.page_background",
             Self::PageSize(_) => "set_property.page_size",
@@ -130,6 +144,16 @@ impl Property {
             ),
             Self::CornerRadius(r) => ("corner_radius", r.is_finite() && *r >= 0.0),
             Self::TextContent(text) => ("text_content", spans_valid(text)),
+            Self::TextSpacing(letters, lines) => (
+                "text_spacing",
+                TextNode::LETTER_SPACING.contains(letters)
+                    && lines.is_none_or(|h| TextNode::LINE_HEIGHT.contains(&h)),
+            ),
+            Self::TextGradient(Some(gradient)) => ("text_gradient", gradient.problem().is_none()),
+            Self::TextCurve(curve) => (
+                "text_curve",
+                (-TextNode::MAX_CURVE..=TextNode::MAX_CURVE).contains(curve),
+            ),
             Self::ShapeText(Some(text)) => ("shape_text", spans_valid(&text.content)),
             Self::Gradient(Some(gradient)) => ("gradient", gradient.problem().is_none()),
             Self::Effect(Some(effect)) => ("effect", effect.problem().is_none()),
@@ -183,6 +207,12 @@ impl Property {
             (Self::Stroke(_), NodeKind::Shape(s)) => Self::Stroke(s.stroke),
             (Self::CornerRadius(_), NodeKind::Shape(s)) => Self::CornerRadius(s.corner_radius),
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
+            (Self::TextCurve(_), NodeKind::Text(t)) => Self::TextCurve(t.curve),
+            (Self::TextAlign(_), NodeKind::Text(t)) => Self::TextAlign(t.align),
+            (Self::TextSpacing(..), NodeKind::Text(t)) => {
+                Self::TextSpacing(t.letter_spacing, t.line_height)
+            }
+            (Self::TextGradient(_), NodeKind::Text(t)) => Self::TextGradient(t.gradient.clone()),
             (Self::ShapeText(_), NodeKind::Shape(s)) => Self::ShapeText(s.text.clone()),
             (Self::Line(_), NodeKind::Line(l)) => Self::Line(l.clone()),
             (Self::Gradient(_), NodeKind::Shape(s)) => Self::Gradient(s.gradient.clone()),
@@ -213,6 +243,13 @@ impl Property {
             (Self::Stroke(v), NodeKind::Shape(s)) => s.stroke = *v,
             (Self::CornerRadius(v), NodeKind::Shape(s)) => s.corner_radius = *v,
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
+            (Self::TextCurve(v), NodeKind::Text(t)) => t.curve = *v,
+            (Self::TextAlign(v), NodeKind::Text(t)) => t.align = *v,
+            (Self::TextSpacing(letters, lines), NodeKind::Text(t)) => {
+                t.letter_spacing = *letters;
+                t.line_height = *lines;
+            }
+            (Self::TextGradient(v), NodeKind::Text(t)) => t.gradient.clone_from(v),
             (Self::ShapeText(v), NodeKind::Shape(s)) => s.text.clone_from(v),
             (Self::Line(v), NodeKind::Line(l)) => l.clone_from(v),
             (Self::Gradient(v), NodeKind::Shape(s)) => s.gradient.clone_from(v),

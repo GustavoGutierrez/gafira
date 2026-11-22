@@ -363,6 +363,64 @@ fn centred(mut p: Placement, cx: f64, cy: f64) -> Placement {
     p
 }
 
+/// The letters a corner resize of group `id` by `scale` scales (owner
+/// rule): the words of every text element and every shape below it, all by
+/// the same factor, so a large and a small letter keep their proportion.
+/// The factor is kept so no letter goes below the smallest size nor past
+/// the largest; it is returned with the new words, `scale` when nothing
+/// below has words.
+pub(crate) fn scaled_letters(
+    page: &Page,
+    id: NodeId,
+    scale: f64,
+) -> (f64, Vec<(NodeId, ScaledWords)>) {
+    let words: Vec<(NodeId, ScaledWords)> = subtree(page, id)
+        .into_iter()
+        .filter_map(|node| match &page.node(node)?.kind {
+            NodeKind::Text(text) => Some((node, ScaledWords::Text(text.content.clone()))),
+            NodeKind::Shape(shape) => shape
+                .text
+                .clone()
+                .map(|text| (node, ScaledWords::Shape(text))),
+            _ => None,
+        })
+        .collect();
+    let k = words.iter().fold(scale, |k, (_, words)| {
+        crate::textbox::corner_factor(words.content(), k)
+    });
+    let scaled = words
+        .into_iter()
+        .map(|(node, words)| (node, words.scaled(k)))
+        .collect();
+    (k, scaled)
+}
+
+/// The words of a text element or of a shape, for [`scaled_letters`].
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ScaledWords {
+    Text(gafira_doc::RichText),
+    Shape(gafira_doc::ShapeText),
+}
+
+impl ScaledWords {
+    fn content(&self) -> &gafira_doc::RichText {
+        match self {
+            Self::Text(text) => text,
+            Self::Shape(text) => &text.content,
+        }
+    }
+
+    fn scaled(self, k: f64) -> Self {
+        match self {
+            Self::Text(text) => Self::Text(crate::textbox::scaled(&text, k)),
+            Self::Shape(mut text) => {
+                text.content = crate::textbox::scaled(&text.content, k);
+                Self::Shape(text)
+            }
+        }
+    }
+}
+
 /// The placement of one element after `change`.
 fn mapped(p: &Placement, change: Change) -> Placement {
     let (cx, cy) = (p.x + p.w / 2.0, p.y + p.h / 2.0);

@@ -88,6 +88,8 @@ pub(crate) enum Icon {
     /// «Luces y efectos» and its elements (spec 065): the category, also
     /// «Brillo», and «Destello de lente».
     CategoryLights,
+    /// Elementos → Fotos (spec 071).
+    CategoryPhotos,
     LensFlare,
     /// «Destello de cine», «Rayos de sol» and «Luces bokeh» (D-104).
     Streak,
@@ -97,7 +99,7 @@ pub(crate) enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 55] = [
+    pub(crate) const ALL: [Self; 56] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -149,6 +151,7 @@ impl Icon {
         Self::CategoryIllustrations,
         Self::Back,
         Self::CategoryLights,
+        Self::CategoryPhotos,
         Self::LensFlare,
         Self::Streak,
         Self::SunRays,
@@ -209,6 +212,7 @@ impl Icon {
             Self::CategoryIllustrations => "paint-brush-broad",
             Self::Back => "arrow-left",
             Self::CategoryLights => "sparkle",
+            Self::CategoryPhotos => "camera",
             Self::LensFlare => "sun",
             Self::Streak => "arrows-out-line-horizontal",
             Self::SunRays => "sun-horizon",

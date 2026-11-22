@@ -29,6 +29,7 @@ use crate::icons::{self, Icon, Weight};
 use crate::layers::{self, Flag};
 use crate::lines;
 use crate::magnet::{self, Snap};
+use crate::pairings;
 use crate::resize;
 use crate::rotation::{self, Axis};
 use crate::ruler;
@@ -43,13 +44,15 @@ use crate::widgets::{self, IconButton, Surface};
 use crate::zoom::{self, Zoom, ZoomAsk};
 
 /// The tabs of the rail, in the order of 03 §2.3, with their icons.
+/// The tabs of the rail (owner request): Elementos first, the one open
+/// when a design opens; Marca third from last and Plantillas last.
 const TABS: [(&str, Icon); 6] = [
-    ("tab.templates", Icon::Templates),
     ("tab.pieces", Icon::Pieces),
     ("tab.text", Icon::Text),
-    ("tab.identity", Icon::Identity),
     ("tab.library", Icon::Library),
+    ("tab.identity", Icon::Identity),
     ("tab.drawing", Icon::Drawing),
+    ("tab.templates", Icon::Templates),
 ];
 
 /// The margin around the page on the canvas, in logical px.
@@ -58,6 +61,8 @@ const CANVAS_MARGIN: f32 = 48.0;
 /// The space between two pages on the canvas, in logical px (03 §7.3: the
 /// pages stack vertically).
 const PAGE_GAP: f32 = 56.0;
+/// The room under the last page for «Añadir página» (spec 077).
+const ADD_PAGE_ROOM: f32 = 48.0;
 
 /// The shortcuts of 03 §9.2 that tooltips and the Edición menu show.
 const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
@@ -257,7 +262,16 @@ pub(crate) struct Editor {
     /// Biblioteca (spec 068): the imported files, the panel's tab, search
     /// and list, and the previews of its files.
     pub(crate) library: Option<std::rc::Rc<dyn crate::LibraryStore>>,
+    /// Elementos → Fotos (spec 071): its search, results and downloads.
+    pub(crate) photo_panel: std::cell::RefCell<crate::photos::PhotosPanel>,
+    /// Dibujo: the tool, the brushes' settings and the stroke being drawn
+    /// (spec 079).
+    draw: std::cell::RefCell<crate::draw::DrawState>,
+    /// Elementos → Ilustraciones (spec 072).
+    pub(crate) illustration_panel: std::cell::RefCell<crate::illustrations::IllustrationsPanel>,
     library_view: std::cell::RefCell<(crate::library::View, f64)>,
+    /// Marcos: its search and the collection open with «Ver todo».
+    frames_view: std::cell::RefCell<(String, Option<usize>)>,
     /// The search of «Fondo de la página» (spec 069).
     background_query: std::cell::RefCell<String>,
     library_previews: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Preview>>,
@@ -312,6 +326,8 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// The box each curved text texture covers, by its key (FD-44).
+    curved_covers: std::cell::RefCell<std::collections::BTreeMap<u64, Placement>>,
     /// The text being written on the canvas (spec 055).
     editing: Option<Editing>,
     /// Crop mode of a frame (S66-07): the photo moves inside it, the whole
@@ -442,7 +458,11 @@ impl Default for Editor {
             textures: std::collections::HashMap::new(),
             photos: std::collections::HashMap::new(),
             library: None,
+            photo_panel: std::cell::RefCell::default(),
+            draw: std::cell::RefCell::default(),
+            illustration_panel: std::cell::RefCell::default(),
             library_view: std::cell::RefCell::default(),
+            frames_view: std::cell::RefCell::default(),
             background_query: std::cell::RefCell::default(),
             library_previews: std::cell::RefCell::default(),
             drag: None,
@@ -464,6 +484,7 @@ impl Default for Editor {
             renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            curved_covers: std::cell::RefCell::default(),
             editing: None,
             cropping: None,
             paste_seen: false,
@@ -484,6 +505,10 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// A freehand stroke to add to its page (spec 079).
+    draw_stroke: Option<(PageId, gafira_edit::NodeSpec)>,
+    /// Strokes the eraser went over, to remove in one step (spec 079).
+    erase: Option<(PageId, Vec<NodeId>)>,
     home: bool,
     file: Option<FileAction>,
     /// «Versiones» in the top bar, «Guardar versión…» in Archivo.
@@ -581,6 +606,9 @@ struct Asked {
     /// (`Some(None)` makes it white), the same background on every page,
     /// and «Subir una imagen».
     page_background: Option<Option<gafira_doc::PageBackground>>,
+    /// «Usar como fondo de la página»: the image element becomes its page's
+    /// background and leaves the page, in one step.
+    image_to_background: Option<(PageId, NodeId, gafira_doc::timeline::AssetRef)>,
     background_all: bool,
     background_pick: bool,
     /// The answer to «¿Cómo quieres importarlo?» for the SVG files waiting:
@@ -603,6 +631,30 @@ struct Asked {
     /// A new text element of this preset (Texto tab, spec 027).
     /// With the words it starts with, already in the interface language.
     insert_text: Option<(canvas::TextPreset, String)>,
+    /// A curved text from the Texto panel, with its bend, in the middle of
+    /// the page or where it was dropped (FD-44).
+    insert_curved: Option<(f64, String, Option<Dropped>)>,
+    /// A font pairing from the Texto panel, by its index in
+    /// [`pairings::PAIRINGS`], in the middle of the page or where it was
+    /// dropped: a group of a heading and a body line.
+    insert_pairing: Option<(usize, (String, String), Option<Dropped>)>,
+    /// «Curva» of the selected texts (FD-44).
+    text_curve: Option<f64>,
+    /// An illustration to insert as vector shapes (spec 072): its SVG, its
+    /// credit and where it was let go (screen).
+    insert_illustration: Option<(Arc<Vec<u8>>, String, Option<Pos2>)>,
+    /// A Foto collage layout, by its index in [`crate::collage::LAYOUTS`],
+    /// filling the current page or the one it was dropped on (S66-09).
+    insert_collage: Option<(usize, Option<PageId>)>,
+    /// A frame of Marcos, in the middle of the current page or where it
+    /// was dropped (spec 066, owner request with references).
+    insert_frame_kind: Option<(crate::frames::Kind, Option<Dropped>)>,
+    /// The alignment of the selected texts (spec 070).
+    text_align: Option<gafira_doc::TextAlign>,
+    /// The letter spacing and line height of the selected texts (FD-41).
+    text_spacing: Option<(f64, Option<f64>)>,
+    /// The colour or gradient of the selected texts' letters (spec 070).
+    text_fill: Option<TextFill>,
     /// New rich text for the selected text element (Inspector).
     text: Option<gafira_doc::RichText>,
     /// An element to move to this index among its siblings (Capas).
@@ -1454,7 +1506,8 @@ impl Editor {
             )
             .show(ctx, |ui| {
                 // 03 §7.3: Notas on the left; on the right the magnet, the
-                // zoom, Páginas with «n de N», and Añadir página (spec 049).
+                // zoom, and Páginas with «n de N» (spec 049). Añadir página
+                // is under the last page (spec 077).
                 let label = |text: String| RichText::new(text).font(theme.font("ui-label"));
                 ui.horizontal_centered(|ui| {
                     // Notas is not a function yet (FD-02): shown, muted.
@@ -1472,10 +1525,6 @@ impl Editor {
                             .as_deref()
                             .and_then(|d| self.current_page(d))
                             .map(|page| page.id);
-                        asked.add_page |= ui
-                            .button(label(texts.t(&gafira_doc::msg!("editor.add_page"))))
-                            .clicked();
-                        bar_separator(ui, theme);
                         ui.label(label(texts.t(&gafira_doc::msg!(
                             "editor.page_of",
                             current = Count(page_number(&ids, current) as u64),
@@ -1663,67 +1712,81 @@ impl Editor {
                     return;
                 }
                 if TABS[self.rail.tab].0 == "tab.text" {
-                    for (key, words, preset) in [
-                        (
-                            gafira_doc::msg!("text.add_title"),
-                            gafira_doc::msg!("text.title"),
-                            canvas::TextPreset::Title,
-                        ),
-                        (
-                            gafira_doc::msg!("text.add_subtitle"),
-                            gafira_doc::msg!("text.subtitle"),
-                            canvas::TextPreset::Subtitle,
-                        ),
-                        (
-                            gafira_doc::msg!("text.add_body"),
-                            gafira_doc::msg!("text.body"),
-                            canvas::TextPreset::Body,
-                        ),
-                    ] {
-                        let (size, display) = preset.size_and_display();
-                        let font = if display {
-                            egui::FontId::new(
-                                size as f32 * 0.4,
-                                egui::FontFamily::Name(crate::style::DISPLAY.into()),
-                            )
-                        } else {
-                            egui::FontId::proportional(size as f32 * 0.5)
-                        };
-                        let button =
-                            egui::Button::new(RichText::new(texts.t(&key)).font(font.clone()))
+                    // The whole panel scrolls: the pairings go past the
+                    // bottom of the window.
+                    egui::ScrollArea::vertical()
+                        .id_salt("editor.text_panel")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            section_title(ui, theme, texts, "text.section_add");
+                            for (key, words, preset) in [
+                                (
+                                    gafira_doc::msg!("text.add_title"),
+                                    gafira_doc::msg!("text.title"),
+                                    canvas::TextPreset::Title,
+                                ),
+                                (
+                                    gafira_doc::msg!("text.add_subtitle"),
+                                    gafira_doc::msg!("text.subtitle"),
+                                    canvas::TextPreset::Subtitle,
+                                ),
+                                (
+                                    gafira_doc::msg!("text.add_body"),
+                                    gafira_doc::msg!("text.body"),
+                                    canvas::TextPreset::Body,
+                                ),
+                            ] {
+                                let (size, display) = preset.size_and_display();
+                                let font = if display {
+                                    egui::FontId::new(
+                                        size as f32 * 0.4,
+                                        egui::FontFamily::Name(crate::style::DISPLAY.into()),
+                                    )
+                                } else {
+                                    egui::FontId::proportional(size as f32 * 0.5)
+                                };
+                                let button = egui::Button::new(
+                                    RichText::new(texts.t(&key)).font(font.clone()),
+                                )
                                 .min_size(Vec2::new(ui.available_width(), 48.0));
-                        // A click adds it to the middle of the page; a drag
-                        // carries it to where it is dropped (spec 061).
-                        let button = ui.add(button).interact(egui::Sense::click_and_drag());
-                        if button.clicked() {
-                            asked.insert_text = Some((preset, texts.t(&words)));
-                        }
-                        let at = ui.input(|i| i.pointer.latest_pos());
-                        if button.dragged()
-                            && let Some(at) = at
-                        {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                            let painter = ui.ctx().layer_painter(egui::LayerId::new(
-                                egui::Order::Tooltip,
-                                egui::Id::new("editor.text_ghost"),
-                            ));
-                            painter.text(
-                                at,
-                                Align2::CENTER_CENTER,
-                                texts.t(&key),
-                                font.clone(),
-                                theme.c("text").gamma_multiply(0.5),
-                            );
-                        }
-                        if button.drag_stopped()
-                            && let Some(at) = at
-                            && let Some((page, point)) =
-                                canvas::drop_point(&self.page_rects, self.zoom, at)
-                        {
-                            asked.drop_text = Some((preset, texts.t(&words), page, point));
-                        }
-                        ui.add_space(8.0);
-                    }
+                                // A click adds it to the middle of the page; a drag
+                                // carries it to where it is dropped (spec 061).
+                                let button = ui.add(button).interact(egui::Sense::click_and_drag());
+                                // A hand over it, a closed hand while it is carried.
+                                if button.hovered() && !button.dragged() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                if button.clicked() {
+                                    asked.insert_text = Some((preset, texts.t(&words)));
+                                }
+                                let at = ui.input(|i| i.pointer.latest_pos());
+                                if button.dragged()
+                                    && let Some(at) = at
+                                {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                        egui::Order::Tooltip,
+                                        egui::Id::new("editor.text_ghost"),
+                                    ));
+                                    painter.text(
+                                        at,
+                                        Align2::CENTER_CENTER,
+                                        texts.t(&key),
+                                        font.clone(),
+                                        theme.c("text").gamma_multiply(0.5),
+                                    );
+                                }
+                                if button.drag_stopped()
+                                    && let Some(at) = at
+                                    && let Some((page, point)) =
+                                        canvas::drop_point(&self.page_rects, self.zoom, at)
+                                {
+                                    asked.drop_text = Some((preset, texts.t(&words), page, point));
+                                }
+                                ui.add_space(8.0);
+                            }
+                            self.text_extras(ui, theme, texts, asked);
+                        });
                     return;
                 }
                 if TABS[self.rail.tab].0 == "tab.pieces" {
@@ -1735,6 +1798,156 @@ impl Editor {
                     };
                     if elements::header(ui, theme, texts, category) {
                         go = Some(Move::Back);
+                    }
+                    if category == Category::Collage {
+                        // S66-09: a click fills the current page with the
+                        // layout, a drag the page it is dropped on (D-105).
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.collage")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(plain(texts, "collage.hint"))
+                                        .font(theme.font("body-sm"))
+                                        .color(theme.c("text.secondary")),
+                                );
+                                ui.add_space(8.0);
+                                let side = ((ui.available_width() - 2.0 * 8.0) / 3.0).max(40.0);
+                                // The sample photo of the frames in every cell.
+                                let sample = canvas::sample_photo().and_then(|image| {
+                                    let size =
+                                        Vec2::new(image.size[0] as f32, image.size[1] as f32);
+                                    self.path_texture(ui.ctx(), 0x5A3_91E, || {
+                                        Some((*image).clone())
+                                    })
+                                    .map(|texture| (texture, size))
+                                });
+                                let layouts: Vec<(usize, &str)> = crate::collage::LAYOUTS
+                                    .iter()
+                                    .copied()
+                                    .enumerate()
+                                    .collect();
+                                for line in layouts.chunks(3) {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 8.0;
+                                        for (index, layout) in line {
+                                            let (rect, card) = ui.allocate_exact_size(
+                                                Vec2::splat(side),
+                                                egui::Sense::click_and_drag(),
+                                            );
+                                            crate::collage::paint(
+                                                ui.painter(),
+                                                rect,
+                                                layout,
+                                                sample,
+                                            );
+                                            if card.hovered() && !card.dragged() {
+                                                ui.ctx().set_cursor_icon(
+                                                    egui::CursorIcon::PointingHand,
+                                                );
+                                                ui.painter().rect_stroke(
+                                                    rect.expand(2.0),
+                                                    4.0,
+                                                    Stroke::new(2.0, theme.c("primary.bg")),
+                                                    egui::StrokeKind::Outside,
+                                                );
+                                            }
+                                            if card.clicked() {
+                                                asked.insert_collage = Some((*index, None));
+                                            }
+                                            let at = ui.input(|i| i.pointer.latest_pos());
+                                            if card.dragged()
+                                                && let Some(at) = at
+                                            {
+                                                ui.ctx()
+                                                    .set_cursor_icon(egui::CursorIcon::Grabbing);
+                                                let ghost =
+                                                    ui.ctx().layer_painter(egui::LayerId::new(
+                                                        egui::Order::Tooltip,
+                                                        egui::Id::new("collage.ghost"),
+                                                    ));
+                                                crate::collage::paint(
+                                                    &ghost,
+                                                    Rect::from_center_size(at, Vec2::splat(80.0)),
+                                                    layout,
+                                                    sample,
+                                                );
+                                            }
+                                            if card.drag_stopped()
+                                                && let Some(at) = at
+                                                && let Some((page, _)) = canvas::drop_point(
+                                                    &self.page_rects,
+                                                    self.zoom,
+                                                    at,
+                                                )
+                                            {
+                                                asked.insert_collage = Some((*index, Some(page)));
+                                            }
+                                        }
+                                    });
+                                    ui.add_space(8.0);
+                                }
+                            });
+                        return;
+                    }
+                    if category == Category::Illustrations {
+                        // Spec 072: a click inserts the drawing as vector
+                        // shapes, a drag carries it (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let can_drop =
+                            move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.illustrations")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let mut panel = self.illustration_panel.borrow_mut();
+                                if !panel.available() {
+                                    ui.label(plain(texts, "photos.unavailable"));
+                                    return;
+                                }
+                                panel.pump();
+                                match panel.show(ui, theme, texts, &can_drop) {
+                                    Some(crate::illustrations::Chosen::Drawing {
+                                        illustration,
+                                        svg,
+                                        at,
+                                    }) => {
+                                        let credit = panel.credit(&illustration);
+                                        asked.insert_illustration = Some((svg, credit, at));
+                                    }
+                                    // A cut-out comes in as an image, through
+                                    // the downloads of Fotos (spec 071).
+                                    Some(crate::illustrations::Chosen::Cutout { photo, at }) => {
+                                        self.photo_panel.borrow_mut().fetch(photo, at);
+                                    }
+                                    None => {}
+                                }
+                            });
+                        return;
+                    }
+                    if category == Category::Photos {
+                        // Spec 071: a click inserts the photo, a drag
+                        // carries it to the page or into a frame (D-105).
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let can_drop =
+                            move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.photos")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let mut panel = self.photo_panel.borrow_mut();
+                                if !panel.available() {
+                                    ui.label(plain(texts, "photos.unavailable"));
+                                    return;
+                                }
+                                let wanted = panel.show(ui, theme, texts, &can_drop);
+                                if let Some((photo, at)) = wanted.insert {
+                                    panel.fetch(photo, at);
+                                }
+                            });
+                        return;
                     }
                     if category == Category::Lights {
                         // A click adds the light to the middle of the
@@ -1762,44 +1975,7 @@ impl Editor {
                         return;
                     }
                     if category == Category::Frames {
-                        // The frames: tiles of their outline; a click adds
-                        // an empty one, a drag carries it (spec 066, D-105).
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing = Vec2::splat(4.0);
-                            for piece in canvas::FRAME_PIECES {
-                                let tile =
-                                    self.frame_tile(ui, theme, piece, plain(texts, piece.key()));
-                                if tile.clicked() {
-                                    asked.insert_frame = Some(piece);
-                                }
-                                let at = ui.input(|i| i.pointer.latest_pos());
-                                if tile.dragged()
-                                    && let Some(at) = at
-                                {
-                                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                                    self.piece_ghost(ui.ctx(), theme, piece, at);
-                                }
-                                if tile.drag_stopped()
-                                    && let Some(at) = at
-                                    && let Some((page, point)) =
-                                        canvas::drop_point(&self.page_rects, self.zoom, at)
-                                {
-                                    asked.drop_frame = Some((piece, page, point));
-                                }
-                            }
-                        });
-                        ui.add_space(12.0);
-                        if widgets::secondary(ui, theme, plain(texts, "frame.import_shape"))
-                            .clicked()
-                        {
-                            asked.import_frame_shape = true;
-                        }
-                        ui.add_space(8.0);
-                        ui.label(
-                            RichText::new(plain(texts, "frame.hint"))
-                                .small()
-                                .color(theme.c("text.secondary")),
-                        );
+                        self.frames_panel(ui, theme, texts, asked);
                         return;
                     }
                     if category != Category::Shapes {
@@ -1849,6 +2025,10 @@ impl Editor {
                             ui.add_space(16.0);
                         }
                     });
+                    return;
+                }
+                if TABS[self.rail.tab].0 == "tab.drawing" {
+                    crate::draw::panel(ui, theme, texts, &mut self.draw.borrow_mut());
                     return;
                 }
                 let mut query = String::new();
@@ -1914,16 +2094,18 @@ impl Editor {
                     crop_fields(ui, theme, texts, frame, asked);
                     return;
                 }
+                // «Propiedades» of what is selected (or of the page), and
+                // «Capas».
                 ui.horizontal(|ui| {
                     for (index, key) in [
-                        gafira_doc::msg!("inspector.position"),
+                        gafira_doc::msg!("inspector.properties"),
                         gafira_doc::msg!("inspector.layers"),
-                        gafira_doc::msg!("inspector.image"),
                     ]
                     .iter()
                     .enumerate()
                     {
-                        let color = if index == self.inspector_tab {
+                        let on = index == self.inspector_tab;
+                        let color = if on {
                             theme.c("text")
                         } else {
                             theme.c("text.muted")
@@ -1934,10 +2116,18 @@ impl Editor {
                                 .color(color),
                         )
                         .frame(false);
-                        if ui.add(tab).clicked() {
+                        let response = ui.add(tab);
+                        if on {
+                            let r = response.rect;
+                            ui.painter().line_segment(
+                                [r.left_bottom(), r.right_bottom()],
+                                Stroke::new(2.0, theme.c("primary.bg")),
+                            );
+                        }
+                        if response.clicked() {
                             self.inspector_tab = index;
                         }
-                        ui.add_space(4.0);
+                        ui.add_space(8.0);
                     }
                 });
                 ui.add_space(24.0);
@@ -1975,19 +2165,47 @@ impl Editor {
                         return;
                     }
                 };
+                // What is selected, as the title of «Propiedades».
+                ui.label(
+                    RichText::new(plain(texts, kind_title(shape)))
+                        .font(theme.font("ui-label"))
+                        .color(theme.c("text")),
+                );
+                ui.add_space(8.0);
+                // An image: its file, and «Usar como fondo de la página».
+                if let Some(asset) = shape.image {
+                    let name = document
+                        .and_then(|d| d.asset(&asset))
+                        .map(|entry| entry.name.clone())
+                        .unwrap_or_default();
+                    if !name.is_empty() {
+                        ui.label(
+                            RichText::new(name)
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("text.secondary")),
+                        );
+                        ui.add_space(6.0);
+                    }
+                    if ui.button(plain(texts, "inspector.as_background")).clicked() {
+                        asked.image_to_background = Some((shape.page, shape.node, asset));
+                    }
+                    ui.add_space(12.0);
+                }
                 if let Some(text) = &shape.text {
                     font_button(ui, theme, texts, text.content.first_style(), asked);
-                    text_fields(ui, texts, text, asked);
+                    let design = document
+                        .and_then(|d| d.page(shape.page))
+                        .map(design_colors)
+                        .unwrap_or_default();
+                    text_fields(ui, theme, texts, (text, &design), asked);
                     ui.add_space(16.0);
                 }
-                if shape.group {
-                    ui.label(
-                        RichText::new(plain(texts, "layers.group"))
-                            .font(theme.font("ui-label"))
-                            .color(theme.c("text")),
-                    );
-                    ui.add_space(8.0);
-                }
+                ui.label(
+                    RichText::new(plain(texts, "inspector.position_size"))
+                        .font(theme.font("body-sm"))
+                        .color(theme.c("text.secondary")),
+                );
+                ui.add_space(4.0);
                 let mut placement = shape.placement;
                 let mut changed = false;
                 egui::Grid::new("inspector.position")
@@ -2310,6 +2528,306 @@ impl Editor {
 
     /// A text of `preset` with `words` on `page`, centred on `at` (px of
     /// page) or in the middle, selected, one undo step (specs 027, 061).
+    /// Alignment, spacing and colour of the selected texts (spec 070), each
+    /// one undo step; spacing refits a box that grows with its words.
+    fn text_styles(&mut self, engine: &mut Gafira, asked: &Asked) {
+        let Some(page) = self.selected.page() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let nodes: Vec<NodeId> = self
+            .selected
+            .nodes()
+            .iter()
+            .copied()
+            .filter(|id| {
+                on.node(*id)
+                    .is_some_and(|n| matches!(n.kind, gafira_doc::NodeKind::Text(_)))
+            })
+            .collect();
+        if nodes.is_empty() {
+            return;
+        }
+        let mut commands: Vec<Box<dyn Command>> = Vec::new();
+        if let Some(align) = asked.text_align {
+            commands.push(Box::new(SetProperty::new(
+                page,
+                nodes.clone(),
+                Property::TextAlign(align),
+                None,
+            )));
+        }
+        if let Some((letters, lines)) = asked.text_spacing {
+            commands.push(Box::new(SetProperty::new(
+                page,
+                nodes.clone(),
+                Property::TextSpacing(letters, lines),
+                None,
+            )));
+            self.fit_pending = nodes.first().map(|node| (page, *node));
+        }
+        match &asked.text_fill {
+            Some(TextFill::Gradient(gradient)) => commands.push(Box::new(SetProperty::new(
+                page,
+                nodes.clone(),
+                Property::TextGradient(Some(gradient.clone())),
+                None,
+            ))),
+            Some(TextFill::Solid(color)) => {
+                commands.push(Box::new(SetProperty::new(
+                    page,
+                    nodes.clone(),
+                    Property::TextGradient(None),
+                    None,
+                )));
+                for node in &nodes {
+                    if let Some(found) = on.node(*node)
+                        && let gafira_doc::NodeKind::Text(text) = &found.kind
+                        && let Some(style) = text.content.first_style()
+                    {
+                        let restyled = gafira_doc::SpanStyle {
+                            color: *color,
+                            ..style.clone()
+                        };
+                        let words = text.content.plain_text();
+                        commands.push(Box::new(SetProperty::new(
+                            page,
+                            vec![*node],
+                            Property::TextContent(gafira_doc::RichText::plain(&words, &restyled)),
+                            None,
+                        )));
+                    }
+                }
+            }
+            None => {}
+        }
+        if commands.is_empty() {
+            return;
+        }
+        let step = Transaction::new(MessageKey("edit.set_property"), commands);
+        if let Err(error) = engine.edit().execute(Box::new(step)) {
+            eprintln!("text style: {error}");
+        }
+    }
+
+    /// «Texto curvo» and «Combinaciones de fuentes» of the Texto panel:
+    /// each card is added with a click and carried with a drag (D-105).
+    fn text_extras(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        ui.add_space(12.0);
+        section_title(ui, theme, texts, "text.curved");
+        let half = ((ui.available_width() - 8.0) / 2.0).max(40.0);
+        ui.horizontal(|ui| {
+            for (key, bend) in [
+                ("text.arc_up", CURVE_PRESET),
+                ("text.arc_down", -CURVE_PRESET),
+            ] {
+                let (rect, response) =
+                    ui.allocate_exact_size(Vec2::new(half, 72.0), egui::Sense::click_and_drag());
+                card_frame(ui, theme, rect, response.hovered());
+                let painter = ui.painter();
+                painter.text(
+                    Pos2::new(rect.center().x, rect.top() + 20.0),
+                    Align2::CENTER_CENTER,
+                    plain(texts, key),
+                    theme.font("body-sm"),
+                    theme.c("text.secondary"),
+                );
+                // The arc the words follow: ⌒ for an arch, ⌣ for a cup.
+                let y = rect.top() + 48.0;
+                let lift = if bend > 0.0 { 12.0 } else { -12.0 };
+                let a = Pos2::new(rect.center().x - 22.0, y + lift / 2.0);
+                let b = Pos2::new(rect.center().x + 22.0, y + lift / 2.0);
+                let control = Pos2::new(rect.center().x, y - lift);
+                painter.add(egui::epaint::QuadraticBezierShape::from_points_stroke(
+                    [a, control, b],
+                    false,
+                    Color32::TRANSPARENT,
+                    Stroke::new(2.0, theme.c("text")),
+                ));
+                let words = plain(texts, "text.curved_words");
+                if response.clicked() {
+                    asked.insert_curved = Some((bend, words.clone(), None));
+                }
+                self.carry(ui, theme, &response, &plain(texts, key), |page, point| {
+                    asked.insert_curved = Some((bend, words, Some((page, point))));
+                });
+            }
+        });
+        ui.add_space(16.0);
+        section_title(ui, theme, texts, "text.pairings");
+        let heading_words = plain(texts, "text.pairing_heading");
+        let body_words = plain(texts, "text.pairing_body");
+        for (index, pairing) in pairings::PAIRINGS.iter().enumerate() {
+            let (rect, response) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), 92.0),
+                egui::Sense::click_and_drag(),
+            );
+            card_frame(ui, theme, rect, response.hovered());
+            let clip = ui.painter().with_clip_rect(rect.shrink(1.0));
+            let left = rect.left() + 14.0;
+            clip.text(
+                Pos2::new(left, rect.top() + 10.0),
+                Align2::LEFT_TOP,
+                plain(texts, pairing.key),
+                theme.font("body-sm"),
+                theme.c("text.secondary"),
+            );
+            for (face, words, y, size) in [
+                (pairing.heading, &heading_words, rect.top() + 30.0, 24.0),
+                (pairing.body, &body_words, rect.top() + 66.0, 12.0),
+            ] {
+                let style = pairings::style(face);
+                let family = text_family(ui.ctx(), theme, &style);
+                clip.text(
+                    Pos2::new(left, y),
+                    Align2::LEFT_TOP,
+                    pairings::words(face, words),
+                    egui::FontId::new(size, family),
+                    canvas::screen_color(style.color),
+                );
+            }
+            let words = (heading_words.clone(), body_words.clone());
+            if response.clicked() {
+                asked.insert_pairing = Some((index, words.clone(), None));
+            }
+            self.carry(
+                ui,
+                theme,
+                &response,
+                &plain(texts, pairing.key),
+                |page, point| {
+                    asked.insert_pairing = Some((index, words, Some((page, point))));
+                },
+            );
+            ui.add_space(8.0);
+        }
+    }
+
+    /// A card of a side panel being dragged: a ghost under the pointer and,
+    /// when it is let go over a page, `dropped` with the page and the point.
+    fn carry(
+        &self,
+        ui: &egui::Ui,
+        theme: &Theme,
+        response: &egui::Response,
+        label: &str,
+        dropped: impl FnOnce(PageId, (f64, f64)),
+    ) {
+        let at = ui.input(|i| i.pointer.latest_pos());
+        // A hand over the card, a closed hand while it is carried.
+        if response.hovered() && !response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if response.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("editor.text_ghost"),
+            ));
+            painter.text(
+                at,
+                Align2::CENTER_CENTER,
+                label,
+                theme.font("ui-label"),
+                theme.c("text").gamma_multiply(0.6),
+            );
+        }
+        if response.drag_stopped()
+            && let Some(at) = at
+            && let Some((page, point)) = canvas::drop_point(&self.page_rects, self.zoom, at)
+        {
+            dropped(page, point);
+        }
+    }
+
+    /// A curved text of `bend` on `page`, in its middle or centred on `at`,
+    /// its box as high as its arc; selected (FD-44).
+    fn add_curved(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        theme: &Theme,
+        (bend, words): (f64, &str),
+        (page, at): (PageId, Option<(f64, f64)>),
+    ) {
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let style = text_style(theme, canvas::TextPreset::Subtitle);
+        let px = Vec2::new(size.width() as f32, size.height() as f32);
+        let mut spec = match at {
+            Some(at) => canvas::text_at(px, words, &style, at),
+            None => canvas::new_text(px, words, &style),
+        };
+        if let gafira_doc::NodeKind::Text(text) = &mut spec.kind {
+            text.curve = bend;
+            text.sizing = gafira_doc::TextSizing::Fixed;
+            let placement = &mut spec.placement;
+            // As wide as the words on a line, so they bend as one arc.
+            placement.w = (words.chars().count() as f64 * style.size * 0.62).max(80.0);
+            if let Some(h) = canvas::curved_height(text, placement.w, placement.h) {
+                let centre_y = placement.y + placement.h / 2.0;
+                placement.h = h;
+                placement.y = centre_y - h / 2.0;
+            }
+            let centre_x = match at {
+                Some((x, _)) => x,
+                None => f64::from(px.x) / 2.0,
+            };
+            placement.x = centre_x - placement.w / 2.0;
+        }
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+                self.scope = None;
+            }
+            Err(error) => eprintln!("insert curved text: {error}"),
+        }
+    }
+
+    /// The font pairing `index` on `page`, in its middle or centred on
+    /// `at`: one group of its heading and body line, selected.
+    fn add_pairing(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        (index, (heading, body)): (usize, &(String, String)),
+        (page, at): (PageId, Option<(f64, f64)>),
+    ) {
+        let (Some(on), Some(pairing)) = (document.page(page), pairings::PAIRINGS.get(index)) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let (w, h) = (size.width(), size.height());
+        let centre = at.unwrap_or((w / 2.0, h / 2.0));
+        let spec = pairings::group(w, centre, *pairing, (heading, body));
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+                self.scope = None;
+            }
+            Err(error) => eprintln!("insert font pairing: {error}"),
+        }
+    }
+
     fn add_text(
         &mut self,
         engine: &mut Gafira,
@@ -2682,6 +3200,114 @@ impl Editor {
         }
     }
 
+    /// The bar over the selection (owner request): «Agrupar» for several
+    /// elements or «Desagrupar» for a group, then Bloquear or Desbloquear,
+    /// Duplicar, Eliminar and «···» with Copiar and Cortar. Above the
+    /// selection, or below it when there is no room.
+    fn selection_bar(
+        &self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        around: Rect,
+        page: &Page,
+        asked: &mut Asked,
+    ) {
+        let locked = self
+            .selected
+            .nodes()
+            .iter()
+            .all(|node| page.node(*node).is_some_and(|n| n.base.locked));
+        let screen = ctx.content_rect();
+        // Clear of the turn handle above the box.
+        let above = around.top() - 84.0 > screen.top() + 56.0;
+        let anchor = if above {
+            Pos2::new(around.center().x, around.top() - 40.0)
+        } else {
+            Pos2::new(around.center().x, around.bottom() + 16.0)
+        };
+        let pivot = if above {
+            Align2::CENTER_BOTTOM
+        } else {
+            Align2::CENTER_TOP
+        };
+        egui::Area::new(egui::Id::new("editor.selection_bar"))
+            .order(egui::Order::Foreground)
+            .pivot(pivot)
+            .fixed_pos(anchor)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style())
+                    .corner_radius(theme.radius_md())
+                    .inner_margin(egui::Margin::symmetric(10, 6))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            // Locked, the one thing to do is unlock it (D-110).
+                            if locked {
+                                // The closed lock, lit, «Desbloquear» on hover.
+                                let unlock =
+                                    IconButton::new(Icon::Locked, plain(texts, "layers.unlock"))
+                                        .active(true)
+                                        .small()
+                                        .show(ui, theme);
+                                if unlock.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                if unlock.clicked() {
+                                    asked.toggle = Some(Flag::Locked);
+                                }
+                                return;
+                            }
+                            if self.can.ungroup && self.selected.len() == 1 {
+                                if ui.button(plain(texts, "editor.ungroup")).clicked() {
+                                    asked.ungroup = true;
+                                }
+                            } else if self.can.group
+                                && self.selected.len() > 1
+                                && ui.button(plain(texts, "editor.group")).clicked()
+                            {
+                                asked.group = true;
+                            }
+                            let (icon, key) = if locked {
+                                (Icon::Locked, "layers.unlock")
+                            } else {
+                                (Icon::Unlocked, "layers.lock")
+                            };
+                            if IconButton::new(icon, plain(texts, key))
+                                .small()
+                                .show(ui, theme)
+                                .clicked()
+                            {
+                                asked.toggle = Some(Flag::Locked);
+                            }
+                            if IconButton::new(Icon::PageCopy, plain(texts, "editor.duplicate"))
+                                .small()
+                                .show(ui, theme)
+                                .clicked()
+                            {
+                                asked.duplicate = true;
+                            }
+                            if IconButton::new(Icon::Delete, plain(texts, "editor.delete"))
+                                .small()
+                                .show(ui, theme)
+                                .clicked()
+                            {
+                                asked.delete = true;
+                            }
+                            ui.menu_button("···", |ui| {
+                                if ui.button(plain(texts, "editor.copy")).clicked() {
+                                    asked.copy = true;
+                                    ui.close();
+                                }
+                                if ui.button(plain(texts, "editor.cut")).clicked() {
+                                    asked.cut = true;
+                                    ui.close();
+                                }
+                            });
+                        });
+                    });
+            });
+    }
+
     /// The background of a page on the canvas (spec 069): a colour painted
     /// directly, anything else from its texture.
     fn paint_background(
@@ -2760,40 +3386,218 @@ impl Editor {
 
     /// A tile of Elementos → Marcos (S66-12): the frame's shape with the
     /// sample photo inside; click and drag like the shape tiles.
-    fn frame_tile(
+    /// Marcos (spec 066, owner request with references): a search, the
+    /// collections as rows with «Ver todo», «Populares» as a grid, and
+    /// «Importar forma». Each frame is added with a click or a drag.
+    fn frames_panel(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        use crate::frames::collections;
+        egui::ScrollArea::vertical()
+            .id_salt("editor.frames")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let mut view = self.frames_view.borrow_mut();
+                ui.add(widgets::field(&mut view.0, plain(texts, "frames.search")));
+                ui.add_space(10.0);
+                let query = view.0.trim().to_owned();
+                let side = ((ui.available_width() - 3.0 * 6.0) / 4.0).max(40.0);
+                if !query.is_empty() {
+                    let found: Vec<crate::frames::Kind> = crate::frames::search(&query)
+                        .iter()
+                        .map(|i| i.kind)
+                        .collect();
+                    if found.is_empty() {
+                        ui.label(
+                            RichText::new(plain(texts, "frames.empty"))
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("text.secondary")),
+                        );
+                    }
+                    self.frame_grid(ui, theme, &found, side, asked);
+                    return;
+                }
+                if let Some(open) = view.1 {
+                    let Some(collection) = collections().get(open) else {
+                        view.1 = None;
+                        return;
+                    };
+                    ui.horizontal(|ui| {
+                        let back = ui.add(egui::Button::new("←").frame(false));
+                        if back.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if back.clicked() {
+                            view.1 = None;
+                        }
+                        ui.label(
+                            RichText::new(plain(texts, collection.key))
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                        );
+                    });
+                    ui.add_space(6.0);
+                    let kinds: Vec<_> = collection.items.iter().map(|i| i.kind).collect();
+                    self.frame_grid(ui, theme, &kinds, side * 4.0 / 3.0 - 2.0, asked);
+                    return;
+                }
+                for (index, collection) in collections().iter().enumerate() {
+                    let kinds: Vec<_> = collection.items.iter().map(|i| i.kind).collect();
+                    let popular = collection.key == "frames.popular";
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(plain(texts, collection.key))
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                        );
+                        if !popular {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let all = ui.add(
+                                        egui::Button::new(
+                                            RichText::new(plain(texts, "frames.see_all"))
+                                                .font(theme.font("body-sm")),
+                                        )
+                                        .frame(false),
+                                    );
+                                    if all.hovered() {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    }
+                                    if all.clicked() {
+                                        view.1 = Some(index);
+                                    }
+                                },
+                            );
+                        }
+                    });
+                    ui.add_space(4.0);
+                    if popular {
+                        self.frame_grid(ui, theme, &kinds, side * 4.0 / 3.0 - 2.0, asked);
+                    } else {
+                        egui::ScrollArea::horizontal()
+                            .id_salt(("editor.frames.row", index))
+                            .scroll_bar_visibility(
+                                egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                            )
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    for kind in kinds.iter().take(10) {
+                                        self.frame_kind_tile(ui, theme, *kind, side, asked);
+                                    }
+                                });
+                            });
+                    }
+                    ui.add_space(12.0);
+                }
+                if widgets::secondary(ui, theme, plain(texts, "frame.import_shape")).clicked() {
+                    asked.import_frame_shape = true;
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(plain(texts, "frame.hint"))
+                        .small()
+                        .color(theme.c("text.secondary")),
+                );
+            });
+    }
+
+    /// `kinds` as a grid of three columns of tiles `side` across.
+    fn frame_grid(
         &self,
         ui: &mut egui::Ui,
         theme: &Theme,
-        piece: canvas::Piece,
-        name: String,
-    ) -> egui::Response {
-        let (rect, response) =
-            ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::click_and_drag());
-        if response.hovered() || response.dragged() {
+        kinds: &[crate::frames::Kind],
+        side: f32,
+        asked: &mut Asked,
+    ) {
+        let columns = ((ui.available_width() + 6.0) / (side + 6.0))
+            .floor()
+            .max(1.0) as usize;
+        for line in kinds.chunks(columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                for kind in line {
+                    self.frame_kind_tile(ui, theme, *kind, side, asked);
+                }
+            });
+            ui.add_space(6.0);
+        }
+    }
+
+    /// One frame of Marcos: the sample photo cut by its outline, or the
+    /// device or film with the sample in its screens; a click adds it, a
+    /// drag carries it (D-105).
+    fn frame_kind_tile(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        kind: crate::frames::Kind,
+        side: f32,
+        asked: &mut Asked,
+    ) {
+        let (rect, tile) = ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click_and_drag());
+        if tile.hovered() && !tile.dragged() {
             ui.painter()
                 .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        let inner = rect.shrink(6.0);
-        let scale = ui.ctx().pixels_per_point();
+        if ui.is_rect_visible(rect) {
+            self.paint_frame_kind(ui.ctx(), ui.painter(), kind, rect.shrink(4.0));
+        }
+        if tile.clicked() {
+            asked.insert_frame_kind = Some((kind, None));
+        }
+        let at = ui.input(|i| i.pointer.latest_pos());
+        if tile.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let ghost = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("frames.ghost"),
+            ));
+            self.paint_frame_kind(
+                ui.ctx(),
+                &ghost,
+                kind,
+                Rect::from_center_size(at, Vec2::splat(80.0)),
+            );
+        }
+        if tile.drag_stopped()
+            && let Some(at) = at
+            && let Some((page, point)) = canvas::drop_point(&self.page_rects, self.zoom, at)
+        {
+            asked.insert_frame_kind = Some((kind, Some((page, point))));
+        }
+    }
+
+    /// The preview of `kind` in `rect`, its proportions kept.
+    fn paint_frame_kind(
+        &self,
+        ctx: &egui::Context,
+        painter: &egui::Painter,
+        kind: crate::frames::Kind,
+        rect: Rect,
+    ) {
+        // Every frame, plain or held by a device, film, stem or paper, is
+        // drawn by the same preview, its proportions kept.
+        let scale = ctx.pixels_per_point();
+        let side = f64::from(rect.width().min(rect.height()));
         let key = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            format!("frame tile {piece:?} {scale}").hash(&mut hasher);
+            format!("frame kind {kind:?} {side} {scale}").hash(&mut hasher);
             hasher.finish()
         };
-        let made = self.path_texture(ui.ctx(), key, || {
-            canvas::frame_preview(piece, f64::from(inner.width()), scale)
+        let made = self.path_texture(ctx, key, || {
+            let spec = crate::frames::spec(kind, (side, side), (side / 2.0, side / 2.0))?;
+            canvas::spec_preview(&spec, side, scale)
         });
-        match made {
-            Some(texture) => {
-                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                ui.painter().image(texture, inner, uv, Color32::WHITE);
-            }
-            None => self.paint_piece(ui.ctx(), ui.painter(), piece, inner, theme.c("text")),
+        if let Some(texture) = made {
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+            let square = Rect::from_center_size(rect.center(), Vec2::splat(side as f32));
+            painter.image(texture, square, uv, Color32::WHITE);
         }
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
-        response.on_hover_text(name)
     }
 
     fn piece_tile(
@@ -3779,8 +4583,10 @@ impl Editor {
                 let mut grip_cursor: Option<egui::CursorIcon> = None;
                 let width =
                     sizes.iter().map(|s| s.x).fold(0.0, f32::max) * zoom + 2.0 * CANVAS_MARGIN;
-                let height: f32 =
-                    sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>() + CANVAS_MARGIN;
+                // Room under the last page for «Añadir página» (spec 077).
+                let height: f32 = sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>()
+                    + CANVAS_MARGIN
+                    + ADD_PAGE_ROOM;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
                     let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
                     if let Some(offset) = anchored {
@@ -3877,9 +4683,28 @@ impl Editor {
                                     (page_doc, index, pages.len()),
                                     asked,
                                 );
+                                // «Añadir página» under the last page.
+                                if index + 1 == pages.len() {
+                                    let bar = Rect::from_min_size(
+                                        Pos2::new(page.min.x, page.max.y + 16.0),
+                                        Vec2::new(page.width().max(220.0), 40.0),
+                                    );
+                                    add_page_bar(ui, theme, texts, bar, page_doc.id, asked);
+                                }
                             }
                             if let Some(page_doc) = pages.get(index) {
                                 let mut shapes = canvas::shapes(page_doc);
+                                // The strokes the eraser has gone over fade
+                                // until it lets go (spec 079).
+                                if let Some((page, erased)) = &self.draw.borrow().erasing
+                                    && *page == page_doc.id
+                                {
+                                    for shape in &mut shapes {
+                                        if erased.contains(&shape.node) {
+                                            shape.opacity *= 0.2;
+                                        }
+                                    }
+                                }
                                 // An image dragged over a frame: the frame
                                 // shows the photo, the image fades (spec 066).
                                 if let Some(target) =
@@ -3953,7 +4778,53 @@ impl Editor {
                                     }
                                     let edited =
                                         self.editing.as_ref().is_some_and(|e| e.node == shape.node);
-                                    if let Some(text) = shape.text.as_ref().filter(|_| !edited) {
+                                    // A curved text is drawn from its outline,
+                                        // as the export draws it (FD-44).
+                                    if let Some(text) = shape
+                                        .text
+                                        .as_ref()
+                                        .filter(|t| !edited && t.styled())
+                                    {
+                                        let key = curved_key(text, &shape.placement, zoom);
+                                        let texture = self.path_texture(ctx, key, || {
+                                            let (image, cover) = canvas::curved_text_image(
+                                                text,
+                                                &shape.placement,
+                                                zoom,
+                                            )?;
+                                            self.curved_covers.borrow_mut().insert(key, cover);
+                                            Some(image)
+                                        });
+                                        let cover = self.curved_covers.borrow().get(&key).copied();
+                                        if let (Some(texture), Some(cover)) = (texture, cover) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE
+                                                    .gamma_multiply(shape.opacity.clamp(0.0, 1.0)),
+                                            ));
+                                        }
+                                        // A box that grows with its words takes the
+                                        // height of its lines (spec 061).
+                                        let resized = self.drag.as_ref().is_some_and(|d| {
+                                            matches!(d.hold, Some(Hold::Resize(_)))
+                                                && d.origins.first().map(|o| o.0)
+                                                    == Some(shape.node)
+                                        });
+                                        if (resized
+                                            || self.fit_pending == Some((page_doc.id, shape.node)))
+                                            && text.sizing == gafira_doc::TextSizing::AutoHeight
+                                            && let Some(height) = canvas::curved_height(
+                                                text,
+                                                shape.placement.w,
+                                                shape.placement.h,
+                                            )
+                                        {
+                                            self.text_measure =
+                                                Some((page_doc.id, shape.node, height));
+                                        }
+                                    } else if let Some(text) = shape.text.as_ref().filter(|_| !edited) {
                                         let laid =
                                             lay_text(&clip, theme, at, zoom, shape.opacity, text);
                                         // The height of the words, for a box that
@@ -4404,6 +5275,26 @@ impl Editor {
                                 }
                             }
                         }
+                        // The bar over the selection: Agrupar or Desagrupar,
+                        // Bloquear, Duplicar, Eliminar and «···» (owner
+                        // request); hidden while dragging, writing or
+                        // cropping.
+                        if self.drag.is_none()
+                            && self.editing.is_none()
+                            && self.cropping.is_none()
+                            && let Some(page_id) = self.selected.page()
+                            && let Some((_, rect)) = page_rects.iter().find(|(id, _)| *id == page_id)
+                            && let Some(page_doc) = pages.iter().find(|p| p.id == page_id)
+                        {
+                            let boxes: Vec<Rect> = chosen(page_doc, &self.selected)
+                                .iter()
+                                .map(|shape| canvas::screen_box_of(shape, *rect, zoom))
+                                .collect();
+                            if let Some(first) = boxes.first() {
+                                let around = boxes.iter().fold(*first, |a, b| a.union(*b));
+                                self.selection_bar(ui.ctx(), theme, texts, around, page_doc, asked);
+                            }
+                        }
                         // Outside every page, the cut-away part of an
                         // element is still taken (S51-06).
                         if pressed
@@ -4488,7 +5379,18 @@ impl Editor {
                             self.active =
                                 active_after(&page_rects, at, picked.map(|(page, _)| page));
                         }
-                        if let Some(handle) = grabbed {
+                        if let Some(tool) = self.drawing_tool() {
+                            // Dibujo with a brush or the eraser: the
+                            // pointer draws or erases (spec 079).
+                            self.draw_input(
+                                ui,
+                                painter,
+                                &response,
+                                (pages, &page_rects, zoom),
+                                (texts, tool),
+                                asked,
+                            );
+                        } else if let Some(handle) = grabbed {
                             // A handle of the selection wins over whatever
                             // lies under it, and keeps the scope.
                             asked.drag_begin = Some(Some(handle));
@@ -4503,9 +5405,18 @@ impl Editor {
                                 (Some((page, node)), true) => next.toggle(page, node),
                                 (Some((page, node)), false) => next = Selection::one(page, node),
                                 (None, true) => {}
-                                // Empty canvas also leaves a group entered.
+                                // A locked element under the click is
+                                // selected, to unlock it from its bar
+                                // (D-110); empty canvas also leaves a group
+                                // entered.
                                 (None, false) => {
                                     next.clear();
+                                    if let Some(at) = pointer
+                                        && let Some((page, node)) =
+                                            locked_under(pages, &page_rects, zoom, at)
+                                    {
+                                        next = Selection::one(page, node);
+                                    }
                                     asked.scope = Some(None);
                                 }
                             }
@@ -4686,10 +5597,28 @@ impl Editor {
                 .filter(|shape| shape.page == page)
                 .map(|shape| rotation::screen_box(origin, zoom, &shape.placement))
                 .collect();
+            // The rulers count in the unit of the page's size (spec 076):
+            // a page made in inches is measured in inches.
+            let measure = document
+                .and_then(|d| {
+                    let unit = d.page(page)?.size.width.unit();
+                    let px = gafira_geom::Length::new(1.0, unit)
+                        .to_px(f64::from(d.dpi().get()))
+                        .ok()?;
+                    Some((unit, px))
+                })
+                .unwrap_or((gafira_geom::Unit::Px, 1.0));
             for axis in [GuideAxis::Horizontal, GuideAxis::Vertical] {
                 let strip = ruler::strip(axis, area);
                 let band = ruler::band(&boxes, axis);
-                draw_ruler(ui.painter(), theme, axis, strip, (origin, zoom), band);
+                draw_ruler(
+                    ui.painter(),
+                    theme,
+                    axis,
+                    strip,
+                    (origin, zoom, measure),
+                    band,
+                );
                 let response = ui.interact(
                     strip,
                     ui.id().with(("ruler", axis == GuideAxis::Horizontal)),
@@ -4723,8 +5652,8 @@ impl Editor {
             None => ruler::page_at(page_rects, at.y),
         };
         let rect = page.and_then(|id| page_rects.iter().find(|(p, _)| *p == id));
-        let on_ruler = ruler::strip(held.axis, area).contains(at);
-        if !on_ruler && let Some((_, rect)) = rect {
+        let on_ruler = ruler::back_to_ruler(held.axis, area, at);
+        if !on_ruler && let Some((page_id, rect)) = rect {
             let px = ruler::page_coordinate(held.axis, *rect, zoom, at);
             let line = Stroke::new(1.0, theme.c("canvas.guide"));
             let offset = px as f32 * zoom;
@@ -4739,6 +5668,36 @@ impl Editor {
                 ],
             };
             ui.painter().line_segment(points, line);
+            // Where it is, in the page's unit, on the ruler it runs to
+            // (spec 076): a vertical guide on the top ruler, a horizontal
+            // one on the left; it follows the pointer.
+            if self.shown.rulers
+                && let Some(page) = document.and_then(|d| d.page(*page_id))
+            {
+                let unit = page.size.width.unit();
+                let per = gafira_geom::Length::new(1.0, unit)
+                    .to_px(document.map_or(96.0, |d| f64::from(d.dpi().get())))
+                    .unwrap_or(1.0);
+                let text = ruler::position_label(px / per, unit);
+                let font = egui::FontId::proportional(11.0);
+                let galley = ui.painter().layout_no_wrap(text, font, Color32::WHITE);
+                let size = galley.size() + Vec2::new(8.0, 2.0);
+                let centre = match held.axis {
+                    GuideAxis::Vertical => Pos2::new(points[0].x, area.min.y + ruler::RULER / 2.0),
+                    GuideAxis::Horizontal => {
+                        Pos2::new(area.min.x + ruler::RULER / 2.0, points[0].y)
+                    }
+                };
+                let mut badge = Rect::from_center_size(centre, size);
+                if held.axis == GuideAxis::Horizontal {
+                    // Kept inside the left ruler's width, reading across.
+                    badge =
+                        badge.translate(Vec2::new(badge.width() / 2.0 - ruler::RULER / 2.0, 0.0));
+                }
+                let painter = ui.painter();
+                painter.rect_filled(badge, 3.0, theme.c("canvas.guide"));
+                painter.galley(badge.min + Vec2::new(4.0, 1.0), galley, Color32::WHITE);
+            }
         }
         if !released {
             return;
@@ -5034,6 +5993,50 @@ impl Editor {
                 eprintln!("background: {error}");
             }
         }
+        if let Some((page, spec)) = asked.draw_stroke.clone()
+            && let Some(on) = document.as_ref().and_then(|d| d.page(page))
+        {
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("draw: {error}");
+            }
+            self.active = Some(page);
+        }
+        if let Some((page, nodes)) = asked.erase.clone()
+            && !nodes.is_empty()
+            && let Err(error) = engine
+                .edit()
+                .execute(Box::new(RemoveNodes::new(page, nodes)))
+        {
+            eprintln!("erase: {error}");
+        }
+        if let Some((page, node, asset)) = asked.image_to_background
+            && let Some(natural) = natural_size(engine, asset.as_hash())
+        {
+            let background = gafira_doc::PageBackground::Image {
+                asset,
+                natural,
+                fit: gafira_doc::BackgroundFit::Fill,
+            };
+            let commands: Vec<Box<dyn Command>> = vec![
+                Box::new(SetProperty::page(
+                    page,
+                    Property::PageBackground(Some(background)),
+                    None,
+                )),
+                Box::new(RemoveNodes::new(page, vec![node])),
+            ];
+            match engine.edit().execute(Box::new(Transaction::new(
+                MessageKey("edit.set_property"),
+                commands,
+            ))) {
+                Ok(_) => {
+                    self.selected = Selection::default();
+                    self.active = Some(page);
+                }
+                Err(error) => eprintln!("image to background: {error}"),
+            }
+        }
         if asked.background_all
             && let Some(page) = background_page
             && let Some(document) = engine.edit().document()
@@ -5092,6 +6095,28 @@ impl Editor {
             let page = page.id;
             self.add_text(engine, document, theme, (*preset, words), (page, None));
         }
+        if let Some((bend, words, at)) = &asked.insert_curved
+            && let Some(document) = document
+            && let Some(page) = at
+                .map(|(page, _)| page)
+                .or_else(|| self.current_page(document).map(|p| p.id))
+        {
+            self.add_curved(
+                engine,
+                document,
+                theme,
+                (*bend, words),
+                (page, at.map(|a| a.1)),
+            );
+        }
+        if let Some((index, words, at)) = &asked.insert_pairing
+            && let Some(document) = document
+            && let Some(page) = at
+                .map(|(page, _)| page)
+                .or_else(|| self.current_page(document).map(|p| p.id))
+        {
+            self.add_pairing(engine, document, (*index, words), (page, at.map(|a| a.1)));
+        }
         // Text pasted from outside: a body text box on the current page,
         // fitted to its words once drawn (spec 061).
         // Spec 067: images from the system.
@@ -5107,6 +6132,75 @@ impl Editor {
         }
         if !asked.paste_files.is_empty() {
             self.place_images(engine, &asked.paste_files, None);
+        }
+        // Spec 071: a photo whose bytes arrived goes into the project's
+        // store with its credit as its name, then on the page or into the
+        // frame it was dropped on; one undo step.
+        // A frame of Marcos: in the middle of the current page or where it
+        // was dropped; selected, one undo step.
+        if let Some((kind, dropped)) = asked.insert_frame_kind
+            && let Some(document) = engine.edit().document()
+            && let Some(page) = dropped
+                .map(|(page, _)| page)
+                .or_else(|| self.current_page(&document).map(|p| p.id))
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+        {
+            let (pw, ph) = (size.width(), size.height());
+            let centre = dropped.map_or((pw / 2.0, ph / 2.0), |(_, point)| point);
+            if let Some(spec) = crate::frames::spec(kind, (pw, ph), centre) {
+                let next = NodeId::new(document.next_id());
+                let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+                match engine.edit().execute(Box::new(command)) {
+                    Ok(_) => {
+                        self.selected = Selection::one(page, next);
+                        self.active = Some(page);
+                        self.scope = None;
+                    }
+                    Err(error) => eprintln!("insert frame: {error}"),
+                }
+            }
+        }
+        // S66-09: a collage fills its whole page (owner request): one group
+        // of frames, selected, one undo step.
+        if let Some((index, dropped)) = asked.insert_collage
+            && let Some(document) = engine.edit().document()
+            && let Some(page) = dropped.or_else(|| self.current_page(&document).map(|p| p.id))
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+            && let Some(layout) = crate::collage::LAYOUTS.get(index)
+            && let Some(spec) = crate::collage::spec(layout, (size.width(), size.height()))
+        {
+            let next = NodeId::new(document.next_id());
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page, next);
+                    self.active = Some(page);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("collage: {error}"),
+            }
+        }
+        // Spec 072: an illustration as a group of vector shapes, 30 % of
+        // the page's shorter side, named by its credit.
+        if let Some((svg, credit, at)) = &asked.insert_illustration {
+            match gafira_io_vector::svg_drawing(svg) {
+                Ok(drawing) => {
+                    self.place_drawing(engine, &drawing, *at, Some((0.3, credit.clone())));
+                }
+                Err(error) => eprintln!("illustration: {error:?}"),
+            }
+        }
+        let arrived = self.photo_panel.borrow_mut().pump();
+        for arrived in arrived {
+            match engine
+                .assets()
+                .import_bytes(&arrived.photo.credit(), &arrived.bytes)
+            {
+                Ok(asset) => self.place_image(engine, asset, arrived.natural, arrived.at, true),
+                Err(error) => eprintln!("photo: {error}"),
+            }
         }
         if !asked.drop_files.is_empty() {
             self.place_images(engine, &asked.drop_files, asked.drop_at);
@@ -5166,6 +6260,52 @@ impl Editor {
                 self.fit_pending = None;
             }
         }
+        // «Curva»: the bend of every selected text and the height of its
+        // box, which follows its arc, in one undo step (FD-44).
+        if let Some(curve) = asked.text_curve
+            && let Some(page) = self.selected.page()
+            && let Some(document) = engine.edit().document()
+            && let Some(on) = document.page(page)
+        {
+            let mut nodes = Vec::new();
+            let mut commands: Vec<Box<dyn Command>> = Vec::new();
+            for id in self.selected.nodes() {
+                if let Some(node) = on.node(*id)
+                    && let gafira_doc::NodeKind::Text(text) = &node.kind
+                {
+                    nodes.push(*id);
+                    let mut bent = text.clone();
+                    bent.curve = curve;
+                    let mut placement = node.base.placement;
+                    if let Some(h) = canvas::curved_height(&bent, placement.w, placement.h) {
+                        placement.h = h.max(1.0);
+                        commands.push(Box::new(SetProperty::new(
+                            page,
+                            vec![*id],
+                            Property::Placement(placement),
+                            None,
+                        )));
+                    }
+                }
+            }
+            if !nodes.is_empty() {
+                commands.insert(
+                    0,
+                    Box::new(SetProperty::new(
+                        page,
+                        nodes,
+                        Property::TextCurve(curve),
+                        None,
+                    )),
+                );
+                let step = Transaction::new(MessageKey("edit.set_property"), commands);
+                log(
+                    "text curve",
+                    engine.edit().execute(Box::new(step)).map(drop),
+                );
+            }
+        }
+        self.text_styles(engine, asked);
         if let (Some(text), Some((page, node))) = (&asked.text, self.selected.single()) {
             let command =
                 SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
@@ -5235,7 +6375,7 @@ impl Editor {
             });
             let mut snap = Snap::default();
             // The letters a corner drag of a text box scales (owner rule).
-            let mut letters: Vec<(NodeId, gafira_doc::RichText)> = Vec::new();
+            let mut letters: Vec<(NodeId, Property)> = Vec::new();
             if drag.hold.is_none()
                 && let Some(field) = &field
                 && let Some(from) = start.and_then(|page| magnet::selection_box(page, &moving))
@@ -5270,11 +6410,45 @@ impl Editor {
                                     _ => None,
                                 }
                             });
-                            if let Some(words) = words {
+                            // A group: a corner scales the letters of every
+                            // text below it by one factor, so they keep
+                            // their proportion (owner rule).
+                            let grouped = start
+                                .filter(|page| group::is_group(page, *node))
+                                .filter(|_| resize::is_corner(handle) && origin.w > 0.0);
+                            if let Some(page) = grouped {
+                                let (k, words) =
+                                    group::scaled_letters(page, *node, to.w / origin.w);
+                                for (id, words) in words {
+                                    letters.push((
+                                        id,
+                                        match words {
+                                            group::ScaledWords::Text(text) => {
+                                                Property::TextContent(text)
+                                            }
+                                            group::ScaledWords::Shape(text) => {
+                                                Property::ShapeText(Some(text))
+                                            }
+                                        },
+                                    ));
+                                }
+                                if (k - to.w / origin.w).abs() > 1e-9 {
+                                    if asked.centre {
+                                        resize::scaled_centred(origin, k).unwrap_or(to)
+                                    } else {
+                                        resize::scaled(origin, handle, k).unwrap_or(to)
+                                    }
+                                } else {
+                                    to
+                                }
+                            } else if let Some(words) = words {
                                 if resize::is_corner(handle) && origin.w > 0.0 {
                                     let k = crate::textbox::corner_factor(&words, to.w / origin.w);
                                     let to = resize::scaled(origin, handle, k).unwrap_or(*origin);
-                                    letters.push((*node, crate::textbox::scaled(&words, k)));
+                                    letters.push((
+                                        *node,
+                                        Property::TextContent(crate::textbox::scaled(&words, k)),
+                                    ));
                                     to
                                 } else {
                                     let least = crate::textbox::min_width(&words);
@@ -5342,7 +6516,7 @@ impl Editor {
                 commands.push(Box::new(SetProperty::new(
                     drag.page,
                     vec![node],
-                    Property::TextContent(words),
+                    words,
                     drag.gesture,
                 )));
             }
@@ -5991,7 +7165,7 @@ impl Editor {
                 .and_then(|b| gafira_io_vector::svg_drawing(b).ok())
             {
                 self.remember(file, false);
-                self.place_drawing(engine, &drawing, at);
+                self.place_drawing(engine, &drawing, at, None);
                 continue;
             }
             let pixels = bytes.and_then(|bytes| gafira_io_vector::svg_pixels(&bytes, 2.0).ok());
@@ -6032,6 +7206,7 @@ impl Editor {
         engine: &mut Gafira,
         drawing: &gafira_io_vector::Drawing,
         at: Option<Pos2>,
+        sized: Option<(f64, String)>,
     ) {
         let Some(document) = engine.edit().document() else {
             return;
@@ -6055,7 +7230,12 @@ impl Editor {
         if !(dw > 0.0 && dh > 0.0) {
             return;
         }
-        let k = (0.8 * pw.min(ph) / dw.max(dh)).min(1.0);
+        // An illustration takes `share` of the page's shorter side; a file
+        // keeps its own size, or less to fit (spec 067).
+        let k = match &sized {
+            Some((share, _)) => share * pw.min(ph) / dw.max(dh),
+            None => (0.8 * pw.min(ph) / dw.max(dh)).min(1.0),
+        };
         let centre = dropped.map_or((pw / 2.0, ph / 2.0), |(_, point)| point);
         let origin = (centre.0 - dw * k / 2.0, centre.1 - dh * k / 2.0);
         let children: Vec<gafira_edit::NodeSpec> = drawing
@@ -6086,6 +7266,13 @@ impl Editor {
             gafira_doc::Placement::new(origin.0, origin.1, dw * k, dh * k),
         )
         .with_children(children);
+        let group = match sized {
+            Some((_, name)) => gafira_edit::NodeSpec {
+                name: Some(name),
+                ..group
+            },
+            None => group,
+        };
         let next = NodeId::new(document.next_id());
         let command = InsertNodes::new(page, None, on.roots.len(), vec![group]);
         match engine.edit().execute(Box::new(command)) {
@@ -6895,6 +8082,260 @@ fn halo_line(painter: &egui::Painter, theme: &Theme, points: [Pos2; 2], color: C
     painter.line_segment(points, Stroke::new(1.0, color));
 }
 
+/// The pages, their boxes on screen and the zoom, as the canvas drew them.
+type CanvasView<'a> = (&'a [Arc<Page>], &'a [(PageId, Rect)], f32);
+
+impl Editor {
+    /// The tool that draws or erases on the canvas, when Dibujo is open
+    /// with a brush or the eraser in hand (spec 079).
+    fn drawing_tool(&self) -> Option<crate::draw::Tool> {
+        let open = self.rail.open && TABS[self.rail.tab].0 == "tab.drawing";
+        let tool = self.draw.borrow().tool;
+        (open && tool != crate::draw::Tool::Select).then_some(tool)
+    }
+
+    /// What the pointer does on the canvas in Dibujo (spec 079): a brush
+    /// follows the hand and, let go, asks for the stroke as one element; the
+    /// eraser gathers the strokes it goes over and, let go, asks to remove
+    /// them. The stroke being drawn is painted live.
+    fn draw_input(
+        &self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        response: &egui::Response,
+        (pages, page_rects, zoom): CanvasView<'_>,
+        (texts, tool): (&Texts, crate::draw::Tool),
+        asked: &mut Asked,
+    ) {
+        use crate::draw::{self, Live, Tool};
+        let mut state = self.draw.borrow_mut();
+        let pointer = ui.input(|i| i.pointer.latest_pos());
+        let press = ui.input(|i| i.pointer.press_origin());
+        let on_page = |at: Pos2, page: Option<PageId>| {
+            page_rects
+                .iter()
+                .find(|(id, rect)| page.map_or(rect.contains(at), |p| p == *id))
+                .map(|(id, rect)| {
+                    let p = (at - rect.min) / zoom;
+                    (*id, *rect, [f64::from(p.x), f64::from(p.y)])
+                })
+        };
+        // The tool in hand is the cursor (spec 079).
+        if (response.hovered() || response.dragged())
+            && let Some(at) = pointer
+        {
+            draw::paint_cursor(ui.ctx(), at, tool, &state);
+        }
+        match tool {
+            Tool::Brush(index) => {
+                let setting = state.settings[index];
+                let brush = draw::BRUSHES[index];
+                let begin = response.drag_started() || response.clicked();
+                if begin
+                    && state.live.is_none()
+                    && let Some((page, _, point)) =
+                        press.or(pointer).and_then(|at| on_page(at, None))
+                {
+                    state.live = Some(Live {
+                        page,
+                        points: vec![point],
+                    });
+                    asked.select = Some(Selection::default());
+                }
+                if (response.dragged() || response.clicked())
+                    && let Some(at) = pointer
+                    && let Some(live) = state.live.as_mut()
+                    && let Some((_, _, point)) = on_page(at, Some(live.page))
+                    && live.points.last() != Some(&point)
+                {
+                    live.points.push(point);
+                }
+                if let Some(live) = &state.live
+                    && let Some((_, rect)) = page_rects.iter().find(|(id, _)| *id == live.page)
+                {
+                    let screen =
+                        |p: draw::Point| rect.min + Vec2::new(p[0] as f32, p[1] as f32) * zoom;
+                    let colour = setting.colour.gamma_multiply(setting.opacity);
+                    let mesh = draw::mesh(
+                        &live.points,
+                        (f64::from(setting.size), brush.cap, &setting.style),
+                        screen,
+                        colour,
+                    );
+                    painter.add(mesh);
+                }
+                let done = response.drag_stopped() || response.clicked();
+                if done && let Some(live) = state.live.take() {
+                    let outline = draw::outline(
+                        &live.points,
+                        f64::from(setting.size),
+                        brush.cap,
+                        &setting.style,
+                    );
+                    if let Some(((x, y, w, h), path)) = draw::to_path(&outline) {
+                        let mut shape = gafira_doc::ShapeNode::new(ShapeGeometry::Path(path));
+                        shape.fill = Some(canvas::document_color(setting.colour));
+                        shape.drawn_with = Some(brush.id.to_owned());
+                        let spec = gafira_edit::NodeSpec {
+                            name: Some(texts.t(&gafira_doc::msg::Message {
+                                key: MessageKey(brush.key),
+                                args: Vec::new(),
+                            })),
+                            opacity: setting.opacity.clamp(0.0, 1.0),
+                            blend: brush.blend,
+                            ..gafira_edit::NodeSpec::new(
+                                gafira_doc::NodeKind::Shape(shape),
+                                gafira_doc::Placement::new(x, y, w, h),
+                            )
+                        };
+                        asked.draw_stroke = Some((live.page, spec));
+                    }
+                }
+            }
+            Tool::Eraser => {
+                let reach = f64::from(8.0 / zoom);
+                let erasing = response.drag_started() || response.dragged() || response.clicked();
+                if erasing
+                    && let Some(at) = pointer
+                    && let Some((page_id, _, point)) =
+                        on_page(at, state.erasing.as_ref().map(|e| e.0))
+                    && let Some(page) = pages.iter().find(|p| p.id == page_id)
+                {
+                    let (_, gone) = state.erasing.get_or_insert_with(|| (page_id, Vec::new()));
+                    for id in &page.roots {
+                        let Some(node) = page.node(*id) else { continue };
+                        let gafira_doc::NodeKind::Shape(shape) = &node.kind else {
+                            continue;
+                        };
+                        let ShapeGeometry::Path(path) = &shape.geometry else {
+                            continue;
+                        };
+                        if shape.drawn_with.is_none() || node.base.locked || gone.contains(id) {
+                            continue;
+                        }
+                        let p = node.base.placement;
+                        let to_page = p.to_transform();
+                        let polygon = draw::flatten(path, |u| {
+                            let q = to_page * kurbo::Point::new(u[0] * p.w, u[1] * p.h);
+                            [q.x, q.y]
+                        });
+                        if draw::touches(&polygon, point, reach) {
+                            gone.push(*id);
+                        }
+                    }
+                }
+                if (response.drag_stopped() || response.clicked())
+                    && let Some(erased) = state.erasing.take()
+                {
+                    asked.erase = Some(erased);
+                }
+            }
+            Tool::Select => {}
+        }
+    }
+}
+
+/// «Añadir página» under the last page (spec 077): a wide button that adds
+/// a page at the end, and an arrow with a menu to add one or duplicate
+/// `last`.
+fn add_page_bar(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    bar: Rect,
+    last: PageId,
+    asked: &mut Asked,
+) {
+    let arrow_w = 40.0;
+    let main = Rect::from_min_max(bar.min, Pos2::new(bar.max.x - arrow_w, bar.max.y));
+    let arrow = Rect::from_min_max(Pos2::new(bar.max.x - arrow_w, bar.min.y), bar.max);
+    let main_r = ui.interact(main, ui.id().with("add_page.main"), egui::Sense::click());
+    let arrow_r = ui.interact(arrow, ui.id().with("add_page.more"), egui::Sense::click());
+    let painter = ui.painter();
+    let radius = theme.radius_md();
+    painter.rect_filled(bar, radius, theme.c("surface"));
+    let hover = theme.c("secondary.bg");
+    if main_r.hovered() {
+        painter.rect_filled(
+            main,
+            egui::CornerRadius {
+                ne: 0,
+                se: 0,
+                ..radius
+            },
+            hover,
+        );
+    }
+    if arrow_r.hovered() {
+        painter.rect_filled(
+            arrow,
+            egui::CornerRadius {
+                nw: 0,
+                sw: 0,
+                ..radius
+            },
+            hover,
+        );
+    }
+    painter.rect_stroke(
+        bar,
+        radius,
+        Stroke::new(1.0, theme.c("border.strong")),
+        egui::StrokeKind::Inside,
+    );
+    painter.line_segment(
+        [
+            Pos2::new(arrow.min.x, bar.min.y + 1.0),
+            Pos2::new(arrow.min.x, bar.max.y - 1.0),
+        ],
+        Stroke::new(1.0, theme.c("border.strong")),
+    );
+    let text = texts.t(&gafira_doc::msg!("page.add"));
+    let galley = painter.layout_no_wrap(text, theme.font("ui-label"), theme.c("text"));
+    let icon = 14.0;
+    let total = icon + 6.0 + galley.size().x;
+    let start = main.center().x - total / 2.0;
+    icons::paint(
+        painter,
+        Rect::from_center_size(
+            Pos2::new(start + icon / 2.0, main.center().y),
+            Vec2::splat(icon),
+        ),
+        Icon::ZoomIn,
+        icons::Weight::Regular,
+        theme.c("text"),
+    );
+    painter.galley(
+        Pos2::new(start + icon + 6.0, main.center().y - galley.size().y / 2.0),
+        galley,
+        theme.c("text"),
+    );
+    icons::paint(
+        painter,
+        Rect::from_center_size(arrow.center(), Vec2::splat(14.0)),
+        Icon::Expand,
+        icons::Weight::Regular,
+        theme.c("text"),
+    );
+    if main_r.hovered() || arrow_r.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if main_r.clicked() {
+        asked.add_page = true;
+    }
+    egui::Popup::menu(&arrow_r).show(|ui| {
+        if ui.button(texts.t(&gafira_doc::msg!("page.add"))).clicked() {
+            asked.add_page = true;
+        }
+        if ui
+            .button(texts.t(&gafira_doc::msg!("page.duplicate")))
+            .clicked()
+        {
+            asked.page_action = Some(PageAction::Duplicate(last));
+        }
+    });
+}
+
 /// The guides of `page_doc` on the page drawn at `page`: a vertical one
 /// along the page, a horizontal one across the canvas row `row` (FD-03).
 fn draw_guides(
@@ -6925,7 +8366,23 @@ fn draw_guides(
                 Pos2::new(row.max.x, page.min.y + at),
             ],
         };
-        halo_line(painter, theme, points, color);
+        if guide.locked {
+            // A locked guide is a fold or a fixed line (spec 076): dashed.
+            painter.add(egui::Shape::dashed_line(
+                &points,
+                Stroke::new(3.0, theme.c("canvas.selection.halo")),
+                6.0,
+                4.0,
+            ));
+            painter.add(egui::Shape::dashed_line(
+                &points,
+                Stroke::new(1.0, color),
+                6.0,
+                4.0,
+            ));
+        } else {
+            halo_line(painter, theme, points, color);
+        }
     }
 }
 
@@ -6958,9 +8415,11 @@ fn draw_ruler(
     theme: &Theme,
     axis: GuideAxis,
     strip: Rect,
-    (origin, zoom): (Rect, f32),
+    (origin, zoom, (unit, px_per_unit)): (Rect, f32, (gafira_geom::Unit, f64)),
     band: Option<(f32, f32)>,
 ) {
+    let scale = f64::from(zoom) * px_per_unit;
+    let finest = ruler::finest(unit);
     painter.rect_filled(strip, 0.0, theme.c("surface"));
     let border = Stroke::new(1.0, theme.c("border"));
     let mut font = theme.font("caption");
@@ -7006,12 +8465,12 @@ fn draw_ruler(
         };
         painter.line_segment(points, border);
     };
-    for (at, middle) in ruler::minor_ticks(origin_at, zoom, from, to) {
+    for (at, middle) in ruler::minor_ticks_in(origin_at, scale, (from, to), finest) {
         tick(at, if middle { size / 2.0 } else { size / 4.0 });
     }
-    for (at, value) in ruler::ticks(origin_at, zoom, from, to) {
+    for (at, value) in ruler::ticks_in(origin_at, scale, (from, to), finest) {
         tick(at, size);
-        let galley = painter.layout_no_wrap(value.to_string(), font.clone(), color);
+        let galley = painter.layout_no_wrap(ruler::tick_label(value), font.clone(), color);
         if horizontal {
             painter.galley(Pos2::new(at + 3.0, strip.min.y + 1.0), galley, color);
         } else {
@@ -7205,6 +8664,16 @@ fn frame_key(shape: &Shape, zoom: f32) -> u64 {
         shape.frame, shape.placement.w, shape.placement.h, zoom
     )
     .hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The key of the texture of a text drawn from its outline: its words,
+/// styles, bend, spacing and gradient, its box, where it is (the cover
+/// moves with it) and the zoom.
+fn curved_key(text: &gafira_doc::TextNode, placement: &Placement, zoom: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("curved {text:?}{placement:?}{zoom}").hash(&mut hasher);
     hasher.finish()
 }
 
@@ -8212,6 +9681,79 @@ fn paint_gradient_swatch(
     painter.add(mesh);
 }
 
+/// Where a card of a side panel was let go: the page and the point on it.
+type Dropped = (PageId, (f64, f64));
+
+/// The locked element under `at` (D-110): the top one there, on the page
+/// under the pointer, as [`layers::locked_pick`] chooses it.
+fn locked_under(
+    pages: &[Arc<Page>],
+    page_rects: &[(PageId, Rect)],
+    zoom: f32,
+    at: Pos2,
+) -> Option<(PageId, NodeId)> {
+    let (id, rect) = page_rects.iter().find(|(_, rect)| rect.contains(at))?;
+    let page = pages.iter().find(|p| p.id == *id)?;
+    let locked: Vec<Shape> = canvas::shapes(page)
+        .into_iter()
+        .filter(|shape| shape.locked)
+        .map(|mut shape| {
+            shape.locked = false;
+            shape
+        })
+        .collect();
+    let leaf = canvas::hit(&locked, *rect, zoom, at)?;
+    Some((*id, layers::locked_pick(page, leaf)?))
+}
+
+/// The bend of «Arco arriba» and, negated, «Arco abajo» (FD-44).
+const CURVE_PRESET: f64 = 45.0;
+
+/// The title of a section of a side panel.
+fn section_title(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, key: &'static str) {
+    ui.label(
+        RichText::new(plain(texts, key))
+            .font(theme.font("ui-label"))
+            .color(theme.c("text")),
+    );
+    ui.add_space(8.0);
+}
+
+/// The rounded card of a side panel at `rect`, lighter under the pointer.
+fn card_frame(ui: &egui::Ui, theme: &Theme, rect: Rect, hovered: bool) {
+    let fill = if hovered {
+        theme.c("surface.sunken")
+    } else {
+        theme.c("surface")
+    };
+    ui.painter().rect(
+        rect,
+        theme.radius_md(),
+        fill,
+        Stroke::new(1.0, theme.c("border")),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// The title of «Propiedades» for `shape`: what kind of element it is.
+fn kind_title(shape: &Shape) -> &'static str {
+    if shape.frame.is_some() {
+        "inspector.kind_frame"
+    } else if shape.effect.is_some() {
+        "inspector.kind_light"
+    } else if shape.group {
+        "inspector.kind_group"
+    } else if shape.line.is_some() {
+        "inspector.kind_line"
+    } else if shape.text.is_some() {
+        "inspector.kind_text"
+    } else if shape.image.is_some() {
+        "inspector.kind_image"
+    } else {
+        "inspector.kind_shape"
+    }
+}
+
 /// «Colores» of a group (spec 067): a swatch for each colour of its shapes;
 /// changing one changes it in all of them.
 fn group_colors(
@@ -8522,41 +10064,393 @@ fn shape_text_fields(
     });
 }
 
-/// The Inspector fields of a text element: its words, size and colour,
-/// applied to every span (one style per element for now, spec 027).
-fn text_fields(ui: &mut egui::Ui, texts: &Texts, text: &gafira_doc::TextNode, asked: &mut Asked) {
+/// The Inspector fields of a text element (spec 070): size, bold and
+/// italic, alignment, letter spacing, line height and its colour, from the
+/// picker, the colours of the design, the solid presets or the gradient
+/// presets. One style per element for now (spec 027).
+fn text_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    (text, design): (&gafira_doc::TextNode, &DesignColors),
+    asked: &mut Asked,
+) {
+    use gafira_doc::TextAlign;
     let Some(style) = text.content.first_style().cloned() else {
         return;
     };
-    // The words are written on the canvas (spec 055), so the Inspector only
-    // keeps their size and colour.
     let words = text.content.plain_text();
-    let mut size = style.size;
-    let mut color = style.color;
+    let restyle = |asked: &mut Asked, style: gafira_doc::SpanStyle| {
+        asked.text = Some(gafira_doc::RichText::plain(&words, &style));
+    };
+    // Size, bold and italic.
     ui.horizontal(|ui| {
-        ui.label(texts.t(&gafira_doc::msg!("inspector.font_size")));
-        let size_changed = ui
+        ui.label(plain(texts, "inspector.font_size"));
+        let mut size = style.size;
+        if ui
             .add(
                 egui::DragValue::new(&mut size)
                     .speed(1.0)
                     .range(1.0..=gafira_doc::TextNode::MAX_SIZE),
             )
-            .changed();
-        ui.label(texts.t(&gafira_doc::msg!("inspector.text_color")));
-        let picked = color_button(ui, Some(color));
-        let color_changed = picked.is_some();
-        if let Some(picked) = picked {
-            color = picked;
+            .changed()
+        {
+            restyle(
+                asked,
+                gafira_doc::SpanStyle {
+                    size,
+                    ..style.clone()
+                },
+            );
         }
-        if size_changed || color_changed {
-            let restyled = gafira_doc::SpanStyle {
-                size,
-                color,
+        ui.add_space(8.0);
+        if format_tile(
+            ui,
+            theme,
+            style.bold,
+            plain(texts, "inspector.bold"),
+            |p, r, c| {
+                // A heavy «B»: the letter twice, a pixel apart.
+                for dx in [0.0, 1.0] {
+                    p.text(
+                        r.center() + Vec2::new(dx - 0.5, 0.0),
+                        Align2::CENTER_CENTER,
+                        "B",
+                        egui::FontId::proportional(15.0),
+                        c,
+                    );
+                }
+            },
+        )
+        .clicked()
+        {
+            restyle(
+                asked,
+                gafira_doc::SpanStyle {
+                    bold: !style.bold,
+                    ..style.clone()
+                },
+            );
+        }
+        let italic = text_family(
+            ui.ctx(),
+            theme,
+            &gafira_doc::SpanStyle {
+                font: "Inter".to_owned(),
+                italic: true,
                 ..style.clone()
-            };
-            asked.text = Some(gafira_doc::RichText::plain(&words, &restyled));
+            },
+        );
+        if format_tile(
+            ui,
+            theme,
+            style.italic,
+            plain(texts, "inspector.italic"),
+            |p, r, c| {
+                p.text(
+                    r.center(),
+                    Align2::CENTER_CENTER,
+                    "I",
+                    egui::FontId::new(15.0, italic),
+                    c,
+                );
+            },
+        )
+        .clicked()
+        {
+            restyle(
+                asked,
+                gafira_doc::SpanStyle {
+                    italic: !style.italic,
+                    ..style.clone()
+                },
+            );
         }
     });
+    ui.add_space(6.0);
+    // Alignment: four lines each, set as the text sets them.
+    ui.horizontal(|ui| {
+        for (align, key) in [
+            (TextAlign::Left, "inspector.text_left"),
+            (TextAlign::Center, "inspector.text_center"),
+            (TextAlign::Right, "inspector.text_right"),
+            (TextAlign::Justify, "inspector.text_justify"),
+        ] {
+            let clicked = format_tile(
+                ui,
+                theme,
+                text.align == align,
+                plain(texts, key),
+                |p, r, c| {
+                    for (row, length) in [1.0_f32, 0.6, 1.0, 0.7].into_iter().enumerate() {
+                        let length = if align == TextAlign::Justify {
+                            1.0
+                        } else {
+                            length
+                        };
+                        let w = 16.0 * length;
+                        let y = r.top() + 10.0 + row as f32 * 4.0;
+                        let x = match align {
+                            TextAlign::Left | TextAlign::Justify => r.center().x - 8.0,
+                            TextAlign::Center => r.center().x - w / 2.0,
+                            TextAlign::Right => r.center().x + 8.0 - w,
+                        };
+                        p.line_segment([Pos2::new(x, y), Pos2::new(x + w, y)], Stroke::new(1.5, c));
+                    }
+                },
+            )
+            .clicked();
+            if clicked {
+                asked.text_align = Some(align);
+            }
+        }
+    });
+    ui.add_space(6.0);
+    // Letter spacing and line height (FD-41).
+    egui::Grid::new("inspector.text_spacing")
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            let mut letters = text.letter_spacing;
+            let mut lines = text.line_height.unwrap_or(1.0);
+            let (lo, hi) = (
+                *gafira_doc::TextNode::LETTER_SPACING.start(),
+                *gafira_doc::TextNode::LETTER_SPACING.end(),
+            );
+            ui.label(plain(texts, "inspector.letter_spacing"));
+            let a = ui.add(egui::Slider::new(&mut letters, lo..=hi).step_by(1.0));
+            ui.end_row();
+            let (lo, hi) = (
+                *gafira_doc::TextNode::LINE_HEIGHT.start(),
+                *gafira_doc::TextNode::LINE_HEIGHT.end(),
+            );
+            ui.label(plain(texts, "inspector.line_height"));
+            let b = ui.add(egui::Slider::new(&mut lines, lo..=hi).step_by(0.05));
+            ui.end_row();
+            if a.changed() || b.changed() {
+                let lines = (b.changed() || text.line_height.is_some()).then_some(lines);
+                asked.text_spacing = Some((letters, lines));
+            }
+        });
+    // «Curva»: from a cup (-100) through straight (0) to an arch (100).
+    ui.add_space(6.0);
+    let mut curve = text.curve;
+    ui.horizontal(|ui| {
+        ui.label(plain(texts, "inspector.curve"));
+        let max = gafira_doc::TextNode::MAX_CURVE;
+        if ui
+            .add(egui::Slider::new(&mut curve, -max..=max).step_by(1.0))
+            .changed()
+        {
+            asked.text_curve = Some(curve);
+        }
+    });
+    ui.add_space(12.0);
+    text_color_fields(ui, theme, texts, (text, &style, design), asked);
+}
+
+/// The colours a design already uses (spec 070): the solid colours and the
+/// gradients of its shapes and texts, each once, in the order they appear.
+#[derive(Clone, Debug, Default)]
+struct DesignColors {
+    solid: Vec<gafira_color::Color>,
+    gradients: Vec<gafira_doc::Gradient>,
+}
+
+/// The colours of the design on `page`, at most twelve of each.
+fn design_colors(page: &gafira_doc::Page) -> DesignColors {
+    let mut out = DesignColors::default();
+    let solid = |color: gafira_color::Color, out: &mut DesignColors| {
+        if out.solid.len() < 12 && !out.solid.contains(&color) {
+            out.solid.push(color);
+        }
+    };
+    let gradient = |g: &gafira_doc::Gradient, out: &mut DesignColors| {
+        if out.gradients.len() < 12 && !out.gradients.contains(g) {
+            out.gradients.push(g.clone());
+        }
+    };
+    let mut ids: Vec<&NodeId> = page.nodes.keys().collect();
+    ids.sort();
+    for id in ids {
+        let Some(node) = page.nodes.get(id) else {
+            continue;
+        };
+        match &node.kind {
+            gafira_doc::NodeKind::Shape(shape) => {
+                match &shape.gradient {
+                    Some(g) => gradient(g, &mut out),
+                    None => {
+                        if let Some(fill) = shape.fill {
+                            solid(fill, &mut out);
+                        }
+                    }
+                }
+                if let Some(text) = &shape.text
+                    && let Some(style) = text.content.first_style()
+                {
+                    solid(style.color, &mut out);
+                }
+            }
+            gafira_doc::NodeKind::Text(text) => match &text.gradient {
+                Some(g) => gradient(g, &mut out),
+                None => {
+                    if let Some(style) = text.content.first_style() {
+                        solid(style.color, &mut out);
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+    out
+}
+
+/// «Color del texto» (spec 070): the picker, then the colours of the
+/// design, the solid presets and the gradient presets, as round swatches;
+/// the one in use is ringed.
+fn text_color_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    (text, style, design): (&gafira_doc::TextNode, &gafira_doc::SpanStyle, &DesignColors),
+    asked: &mut Asked,
+) {
+    let section = |ui: &mut egui::Ui, key: &'static str| {
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(plain(texts, key))
+                .font(theme.font("body-sm"))
+                .color(theme.c("text.secondary")),
+        );
+        ui.add_space(4.0);
+    };
+    ui.label(
+        RichText::new(plain(texts, "inspector.text_color"))
+            .font(theme.font("ui-label"))
+            .color(theme.c("text")),
+    );
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        if let Some(picked) = color_button(ui, Some(style.color)) {
+            asked.text_fill = Some(TextFill::Solid(picked));
+        }
+        ui.label(plain(texts, "inspector.custom_color"));
+    });
+    let in_use = |fill: &TextFill| match fill {
+        TextFill::Solid(c) => text.gradient.is_none() && *c == style.color,
+        TextFill::Gradient(g) => text.gradient.as_ref() == Some(g),
+    };
+    let row = |ui: &mut egui::Ui, fills: Vec<TextFill>, asked: &mut Asked| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::splat(6.0);
+            for fill in fills {
+                if dot(ui, theme, in_use(&fill), &fill).clicked() {
+                    asked.text_fill = Some(fill);
+                }
+            }
+        });
+    };
+    if !design.solid.is_empty() || !design.gradients.is_empty() {
+        section(ui, "inspector.design_colors");
+        let fills = design
+            .solid
+            .iter()
+            .copied()
+            .map(TextFill::Solid)
+            .chain(design.gradients.iter().cloned().map(TextFill::Gradient))
+            .collect();
+        row(ui, fills, asked);
+    }
+    section(ui, "inspector.solid_presets");
+    row(
+        ui,
+        crate::colors::TEXT_PALETTE
+            .iter()
+            .map(|code| TextFill::Solid(crate::colors::hex(*code)))
+            .collect(),
+        asked,
+    );
+    section(ui, "inspector.gradient_presets");
+    row(
+        ui,
+        crate::colors::TEXT_GRADIENTS
+            .iter()
+            .map(|(a, b, angle)| TextFill::Gradient(crate::colors::gradient(*a, *b, *angle)))
+            .collect(),
+        asked,
+    );
+}
+
+/// A colour for the letters of a text: one colour, or a gradient over the
+/// box (spec 070).
+#[derive(Clone, Debug, PartialEq)]
+enum TextFill {
+    Solid(gafira_color::Color),
+    Gradient(gafira_doc::Gradient),
+}
+
+/// A round swatch of `fill`, ringed when it is the one in use; a hand
+/// over it.
+fn dot(ui: &mut egui::Ui, theme: &Theme, on: bool, fill: &TextFill) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
+    let painter = ui.painter();
+    let inner = rect.shrink(2.0);
+    match fill {
+        TextFill::Solid(color) => {
+            painter.circle_filled(
+                inner.center(),
+                inner.width() / 2.0,
+                canvas::screen_color(*color),
+            );
+        }
+        TextFill::Gradient(gradient) => {
+            // The gradient swatch, cut round by the page colour around it.
+            painter.add(gradient_swatch(gradient, inner));
+            let ring = inner.width() / 2.0 + 4.0;
+            painter.circle_stroke(
+                inner.center(),
+                ring - 2.0,
+                Stroke::new(8.0, ui.visuals().panel_fill),
+            );
+        }
+    }
+    let ring = if on {
+        Stroke::new(2.0, theme.c("primary.bg"))
+    } else {
+        Stroke::new(1.0, theme.c("border"))
+    };
+    painter.circle_stroke(rect.center(), rect.width() / 2.0 - 1.0, ring);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response
+}
+
+/// A square button of the text formats, drawn by `paint` in the text colour
+/// (or the brand colour when `on`), with `hint` on hover and a hand.
+fn format_tile(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    on: bool,
+    hint: String,
+    paint: impl FnOnce(&egui::Painter, Rect, Color32),
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(30.0), egui::Sense::click());
+    let painter = ui.painter();
+    if on || response.hovered() {
+        painter.rect_filled(rect, 6.0, theme.c("surface.sunken"));
+    }
+    let color = if on {
+        theme.c("primary.bg")
+    } else {
+        theme.c("text")
+    };
+    paint(painter, rect, color);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.on_hover_text(hint)
 }
 
 /// Lay out a text element in its upright screen box `at`: one galley per
@@ -8855,7 +10749,20 @@ pub(crate) mod tests {
         repository: Arc<dyn ProjectRepository>,
         store: Arc<dyn ContentStore>,
     ) -> Gafira {
-        let dir = std::env::temp_dir().join(format!("gafira-ui-{}", std::process::id()));
+        // A folder of its own: two tests saving their settings at once
+        // would race on the same `settings.json.tmp`.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("gafira-ui-{}-{n}", std::process::id()));
+        engine_in(&dir, repository, store)
+    }
+
+    /// An engine whose settings and instances live in `dir`.
+    pub(crate) fn engine_in(
+        dir: &std::path::Path,
+        repository: Arc<dyn ProjectRepository>,
+        store: Arc<dyn ContentStore>,
+    ) -> Gafira {
         let clock = Arc::new(SystemClock::new());
         let ports = Ports::new(
             repository,
@@ -8995,6 +10902,73 @@ pub(crate) mod tests {
         assert!(
             (a4.x - 793.7).abs() < 0.1 && (a4.y - 1122.5).abs() < 0.1,
             "{a4:?}"
+        );
+    }
+
+    // Spec 079: a hand stroke goes into the page as one vector element,
+    // kept as a freehand stroke with its brush; the eraser removes it in
+    // one step that undo brings back.
+    #[test]
+    fn s79_a_stroke_is_one_element_and_the_eraser_removes_it() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let snapshot = engine.edit().document();
+        let page = snapshot.as_ref().expect("doc").pages()[0].id;
+        let brush = crate::draw::BRUSHES[1];
+        let points: Vec<[f64; 2]> = (0..60)
+            .map(|k| {
+                [
+                    100.0 + f64::from(k) * 5.0,
+                    300.0 + 40.0 * (f64::from(k) / 9.0).sin(),
+                ]
+            })
+            .collect();
+        let outline = crate::draw::outline(&points, 10.0, brush.cap, &brush.style);
+        let ((x, y, w, h), path) = crate::draw::to_path(&outline).expect("path");
+        let mut shape = gafira_doc::ShapeNode::new(ShapeGeometry::Path(path));
+        shape.fill = Some(canvas::document_color(Color32::RED));
+        shape.drawn_with = Some(brush.id.to_owned());
+        let spec = gafira_edit::NodeSpec::new(
+            gafira_doc::NodeKind::Shape(shape),
+            gafira_doc::Placement::new(x, y, w, h),
+        );
+        let draw = Asked {
+            draw_stroke: Some((page, spec)),
+            ..Asked::default()
+        };
+        run(&mut engine, &snapshot, &draw);
+        let after = engine.edit().document();
+        let on = &after.as_ref().expect("doc").pages()[0];
+        assert_eq!(on.roots.len(), 1, "one element");
+        let id = on.roots[0];
+        let gafira_doc::NodeKind::Shape(drawn) = &on.node(id).expect("node").kind else {
+            panic!("a shape");
+        };
+        assert_eq!(drawn.drawn_with.as_deref(), Some("marker"));
+        let erase = Asked {
+            erase: Some((page, vec![id])),
+            ..Asked::default()
+        };
+        run(&mut engine, &after, &erase);
+        assert!(
+            engine.edit().document().as_ref().expect("doc").pages()[0]
+                .roots
+                .is_empty()
+        );
+        let snapshot = engine.edit().document();
+        run(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                undo: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            engine.edit().document().as_ref().expect("doc").pages()[0]
+                .roots
+                .len(),
+            1
         );
     }
 
@@ -9191,7 +11165,11 @@ pub(crate) mod tests {
     #[test]
     fn s21_02_dark_mode_is_asked_for_and_the_settings_keep_it() {
         use gafira_ports::settings::Appearance;
-        let mut engine = engine();
+        // Two engines over the same settings: the second reads what the
+        // first saved.
+        let dir = std::env::temp_dir().join(format!("gafira-ui-s21-{}", std::process::id()));
+        let fresh = || engine_in(&dir, Arc::new(Nothing), Arc::new(Nothing));
+        let mut engine = fresh();
         start(&mut engine, StartFormat::Social).expect("a new document");
         let snapshot = engine.edit().document();
         assert!(matches!(
@@ -9207,7 +11185,7 @@ pub(crate) mod tests {
         ));
         let settings = engine.settings().get().with_appearance(Appearance::Dark);
         engine.settings().set(settings).expect("saves");
-        let again = super::tests::engine();
+        let again = fresh();
         again.settings().start().expect("loads");
         assert_eq!(again.settings().get().appearance, Appearance::Dark);
         again.settings().set(Settings::default()).expect("resets");
@@ -9831,6 +11809,355 @@ pub(crate) mod tests {
         library.record(&png, false);
         std::fs::remove_file(&png).expect("deleted");
         assert!(library.existing().is_empty(), "a deleted file is not shown");
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // Spec 070: alignment, spacing and a gradient go to the selected text,
+    // each one undo step; a solid colour takes the gradient off.
+    #[test]
+    fn s70_06_text_styles_from_the_inspector() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Title, "Hola".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the text");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let found = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node");
+            let gafira_doc::NodeKind::Text(text) = &found.kind else {
+                panic!("a text")
+            };
+            text.clone()
+        };
+        let gradient = crate::colors::gradient(0xFF0000, 0x0000FF, 45.0);
+        let depth = undo_depth(&mut engine);
+        for asked in [
+            Asked {
+                text_align: Some(gafira_doc::TextAlign::Center),
+                ..Asked::default()
+            },
+            Asked {
+                text_spacing: Some((120.0, Some(1.5))),
+                ..Asked::default()
+            },
+            Asked {
+                text_fill: Some(TextFill::Gradient(gradient.clone())),
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let text = read(&mut engine);
+        assert_eq!(text.align, gafira_doc::TextAlign::Center);
+        assert_eq!((text.letter_spacing, text.line_height), (120.0, Some(1.5)));
+        assert_eq!(text.gradient, Some(gradient));
+        assert_eq!(undo_depth(&mut engine), depth + 3);
+        let red = crate::colors::hex(0xFF3131);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                text_fill: Some(TextFill::Solid(red)),
+                ..Asked::default()
+            },
+        );
+        let text = read(&mut engine);
+        assert_eq!(text.gradient, None);
+        assert_eq!(text.content.first_style().map(|s| s.color), Some(red));
+        assert_eq!(undo_depth(&mut engine), depth + 4);
+    }
+
+    // Marcos (owner request): a letter comes in as one frame cut by its
+    // outline, a phone as a group holding a screen frame; each selected, in
+    // one undo step.
+    #[test]
+    fn frames_of_marcos_come_in() {
+        use crate::frames::{Holder, Kind};
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        for (kind, group) in [
+            (Kind::Glyph('A'), false),
+            (Kind::Holder(Holder::Phone), true),
+        ] {
+            let depth = undo_depth(&mut engine);
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    insert_frame_kind: Some((kind, None)),
+                    ..Asked::default()
+                },
+            );
+            let document = engine.edit().document().expect("doc");
+            let page = &document.pages()[0];
+            let (_, node) = editor.selected.single().expect("selected");
+            let node = page.node(node).expect("node");
+            match (&node.kind, group) {
+                (gafira_doc::NodeKind::Frame(frame), false) => {
+                    assert!(matches!(frame.clip_shape, ShapeGeometry::Path(_)));
+                }
+                (gafira_doc::NodeKind::Group(_), true) => {
+                    assert!(node.children.iter().any(|c| matches!(
+                        page.node(*c).map(|n| &n.kind),
+                        Some(gafira_doc::NodeKind::Frame(_))
+                    )));
+                }
+                (other, _) => panic!("{other:?}"),
+            }
+            assert_eq!(undo_depth(&mut engine), depth + 1);
+        }
+    }
+
+    // S66-09 (owner request): a Foto collage fills the whole current page,
+    // a group of frames, selected; one undo step.
+    #[test]
+    fn s66_09_a_collage_fills_the_current_page() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_collage: Some((9, None)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let page = &document.pages()[0];
+        let size = page.size.to_px(document.dpi()).expect("px");
+        let (_, group) = editor.selected.single().expect("the collage");
+        let node = page.node(group).expect("group");
+        let p = node.base.placement;
+        assert_eq!(
+            (p.x, p.y, p.w, p.h),
+            (0.0, 0.0, size.width(), size.height())
+        );
+        assert_eq!(node.children.len(), 4);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // Spec 072: an illustration comes in as one selected group of vector
+    // shapes, 30 % of the page's shorter side, named by its credit; one
+    // undo step.
+    #[test]
+    fn an_illustration_is_a_group_of_shapes() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="40" fill="#e33"/><rect x="10" y="10" width="20" height="20" fill="#3a3"/></svg>"##;
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_illustration: Some((
+                    Arc::new(svg.to_vec()),
+                    "sunflower — Noto Emoji (Google, Apache 2.0)".to_owned(),
+                    None,
+                )),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let page = &document.pages()[0];
+        let (_, group) = editor.selected.single().expect("the group");
+        let node = page.node(group).expect("group");
+        assert!(matches!(node.kind, gafira_doc::NodeKind::Group(_)));
+        assert_eq!(node.children.len(), 2);
+        assert_eq!(
+            node.base.name.as_deref(),
+            Some("sunflower — Noto Emoji (Google, Apache 2.0)")
+        );
+        let side = page.size.to_px(document.dpi()).expect("px");
+        let shorter = side.width().min(side.height());
+        let p = node.base.placement;
+        assert!(
+            (p.w.max(p.h) - 0.3 * shorter).abs() < 1.0,
+            "{} vs {}",
+            p.w,
+            shorter
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // A font pairing comes in as one selected group of a heading and a
+    // body line, in one undo step.
+    #[test]
+    fn a_font_pairing_is_added_as_a_group() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((1, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let page = &document.pages()[0];
+        let (_, group) = editor.selected.single().expect("one selected");
+        let node = page.node(group).expect("the group");
+        assert!(matches!(node.kind, gafira_doc::NodeKind::Group(_)));
+        let children = node.children.clone();
+        assert_eq!(children.len(), 2);
+        assert!(children.iter().all(|c| matches!(
+            page.node(*c).map(|n| &n.kind),
+            Some(gafira_doc::NodeKind::Text(_))
+        )));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // FD-44: a curved text from the panel fits its box, either way: no
+    // letter outside it.
+    #[test]
+    fn s70_04_a_curved_text_fits_its_box() {
+        use kurbo::Shape as _;
+        for bend in [CURVE_PRESET, -CURVE_PRESET] {
+            let mut engine = engine();
+            start(&mut engine, StartFormat::Social).expect("a new document");
+            let mut editor = Editor::default();
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    insert_curved: Some((bend, "Texto curvo".to_owned(), None)),
+                    ..Asked::default()
+                },
+            );
+            let (page, node) = editor.selected.single().expect("the curved text");
+            let document = engine.edit().document().expect("doc");
+            let found = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node");
+            let gafira_doc::NodeKind::Text(text) = &found.kind else {
+                panic!("a text")
+            };
+            let p = found.base.placement;
+            let (path, _, _) =
+                gafira_render::text_outline(text, (p.w, p.h), canvas::text_fonts()).expect("drawn");
+            let b = path.bounding_box();
+            assert!(b.x0 >= -0.5 && b.y0 >= -0.5, "bend {bend}: {b:?}");
+            assert!(
+                b.x1 <= p.w + 0.5 && b.y1 <= p.h + 0.5,
+                "bend {bend}: {b:?} in {}x{}",
+                p.w,
+                p.h
+            );
+        }
+    }
+
+    // FD-44: «Curva» bends the text and its box takes the height of the arc,
+    // in one undo step; a curved text from the panel comes in bent.
+    #[test]
+    fn s70_04_curving_a_text_fits_its_box() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_curved: Some((45.0, "Texto curvo".to_owned(), None)),
+                ..Asked::default()
+            },
+        );
+        let (page, node) = editor.selected.single().expect("the curved text");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let found = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node");
+            let gafira_doc::NodeKind::Text(text) = &found.kind else {
+                panic!("a text")
+            };
+            (text.curve, found.base.placement.h)
+        };
+        let (curve, arched) = read(&mut engine);
+        assert_eq!(curve, 45.0);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                text_curve: Some(0.0),
+                ..Asked::default()
+            },
+        );
+        let (curve, straight) = read(&mut engine);
+        assert_eq!(curve, 0.0);
+        assert!(straight < arched - 5.0, "{straight} < {arched}");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // «Usar como fondo de la página»: the image becomes its page's
+    // background and leaves the page, in one undo step.
+    #[test]
+    fn an_image_becomes_the_page_background() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-asbg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("fondo.png");
+        image::RgbaImage::from_pixel(64, 32, image::Rgba([10, 20, 30, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let asset = engine.assets().import(&png).expect("imports");
+        let page = engine.edit().document().expect("doc").pages()[0].id;
+        let next = NodeId::new(engine.edit().document().expect("doc").next_id());
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(
+                page,
+                None,
+                0,
+                vec![canvas::new_image(
+                    Vec2::new(1080.0, 1080.0),
+                    (64, 32),
+                    asset,
+                )],
+            )))
+            .expect("inserts");
+        let mut editor = Editor::default();
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                image_to_background: Some((page, next, asset)),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("doc");
+        let on = &document.pages()[0];
+        assert!(on.node(next).is_none(), "the element is gone");
+        assert_eq!(
+            on.background,
+            Some(gafira_doc::PageBackground::Image {
+                asset,
+                natural: (64, 32),
+                fit: gafira_doc::BackgroundFit::Fill,
+            })
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1);
         std::fs::remove_dir_all(dir).expect("clean up");
     }
 
@@ -10623,6 +12950,66 @@ pub(crate) mod tests {
         assert!((after.w - before.w - 20.0).abs() < 1e-9, "{after:?}");
         assert_eq!(after.h, before.h);
         assert_eq!(after.rotation_deg, 90.0);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // Owner rule: a corner of a group scales every letter below it by one
+    // factor, so a large and a small one keep their proportion; one undo
+    // step.
+    #[test]
+    fn a_group_corner_scales_its_letters_in_proportion() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                ..Asked::default()
+            },
+        );
+        let (_, group) = editor.selected.single().expect("the group");
+        let read = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            let page = &document.pages()[0];
+            let node = page.node(group).expect("group");
+            let sizes: Vec<f64> = node
+                .children
+                .iter()
+                .map(|c| match &page.node(*c).expect("child").kind {
+                    gafira_doc::NodeKind::Text(t) => t.content.first_style().expect("style").size,
+                    _ => panic!("a text"),
+                })
+                .collect();
+            (node.base.placement, sizes)
+        };
+        let (before, sizes) = read(&mut engine);
+        editor.zoom = 1.0;
+        let depth = undo_depth(&mut engine);
+        let corner = canvas::Handle { x: 1, y: 1 };
+        let steps = vec![
+            Asked {
+                drag_begin: Some(Some(Hold::Resize(corner))),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(before.w as f32, 0.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ];
+        gesture(&mut engine, &mut editor, steps);
+        let (after, bigger) = read(&mut engine);
+        let k = after.w / before.w;
+        assert!(k > 1.5, "the group grew: {k}");
+        for (a, b) in sizes.iter().zip(&bigger) {
+            assert!((b / a - k).abs() < 1e-6, "{a} -> {b}, k {k}");
+        }
+        assert!((bigger[0] / bigger[1] - sizes[0] / sizes[1]).abs() < 1e-9);
         assert_eq!(undo_depth(&mut engine), depth + 1);
     }
 

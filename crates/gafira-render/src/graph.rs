@@ -23,7 +23,7 @@ use gafira_doc::{
 use gafira_geom::Affine;
 use gafira_pathops::{Cap, FillRule, Join, StrokeStyle};
 use gafira_ports::export::ImagePixels;
-use gafira_ports::render::{ContentKey, RenderOp, RenderQuality};
+use gafira_ports::render::{ContentKey, GlyphRun, RenderOp, RenderQuality, RunGlyph};
 use gafira_raster::{ImageBuf, LightSpot};
 use gafira_time::Flicks;
 use kurbo::{BezPath, Ellipse, Rect, RoundedRect, Shape};
@@ -723,7 +723,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         });
                     }
                     RecordKind::Text(ref text) => {
-                        let Some((path, color, canonical)) =
+                        let Some((path, color, canonical, runs)) =
                             text_path(text, &record.base.placement, &self.fonts)
                         else {
                             // No words, no fonts or no glyph: nothing to draw.
@@ -737,7 +737,10 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             &[],
                             &[
                                 KeyParam::Quality(self.params.quality),
-                                KeyParam::Text(canonical),
+                                KeyParam::Text(match &text.gradient {
+                                    Some(gradient) => format!("{canonical}\u{0}{gradient:?}"),
+                                    None => canonical,
+                                }),
                                 KeyParam::Fill(Some(color)),
                                 KeyParam::Transform(transform.as_coeffs()),
                                 KeyParam::Opacity(record.base.opacity),
@@ -759,10 +762,22 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         if let Some(frame) = stack.last_mut() {
                             frame.inputs.push(node_id);
                         }
-                        sub.ops.push(RenderOp::FillPath {
-                            path: Arc::new(path),
-                            color,
-                            transform,
+                        // A gradient fills the letters over the box (spec 070).
+                        let placement = &record.base.placement;
+                        sub.ops.push(match &text.gradient {
+                            Some(gradient) => RenderOp::FillGradient {
+                                path: Arc::new(path),
+                                gradient: Arc::new(gradient.clone()),
+                                size: (placement.w.abs(), placement.h.abs()),
+                                transform,
+                            },
+                            // Its glyphs go with it, for the PDF (spec 073).
+                            None => RenderOp::Text {
+                                path: Arc::new(path),
+                                color,
+                                transform,
+                                runs: Arc::new(runs),
+                            },
                         });
                         sub.ops.push(RenderOp::PopLayer {
                             blend: record.base.blend,
@@ -1417,10 +1432,65 @@ fn text_path(
     text: &TextNode,
     placement: &Placement,
     fonts: &FontBook,
-) -> Option<(BezPath, Color, String)> {
+) -> Option<(BezPath, Color, String, Vec<GlyphRun>)> {
     let bounds = gafira_geom::Size::new(placement.w.abs(), placement.h.abs());
-    laid_text(&text.content, text.align, bounds, fonts)
-        .map(|(path, color, canonical, _)| (path, color, canonical))
+    let laid = laid_text(&text.content, Laid::of(text), bounds, fonts)?;
+    Some((laid.path, laid.color, laid.canonical, laid.runs))
+}
+
+/// A text laid out: its outline, colour, the canonical string of its key,
+/// the height of its lines and its glyph runs (spec 073; none for a curved
+/// text, whose letters turn one by one).
+struct LaidText {
+    path: BezPath,
+    color: Color,
+    canonical: String,
+    height: f64,
+    runs: Vec<GlyphRun>,
+}
+
+/// How a text is laid out besides its words: alignment, bend, letter
+/// spacing (thousandths of an em) and line height (FD-41, FD-44).
+#[derive(Clone, Copy)]
+struct Laid {
+    align: TextAlign,
+    curve: f64,
+    letter_spacing: f64,
+    line_height: Option<f64>,
+}
+
+impl Laid {
+    fn of(text: &TextNode) -> Self {
+        Self {
+            align: text.align,
+            curve: text.curve,
+            letter_spacing: text.letter_spacing,
+            line_height: text.line_height,
+        }
+    }
+
+    fn plain(align: TextAlign) -> Self {
+        Self {
+            align,
+            curve: 0.0,
+            letter_spacing: 0.0,
+            line_height: None,
+        }
+    }
+}
+
+/// The outline of `text` in a box `width` × `height` px, from its top-left
+/// corner, its colour and the height of its lines: what the export draws,
+/// for the canvas to draw a curved or spaced text the same way.
+#[must_use]
+pub fn text_outline(
+    text: &TextNode,
+    (width, height): (f64, f64),
+    fonts: &FontBook,
+) -> Option<(BezPath, Color, f64)> {
+    let bounds = gafira_geom::Size::new(width.abs(), height.abs());
+    laid_text(&text.content, Laid::of(text), bounds, fonts)
+        .map(|laid| (laid.path, laid.color, laid.height))
 }
 
 /// The text of a shape (spec 055) in the shape's box `rect`: laid out in
@@ -1437,7 +1507,13 @@ fn shape_text_path(
         (rect.width() - 2.0 * pad).max(1.0),
         (rect.height() - 2.0 * pad).max(1.0),
     );
-    let (mut path, color, canonical, height) = laid_text(&text.content, text.align, inner, fonts)?;
+    let LaidText {
+        mut path,
+        color,
+        canonical,
+        height,
+        ..
+    } = laid_text(&text.content, Laid::plain(text.align), inner, fonts)?;
     let (share, name) = match text.valign {
         gafira_doc::VerticalAlign::Top => (0.0, 't'),
         gafira_doc::VerticalAlign::Middle => (0.5, 'm'),
@@ -1450,13 +1526,20 @@ fn shape_text_path(
 
 /// `content` laid out in a box of `bounds` with `align`: its outline from
 /// the box's top-left corner, its colour, the canonical string of its key
-/// and the height of its lines; `None` when it draws nothing.
+/// and the height of its lines; `None` when it draws nothing. With a `curve`
+/// other than 0 each letter sits on the arc of its line (FD-44).
 fn laid_text(
     content: &gafira_doc::RichText,
-    align: TextAlign,
+    laid: Laid,
     bounds: gafira_geom::Size,
     fonts: &FontBook,
-) -> Option<(BezPath, Color, String, f64)> {
+) -> Option<LaidText> {
+    let Laid {
+        align,
+        curve,
+        letter_spacing,
+        line_height,
+    } = laid;
     let style = content.first_style()?;
     let words = content.plain_text();
     if words.trim().is_empty() || !style.size.is_finite() || style.size <= 0.0 {
@@ -1477,6 +1560,8 @@ fn laid_text(
             TextAlign::Right => gafira_text::TextAlign::Right,
             TextAlign::Justify => gafira_text::TextAlign::Justify,
         },
+        letter_spacing,
+        line_height: line_height.unwrap_or(gafira_text::TextStyle::default().line_height),
         ..gafira_text::TextStyle::default()
     };
     let dpi = 72.0 * style.size / size_pt;
@@ -1490,12 +1575,50 @@ fn laid_text(
     )
     .ok()?;
     let outlines = gafira_text::outline_text(&layout, &stack).ok()?;
+    let curved = if curve == 0.0 {
+        None
+    } else {
+        Some(gafira_text::curve_layout(&layout, bounds.width(), curve).ok()?)
+    };
     let mut path = BezPath::new();
+    // The top of the straight letters: a curved text starts there too, so a
+    // cup, whose ends rise, stays in its box.
+    let mut straight_top = f64::MAX;
     for outline in outlines {
-        path.extend(outline.path.as_bez_path().elements().iter().copied());
+        let elements = outline.path.as_bez_path().elements().to_vec();
+        if curved.is_some() {
+            use kurbo::Shape as _;
+            let glyph = BezPath::from_vec(elements.clone());
+            if !glyph.elements().is_empty() {
+                straight_top = straight_top.min(glyph.bounding_box().y0);
+            }
+        }
+        let mut glyph = BezPath::from_vec(elements);
+        if let Some(lines) = &curved
+            && let Some(line) = layout.lines.get(outline.line)
+            && let Some(cluster) = line.clusters.get(outline.cluster)
+            && let Some(placed) = lines
+                .get(outline.line)
+                .and_then(|l| l.clusters.get(outline.cluster))
+        {
+            // From its place on the straight line to its place on the arc,
+            // turned with it.
+            let centre = f64::from(cluster.x) + f64::from(cluster.advance) / 2.0;
+            glyph.apply_affine(
+                Affine::translate((placed.x, placed.y))
+                    * Affine::rotate(placed.rotation)
+                    * Affine::translate((-centre, -f64::from(line.baseline))),
+            );
+        }
+        path.extend(glyph.elements().iter().copied());
     }
     if path.elements().is_empty() {
         return None;
+    }
+    if curved.is_some() && straight_top < f64::MAX {
+        use kurbo::Shape as _;
+        let top = path.bounding_box().y0;
+        path.apply_affine(Affine::translate((0.0, straight_top - top)));
     }
     let align = match align {
         TextAlign::Left => 'l',
@@ -1504,11 +1627,75 @@ fn laid_text(
         TextAlign::Justify => 'j',
     };
     let canonical = format!(
-        "{}\u{0}{:016x}\u{0}{align}\u{0}{words}",
+        "{}\u{0}{:016x}\u{0}{align}{}\u{0}{words}",
         face,
-        style.size.to_bits()
+        style.size.to_bits(),
+        if curve == 0.0 && letter_spacing == 0.0 && line_height.is_none() {
+            String::new()
+        } else {
+            format!(
+                "~{:016x}~{:016x}~{:?}",
+                curve.to_bits(),
+                letter_spacing.to_bits(),
+                line_height.map(f64::to_bits)
+            )
+        }
     );
-    Some((path, style.color, canonical, f64::from(layout.height)))
+    // The glyphs by line and font, where the outline put them (spec 073).
+    let text: Arc<str> = Arc::from(words.as_str());
+    let mut runs: Vec<GlyphRun> = Vec::new();
+    if curved.is_none() {
+        for line in &layout.lines {
+            let mut current: Option<GlyphRun> = None;
+            for cluster in &line.clusters {
+                let Some(font) = owned.get(cluster.font) else {
+                    continue;
+                };
+                let same = current
+                    .as_ref()
+                    .is_some_and(|run| Arc::ptr_eq(&run.font, font) && run.size == cluster.size_px);
+                if !same {
+                    runs.extend(current.take());
+                    current = Some(GlyphRun {
+                        font: Arc::clone(font),
+                        index: 0,
+                        size: cluster.size_px,
+                        glyphs: Vec::new(),
+                        text: Arc::clone(&text),
+                    });
+                }
+                if let Some(run) = current.as_mut() {
+                    for (k, (id, (dx, dy))) in cluster
+                        .glyphs
+                        .iter()
+                        .zip(&cluster.glyph_offsets)
+                        .enumerate()
+                    {
+                        // The words a cluster draws go with its first glyph.
+                        let range = if k == 0 {
+                            cluster.range.clone()
+                        } else {
+                            cluster.range.end..cluster.range.end
+                        };
+                        run.glyphs.push(RunGlyph {
+                            id: *id,
+                            x: cluster.x + dx,
+                            y: line.baseline + dy,
+                            text: range,
+                        });
+                    }
+                }
+            }
+            runs.extend(current);
+        }
+    }
+    Some(LaidText {
+        path,
+        color: style.color,
+        canonical,
+        height: f64::from(layout.height),
+        runs,
+    })
 }
 
 /// The check of ARQ-110: a number that is not finite is an error that names
@@ -1631,6 +1818,7 @@ mod tests {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         })
     }
 
@@ -1669,6 +1857,8 @@ mod tests {
             RenderOp::PushLayer => "push",
             RenderOp::PopLayer { .. } => "pop",
             RenderOp::FillPath { .. } => "fill",
+            // Text draws as its outline (spec 073).
+            RenderOp::Text { .. } => "fill",
             RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
             RenderOp::ClipPath { .. } => "clip",
@@ -2163,6 +2353,113 @@ mod tests {
         page
     }
 
+    // S70-04 (FD-44): an arch keeps its middle letter on the line and bends
+    // its ends down; a cup bends them up and starts at the top of the box.
+    #[test]
+    fn s70_04_curved_text_follows_its_arc() {
+        use kurbo::Shape as _;
+        let style = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 32.0,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
+        };
+        let fonts = fonts();
+        let band = |curve: f64| {
+            let mut text = TextNode::plain("IIIIIIIIIIIII", &style);
+            text.curve = curve;
+            let (path, _, _) = text_outline(&text, (600.0, 60.0), &fonts).expect("an outline");
+            // The top of the first glyph and of the middle of the line.
+            let bbox = path.bounding_box();
+            let mid = kurbo::Rect::new(bbox.center().x - 4.0, -1e4, bbox.center().x + 4.0, 1e4);
+            let top_mid = path
+                .elements()
+                .iter()
+                .filter_map(|e| e.end_point())
+                .filter(|p| mid.contains(*p))
+                .map(|p| p.y)
+                .fold(f64::MAX, f64::min);
+            (bbox.y0, top_mid, bbox.height())
+        };
+        let (straight_top, straight_mid, straight_h) = band(0.0);
+        let (arch_top, arch_mid, arch_h) = band(60.0);
+        let (cup_top, cup_mid, cup_h) = band(-60.0);
+        assert!(arch_h > straight_h + 10.0, "an arch is taller than a line");
+        assert!(cup_h > straight_h + 10.0, "and so is a cup");
+        assert!(
+            (arch_mid - arch_top).abs() < 1.0,
+            "the middle of an arch is its top"
+        );
+        // A cup starts where the straight letters start, so it stays in its
+        // box; its ends are above its middle.
+        assert!(
+            (cup_top - straight_top).abs() < 1.0,
+            "a cup starts at the top"
+        );
+        assert!(
+            cup_mid > cup_top + 5.0,
+            "a cup's ends rise above its middle"
+        );
+        let _ = straight_mid;
+        assert!(
+            (straight_mid - arch_mid).abs() < 2.0,
+            "the middle stays on the line"
+        );
+    }
+
+    // S70-06 (FD-41): letter spacing widens the words, a line height
+    // spaces the lines, both key the text apart; a gradient fills the
+    // letters over the box (spec 070).
+    #[test]
+    fn s70_06_spacing_line_height_and_gradient_of_a_text() {
+        use kurbo::Shape as _;
+        let style = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 32.0,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
+        };
+        let fonts = fonts();
+        let measure = |letters: f64, lines: Option<f64>| {
+            let mut text = TextNode::plain("Hola\nmundo", &style);
+            text.letter_spacing = letters;
+            text.line_height = lines;
+            let (path, _, height) = text_outline(&text, (600.0, 200.0), &fonts).expect("drawn");
+            (path.bounding_box().width(), height)
+        };
+        let (plain_w, plain_h) = measure(0.0, None);
+        let (spaced_w, _) = measure(200.0, None);
+        let (_, tall_h) = measure(0.0, Some(2.0));
+        assert!(spaced_w > plain_w + 10.0, "{spaced_w} > {plain_w}");
+        assert!(tall_h > plain_h + 20.0, "{tall_h} > {plain_h}");
+
+        let mut page = text_page("Hola");
+        let plain_key = build_text(&page, 1.0, Some(fonts.clone())).key_of(NodeId::new(1));
+        let node = page.nodes.get_mut(&NodeId::new(1)).expect("the text");
+        let node = Arc::make_mut(node);
+        let NodeKind::Text(text) = &mut node.kind else {
+            panic!("a text")
+        };
+        text.gradient = Some(gafira_doc::Gradient {
+            kind: gafira_doc::GradientKind::Linear { angle_deg: 0.0 },
+            stops: vec![
+                gafira_doc::GradientStop {
+                    offset: 0.0,
+                    color: Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0)),
+                },
+                gafira_doc::GradientStop {
+                    offset: 1.0,
+                    color: Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
+                },
+            ],
+        });
+        let graph = build_text(&page, 1.0, Some(fonts));
+        assert_eq!(op_kinds(&graph), ["push", "gradient", "pop"]);
+        assert_ne!(graph.key_of(NodeId::new(1)), plain_key);
+    }
+
     // S63-03: a shape with a gradient emits its fill as a gradient in its
     // box, and another gradient keys it apart.
     #[test]
@@ -2373,14 +2670,50 @@ mod tests {
             .ops()
             .iter()
             .filter_map(|op| match op {
+                // A text fills its outline too (spec 073).
                 RenderOp::FillPath {
                     path,
                     color,
                     transform,
+                }
+                | RenderOp::Text {
+                    path,
+                    color,
+                    transform,
+                    ..
                 } => Some((path.bounding_box(), *color, *transform)),
                 _ => None,
             })
             .collect()
+    }
+
+    // S73-01: a text carries its glyphs, their font and its words, for the
+    // PDF; a curved one does not (its letters turn one by one).
+    #[test]
+    fn s73_01_a_text_carries_its_glyph_runs() {
+        let runs = |page: &Page| -> Vec<GlyphRun> {
+            let graph = build_text(page, 1.0, Some(fonts()));
+            graph
+                .ops()
+                .iter()
+                .find_map(|op| match op {
+                    RenderOp::Text { runs, .. } => Some(runs.as_ref().clone()),
+                    _ => None,
+                })
+                .expect("a text op")
+        };
+        let found = runs(&text_page("Hola"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(&*found[0].text, "Hola");
+        assert_eq!(found[0].glyphs.len(), 4);
+        assert!((found[0].size - 32.0).abs() < 1e-3);
+        assert!(found[0].glyphs.windows(2).all(|w| w[1].x > w[0].x));
+        let mut curved = text_page("Hola");
+        let node = Arc::make_mut(curved.nodes.get_mut(&NodeId::new(1)).expect("text"));
+        if let NodeKind::Text(text) = &mut node.kind {
+            text.curve = 50.0;
+        }
+        assert!(runs(&curved).is_empty());
     }
 
     // S30-01: a text element fills the outlines of its glyphs, in its colour,

@@ -36,7 +36,10 @@ gafira-assets = { path = "crates/gafira-assets" }
 gafira-i18n = { path = "crates/gafira-i18n" }
 gafira-io-image = { path = "crates/gafira-io-image" }
 gafira-io-pdf = { path = "crates/gafira-io-pdf" }
+gafira-io-svg = { path = "crates/gafira-io-svg" }
+gafira-io-pptx = { path = "crates/gafira-io-pptx" }
 gafira-io-vector = { path = "crates/gafira-io-vector" }
+gafira-photos = { path = "crates/gafira-photos" }
 blake3 = "1"
 crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
@@ -61,6 +64,8 @@ eframe = { version = "0.33", default-features = false, features = ["glow", "x11"
 egui = { version = "0.33", default-features = false }
 getrandom = "0.3"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
+x11rb = { version = "0.13", default-features = false, features = ["randr"] }
+roxmltree = "0.20"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

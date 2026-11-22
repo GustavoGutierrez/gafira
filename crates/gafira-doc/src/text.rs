@@ -150,11 +150,50 @@ pub struct TextNode {
     pub sizing: TextSizing,
     #[serde(default)]
     pub align: TextAlign,
+    /// How much the lines bend (FD-44, D-26), in `[-100, 100]`: positive
+    /// is an arch, negative a cup, 0 straight. Additive to schema 1.
+    #[serde(default, skip_serializing_if = "is_straight")]
+    pub curve: f64,
+    /// Room between letters, in thousandths of an em, in `[-100, 500]`
+    /// (FD-41). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "is_straight")]
+    pub letter_spacing: f64,
+    /// Line height as a multiple of the size, in `[0.5, 4]` (FD-41); none
+    /// is the font's own. Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<f64>,
+    /// A gradient the letters are filled with instead of their colour, over
+    /// the box (spec 070). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<crate::Gradient>,
+}
+
+fn is_straight(curve: &f64) -> bool {
+    *curve == 0.0
 }
 
 impl TextNode {
     /// The largest font size, in px.
     pub const MAX_SIZE: f64 = 4096.0;
+
+    /// The most a text bends, either way (FD-44).
+    pub const MAX_CURVE: f64 = 100.0;
+
+    /// The letter spacing range, in thousandths of an em (FD-41).
+    pub const LETTER_SPACING: std::ops::RangeInclusive<f64> = -100.0..=500.0;
+
+    /// The line height range, as a multiple of the size (FD-41).
+    pub const LINE_HEIGHT: std::ops::RangeInclusive<f64> = 0.5..=4.0;
+
+    /// Whether it is drawn from its outline (curve, spacing, line height or
+    /// gradient) rather than as plain lines of words.
+    #[must_use]
+    pub fn styled(&self) -> bool {
+        self.curve != 0.0
+            || self.letter_spacing != 0.0
+            || self.line_height.is_some()
+            || self.gradient.is_some()
+    }
 
     /// `text` in one style, left aligned, growing downwards.
     #[must_use]
@@ -163,6 +202,10 @@ impl TextNode {
             content: RichText::plain(text, style),
             sizing: TextSizing::AutoHeight,
             align: TextAlign::Left,
+            curve: 0.0,
+            letter_spacing: 0.0,
+            line_height: None,
+            gradient: None,
         }
     }
 }

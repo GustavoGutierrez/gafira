@@ -632,6 +632,7 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
         placement,
     )
@@ -655,19 +656,6 @@ pub(crate) fn new_effect(page_px: Vec2, effect: gafira_doc::ShapeEffect, share: 
     shape.effect = Some(effect);
     NodeSpec::new(NodeKind::Shape(shape), placement)
 }
-
-/// The shapes of Elementos → Marcos (spec 066, S66-08), from the shape
-/// library: their outline cuts the photo.
-pub(crate) const FRAME_PIECES: [Piece; 8] = [
-    Piece::Square,
-    Piece::RoundedSquare,
-    Piece::Circle,
-    Piece::Heart,
-    Piece::Star5,
-    Piece::Decision,
-    Piece::Hexagon,
-    Piece::Cloud,
-];
 
 /// A new empty frame of `piece`'s outline (spec 066): half the shorter side
 /// of the page (a quarter of its area), in the middle, its proportions those
@@ -1349,39 +1337,6 @@ pub(crate) fn with_sample(shape: &Shape, sample: &egui::ColorImage) -> Shape {
     shown
 }
 
-/// A frame of `piece` with the sample photo, `side` logical px, drawn at
-/// `scale` px per logical px: the tile of Elementos → Marcos (S66-12).
-pub(crate) fn frame_preview(piece: Piece, side: f64, scale: f32) -> Option<egui::ColorImage> {
-    let sample = sample_photo()?;
-    let mut page = Page::new(
-        PageId::new(1),
-        String::new(),
-        gafira_doc::PageSize {
-            width: gafira_geom::Length::new(side, gafira_geom::Unit::Px),
-            height: gafira_geom::Length::new(side, gafira_geom::Unit::Px),
-        },
-    );
-    let aspect = piece.aspect();
-    let (w, h) = if aspect >= 1.0 {
-        (side, side / aspect)
-    } else {
-        (side * aspect, side)
-    };
-    let mut frame = gafira_doc::FrameNode::new(piece.geometry());
-    frame.corner_radius = piece.corner_radius(w.min(h));
-    let base = gafira_doc::ElementBase::new(
-        NodeId::new(2),
-        Placement::new((side - w) / 2.0, (side - h) / 2.0, w, h),
-    );
-    page.nodes.insert(
-        NodeId::new(2),
-        std::sync::Arc::new(gafira_doc::Node::new(base, NodeKind::Frame(frame))),
-    );
-    page.roots = vec![NodeId::new(2)];
-    let shape = shapes(&page).pop()?;
-    frame_image(&with_sample(&shape, &sample), &sample, scale)
-}
-
 /// True when the canvas draws `shape` from a texture: a path (spec 054) or
 /// a shape filled with a gradient (spec 063).
 pub(crate) fn textured(shape: &Shape) -> bool {
@@ -1728,6 +1683,7 @@ mod tests {
                     text: None,
                     gradient: None,
                     effect: None,
+                    drawn_with: None,
                 }),
             ))
         };
@@ -2391,7 +2347,13 @@ mod s41_tests {
         );
         assert_eq!(shown.pixels[2 * 100 + 2].a(), 0, "and is cut at the corner");
         assert!(
-            frame_preview(Piece::Heart, 44.0, 2.0).is_some(),
+            crate::frames::spec(
+                crate::frames::Kind::Piece(Piece::Heart),
+                (44.0, 44.0),
+                (22.0, 22.0)
+            )
+            .and_then(|spec| spec_preview(&spec, 44.0, 2.0))
+            .is_some(),
             "the panel tile"
         );
     }
@@ -2743,4 +2705,280 @@ mod s41_tests {
             origin.pos
         );
     }
+}
+
+/// The fonts the canvas draws a curved text with (FD-44): those of the
+/// theme and the library, as the export has them.
+pub(crate) fn text_fonts() -> &'static gafira_render::FontBook {
+    static FONTS: std::sync::OnceLock<gafira_render::FontBook> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| {
+        let book = gafira_theme::fonts()
+            .iter()
+            .fold(gafira_render::FontBook::new(), |book, font| {
+                book.with(font.family, font.bytes)
+            });
+        gafira_theme::library().iter().fold(book, |book, face| {
+            book.with(
+                &gafira_theme::face_key(face.family, face.bold, face.italic),
+                face.bytes,
+            )
+        })
+    })
+}
+
+/// The height a text drawn from its outline needs: a curved one down to the
+/// lowest letter of its arc and a quarter of its size under it (FD-44), a
+/// straight one the height of its lines (FD-41); `None` when it draws
+/// nothing.
+pub(crate) fn curved_height(text: &TextNode, width: f64, height: f64) -> Option<f64> {
+    use kurbo::Shape as _;
+    let size = text.content.first_style()?.size;
+    let (path, _, lines) = gafira_render::text_outline(text, (width, height), text_fonts())?;
+    Some(if text.curve == 0.0 {
+        lines
+    } else {
+        path.bounding_box().y1 + size * 0.25
+    })
+}
+
+/// The texture of a text drawn from its outline (curved, spaced or with a
+/// gradient) at `zoom` and the box it covers:
+/// its own box grown the same on every side until the letters fit, so it
+/// turns about the same centre. The same outline as the export.
+pub(crate) fn curved_text_image(
+    text: &TextNode,
+    placement: &Placement,
+    zoom: f32,
+) -> Option<(egui::ColorImage, Placement)> {
+    use kurbo::Shape as _;
+    let (w, h) = (placement.w.abs(), placement.h.abs());
+    let zoom = f64::from(zoom);
+    if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let (path, color, _) = gafira_render::text_outline(text, (w, h), text_fonts())?;
+    let bbox = path.bounding_box();
+    let margin = [-bbox.x0, -bbox.y0, bbox.x1 - w, bbox.y1 - h]
+        .into_iter()
+        .fold(0.0_f64, f64::max)
+        + 2.0;
+    let cover = Placement {
+        x: placement.x - margin,
+        y: placement.y - margin,
+        w: w + 2.0 * margin,
+        h: h + 2.0 * margin,
+        ..*placement
+    };
+    let scale = zoom.min(PATH_TEXTURE_MAX / cover.w.max(cover.h));
+    let side = |v: f64| (v * scale).round().max(1.0) as u32;
+    let (pw, ph) = (side(cover.w), side(cover.h));
+    let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
+    let at = |p: kurbo::Point| {
+        (
+            ((p.x + margin) * scale) as f32,
+            ((p.y + margin) * scale) as f32,
+        )
+    };
+    let mut builder = tiny_skia::PathBuilder::new();
+    for el in path.elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => {
+                let (x, y) = at(p);
+                builder.move_to(x, y);
+            }
+            kurbo::PathEl::LineTo(p) => {
+                let (x, y) = at(p);
+                builder.line_to(x, y);
+            }
+            kurbo::PathEl::QuadTo(c, p) => {
+                let ((cx, cy), (x, y)) = (at(c), at(p));
+                builder.quad_to(cx, cy, x, y);
+            }
+            kurbo::PathEl::CurveTo(c1, c2, p) => {
+                let ((ax, ay), (bx, by), (x, y)) = (at(c1), at(c2), at(p));
+                builder.cubic_to(ax, ay, bx, by, x, y);
+            }
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    let outline = builder.finish()?;
+    let c = screen_color(color);
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+    paint.anti_alias = true;
+    // A gradient over the box, as the export fills it (spec 070).
+    if let Some(shader) = text
+        .gradient
+        .as_ref()
+        .and_then(|g| gradient_shader(g, (w, h), (margin, scale)))
+    {
+        paint.shader = shader;
+    }
+    pixmap.fill_path(
+        &outline,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    let image =
+        egui::ColorImage::from_rgba_premultiplied([pw as usize, ph as usize], pixmap.data());
+    Some((image, cover))
+}
+
+/// `path` as a tiny-skia path.
+fn skia_path(path: &kurbo::BezPath) -> Option<tiny_skia::Path> {
+    let mut builder = tiny_skia::PathBuilder::new();
+    for el in path.elements() {
+        match *el {
+            kurbo::PathEl::MoveTo(p) => builder.move_to(p.x as f32, p.y as f32),
+            kurbo::PathEl::LineTo(p) => builder.line_to(p.x as f32, p.y as f32),
+            kurbo::PathEl::QuadTo(c, p) => {
+                builder.quad_to(c.x as f32, c.y as f32, p.x as f32, p.y as f32);
+            }
+            kurbo::PathEl::CurveTo(a, b, p) => builder.cubic_to(
+                a.x as f32, a.y as f32, b.x as f32, b.y as f32, p.x as f32, p.y as f32,
+            ),
+            kurbo::PathEl::ClosePath => builder.close(),
+        }
+    }
+    builder.finish()
+}
+
+/// The outline of `geometry` in a `w` × `h` box from its top-left corner,
+/// a rectangle's corners rounded by `radius`.
+fn spec_outline(geometry: &ShapeGeometry, (w, h): (f64, f64), radius: f64) -> kurbo::BezPath {
+    use kurbo::Shape as _;
+    match geometry {
+        ShapeGeometry::Path(path) => crate::shapes::bez(path, w, h),
+        ShapeGeometry::Ellipse => {
+            kurbo::Ellipse::from_rect(kurbo::Rect::new(0.0, 0.0, w, h)).to_path(0.1)
+        }
+        ShapeGeometry::Rect => {
+            let r = radius.max(0.0).min(w.min(h) / 2.0);
+            kurbo::RoundedRect::new(0.0, 0.0, w, h, r).to_path(0.1)
+        }
+    }
+}
+
+/// A frame, or a group of shapes and frames, drawn in a square of `side`
+/// px at `scale`, fitted with its proportions kept: shapes in their colours
+/// and outlines, turned as they are, frames holding the sample photo cut to
+/// cover them. The preview of a tile of Marcos.
+pub(crate) fn spec_preview(spec: &NodeSpec, side: f64, scale: f32) -> Option<egui::ColorImage> {
+    let sample = sample_photo()?;
+    let px = (side * f64::from(scale)).round().clamp(1.0, 1024.0) as u32;
+    let mut pixmap = tiny_skia::Pixmap::new(px, px)?;
+    let [sw, sh] = sample.size;
+    // egui's colours are premultiplied, as tiny-skia's pixmaps are.
+    let data: Vec<u8> = sample.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let photo = tiny_skia::Pixmap::from_vec(
+        data,
+        tiny_skia::IntSize::from_wh(u32::try_from(sw).ok()?, u32::try_from(sh).ok()?)?,
+    )?;
+    let b = spec.placement;
+    let k = f64::from(px) / b.w.max(b.h).max(1e-9);
+    let (ox, oy) = (
+        (f64::from(px) - b.w * k) / 2.0 - b.x * k,
+        (f64::from(px) - b.h * k) / 2.0 - b.y * k,
+    );
+    let mut leaves = Vec::new();
+    fn walk<'a>(spec: &'a NodeSpec, out: &mut Vec<&'a NodeSpec>) {
+        if spec.children.is_empty() {
+            out.push(spec);
+        }
+        for child in &spec.children {
+            walk(child, out);
+        }
+    }
+    walk(spec, &mut leaves);
+    for leaf in leaves {
+        let p = leaf.placement;
+        let (cx, cy) = (p.w / 2.0, p.h / 2.0);
+        let at = kurbo::Affine::translate((ox, oy))
+            * kurbo::Affine::scale(k)
+            * kurbo::Affine::translate((p.x + cx, p.y + cy))
+            * kurbo::Affine::rotate(p.rotation_deg.to_radians())
+            * kurbo::Affine::translate((-cx, -cy));
+        let (geometry, radius) = match &leaf.kind {
+            NodeKind::Shape(shape) => (&shape.geometry, shape.corner_radius),
+            NodeKind::Frame(frame) => (&frame.clip_shape, frame.corner_radius),
+            _ => continue,
+        };
+        let mut outline = spec_outline(geometry, (p.w, p.h), radius);
+        outline.apply_affine(at);
+        let Some(path) = skia_path(&outline) else {
+            continue;
+        };
+        match &leaf.kind {
+            NodeKind::Shape(shape) => {
+                if let Some(fill) = shape.fill {
+                    let c = screen_color(fill);
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+                    paint.anti_alias = true;
+                    pixmap.fill_path(
+                        &path,
+                        &paint,
+                        tiny_skia::FillRule::Winding,
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                }
+                if let Some(stroke) = shape.stroke.filter(|s| s.width > 0.0) {
+                    let c = screen_color(stroke.color);
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.set_color_rgba8(c.r(), c.g(), c.b(), c.a());
+                    paint.anti_alias = true;
+                    let style = tiny_skia::Stroke {
+                        width: ((stroke.width * k) as f32).max(0.75),
+                        ..tiny_skia::Stroke::default()
+                    };
+                    pixmap.stroke_path(
+                        &path,
+                        &paint,
+                        &style,
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                }
+            }
+            NodeKind::Frame(_) => {
+                // The photo covering the frame's box, its middle kept.
+                let cover = (p.w / sw as f64).max(p.h / sh as f64);
+                let into =
+                    at * kurbo::Affine::translate((
+                        (p.w - sw as f64 * cover) / 2.0,
+                        (p.h - sh as f64 * cover) / 2.0,
+                    )) * kurbo::Affine::scale(cover);
+                let [a, b2, c, d, e, f] = into.as_coeffs();
+                let shader = tiny_skia::Pattern::new(
+                    photo.as_ref(),
+                    tiny_skia::SpreadMode::Pad,
+                    tiny_skia::FilterQuality::Bilinear,
+                    1.0,
+                    tiny_skia::Transform::from_row(
+                        a as f32, b2 as f32, c as f32, d as f32, e as f32, f as f32,
+                    ),
+                );
+                let paint = tiny_skia::Paint {
+                    shader,
+                    anti_alias: true,
+                    ..tiny_skia::Paint::default()
+                };
+                pixmap.fill_path(
+                    &path,
+                    &paint,
+                    tiny_skia::FillRule::Winding,
+                    tiny_skia::Transform::identity(),
+                    None,
+                );
+            }
+            _ => {}
+        }
+    }
+    Some(egui::ColorImage::from_rgba_premultiplied(
+        [px as usize, px as usize],
+        pixmap.data(),
+    ))
 }

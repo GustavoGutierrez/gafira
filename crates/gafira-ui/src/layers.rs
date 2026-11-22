@@ -24,6 +24,20 @@ pub(crate) fn hidden(page: &Page, id: NodeId) -> bool {
     own(id) || ancestors(page, id).into_iter().any(own)
 }
 
+/// What a click selects on a locked `leaf` of `page` (D-110): the outermost
+/// locked element among it and the groups above it, so it can be unlocked
+/// from the bar over it. `None` when nothing there is locked, or when the
+/// whole page is (it is unlocked from the page bar).
+pub(crate) fn locked_pick(page: &Page, leaf: NodeId) -> Option<NodeId> {
+    if page.locked {
+        return None;
+    }
+    let own = |id: &NodeId| page.node(*id).is_some_and(|node| node.base.locked);
+    std::iter::once(leaf)
+        .chain(ancestors(page, leaf))
+        .rfind(own)
+}
+
 /// The nodes of `nodes` that a move, a nudge or a resize may change: the
 /// ones that are not locked, in their order (FD-13 b, D-91).
 pub(crate) fn movable(page: &Page, nodes: &[NodeId]) -> Vec<NodeId> {
@@ -185,6 +199,18 @@ mod tests {
             "under a locked group"
         );
         assert_eq!(shapes.len(), 3, "locked elements are still drawn");
+    }
+
+    // D-110: a click on a locked element selects it (or the locked group
+    // above it), for the bar to unlock it; nothing locked, nothing picked.
+    #[test]
+    fn a_click_selects_what_is_locked() {
+        let mut page = page();
+        assert_eq!(locked_pick(&page, n(2)), None);
+        lock(&mut page, 2);
+        assert_eq!(locked_pick(&page, n(2)), Some(n(2)));
+        lock(&mut page, 9);
+        assert_eq!(locked_pick(&page, n(3)), Some(n(9)), "the locked group");
     }
 
     // S48-04 (D-91): the marquee and Ctrl+A leave out what is locked and

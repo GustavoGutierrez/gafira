@@ -34,19 +34,24 @@ pub(crate) enum Category {
     Illustrations,
     /// «Luces y efectos» (spec 065, D-103).
     Lights,
+    /// «Fotos» from remote catalogues (spec 071, D-111).
+    Photos,
 }
 
 impl Category {
-    pub(crate) const ALL: [Self; 9] = [
+    /// The categories in the order of the grid: those that work first,
+    /// those still to come last (owner request).
+    pub(crate) const ALL: [Self; 10] = [
         Self::Shapes,
         Self::Collage,
         Self::Frames,
+        Self::Illustrations,
+        Self::Photos,
+        Self::Lights,
         Self::Icons,
         Self::QrCodes,
         Self::Tables,
         Self::Charts,
-        Self::Illustrations,
-        Self::Lights,
     ];
 
     /// The catalogue key of its name.
@@ -61,6 +66,7 @@ impl Category {
             Self::Charts => "elements.charts",
             Self::Illustrations => "elements.illustrations",
             Self::Lights => "elements.lights",
+            Self::Photos => "elements.photos",
         }
     }
 
@@ -75,6 +81,7 @@ impl Category {
             Self::Charts => Icon::CategoryCharts,
             Self::Illustrations => Icon::CategoryIllustrations,
             Self::Lights => Icon::CategoryLights,
+            Self::Photos => Icon::CategoryPhotos,
         }
     }
 }

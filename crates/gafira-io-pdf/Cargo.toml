@@ -16,13 +16,22 @@ gafira-io-image.workspace = true
 # FD-56, 02 §9.2: krilla (MIT OR Apache-2.0). `raster-images` is the feature
 # that draws an image on a page; text shaping (`simple-text`) is left out.
 krilla.workspace = true
+# Spec 073: the vector PDF reads the drawing operations (gafira-ports
+# render types, kurbo paths, gafira-color, gafira-raster pixels), re-encodes
+# images as JPEG when compressed (image), and encrypts with a password
+# (lopdf, MIT, AES-256; getrandom for the file key).
+kurbo.workspace = true
+gafira-color.workspace = true
+gafira-raster.workspace = true
+image.workspace = true
+lopdf = { version = "0.47", default-features = false }
+getrandom.workspace = true
 
 # The pipeline tests draw real pages (gafira-render on the CPU backend) and
 # read the PDF back (hayro-syntax, Apache-2.0 OR MIT). Dev-only: not layer
 # edges (ARQ-06).
 [dev-dependencies]
-gafira-color.workspace = true
-gafira-raster.workspace = true
+gafira-testkit.workspace = true
 gafira-render.workspace = true
 gafira-render-cpu.workspace = true
 hayro-syntax.workspace = true

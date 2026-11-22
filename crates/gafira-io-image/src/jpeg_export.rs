@@ -2,7 +2,7 @@
 
 use std::io;
 
-use gafira_doc::contract::{ParamDef, ParamKind, ParamSchema, ParamValues};
+use gafira_doc::contract::{ParamChoice, ParamDef, ParamKind, ParamSchema, ParamValues};
 use gafira_doc::msg::MessageKey;
 use gafira_ports::common::LegalClass;
 use gafira_ports::export::ExportError;
@@ -12,11 +12,35 @@ use image::codecs::jpeg::JpegEncoder;
 
 use crate::raster::{Raster, delegate_exporter, scale_param};
 
-/// The option id of the JPEG quality, 1 to 100 (FD-55, «Calidad»).
+/// The option id of the JPEG quality (FD-55, «Calidad»; spec 074: Baja,
+/// Media or Alta).
 pub const QUALITY: &str = "quality";
 
-/// The quality when the request names none (FD-55).
-const DEFAULT_QUALITY: i64 = 90;
+/// Baja, Media and Alta, and the JPEG quality each one writes.
+const QUALITIES: &[ParamChoice] = &[
+    ParamChoice {
+        id: "low",
+        label: MessageKey("export.quality_low"),
+    },
+    ParamChoice {
+        id: "medium",
+        label: MessageKey("export.quality_medium"),
+    },
+    ParamChoice {
+        id: "high",
+        label: MessageKey("export.quality_high"),
+    },
+];
+
+/// The JPEG quality of a choice of [`QUALITIES`].
+#[must_use]
+pub fn jpeg_quality(choice: &str) -> u8 {
+    match choice {
+        "low" => 60,
+        "medium" => 80,
+        _ => 92,
+    }
+}
 
 /// The JPEG format (FD-55).
 pub const JPEG_FORMAT: FormatDescriptor = FormatDescriptor {
@@ -54,10 +78,9 @@ impl JpegExporter {
                 ParamDef {
                     id: QUALITY,
                     label: MessageKey("export.quality"),
-                    kind: ParamKind::Int {
-                        min: 1,
-                        max: 100,
-                        default: DEFAULT_QUALITY,
+                    kind: ParamKind::Choice {
+                        options: QUALITIES,
+                        default: "high",
                     },
                     animatable: false,
                 },
@@ -94,10 +117,7 @@ fn encode(
     pixels: Vec<u8>,
     options: &ParamValues,
 ) -> Result<Vec<u8>, ExportError> {
-    let quality = options
-        .int(QUALITY)
-        .unwrap_or(DEFAULT_QUALITY)
-        .clamp(1, 100) as u8;
+    let quality = jpeg_quality(options.choice(QUALITY).unwrap_or("high"));
     let mut out = Vec::new();
     JpegEncoder::new_with_quality(&mut out, quality)
         .encode(&over_white(&pixels), width, height, ExtendedColorType::Rgb8)

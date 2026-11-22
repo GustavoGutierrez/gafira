@@ -18,6 +18,33 @@ pub(crate) fn field(text: &mut String, hint: String) -> egui::TextEdit<'_> {
         .desired_width(f32::INFINITY)
 }
 
+/// An on/off switch (spec 073): a pill that slides its knob to the right
+/// and fills with the brand colour when on; a hand over it.
+pub(crate) fn toggle(ui: &mut Ui, theme: &Theme, on: &mut bool) -> Response {
+    let size = Vec2::new(36.0, 20.0);
+    let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed();
+    }
+    let t = ui.ctx().animate_bool(response.id, *on);
+    let painter = ui.painter();
+    let fill = if *on {
+        theme.c("primary.bg")
+    } else {
+        theme.c("border")
+    };
+    painter.rect_filled(rect, rect.height() / 2.0, fill);
+    let r = rect.height() / 2.0 - 2.0;
+    let x = egui::lerp(rect.left() + r + 2.0..=rect.right() - r - 2.0, t);
+    painter.circle_filled(egui::pos2(x, rect.center().y), r, egui::Color32::WHITE);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, *on, ""));
+    response
+}
+
 /// The coral button: one per view (DIS-15).
 pub(crate) fn primary(ui: &mut Ui, theme: &Theme, text: String) -> Response {
     let height = px(theme.tokens.size.control.lg);
@@ -251,11 +278,16 @@ pub(crate) fn rail_tab(
         Vec2::splat(size),
     );
     icons::paint(painter, glyph, icon, weight, color);
-    painter.text(
+    // The label a size under the caption, with 6 px of room each side so it
+    // never touches the rail's edges (owner request); a longer one is cut.
+    let mut font = theme.font("caption");
+    font.size = (font.size - 1.0).max(9.0);
+    let room = rect.shrink2(Vec2::new(RAIL_LABEL_ROOM, 0.0));
+    painter.with_clip_rect(room).text(
         egui::pos2(rect.center().x, rect.max.y - 6.0),
         egui::Align2::CENTER_BOTTOM,
         label,
-        theme.font("caption"),
+        font,
         color,
     );
     if response.has_focus() {
@@ -267,6 +299,9 @@ pub(crate) fn rail_tab(
 
 /// The height of a rail tab: icon, gap and caption.
 const RAIL_TAB: f32 = 56.0;
+
+/// The room left and right of a rail tab's label, in px.
+const RAIL_LABEL_ROOM: f32 = 6.0;
 
 /// The 2 px focus ring of 03 §8.1 around `rect`.
 fn focus_ring(painter: &egui::Painter, theme: &Theme, rect: Rect) {
@@ -501,5 +536,40 @@ mod pointing_hand_tests {
             }),
             egui::CursorIcon::Default
         );
+    }
+
+    // Owner request: every rail label, in Spanish and English, fits the
+    // rail with its room on both sides.
+    #[test]
+    fn rail_labels_keep_their_room() {
+        let theme = Theme::new(gafira_theme::ThemeTokens::embedded().expect("tokens"));
+        let ctx = egui::Context::default();
+        theme.apply(&ctx);
+        let room = px(theme.tokens.size.rail) - 2.0 * RAIL_LABEL_ROOM;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            let mut font = theme.font("caption");
+            font.size -= 1.0;
+            for label in [
+                "Plantillas",
+                "Elementos",
+                "Texto",
+                "Marca",
+                "Biblioteca",
+                "Dibujo",
+                "Templates",
+                "Elements",
+                "Text",
+                "Brand",
+                "Library",
+                "Drawing",
+            ] {
+                let w = ctx.fonts_mut(|f| {
+                    f.layout_no_wrap(label.to_owned(), font.clone(), egui::Color32::WHITE)
+                        .size()
+                        .x
+                });
+                assert!(w <= room, "{label}: {w} > {room}");
+            }
+        });
     }
 }

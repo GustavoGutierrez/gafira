@@ -1,11 +1,14 @@
-//! The formats of Inicio (03 §6.2, §7.2) and how a page fits the canvas.
+//! How a page fits the canvas, and the starting formats the tests open
+//! documents with (Inicio's sizes are in `design_sizes`, spec 076).
 
+#[cfg(test)]
 use gafira_doc::PageSize;
-use gafira_doc::msg::Message;
+#[cfg(test)]
 use gafira_geom::{Length, Unit};
 
-/// A starting format of «¿Qué quieres crear hoy?».
+/// A starting format the tests open documents with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(crate) enum StartFormat {
     Social,
     Presentation,
@@ -15,38 +18,8 @@ pub(crate) enum StartFormat {
     Custom,
 }
 
+#[cfg(test)]
 impl StartFormat {
-    pub(crate) const ALL: [Self; 6] = [
-        Self::Social,
-        Self::Presentation,
-        Self::Print,
-        Self::VideoVertical,
-        Self::VideoHorizontal,
-        Self::Custom,
-    ];
-
-    pub(crate) fn name(self) -> Message {
-        match self {
-            Self::Social => gafira_doc::msg!("home.format.social"),
-            Self::Presentation => gafira_doc::msg!("home.format.presentation"),
-            Self::Print => gafira_doc::msg!("home.format.print"),
-            Self::VideoVertical => gafira_doc::msg!("home.format.video_vertical"),
-            Self::VideoHorizontal => gafira_doc::msg!("home.format.video_horizontal"),
-            Self::Custom => gafira_doc::msg!("home.format.custom"),
-        }
-    }
-
-    pub(crate) fn size_label(self) -> Message {
-        match self {
-            Self::Social => gafira_doc::msg!("home.size.social"),
-            Self::Presentation => gafira_doc::msg!("home.size.presentation"),
-            Self::Print => gafira_doc::msg!("home.size.print"),
-            Self::VideoVertical => gafira_doc::msg!("home.size.video_vertical"),
-            Self::VideoHorizontal => gafira_doc::msg!("home.size.video_horizontal"),
-            Self::Custom => gafira_doc::msg!("home.size.custom"),
-        }
-    }
-
     /// The size of the first page: A4 in millimetres, the rest in pixels; a
     /// custom size starts square until Cambiar tamaño exists (03 §7.6).
     pub(crate) fn page_size(self) -> PageSize {
@@ -86,7 +59,14 @@ mod tests {
             let size = format.page_size().to_px(dpi).expect("converts");
             size.height() / size.width()
         };
-        for format in StartFormat::ALL {
+        for format in [
+            StartFormat::Social,
+            StartFormat::Presentation,
+            StartFormat::Print,
+            StartFormat::VideoVertical,
+            StartFormat::VideoHorizontal,
+            StartFormat::Custom,
+        ] {
             assert!(format.page_size().check(dpi).is_ok(), "{format:?}");
         }
         assert!((aspect(StartFormat::VideoVertical) - 16.0 / 9.0).abs() < 1e-9);

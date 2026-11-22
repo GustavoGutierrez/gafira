@@ -201,6 +201,40 @@ impl GraphPageRenderer {
 }
 
 impl PageRenderer for GraphPageRenderer {
+    /// The page as its operations at 1×, in page px, on a white ground:
+    /// what the PDF keeps as vectors and text (spec 073).
+    fn vectors(
+        &self,
+        page: gafira_doc::PageId,
+        cancel: &CancelToken,
+    ) -> Result<Option<Vec<RenderOp>>, RenderError> {
+        let Some(page) = self.document.page(page) else {
+            return Ok(Some(Vec::new()));
+        };
+        let extent = self.extent(page, 1.0)?;
+        let level = TileGrid::new(extent).level_for(self.zoom(1.0));
+        let graph = self.graph(
+            page,
+            GraphParams {
+                quality: self.quality,
+                lod: level,
+                t: gafira_time::Flicks::default(),
+            },
+            1.0,
+            cancel,
+        )?;
+        let ground = Rect::new(0.0, 0.0, f64::from(extent.width), f64::from(extent.height))
+            .abs()
+            .to_path(0.25);
+        let mut ops = vec![RenderOp::FillPath {
+            path: Arc::new(ground),
+            color: PAGE_BACKGROUND,
+            transform: Affine::IDENTITY,
+        }];
+        ops.extend(graph.ops().iter().map(crate::planner::copy_op));
+        Ok(Some(ops))
+    }
+
     fn render(
         &self,
         request: &PageRenderRequest,
@@ -480,6 +514,7 @@ mod tests {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         });
         page.nodes.insert(node, Arc::new(Node::new(base, kind)));
         page.roots = vec![node];
@@ -534,6 +569,12 @@ mod tests {
                 opacity: *opacity,
             },
             RenderOp::FillPath {
+                color, transform, ..
+            } => OpShape::FillPath {
+                color: *color,
+                transform: *transform,
+            },
+            RenderOp::Text {
                 color, transform, ..
             } => OpShape::FillPath {
                 color: *color,

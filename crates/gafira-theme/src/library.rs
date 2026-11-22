@@ -14,7 +14,7 @@ pub struct LibraryFace {
     pub bytes: &'static [u8],
 }
 
-const FACES: [LibraryFace; 62] = [
+const FACES: [LibraryFace; 70] = [
     LibraryFace {
         family: "Open Sans",
         bold: false,
@@ -473,6 +473,66 @@ const FACES: [LibraryFace; 62] = [
             "../../../assets/fonts/library/dmserifdisplay/DMSerifDisplay-Italic.ttf"
         ),
     },
+    LibraryFace {
+        family: "Kaushan Script",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/kaushanscript/KaushanScript-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/kaushanscript/KaushanScript-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Satisfy",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/satisfy/Satisfy-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/satisfy/Satisfy-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Alex Brush",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/alexbrush/AlexBrush-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/alexbrush/AlexBrush-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Dancing Script",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/dancingscript/DancingScript-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/dancingscript/DancingScript-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Allura",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/allura/Allura-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/allura/Allura-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Great Vibes",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/greatvibes/GreatVibes-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/greatvibes/GreatVibes-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Merienda",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/merienda/Merienda-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/merienda/Merienda-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Courgette",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/courgette/Courgette-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/courgette/Courgette-Regular.ttf"),
+    },
 ];
 
 /// Every face of the library, family by family, regular first.
@@ -504,7 +564,7 @@ mod tests {
     #[test]
     fn s62_02_library_faces() {
         let families = library_families();
-        assert_eq!(families.len(), 25);
+        assert_eq!(families.len(), 33);
         assert_eq!(families[0], "Open Sans");
         for family in &families {
             assert!(
@@ -514,7 +574,7 @@ mod tests {
                 "{family}"
             );
         }
-        assert_eq!(library().len(), 62, "every face of the library");
+        assert_eq!(library().len(), 70, "every face of the library");
         assert_eq!(face_key("Lato", false, false), "Lato");
         assert_eq!(face_key("Lato", true, false), "Lato Bold");
         assert_eq!(face_key("Lato", false, true), "Lato Italic");

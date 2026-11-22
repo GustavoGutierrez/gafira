@@ -173,6 +173,11 @@ pub struct ShapeNode {
     /// when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect: Option<crate::ShapeEffect>,
+    /// The brush that drew the shape by hand (spec 079): a freehand
+    /// stroke, which the eraser removes whole. Written only when set; at
+    /// most [`ShapeNode::MAX_BRUSH_ID`] bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drawn_with: Option<String>,
 }
 
 /// Whether `value` is `+0.0`, the default radius.
@@ -191,8 +196,12 @@ impl ShapeNode {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }
     }
+
+    /// The longest brush id a freehand stroke keeps.
+    pub const MAX_BRUSH_ID: usize = 64;
 }
 
 /// A node owned by a plugin or a future feature, kept as opaque data.

@@ -252,6 +252,8 @@ fn arq_06_render_op_is_closed() {
             // Spec 063: added on purpose, with every backend handling it.
             RenderOp::FillGradient { .. } => "fill_gradient",
             RenderOp::DrawImage { .. } => "draw_image",
+            // Spec 073: added on purpose, with every backend handling it.
+            RenderOp::Text { .. } => "text",
             // Spec 066: added on purpose, with every backend handling it.
             RenderOp::ClipPath { .. } => "clip_path",
             RenderOp::ApplyMask { .. } => "apply_mask",

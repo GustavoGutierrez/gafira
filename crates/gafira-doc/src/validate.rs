@@ -320,6 +320,10 @@ fn path_problem(path: &crate::ShapePath) -> Option<crate::PathProblem> {
     }
 }
 
+fn text_curve(v: f64) -> bool {
+    (-crate::TextNode::MAX_CURVE..=crate::TextNode::MAX_CURVE).contains(&v)
+}
+
 fn font_size(v: f64) -> bool {
     v > 0.0 && v <= crate::TextNode::MAX_SIZE
 }
@@ -396,6 +400,17 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
         NodeKind::Shape(shape) => shape.text.as_ref().map(|text| &text.content),
         _ => None,
     };
+    if let NodeKind::Text(text) = &node.kind {
+        out.push((NodeField::TextCurve, text.curve, text_curve));
+        out.push((NodeField::LetterSpacing, text.letter_spacing, |v| {
+            crate::TextNode::LETTER_SPACING.contains(&v)
+        }));
+        if let Some(height) = text.line_height {
+            out.push((NodeField::LineHeight, height, |v| {
+                crate::TextNode::LINE_HEIGHT.contains(&v)
+            }));
+        }
+    }
     if let Some(content) = content {
         for span in content.spans() {
             out.push((NodeField::FontSize, span.style.size, font_size));
@@ -429,9 +444,12 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     {
         return Err(ValidationError::InvalidPath { node: id, problem });
     }
-    if let NodeKind::Shape(shape) = &node.kind
-        && let Some(problem) = shape.gradient.as_ref().and_then(crate::Gradient::problem)
-    {
+    let gradient = match &node.kind {
+        NodeKind::Shape(shape) => shape.gradient.as_ref(),
+        NodeKind::Text(text) => text.gradient.as_ref(),
+        _ => None,
+    };
+    if let Some(problem) = gradient.and_then(crate::Gradient::problem) {
         return Err(ValidationError::InvalidGradient { node: id, problem });
     }
     if let NodeKind::Frame(frame) = &node.kind

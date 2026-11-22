@@ -69,6 +69,7 @@ fn page() -> Page {
             text: None,
             gradient: None,
             effect: None,
+            drawn_with: None,
         }),
     );
     let group = Node::new(
@@ -120,6 +121,13 @@ fn op_shape(op: &RenderOp) -> OpShape {
             opacity: *opacity,
         },
         RenderOp::FillPath {
+            color, transform, ..
+        } => OpShape::FillPath {
+            color: *color,
+            transform: *transform,
+        },
+        // Text draws as its outline, a filled path (spec 073).
+        RenderOp::Text {
             color, transform, ..
         } => OpShape::FillPath {
             color: *color,

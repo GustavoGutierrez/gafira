@@ -235,6 +235,18 @@ fn collect(group: &resvg::usvg::Group, out: &mut Vec<VectorShape>) {
     }
 }
 
+/// An SVG drawn so its longer side is `side` px, straight RGBA: a thumbnail
+/// (spec 072).
+///
+/// # Errors
+/// As [`svg_pixels`].
+pub fn svg_thumbnail(bytes: &[u8], side: f32) -> Result<(Vec<u8>, u32, u32), VectorError> {
+    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
+        .map_err(|_| VectorError::Unreadable)?;
+    let longest = tree.size().width().max(tree.size().height()).max(1.0);
+    svg_pixels(bytes, side / longest)
+}
+
 /// An SVG drawn as it is, in colour, `scale` times its own size (at most
 /// 4096 px a side): straight (not premultiplied) RGBA and its size. For
 /// «Como imagen» when an SVG is imported (spec 067).

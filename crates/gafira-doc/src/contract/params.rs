@@ -40,6 +40,12 @@ pub enum ParamKind {
     Color {
         default: Color,
     },
+    /// A line of text, at most `max_len` characters, empty by default;
+    /// `secret` hides it as it is typed (a PDF password, spec 073).
+    Text {
+        max_len: usize,
+        secret: bool,
+    },
 }
 
 impl ParamKind {
@@ -61,6 +67,7 @@ impl ParamKind {
                         .all(|(i, o)| options[..i].iter().all(|earlier| earlier.id != o.id))
             }
             ParamKind::Color { default } => default.is_finite(),
+            ParamKind::Text { max_len, .. } => *max_len > 0,
         }
     }
 
@@ -97,6 +104,13 @@ impl ParamKind {
                     Err(ParamError::NonFinite { param })
                 }
             }
+            (ParamKind::Text { max_len, .. }, ParamValue::Text(v)) => {
+                if v.chars().count() <= *max_len {
+                    Ok(())
+                } else {
+                    Err(ParamError::OutOfRange { param })
+                }
+            }
             _ => Err(ParamError::WrongType { param }),
         }
     }
@@ -108,6 +122,7 @@ impl ParamKind {
             ParamKind::Bool { default } => ParamValue::Bool(*default),
             ParamKind::Choice { default, .. } => ParamValue::Choice((*default).to_owned()),
             ParamKind::Color { default } => ParamValue::Color(*default),
+            ParamKind::Text { .. } => ParamValue::Text(String::new()),
         }
     }
 }
@@ -233,6 +248,7 @@ pub enum ParamValue {
     Bool(bool),
     Choice(String),
     Color(Color),
+    Text(String),
 }
 
 /// Values by parameter id, iterated in id order (ARQ-111).
@@ -294,6 +310,14 @@ impl ParamValues {
     pub fn choice(&self, id: &str) -> Option<&str> {
         match self.get(id) {
             Some(ParamValue::Choice(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn text(&self, id: &str) -> Option<&str> {
+        match self.get(id) {
+            Some(ParamValue::Text(v)) => Some(v),
             _ => None,
         }
     }

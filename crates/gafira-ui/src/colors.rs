@@ -25,6 +25,51 @@ pub(crate) const GRADIENTS: [(u32, u32, f64); 6] = [
     (0xFFE4E6, 0xFFF7ED, 90.0),
 ];
 
+/// The solid presets of «Color del texto» (spec 070): greys, then rows of
+/// reds and pinks, blues and cyans, greens and oranges.
+pub(crate) const TEXT_PALETTE: [u32; 28] = [
+    0x000000, 0x545454, 0x737373, 0xA6A6A6, 0xB4B4B4, 0xD9D9D9, 0xFFFFFF, 0xFF3131, 0xFF5757,
+    0xFF66C4, 0xE2A9F1, 0xCB6CE6, 0x8C52FF, 0x5E17EB, 0x0097B2, 0x0CC0DF, 0x5CE1E6, 0x38B6FF,
+    0x5271FF, 0x004AAD, 0x1800AD, 0x00BF63, 0x7ED957, 0xC1FF72, 0xFFDE59, 0xFFBD59, 0xFF914D,
+    0xFF751F,
+];
+
+/// The gradient presets of «Color del texto» (spec 070): two colours and
+/// an angle.
+pub(crate) const TEXT_GRADIENTS: [(u32, u32, f64); 14] = [
+    (0x000000, 0x737373, 0.0),
+    (0x000000, 0xFFFFFF, 0.0),
+    (0xA6A6A6, 0xFFFFFF, 0.0),
+    (0xC9E265, 0x5CB85C, 45.0),
+    (0x000000, 0xC89116, 0.0),
+    (0x8C52FF, 0xFFDE59, 90.0),
+    (0x000000, 0x5E17EB, 45.0),
+    (0xA6E3F3, 0xE2A9F1, 45.0),
+    (0xFF3131, 0xFF914D, 45.0),
+    (0xFF5757, 0x8C52FF, 45.0),
+    (0x5170FF, 0xFF66C4, 45.0),
+    (0x004AAD, 0xCB6CE6, 45.0),
+    (0x0097B2, 0x7ED957, 45.0),
+    (0xFFDE59, 0xFF914D, 45.0),
+];
+
+/// A linear gradient from `a` to `b` at `angle_deg`.
+pub(crate) fn gradient(a: u32, b: u32, angle_deg: f64) -> gafira_doc::Gradient {
+    gafira_doc::Gradient {
+        kind: gafira_doc::GradientKind::Linear { angle_deg },
+        stops: vec![
+            gafira_doc::GradientStop {
+                offset: 0.0,
+                color: hex(a),
+            },
+            gafira_doc::GradientStop {
+                offset: 1.0,
+                color: hex(b),
+            },
+        ],
+    }
+}
+
 /// Named colours, Spanish and English names for each.
 const NAMES: [(&str, &str, u32); 24] = [
     ("negro", "black", 0x000000),

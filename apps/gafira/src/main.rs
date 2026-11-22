@@ -34,6 +34,83 @@ struct Recent {
     clock: SystemClock,
 }
 
+/// The export settings kept per format, in `<data_dir>/export-presets.json`
+/// (spec 074): `{"pdf": {"compress": true, "scale": 2.0}}`.
+struct Presets {
+    file: std::path::PathBuf,
+}
+
+impl Presets {
+    fn read(&self) -> serde_json::Map<String, serde_json::Value> {
+        std::fs::read(&self.file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+}
+
+impl gafira_ui::ExportPresets for Presets {
+    fn load(&self, format: &str) -> Option<Vec<(String, gafira_ui::PresetValue)>> {
+        use gafira_ui::PresetValue;
+        let all = self.read();
+        let kept = all.get(format)?.as_object()?;
+        Some(
+            kept.iter()
+                .filter_map(|(id, value)| {
+                    let value = match value {
+                        serde_json::Value::Bool(v) => PresetValue::Bool(*v),
+                        serde_json::Value::String(v) => PresetValue::Choice(v.clone()),
+                        serde_json::Value::Number(n) if n.is_f64() => {
+                            PresetValue::Float(n.as_f64()?)
+                        }
+                        serde_json::Value::Number(n) => PresetValue::Int(n.as_i64()?),
+                        _ => return None,
+                    };
+                    Some((id.clone(), value))
+                })
+                .collect(),
+        )
+    }
+
+    fn save(&self, format: &str, values: Option<Vec<(String, gafira_ui::PresetValue)>>) {
+        use gafira_ui::PresetValue;
+        let mut all = self.read();
+        match values {
+            Some(values) => {
+                let kept: serde_json::Map<String, serde_json::Value> = values
+                    .into_iter()
+                    .filter_map(|(id, value)| {
+                        let value = match value {
+                            PresetValue::Bool(v) => serde_json::Value::Bool(v),
+                            PresetValue::Choice(v) => serde_json::Value::String(v),
+                            PresetValue::Float(v) => {
+                                serde_json::Value::Number(serde_json::Number::from_f64(v)?)
+                            }
+                            PresetValue::Int(v) => serde_json::Value::Number(v.into()),
+                        };
+                        Some((id, value))
+                    })
+                    .collect();
+                all.insert(format.to_owned(), serde_json::Value::Object(kept));
+            }
+            None => {
+                all.remove(format);
+            }
+        }
+        let written = serde_json::to_vec_pretty(&all)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| {
+                if let Some(folder) = self.file.parent() {
+                    std::fs::create_dir_all(folder)?;
+                }
+                std::fs::write(&self.file, bytes)
+            });
+        if let Err(error) = written {
+            eprintln!("export presets: {error}");
+        }
+    }
+}
+
 /// Biblioteca over `<data_dir>/library.json` (spec 068).
 struct Library {
     file: ImportedFiles,
@@ -115,6 +192,24 @@ impl gafira_ui::RecentStore for Recent {
     }
 }
 
+/// The project file the system passed (a double click on a `.gaf`, spec
+/// 078): the first argument that is not a flag or a flag's value.
+fn project_argument() -> Option<std::path::PathBuf> {
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--lang" {
+            args.next();
+            continue;
+        }
+        if arg.to_string_lossy().starts_with("--") {
+            continue;
+        }
+        let path = std::path::PathBuf::from(arg);
+        return path.is_file().then_some(path);
+    }
+    None
+}
+
 /// `--lang es|en` overrides the language for this run without saving it.
 fn language_flag() -> Option<LanguagePreference> {
     let args: Vec<String> = std::env::args().collect();
@@ -152,7 +247,12 @@ fn main() -> eframe::Result {
         scanning.set(faces);
     });
     let for_export = system_fonts.clone();
+    let catalog = Arc::new(gafira_photos::Catalog::new(Box::new(
+        gafira_photos::online::UreqHttp::new(env!("CARGO_PKG_VERSION")),
+    )));
     gafira_ui::run(gafira_ui::UiConfig {
+        open: project_argument(),
+        start_monitor: gafira_platform::pointer_monitor().map(|m| (m.x, m.y, m.width, m.height)),
         locale,
         version: env!("CARGO_PKG_VERSION"),
         recent: Box::new(Recent {
@@ -162,9 +262,16 @@ fn main() -> eframe::Result {
         library: Box::new(Library {
             file: ImportedFiles::at(data_dir.join("library.json")),
         }),
+        export_presets: Box::new(Presets {
+            file: data_dir.join("export-presets.json"),
+        }),
         // Spec 039: «Mostrar en carpeta» opens the system file manager.
         show_in_folder: Box::new(gafira_platform::show_in_folder),
         system_fonts,
+        // D-111: Openverse and Wikimedia Commons, and the illustrations of
+        // Iconify (spec 072), without an API key.
+        photos: Some(Arc::clone(&catalog) as Arc<dyn gafira_ports::photos::PhotoCatalog>),
+        illustrations: Some(catalog as Arc<dyn gafira_ports::photos::IllustrationCatalog>),
         engine: Box::new(move |waker: Arc<dyn Waker>| {
             let clock = Arc::new(SystemClock::new());
             // Spec 026: imported and opened assets live in the content store,
@@ -235,11 +342,15 @@ fn export_pages(clock: Arc<SystemClock>, system: gafira_ui::SystemFonts) -> Arc<
 /// WebP (spec 039), in the order the export dialog lists them.
 fn registries() -> Registries {
     let mut registries = Registries::new();
-    let exporters: [Arc<dyn Exporter>; 4] = [
+    let exporters: [Arc<dyn Exporter>; 6] = [
         Arc::new(gafira_io_image::PngExporter::new()),
         Arc::new(gafira_io_image::JpegExporter::new()),
         Arc::new(gafira_io_image::WebpExporter::new()),
         Arc::new(gafira_io_pdf::PdfExporter::new()),
+        // Spec 074: SVG, vectors and real text.
+        Arc::new(gafira_io_svg::SvgExporter::new()),
+        // Spec 075: PowerPoint, editable.
+        Arc::new(gafira_io_pptx::PptxExporter::new()),
     ];
     for exporter in exporters {
         if let Err(error) = registries.formats.register_exporter(exporter) {

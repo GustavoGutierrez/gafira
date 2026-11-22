@@ -381,6 +381,24 @@ fn render_tile(
                     )?;
                 }
             }
+            // Text is filled from its outline, as a path (spec 073).
+            RenderOp::Text {
+                path,
+                color,
+                transform,
+                ..
+            } => {
+                if coverage::meets(coverage::page_bounds(path, *transform), drawn) {
+                    paint_fill(
+                        layers.target(&mut pixels),
+                        size,
+                        drawn,
+                        path,
+                        *color,
+                        *transform,
+                    )?;
+                }
+            }
             RenderOp::FillGradient {
                 path,
                 gradient,
