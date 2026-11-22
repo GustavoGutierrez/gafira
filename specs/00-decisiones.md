@@ -1037,3 +1037,10 @@ Fecha: 22 de noviembre de 2026.
 
 - **Decisión** (titular): un texto seleccionado tiene «Efectos»: Paralela, Brillo, Eco, Contorno, Fondo, Desalineado, Sin relleno, Neón y Distorsión, cada uno con sus parámetros; Curvar; y estilos listos con nombres propios.
 - **Consecuencia**: precisa FD-43 y FD-35 (en texto); cambio aditivo del esquema 1. Se aplica en la spec 089.
+
+## D-121 Publicación de binarios y coste de Actions
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): cada versión se publica con binarios de Linux y Windows, con instalador de Windows que registra `.gaf` y su icono; macOS cuando se pueda. Actions gasta lo mínimo.
+- **Consecuencia**: una etiqueta compila y publica sin repetir pruebas; CI corre en el PR a `main`, con pruebas en Linux y solo clippy en Windows; las de Windows y macOS, a petición. Se aplica en la spec 090.
