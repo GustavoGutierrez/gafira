@@ -222,6 +222,10 @@ impl Studio {
         self.relist();
     }
 
+    pub fn models(&self) -> Option<Arc<dyn VisionModels>> {
+        self.models.clone()
+    }
+
     pub fn available(&self) -> bool {
         self.models.is_some()
     }
@@ -492,6 +496,21 @@ pub(crate) fn buttons(
     if target.image.edit.is_some() && button(ui, free, "vision.original", "vision.original_hint") {
         ask = Some(Ask::Original(target.clone()));
     }
+    ask = progress(ui, theme, texts, studio).or(ask);
+    ui.add_space(4.0);
+    let text = RichText::new(plain(texts, "vision.models")).font(theme.font("body-sm"));
+    let link = ui
+        .add(egui::Button::new(text).frame(false))
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if link.clicked() {
+        ask = Some(Ask::Models);
+    }
+    ask
+}
+
+/// How far the work is, and what is said of the last one.
+pub(crate) fn progress(ui: &mut Ui, theme: &Theme, texts: &Texts, studio: &Studio) -> Option<Ask> {
+    let mut ask = None;
     if let Some(job) = studio.job.as_ref().filter(|job| job.target.is_some()) {
         ui.add_space(6.0);
         bar(ui, theme, job.progress.share());
@@ -510,14 +529,6 @@ pub(crate) fn buttons(
         });
     }
     said(ui, theme, texts, studio);
-    ui.add_space(4.0);
-    let text = RichText::new(plain(texts, "vision.models")).font(theme.font("body-sm"));
-    let link = ui
-        .add(egui::Button::new(text).frame(false))
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    if link.clicked() {
-        ask = Some(Ask::Models);
-    }
     ask
 }
 

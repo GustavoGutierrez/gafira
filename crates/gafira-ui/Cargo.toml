@@ -18,6 +18,9 @@ gafira-i18n.workspace = true
 gafira-layout.workspace = true
 # Spec 065: the lights are drawn with the pixels of gafira-raster, as the export draws them.
 gafira-raster.workspace = true
+# Spec 085: the element of an image under a click.
+gafira-segment.workspace = true
+rayon.workspace = true
 # Spec 080: the QR codes of the panel and the canvas.
 gafira-qr.workspace = true
 # Spec 081: the tables of the panel and the canvas, and their Excel file.

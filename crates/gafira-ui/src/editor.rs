@@ -364,6 +364,11 @@ pub(crate) struct Editor {
     chart_panel: std::cell::RefCell<crate::chart_templates::Panel>,
     chart_edit: Option<charts::Editing>,
     chart_gesture: Option<(NodeId, u64, GestureId)>,
+    /// The panel «Editar imagen», its undo step, and the images with a look
+    /// as they are shown (spec 085).
+    image_edit: Option<crate::image_panel::Editing>,
+    image_gesture: Option<(NodeId, u64, GestureId)>,
+    looks: crate::looks::Looks,
     /// «Mejorar resolución», «Quitar fondo» and «Borrar píxeles» (spec 084).
     pub(crate) studio: crate::vision::Studio,
     eraser: Option<crate::eraser::Eraser>,
@@ -536,6 +541,9 @@ impl Default for Editor {
             chart_panel: std::cell::RefCell::default(),
             chart_edit: None,
             chart_gesture: None,
+            image_edit: None,
+            image_gesture: None,
+            looks: crate::looks::Looks::default(),
             frame_target: None,
             line_view: None,
             fit_pending: None,
@@ -672,7 +680,14 @@ struct Asked {
     chart: Option<(PageId, NodeId, Box<gafira_doc::ChartNode>)>,
     chart_field: u64,
     chart_rest: bool,
+    controls_rest: bool,
     chart_import: Option<(PageId, NodeId)>,
+    /// The panel «Editar imagen» opens on this image, or closes; the image a
+    /// control changes, and one that is a step of its own (spec 085).
+    image_open: Option<(PageId, NodeId)>,
+    image_close: bool,
+    image: Option<(PageId, NodeId, gafira_doc::ImageNode)>,
+    image_step: Option<(PageId, NodeId, gafira_doc::ImageNode)>,
     /// What is asked for an image (spec 084).
     vision: Option<crate::vision::Ask>,
     eraser: Option<crate::eraser::Answer>,
@@ -1035,6 +1050,11 @@ impl Editor {
             single == Some((edit.page, edit.node))
                 && document.is_some_and(|d| chart_of(d, edit.page, edit.node).is_some())
         });
+        // So does «Editar imagen».
+        self.image_edit = self.image_edit.take().filter(|edit| {
+            single == Some((edit.page, edit.node))
+                && document.is_some_and(|d| image_of(d, edit.page, edit.node).is_some())
+        });
         self.scope = self.scope.filter(|(page, node)| {
             document
                 .and_then(|d| d.page(*page))
@@ -1102,6 +1122,7 @@ impl Editor {
         }
         let mut asked = Asked::default();
         self.images_arrived(ctx, engine);
+        self.looks.pump(ctx);
         // «Borrador de píxeles» takes the whole window and its keys: Ctrl+Z
         // is of its strokes (S84-08).
         if let Some(eraser) = self.eraser.as_mut() {
@@ -1170,7 +1191,9 @@ impl Editor {
                 // Esc leaves the group entered, selecting it; outside one it
                 // empties the selection (03 §9.1, spec 043).
                 if i.key_pressed(egui::Key::Escape) {
-                    if self.cropping.is_some() {
+                    if self.image_edit.as_mut().is_some_and(|edit| edit.leave()) {
+                        // The zone is left, the image stays chosen.
+                    } else if self.cropping.is_some() {
                         asked.end_crop = true;
                     } else if self.scope.is_some() {
                         asked.leave = true;
@@ -1377,6 +1400,15 @@ impl Editor {
         self.rail(ctx, theme, texts);
         let editing = !self.font_panel
             && self.chart_panel_of(ctx, theme, texts, document.as_deref(), &mut asked);
+        let editing = editing
+            || (!self.font_panel
+                && self.image_panel_of(
+                    ctx,
+                    engine,
+                    (theme, texts),
+                    document.as_deref(),
+                    &mut asked,
+                ));
         if !editing && let Some(step) = self.side_panel(ctx, theme, texts, &mut asked) {
             self.rail.apply(step);
         }
@@ -1388,7 +1420,12 @@ impl Editor {
             &selection,
             &mut asked,
         );
-        self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
+        self.canvas(ctx, engine, theme, texts, document.as_deref(), &mut asked);
+        if let Some(edit) = &mut self.image_edit
+            && let Some(image) = edit.take_step()
+        {
+            asked.image_step = Some((edit.page, edit.node, image));
+        }
         match asked.table_menu {
             Some(tables::Menu::Duplicate) => asked.duplicate = true,
             Some(tables::Menu::Delete) => asked.delete = true,
@@ -1410,6 +1447,10 @@ impl Editor {
         // The fields of a chart: each one is an undo step.
         let focused = ctx.memory(|m| m.focused());
         asked.chart_field = focused.map_or(0, |id| id.value());
+        asked.controls_rest = asked.image.is_none()
+            && focused.is_none()
+            && !ctx.input(|i| i.pointer.any_down())
+            && !egui::Popup::is_any_open(ctx);
         asked.chart_rest = asked.chart.is_none()
             && focused.is_none()
             && !ctx.input(|i| i.pointer.any_down())
@@ -2488,6 +2529,14 @@ impl Editor {
                         asked.image_to_background = Some((shape.page, shape.node, asset));
                     }
                     ui.add_space(12.0);
+                    if !shape.locked {
+                        let wide = Vec2::new(ui.available_width(), 36.0);
+                        let edit = egui::Button::new(plain(texts, "image.title"));
+                        if ui.add_sized(wide, edit).clicked() {
+                            asked.image_open = Some((shape.page, shape.node));
+                        }
+                        ui.add_space(12.0);
+                    }
                     if let Some(image) = document.and_then(|d| image_of(d, shape.page, shape.node))
                     {
                         let target = crate::vision::Target {
@@ -2495,8 +2544,8 @@ impl Editor {
                             node: shape.node,
                             image,
                         };
-                        asked.vision =
-                            crate::vision::buttons(ui, theme, texts, &self.studio, target);
+                        let ask = crate::vision::buttons(ui, theme, texts, &self.studio, target);
+                        asked.vision = ask.or(asked.vision.take());
                         ui.add_space(12.0);
                     }
                 }
@@ -3537,6 +3586,17 @@ impl Editor {
                                     asked.chart_open = Some(at);
                                 }
                                 take_chart(asked, at, asks);
+                                bar_separator(ui, theme);
+                            }
+                            if let Some(at) = self.selected.single()
+                                && matches!(
+                                    page.node(at.1).map(|n| &n.kind),
+                                    Some(gafira_doc::NodeKind::Image(_))
+                                )
+                            {
+                                if ui.button(plain(texts, "image.title")).clicked() {
+                                    asked.image_open = Some(at);
+                                }
                                 bar_separator(ui, theme);
                             }
                             if self.can.ungroup && self.selected.len() == 1 {
@@ -4809,6 +4869,7 @@ impl Editor {
     fn canvas(
         &mut self,
         ctx: &egui::Context,
+        engine: &Gafira,
         theme: &Theme,
         texts: &Texts,
         document: Option<&Document>,
@@ -4904,7 +4965,9 @@ impl Editor {
                         // In crop mode a drag moves the photo, not the
                         // elements (S66-07).
                         let pressed =
-                            (response.clicked() || response.drag_started()) && self.cropping.is_none();
+                            (response.clicked() || response.drag_started())
+                                && self.cropping.is_none()
+                                && !self.image_edit.as_ref().is_some_and(|e| e.choosing());
                         if self.cropping.is_some() && response.dragged() {
                             asked.crop_drag = Some(response.drag_delta());
                         }
@@ -5050,11 +5113,30 @@ impl Editor {
                                     if let Some(asset) = shape.image {
                                         let tint = Color32::WHITE
                                             .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
+                                        let looked = document
+                                            .and_then(|d| image_of(d, shape.page, shape.node))
+                                            .and_then(|i| self.looks.picture(shape.node, &i));
                                         match self
                                             .textures
                                             .get(&asset.as_hash())
                                             .and_then(Option::as_ref)
                                         {
+                                            // With its look, and its shadow
+                                            // past the box (spec 085).
+                                            _ if looked.is_some() => {
+                                                if let Some(looked) = looked {
+                                                    clip.add(canvas::image_mesh_with(
+                                                        looked.texture,
+                                                        turn,
+                                                        &shape.placement,
+                                                        looked.bleed((
+                                                            shape.placement.w,
+                                                            shape.placement.h,
+                                                        )),
+                                                        tint,
+                                                    ));
+                                                }
+                                            }
                                             Some(texture) => {
                                                 clip.add(canvas::image_mesh(
                                                     texture.id(),
@@ -5669,6 +5751,30 @@ impl Editor {
                                     shape,
                                     asked,
                                 );
+                            }
+                            // The zone of the image being edited (spec 085).
+                            if let Some(edit) = &mut self.image_edit
+                                && edit.page == page_doc.id
+                                && let Some(shape) = chosen.iter().find(|s| s.node == edit.node)
+                                && let Some(image) =
+                                    document.and_then(|d| image_of(d, edit.page, edit.node))
+                            {
+                                let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                let clip =
+                                    painter.with_clip_rect(page.intersect(painter.clip_rect()));
+                                let mut with = crate::image_panel::With {
+                                    theme,
+                                    texts,
+                                    looks: &mut self.looks,
+                                    studio: &self.studio,
+                                    store: &engine.ports().store,
+                                };
+                                let what = (&response, turn, &shape.placement);
+                                let took = edit.overlay(ui, &clip, &mut with, what, &image);
+                                if took {
+                                    grabbed = None;
+                                }
+                                on_cells |= took;
                             }
                             if self.selected.len() > 1 && self.selected.page() == Some(page_doc.id)
                             {
@@ -6345,6 +6451,7 @@ impl Editor {
         self.tables(engine, asked);
         self.charts(engine, asked);
         self.images(engine, asked);
+        self.image_looks(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine);
         }
@@ -7414,6 +7521,12 @@ impl Editor {
                     self.photos
                         .entry(hash)
                         .or_insert_with(|| decode(engine, hash).map(Arc::new));
+                }
+                // With its look, if it has one (spec 085).
+                if let Some(image) = image_of(document, page.id, shape.node) {
+                    let settled = !ctx.input(|i| i.pointer.any_down());
+                    let store = &engine.ports().store;
+                    self.looks.want(ctx, store, (shape.node, &image), settled);
                 }
                 if self.textures.contains_key(&hash) {
                     continue;
@@ -9316,6 +9429,101 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// The open undo step of an image is over.
+    fn end_image_step(&mut self, engine: &mut Gafira) {
+        if self.image_gesture.take().is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
+    /// What «Editar imagen» asks for (spec 085): while a control moves it is
+    /// one undo step.
+    fn image_looks(&mut self, engine: &mut Gafira, asked: &Asked) {
+        if let Some((node, field, _)) = self.image_gesture {
+            let same = asked
+                .image
+                .as_ref()
+                .is_none_or(|(_, of, _)| *of == node && asked.chart_field == field);
+            if asked.controls_rest || asked.image_step.is_some() || !same {
+                self.end_image_step(engine);
+            }
+        }
+        if let Some((page, node, image)) = &asked.image {
+            if self.image_gesture.is_none() {
+                let gesture = engine.edit().begin_gesture().ok();
+                self.image_gesture = gesture.map(|g| (*node, asked.chart_field, g));
+            }
+            let gesture = self.image_gesture.map(|(_, _, gesture)| gesture);
+            let property = Property::Image(image.clone());
+            let command = SetProperty::new(*page, vec![*node], property, gesture);
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("image: {error}");
+            }
+        }
+        if let Some((page, node, image)) = &asked.image_step {
+            let target = crate::vision::Target {
+                page: *page,
+                node: *node,
+                image: image.clone(),
+            };
+            set_image(engine, &target, image.clone());
+        }
+        if let Some((page, node)) = asked.image_open {
+            self.font_panel = false;
+            self.image_edit = Some(crate::image_panel::Editing::new(page, node));
+        }
+        if asked.image_close {
+            self.image_edit = None;
+        }
+    }
+
+    /// The panel «Editar imagen» in place of the one of the rail; whether it
+    /// is open (S85-06).
+    fn image_panel_of(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &Gafira,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) -> bool {
+        self.looks.compare = None;
+        let Some(edit) = self.image_edit.as_mut() else {
+            return false;
+        };
+        let at = (edit.page, edit.node);
+        let Some(image) = document.and_then(|d| image_of(d, at.0, at.1)) else {
+            return false;
+        };
+        let store = &engine.ports().store;
+        edit.arrived(&**store, &image);
+        let mut with = crate::image_panel::With {
+            theme,
+            texts,
+            looks: &mut self.looks,
+            studio: &self.studio,
+            store,
+        };
+        egui::SidePanel::left("editor.image")
+            .default_width(px(theme.tokens.size.panel_left).max(340.0))
+            .width_range(300.0..=520.0)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.c("bg"))
+                    .stroke(Stroke::new(1.0, theme.c("border")))
+                    .inner_margin(egui::Margin::same(16)),
+            )
+            .show(ctx, |ui| {
+                let asks = edit.panel(ui, &mut with, &image);
+                asked.image = asks.image.map(|image| (at.0, at.1, image));
+                asked.vision = asks.vision;
+                asked.image_close = asks.close;
+            });
+        true
     }
 
     /// The open undo step of a chart is over.
@@ -11541,6 +11749,9 @@ fn arrange_buttons(
                 asked.align = Some(action);
             }
         }
+    });
+    // A row of their own: in the one above they reached the edge.
+    ui.horizontal(|ui| {
         for (axis, key, icon) in DISTRIBUTES {
             let tooltip = distribute_tooltip(texts, key, can.distribute);
             let button = ui.add_enabled_ui(can.distribute, |ui| {
@@ -13984,6 +14195,93 @@ pub(crate) mod tests {
                 .asset(&asset(8))
                 .is_none()
         );
+    }
+
+    // S85-06: a control that moves is one undo step, a zone another; the
+    // panel stays while its image is the one selected, the adjustments stay
+    // when the background goes, and «Restaurar original» keeps them.
+    #[test]
+    fn s85_06_the_look_of_an_image_is_edited() {
+        use crate::vision::{Ask, Target};
+        use gafira_doc::{AssetRef, ContentHash, ImageLook, ZoneKind};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.page_rects = vec![(page, Rect::from_min_size(Pos2::ZERO, Vec2::splat(800.0)))];
+        let asset = |n: u8| AssetRef::new(ContentHash([n; 32]));
+        let entry = gafira_doc::AssetEntry {
+            name: "gato.png".to_owned(),
+            storage: gafira_doc::AssetStorage::Embedded,
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertAsset::new(asset(7), entry)))
+            .expect("the asset");
+        editor.place_image(&mut engine, asset(7), (200, 100), None, false);
+        let at = editor.selected.single().expect("the image");
+        let depth = undo_depth(&mut engine);
+        let image = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("doc");
+            image_of(&document, at.0, at.1).expect("an image")
+        };
+        let before = image(&mut engine);
+        let open = Asked {
+            image_open: Some(at),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, open);
+        assert!(editor.image_edit.is_some());
+        for contrast in [5.0, 12.0, 30.0] {
+            let mut look = ImageLook::default();
+            look.adjust.contrast = contrast;
+            let asked = Asked {
+                image: Some((at.0, at.1, before.looking(look))),
+                ..Asked::default()
+            };
+            ask(&mut engine, &mut editor, asked);
+        }
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one control, one step");
+        let look = image(&mut engine).look.expect("a look");
+        let (look, _) = crate::zones::with_zone(&look, ZoneKind::Area, asset(5)).expect("it fits");
+        let zoned = before.looking(look);
+        let asked = Asked {
+            image_step: Some((at.0, at.1, zoned.clone())),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, asked);
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        assert!(editor.image_gesture.is_none());
+        assert_eq!(image(&mut engine), zoned);
+        let document = engine.edit().document().expect("doc");
+        assert!(document.asset(&asset(5)).is_some(), "its mask");
+        let target = Target {
+            page: at.0,
+            node: at.1,
+            image: zoned.clone(),
+        };
+        set_image(&mut engine, &target, zoned.edited(asset(8), asset(7)));
+        let cut = image(&mut engine);
+        assert!(cut.is_cut() && cut.look == zoned.look);
+        let asked = Asked {
+            vision: Some(Ask::Original(Target {
+                image: cut,
+                ..target
+            })),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, asked);
+        assert_eq!(image(&mut engine), zoned);
+        for _ in 0..4 {
+            engine.edit().undo().expect("an undo");
+        }
+        assert_eq!(image(&mut engine), before);
+        let document = engine.edit().document();
+        editor.prune(document.as_deref());
+        assert!(editor.image_edit.is_some(), "still selected");
+        editor.selected = Selection::default();
+        editor.prune(document.as_deref());
+        assert!(editor.image_edit.is_none());
     }
 
     // S66-10: an SVG dropped on the canvas becomes an empty frame of its

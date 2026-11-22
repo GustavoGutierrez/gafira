@@ -1598,17 +1598,24 @@ pub(crate) fn image_mesh(
     placement: &Placement,
     tint: Color32,
 ) -> egui::Mesh {
+    image_mesh_with(texture, transform, placement, (0.0, 0.0), tint)
+}
+
+/// [`image_mesh`] that reaches past its box, across and down (spec 085).
+pub(crate) fn image_mesh_with(
+    texture: egui::TextureId,
+    transform: Affine,
+    placement: &Placement,
+    (bx, by): (f64, f64),
+    tint: Color32,
+) -> egui::Mesh {
     let mut mesh = egui::Mesh::with_texture(texture);
-    let uvs = [
-        Pos2::new(0.0, 0.0),
-        Pos2::new(1.0, 0.0),
-        Pos2::new(1.0, 1.0),
-        Pos2::new(0.0, 1.0),
-    ];
-    for (pos, uv) in rotation::corners(transform, placement).into_iter().zip(uvs) {
+    let (w, h) = (placement.w, placement.h);
+    for (u, v) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
         mesh.vertices.push(egui::epaint::Vertex {
-            pos,
-            uv,
+            pos: rotation::screen(transform, u * (w + 2.0 * bx) - bx, v * (h + 2.0 * by) - by),
+            // 0 or 1: the casts are exact.
+            uv: Pos2::new(u as f32, v as f32),
             color: tint,
         });
     }
