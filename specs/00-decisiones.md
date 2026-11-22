@@ -1002,3 +1002,10 @@ Fecha: 22 de noviembre de 2026.
 
 - **Decisión** (titular): «Mejorar resolución» y «Quitar fondo» usan modelos locales. El paquete incluye los dos más ligeros (`u2netp` y `realesr-general-x4v3`, menos de 10 MB entre ambos); los mayores y la aceleración por GPU se descargan solo cuando la persona lo pide y acepta, con su peso y su licencia a la vista.
 - **Consecuencia**: precisa ARQ-76, RNF-04 y FD-40 («sin modelos en el instalador» pasa a «sin modelos de más de 10 MB en total»), y ARQ-04 y D-111: es la tercera conexión de red, acotada al botón de descargar del panel de modelos, tras la feature `online`. Las imágenes no salen nunca de la máquina. Solo modelos con licencia permisiva y procedencia comprobada. Se aplica en la spec 084.
+
+## D-116 Edición de imagen completa
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): «Editar imagen» reúne ajustes, zonas, filtros y sombras. Se entregan el catálogo de filtros con nombres propios (D-40 lo aplazaba), y las sombras Brillo, Contorno y Curva (D-42 y D-27 las aplazaban) más Página flotante, En ángulo y Suelo. Primer plano y Fondo usan el modelo de quitar fondo (D-115) en lugar del `ClassicSegmenter`; Elemento se elige con un clic.
+- **Consecuencia**: precisa FD-32, FD-34, FD-35, D-27, D-40 y D-42; sus fórmulas y valores quedan sujetos a la revisión visual del titular. Cambio aditivo del esquema 1. Se aplica en la spec 085.
