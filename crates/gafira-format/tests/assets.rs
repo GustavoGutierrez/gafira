@@ -103,7 +103,11 @@ fn unpacked(bytes: &[u8]) -> Vec<(String, CompressionMethod, Vec<u8>)> {
             let mut file = zip.by_index(index).expect("an entry");
             let mut data = Vec::new();
             file.read_to_end(&mut data).expect("bytes");
-            (file.name().to_owned(), file.compression(), data)
+            (
+                file.name().expect("name").into_owned(),
+                file.compression(),
+                data,
+            )
         })
         .collect()
 }

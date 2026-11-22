@@ -39,8 +39,9 @@ fn parts(sheets: &[(&str, &TableNode)]) -> Vec<(String, String)> {
             let mut file = zip.by_index(i).expect("a part");
             let mut text = String::new();
             file.read_to_string(&mut text).expect("utf-8");
-            roxmltree::Document::parse(&text).unwrap_or_else(|e| panic!("{}: {e}", file.name()));
-            (file.name().to_owned(), text)
+            let name = file.name().expect("a name").into_owned();
+            roxmltree::Document::parse(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+            (name, text)
         })
         .collect()
 }

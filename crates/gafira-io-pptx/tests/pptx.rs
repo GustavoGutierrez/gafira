@@ -198,7 +198,13 @@ fn s75_01_an_editable_presentation() {
     let bytes = pptx();
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("a zip");
     let names: Vec<String> = (0..zip.len())
-        .map(|i| zip.by_index(i).expect("entry").name().to_owned())
+        .map(|i| {
+            zip.by_index(i)
+                .expect("entry")
+                .name()
+                .expect("name")
+                .into_owned()
+        })
         .collect();
     for part in [
         "[Content_Types].xml",

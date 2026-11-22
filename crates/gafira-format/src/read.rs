@@ -68,41 +68,33 @@ pub fn read_gaf<R: Read + Seek>(
     let mut embedded: Vec<(usize, AssetRef)> = Vec::new();
     for index in 0..zip.len() {
         let entry = zip.by_index_raw(index).map_err(zip_error)?;
-        if !safe_name(entry.name()) {
-            return Err(corrupt(format!("unsafe entry name {:?}", entry.name())));
+        let name = entry.name().map_err(zip_error)?;
+        if !safe_name(&name) {
+            return Err(corrupt(format!("unsafe entry name {:?}", name)));
         }
         let (size, packed) = (entry.size(), entry.compressed_size().max(1));
         if size > 1024 * 1024 && size / packed > limits.max_ratio {
-            return Err(corrupt(format!(
-                "{} expands {}x",
-                entry.name(),
-                size / packed
-            )));
+            return Err(corrupt(format!("{} expands {}x", name, size / packed)));
         }
-        if entry.name().starts_with(assets::FOLDER) && !entry.is_dir() {
-            let reference = assets::parse(entry.name())
-                .ok_or_else(|| corrupt(format!("malformed asset name {:?}", entry.name())))?;
+        if name.starts_with(assets::FOLDER) && !entry.is_dir() {
+            let reference = assets::parse(&name)
+                .ok_or_else(|| corrupt(format!("malformed asset name {:?}", name)))?;
             if size > limits.max_asset_bytes {
                 return Err(corrupt(format!(
                     "{} is larger than {} bytes",
-                    entry.name(),
-                    limits.max_asset_bytes
+                    name, limits.max_asset_bytes
                 )));
             }
             embedded.push((index, reference));
         }
-        if entry.name().starts_with(thumbs::FOLDER) && !entry.is_dir() {
-            if thumbs::parse(entry.name()).is_none() {
-                return Err(corrupt(format!(
-                    "malformed thumbnail name {:?}",
-                    entry.name()
-                )));
+        if name.starts_with(thumbs::FOLDER) && !entry.is_dir() {
+            if thumbs::parse(&name).is_none() {
+                return Err(corrupt(format!("malformed thumbnail name {:?}", name)));
             }
             if size > limits.max_thumb_bytes {
                 return Err(corrupt(format!(
                     "{} is larger than {} bytes",
-                    entry.name(),
-                    limits.max_thumb_bytes
+                    name, limits.max_thumb_bytes
                 )));
             }
         }
@@ -291,7 +283,9 @@ pub(crate) fn check_mimetype<R: Read + Seek>(
     zip: &mut ZipArchive<R>,
 ) -> Result<(), RepositoryError> {
     let mut first = zip.by_index(0).map_err(zip_error)?;
-    if first.name() != "mimetype" || first.compression() != zip::CompressionMethod::Stored {
+    if first.name().map_err(zip_error)? != "mimetype"
+        || first.compression() != zip::CompressionMethod::Stored
+    {
         return Err(corrupt("the first entry is not a stored mimetype"));
     }
     let mut text = String::new();

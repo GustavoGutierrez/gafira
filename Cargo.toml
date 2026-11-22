@@ -79,7 +79,7 @@ roxmltree = "0.20"
 tract-onnx = { version = "0.23", default-features = false }
 tract-linalg = { version = "0.23", default-features = false, features = ["multithread-mm"] }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std", "webgpu", "api-22"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 # WebP: spec 087, with `image-webp`, already in the tree.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
