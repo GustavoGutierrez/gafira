@@ -4,8 +4,7 @@ use gafira_ports::export::ImageDecoder;
 use gafira_ports::media::MediaError;
 use gafira_raster::{ImageBuf, PixelBuf, premultiply_u8};
 
-/// Decodes PNG and JPEG with `image` (only its `png` and `jpeg` features,
-/// ARQ-66) into 8-bit sRGB premultiplied pixels (ARQ-117).
+/// Decodes PNG, JPEG, WebP and AVIF (spec 087) with `image` (ARQ-66) into 8-bit sRGB premultiplied pixels (ARQ-117).
 ///
 /// The format is read from the bytes, not from a name. The allocation limits
 /// are the defaults of `image`.
@@ -15,12 +14,14 @@ pub struct RasterDecoder;
 impl RasterDecoder {
     #[must_use]
     pub fn new() -> Self {
+        crate::avif::register();
         Self
     }
 }
 
 impl ImageDecoder for RasterDecoder {
     fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, MediaError> {
+        crate::avif::register();
         let corrupt = |detail: String| MediaError::Corrupt { detail };
         let decoded = image::load_from_memory(bytes).map_err(|e| corrupt(e.to_string()))?;
         let rgba = decoded.into_rgba8();

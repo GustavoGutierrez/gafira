@@ -351,10 +351,12 @@ fn export_pages(clock: Arc<SystemClock>, system: gafira_ui::SystemFonts) -> Arc<
 /// WebP (spec 039), in the order the export dialog lists them.
 fn registries() -> Registries {
     let mut registries = Registries::new();
-    let exporters: [Arc<dyn Exporter>; 7] = [
+    let exporters: [Arc<dyn Exporter>; 8] = [
         Arc::new(gafira_io_image::PngExporter::new()),
         Arc::new(gafira_io_image::JpegExporter::new()),
         Arc::new(gafira_io_image::WebpExporter::new()),
+        // Spec 087: AVIF.
+        Arc::new(gafira_io_image::AvifExporter::new()),
         Arc::new(gafira_io_pdf::PdfExporter::new()),
         // Spec 074: SVG, vectors and real text.
         Arc::new(gafira_io_svg::SvgExporter::new()),
