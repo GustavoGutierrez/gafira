@@ -1052,4 +1052,12 @@ Fecha: 23 de noviembre de 2026.
 - **Decisión** (titular, con capturas de referencia): Inicio pasa a ser una portada con título, pestañas Inicio y Plantillas, un buscador de tipos de diseño y plantillas, accesos a las categorías de «Crear un diseño», recientes y plantillas por tipo. «Crear un diseño» se conserva, se abre desde esos accesos en su categoría y tiene vuelta a Inicio y a Plantillas. Plantillas es una pantalla propia, filtrable y con carga progresiva; una plantilla abre un diseño nuevo, editable por completo, que se guarda sin la marca de plantilla.
 - **Formato**: una plantilla es un `.gaf` con el `template` de D-81 y su miniatura; no hay extensión aparte. Las plantillas van en `assets/templates/<categoría>/`, con nombres de archivo en inglés (`corner-coffee.es.gaf`); su nombre visible es la etiqueta `title:` y su idioma la etiqueta `lang:`. La búsqueda encuentra una plantilla con palabras de cualquiera de los dos idiomas. Las plantillas incluidas usan solo los colores de la marca.
 - **Editor**: la pestaña Plantillas del riel ofrece las plantillas de proporción parecida a la página activa; una plantilla reemplaza el contenido de esa página y añade sus demás páginas detrás, en un paso que se deshace.
+- **Detalle**: pulsar una plantilla en Inicio o en Plantillas abre un modal con su imagen, nombre, tipo y tamaño, «Personalizar esta plantilla» y plantillas similares; pulsar una similar la muestra en el mismo modal. Sin opciones de papel.
 - **Consecuencia**: se activan la pestaña Plantillas de la barra superior y la del riel (cambia lo dicho de Plantillas en D-119). Se aplica en la spec 091.
+
+## D-123 Barra superior y Ajustes
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular): la barra superior de las pantallas de inicio muestra el logo horizontal de fondo oscuro en lugar del texto «Gafira», sin Proyectos, y con iconos en Inicio, Plantillas y Ajustes. Ajustes se rediseña: cada sección y opción mejora en diseño y uso, y el tema se elige con una miniatura de cada uno. Ajustes debe reflejar lo que Gafira hace hoy.
+- **Consecuencia**: se aplica en la spec 092; el texto de Privacidad deja de decir que Gafira no se conecta a internet.
