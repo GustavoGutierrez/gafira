@@ -55,6 +55,8 @@ pub(crate) struct Home {
     thumbs: BTreeMap<PathBuf, RecentThumbnail>,
     /// The texts in both languages, for a search in either.
     both: [Texts; 2],
+    /// The template whose details are open, if any (spec 091).
+    detail: Option<PathBuf>,
 }
 
 /// The text of `key`.
@@ -84,6 +86,7 @@ impl Home {
             recent,
             thumbs,
             both: [Texts::new(Locale::Es), Texts::new(Locale::En)],
+            detail: None,
         }
     }
 
@@ -112,14 +115,217 @@ impl Home {
                             Tab::Home => self.home(ui, theme, texts, now, textures, catalogue),
                             Tab::Templates => self.templates(ui, theme, texts, catalogue),
                         });
-                        if let Some(next) = next {
-                            go = next;
+                        match next {
+                            // A template opens its details first.
+                            Some(Go::FromTemplate(path)) => self.detail = Some(path),
+                            Some(next) => go = next,
+                            None => {}
                         }
                         ui.add_space(40.0);
                     });
             });
+        if self.detail.is_some() {
+            if let Some(next) = self.detail_modal(ctx, theme, texts, catalogue) {
+                go = next;
+            }
+            return go;
+        }
         if let Some(next) = create::start_keys(ctx) {
             go = next;
+        }
+        go
+    }
+
+    /// The details of a template over the screen: its picture, its name,
+    /// kind and size, «Personalizar esta plantilla», and the templates like
+    /// it; a click on one of them shows it here. Esc, the cross or a click
+    /// outside closes it.
+    fn detail_modal(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        catalogue: &mut Catalogue,
+    ) -> Option<Go> {
+        let path = self.detail.clone()?;
+        let all = catalogue.list().map(<[Template]>::to_vec)?;
+        let Some(current) = all.iter().find(|t| t.path == path).cloned() else {
+            self.detail = None;
+            return None;
+        };
+        let similar: Vec<Template> = templates::similar(&all, &current, texts.locale, 12)
+            .into_iter()
+            .cloned()
+            .collect();
+        let mut go = None;
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let screen = ctx.content_rect();
+        // The dim behind it; a click on it closes.
+        egui::Area::new(egui::Id::new("template.detail.dim"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(screen.min)
+            .show(ctx, |ui| {
+                let (rect, response) = ui.allocate_exact_size(screen.size(), Sense::click());
+                ui.painter()
+                    .rect_filled(rect, 0.0, Color32::from_black_alpha(140));
+                if response.clicked() {
+                    close = true;
+                }
+            });
+        let width = (screen.width() - 120.0).clamp(600.0, 1100.0);
+        let height = (screen.height() - 100.0).clamp(420.0, 780.0);
+        let window = Rect::from_center_size(screen.center(), Vec2::new(width, height));
+        egui::Area::new(egui::Id::new("template.detail"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(window.min)
+            .show(ctx, |ui| {
+                egui::Frame::NONE
+                    .fill(theme.c("surface"))
+                    .corner_radius(16.0)
+                    .inner_margin(egui::Margin::same(28))
+                    .show(ui, |ui| {
+                        ui.set_width(width - 56.0);
+                        ui.set_height(height - 56.0);
+                        // The cross.
+                        let cross = Rect::from_min_size(
+                            egui::pos2(window.right() - 52.0, window.top() + 16.0),
+                            Vec2::splat(32.0),
+                        );
+                        let response = ui.interact(cross, ui.id().with("close"), Sense::click());
+                        if response.hovered() {
+                            ui.painter().circle_filled(
+                                cross.center(),
+                                16.0,
+                                theme.c("secondary.bg"),
+                            );
+                        }
+                        let c = cross.center();
+                        let stroke = Stroke::new(2.0, theme.c("text"));
+                        ui.painter().line_segment(
+                            [c + Vec2::new(-6.0, -6.0), c + Vec2::new(6.0, 6.0)],
+                            stroke,
+                        );
+                        ui.painter().line_segment(
+                            [c + Vec2::new(6.0, -6.0), c + Vec2::new(-6.0, 6.0)],
+                            stroke,
+                        );
+                        if response
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            close = true;
+                        }
+                        let top = (height - 56.0) * 0.62;
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 28.0;
+                            // The picture, whole.
+                            let picture_w = (width - 56.0) * 0.58;
+                            let (tile, _) =
+                                ui.allocate_exact_size(Vec2::new(picture_w, top), Sense::hover());
+                            ui.painter()
+                                .rect_filled(tile, 12.0, theme.c("surface.sunken"));
+                            if let Some((texture, (w, h))) = catalogue.thumbnail(&current) {
+                                let (fw, fh) =
+                                    recent::fit(w, h, (tile.width() - 32.0, tile.height() - 32.0));
+                                ui.painter().image(
+                                    texture,
+                                    Rect::from_center_size(tile.center(), Vec2::new(fw, fh)),
+                                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                    Color32::WHITE,
+                                );
+                            }
+                            ui.vertical(|ui| {
+                                ui.set_width((width - 56.0) - picture_w - 28.0 - 40.0);
+                                ui.add_space(8.0);
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&current.name)
+                                            .font(theme.font("h2"))
+                                            .color(theme.c("text")),
+                                    )
+                                    .wrap(),
+                                );
+                                ui.add_space(10.0);
+                                if let Some(kind) = current.kind {
+                                    ui.label(
+                                        RichText::new(t(texts, kind.key))
+                                            .font(theme.font("body"))
+                                            .color(theme.c("text.secondary")),
+                                    );
+                                    ui.label(
+                                        RichText::new(kind.label(texts.locale))
+                                            .font(theme.font("body-sm"))
+                                            .color(theme.c("text.muted")),
+                                    );
+                                }
+                                if let Some(category) = current.category() {
+                                    ui.add_space(10.0);
+                                    create::pill(ui, theme, false, &t(texts, category.key()));
+                                }
+                                ui.add_space(24.0);
+                                let (button, response) = ui.allocate_exact_size(
+                                    Vec2::new(ui.available_width(), 46.0),
+                                    Sense::click(),
+                                );
+                                let fill = if response.hovered() {
+                                    theme.c("primary.bg.hover")
+                                } else {
+                                    theme.c("primary.bg")
+                                };
+                                ui.painter().rect_filled(button, theme.radius_md(), fill);
+                                ui.painter().text(
+                                    button.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    t(texts, "templates.use"),
+                                    theme.font("ui-label"),
+                                    theme.c("primary.fg"),
+                                );
+                                if response
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
+                                    go = Some(Go::FromTemplate(current.path.clone()));
+                                }
+                                ui.add_space(10.0);
+                                ui.label(
+                                    RichText::new(t(texts, "templates.use_hint"))
+                                        .font(theme.font("caption"))
+                                        .color(theme.c("text.muted")),
+                                );
+                            });
+                        });
+                        ui.add_space(22.0);
+                        ui.label(
+                            RichText::new(t(texts, "templates.similar"))
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                        );
+                        ui.add_space(10.0);
+                        if similar.is_empty() {
+                            muted(ui, theme, &t(texts, "templates.no_similar"));
+                            return;
+                        }
+                        let row_h = (ui.available_height() - 40.0).clamp(80.0, 200.0);
+                        egui::ScrollArea::horizontal()
+                            .id_salt("template.detail.similar")
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                ui.horizontal_top(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 14.0;
+                                    for other in &similar {
+                                        if template_card(ui, theme, catalogue, other, row_h) {
+                                            self.detail = Some(other.path.clone());
+                                        }
+                                    }
+                                });
+                            });
+                    });
+            });
+        if close {
+            self.detail = None;
+        }
+        if go.is_some() {
+            self.detail = None;
         }
         go
     }

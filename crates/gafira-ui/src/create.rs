@@ -620,8 +620,8 @@ pub(crate) enum Tab {
     Templates,
 }
 
-/// The topbar of the start screens: the name, Inicio, Proyectos (not yet),
-/// Plantillas and Ajustes; where a click goes.
+/// The topbar of the start screens (spec 092): the logo, Inicio and
+/// Plantillas with their icons, and Ajustes on the right; where a click goes.
 pub(crate) fn start_topbar(
     ctx: &egui::Context,
     theme: &Theme,
@@ -630,26 +630,25 @@ pub(crate) fn start_topbar(
 ) -> Option<Go> {
     let mut go = None;
     widgets::topbar(ctx, theme, "start.topbar", |ui| {
-        ui.label(
-            RichText::new(t(texts, "app.name"))
-                .font(egui::FontId::new(
-                    20.0,
-                    egui::FontFamily::Name(DISPLAY.into()),
-                ))
-                .color(theme.c("topbar.fg")),
-        );
-        ui.add_space(24.0);
-        if widgets::on_topbar(ui, theme, t(texts, "nav.home"), on == Some(Tab::Home)).clicked() {
+        ui.add_space(4.0);
+        if widgets::topbar_logo(ui, 26.0)
+            .on_hover_text(t(texts, "nav.home"))
+            .clicked()
+        {
             go = Some(Go::Home);
         }
-        ui.add_enabled_ui(false, |ui| {
-            widgets::on_topbar(ui, theme, t(texts, "nav.projects"), false)
-                .on_disabled_hover_text(t(texts, "tab.soon"));
-        });
-        if widgets::on_topbar(
+        ui.add_space(28.0);
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let home = t(texts, "nav.home");
+        if widgets::nav_item(ui, theme, Icon::Home, &home, on == Some(Tab::Home)).clicked() {
+            go = Some(Go::Home);
+        }
+        let templates = t(texts, "nav.templates");
+        if widgets::nav_item(
             ui,
             theme,
-            t(texts, "nav.templates"),
+            Icon::Templates,
+            &templates,
             on == Some(Tab::Templates),
         )
         .clicked()
@@ -657,7 +656,8 @@ pub(crate) fn start_topbar(
             go = Some(Go::Templates(None));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::on_topbar(ui, theme, t(texts, "nav.settings"), false).clicked() {
+            let settings = t(texts, "nav.settings");
+            if widgets::nav_item(ui, theme, Icon::Settings, &settings, false).clicked() {
                 go = Some(Go::Settings);
             }
         });
@@ -700,7 +700,7 @@ pub(crate) fn heading(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 }
 
 /// One line of the side list: its icon and name, lit when chosen.
-fn side_row(
+pub(crate) fn side_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     on: bool,

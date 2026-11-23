@@ -182,6 +182,32 @@ pub(crate) fn by_kind<'a>(
     rows
 }
 
+/// The templates like `current` for `locale`, at most `most`: those of
+/// its kind first, then those of its category, each in the list's order;
+/// never `current` itself.
+pub(crate) fn similar<'a>(
+    all: &'a [Template],
+    current: &Template,
+    locale: Locale,
+    most: usize,
+) -> Vec<&'a Template> {
+    let others = || {
+        all.iter()
+            .filter(move |t| t.path != current.path && t.shown_in(locale))
+    };
+    let same_kind = |t: &&Template| {
+        current.kind.is_some() && t.kind.map(|k| k.key) == current.kind.map(|k| k.key)
+    };
+    let mut out: Vec<&Template> = others().filter(same_kind).collect();
+    out.extend(
+        others()
+            .filter(|t| !same_kind(t))
+            .filter(|t| current.category().is_some() && t.category() == current.category()),
+    );
+    out.truncate(most);
+    out
+}
+
 /// What the worker thread hands back.
 enum Loaded {
     List(Vec<TemplateListing>),
@@ -441,6 +467,27 @@ mod tests {
         assert_eq!(shown(&list, 2), &list[..2 * PAGE]);
         assert_eq!(shown(&list, 3), &list[..], "the last page is shorter");
         assert_eq!(shown(&list, usize::MAX), &list[..]);
+    }
+
+    #[test]
+    fn s91_13_similar_templates_share_the_kind_then_the_category() {
+        let all = catalogue();
+        let cafe = &all[0];
+        let names =
+            |list: Vec<&Template>| -> Vec<String> { list.iter().map(|t| t.name.clone()).collect() };
+        // «Coffee shop» is English; the Facebook post shares the category.
+        assert_eq!(
+            names(similar(&all, cafe, Locale::Es, 8)),
+            ["Oferta de verano"]
+        );
+        assert!(similar(&all, cafe, Locale::Es, 0).is_empty());
+        let report = &all[3];
+        assert!(
+            similar(&all, report, Locale::Es, 8).is_empty(),
+            "alone in its category"
+        );
+        let untyped = &all[5];
+        assert!(similar(&all, untyped, Locale::Es, 8).is_empty());
     }
 
     #[test]

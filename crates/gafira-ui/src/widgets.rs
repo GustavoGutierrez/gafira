@@ -400,6 +400,79 @@ pub(crate) fn pointing_hand(ctx: &egui::Context) {
 }
 
 /// The graphite top bar of every screen (03 §7.1: 48 px).
+/// The horizontal logo for dark backgrounds (brand manual), `height`
+/// points tall, on the graphite top bar.
+pub(crate) fn topbar_logo(ui: &mut Ui, height: f32) -> Response {
+    const LOGO: &str = include_str!("../../../assets/gafira-logo-dark-background.svg");
+    // The logo's own proportions: 1325 × 425.
+    let size = Vec2::new(height * 1325.0 / 425.0, height);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let side = (size.x * ui.ctx().pixels_per_point()).round() as u32;
+    if let Some(texture) =
+        crate::design_art::texture(ui.ctx(), "logo/dark", side, || LOGO.to_owned())
+    {
+        ui.painter().image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    response
+}
+
+/// A place of the top bar of the start screens: its icon and name, lit
+/// with a soft fill and a coral line under it when it is the one open.
+pub(crate) fn nav_item(
+    ui: &mut Ui,
+    theme: &Theme,
+    icon: Icon,
+    text: &str,
+    active: bool,
+) -> Response {
+    let font = theme.font("ui-label");
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, theme.c("topbar.fg"));
+    let size = Vec2::new(galley.size().x + 18.0 + 8.0 + 24.0, 34.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let hover = response.hovered();
+    if active || hover {
+        ui.painter().rect_filled(rect, 8.0, theme.c("topbar.hover"));
+    }
+    let color = if active || hover {
+        theme.c("topbar.fg")
+    } else {
+        theme.c("topbar.fg.muted")
+    };
+    let weight = if active {
+        Weight::Fill
+    } else {
+        Weight::Regular
+    };
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + 12.0 + 9.0, rect.center().y),
+        Vec2::splat(18.0),
+    );
+    icons::paint(ui.painter(), icon_rect, icon, weight, color);
+    ui.painter().galley(
+        egui::pos2(
+            icon_rect.right() + 8.0,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        color,
+    );
+    if active {
+        let line = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 10.0, rect.bottom() + 5.0),
+            Vec2::new(rect.width() - 20.0, 3.0),
+        );
+        ui.painter().rect_filled(line, 1.5, theme.c("primary.bg"));
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 pub(crate) fn topbar(ctx: &egui::Context, theme: &Theme, id: &str, add: impl FnOnce(&mut Ui)) {
     egui::TopBottomPanel::top(id.to_owned())
         .exact_height(px(theme.tokens.size.topbar))
