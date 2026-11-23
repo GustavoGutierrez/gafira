@@ -1044,3 +1044,11 @@ Fecha: 22 de noviembre de 2026.
 
 - **Decisión** (titular): cada versión se publica con binarios de Linux y Windows, con instalador de Windows que registra `.gaf` y su icono; macOS cuando se pueda. Actions gasta lo mínimo.
 - **Consecuencia**: una etiqueta compila y publica sin repetir pruebas; CI corre en el PR a `main`, con pruebas en Linux y solo clippy en Windows; las de Windows y macOS, a petición. Se aplica en la spec 090.
+
+## D-122 Inicio nuevo y plantillas
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): Inicio pasa a ser una portada con título, pestañas Inicio y Plantillas, un buscador de tipos de diseño y plantillas, accesos a las categorías de «Crear un diseño», recientes y plantillas por tipo. «Crear un diseño» se conserva, se abre desde esos accesos en su categoría y tiene vuelta a Inicio y a Plantillas. Plantillas es una pantalla propia, filtrable y con carga progresiva; una plantilla abre un diseño nuevo, editable por completo, que se guarda sin la marca de plantilla.
+- **Formato**: una plantilla es un `.gaf` con el `template` de D-81 y su miniatura; no hay extensión aparte. Las plantillas van en `assets/templates/<categoría>/`, con nombres de archivo en inglés (`corner-coffee.es.gaf`); su nombre visible es la etiqueta `title:` y su idioma la etiqueta `lang:`. La búsqueda encuentra una plantilla con palabras de cualquiera de los dos idiomas. Las plantillas incluidas usan solo los colores de la marca.
+- **Consecuencia**: la pestaña Plantillas de la barra superior se activa. Se aplica en la spec 091.
