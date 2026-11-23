@@ -6,6 +6,7 @@
 //! ports from the adapters, the engine over them, and hands both to the
 //! shell (spec 018).
 
+mod brand;
 mod templates;
 
 use std::io::BufReader;
@@ -256,6 +257,7 @@ fn main() -> eframe::Result {
         scanning.set(faces);
     });
     let for_export = system_fonts.clone();
+    let brand_fonts = system_fonts.clone();
     let catalog = Arc::new(gafira_photos::Catalog::new(Box::new(
         gafira_photos::online::UreqHttp::new(env!("CARGO_PKG_VERSION")),
     )));
@@ -277,6 +279,8 @@ fn main() -> eframe::Result {
         // Spec 039: «Mostrar en carpeta» opens the system file manager.
         show_in_folder: Box::new(gafira_platform::show_in_folder),
         system_fonts,
+        // Spec 093: the brand kits, in the data folder.
+        brand: Box::new(brand::Brand::new(data_dir.join("brand"), brand_fonts)),
         // Spec 091: the templates the app carries, written out once.
         templates: Some(Arc::new(templates::Templates {
             dir: data_dir.join("templates").join("bundled"),

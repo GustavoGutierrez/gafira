@@ -47,8 +47,7 @@ use crate::zoom::{self, Zoom, ZoomAsk};
 
 /// The tabs of the rail, in the order of 03 §2.3, with their icons.
 /// The tabs of the rail (owner request): Elementos first, the one open
-/// when a design opens; Marca, still to come, and Plantillas (spec 091)
-/// last.
+/// when a design opens; Marca (spec 093) and Plantillas (spec 091) last.
 const TABS: [(&str, Icon); 6] = [
     ("tab.pieces", Icon::Pieces),
     ("tab.text", Icon::Text),
@@ -59,7 +58,7 @@ const TABS: [(&str, Icon); 6] = [
 ];
 
 /// The tabs that do nothing yet: they say so and cannot be opened.
-const SOON: [&str; 1] = ["tab.identity"];
+const SOON: [&str; 0] = [];
 
 /// The margin around the page on the canvas, in logical px.
 const CANVAS_MARGIN: f32 = 48.0;
@@ -302,6 +301,13 @@ pub(crate) struct Editor {
     /// (spec 091).
     pub(crate) templates: Option<std::rc::Rc<std::cell::RefCell<crate::templates::Catalogue>>>,
     template_panel: std::cell::RefCell<crate::template_panel::Panel>,
+    /// The brand kits, shared with Marca (spec 093).
+    pub(crate) brand: Option<std::rc::Rc<dyn crate::BrandStore>>,
+    brand_panel: std::cell::RefCell<crate::brand_panel::BrandPanel>,
+    /// What saving a brand template said, and when, shown a few seconds.
+    brand_note: Option<(gafira_doc::msg::Message, f64)>,
+    /// The time of the last frame, for [`Editor::brand_note`].
+    brand_clock: f64,
     library_previews: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Preview>>,
     /// The decoded pixels of the photos of frames, by content hash, cut
     /// out by each frame's shape into a texture (spec 066).
@@ -523,6 +529,10 @@ impl Default for Editor {
             background_query: std::cell::RefCell::default(),
             templates: None,
             template_panel: std::cell::RefCell::default(),
+            brand: None,
+            brand_panel: std::cell::RefCell::default(),
+            brand_note: None,
+            brand_clock: 0.0,
             library_previews: std::cell::RefCell::default(),
             drag: None,
             marquee: None,
@@ -575,6 +585,16 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// A text of a brand style to add to the page in view (spec 093).
+    brand_text: Option<(gafira_doc::SpanStyle, String)>,
+    /// The same, dropped at a point of a page.
+    brand_drop: Option<(gafira_doc::SpanStyle, String, PageId, (f64, f64))>,
+    /// A brand style for the selected texts, their words kept.
+    brand_style: Option<gafira_doc::SpanStyle>,
+    /// Open Marca, on a kit if given (spec 093).
+    brand: Option<Option<String>>,
+    /// Save the design as a brand template of a kit, with a name.
+    brand_template: Option<(String, String)>,
     /// A template to put on the page in view (spec 091).
     apply_template: Option<std::path::PathBuf>,
     /// A freehand stroke to add to its page (spec 079).
@@ -1050,6 +1070,240 @@ fn page_sizes(document: &Document) -> Vec<Vec2> {
 }
 
 impl Editor {
+    /// What a click in the Marca panel asked, as the requests of the frame
+    /// (spec 093): a colour goes on the texts of the selection, else on its
+    /// shapes, else on the page.
+    fn brand_ask(
+        &self,
+        ask: Option<crate::brand_panel::PanelAsk>,
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        use crate::brand_panel::PanelAsk;
+        match ask {
+            None => {}
+            Some(PanelAsk::Template(path)) => asked.apply_template = Some(path),
+            Some(PanelAsk::File(path)) => asked.library_add = Some((path, false, None)),
+            Some(PanelAsk::Text(style, words)) => {
+                // With texts selected, the style goes on them; else a new
+                // text of that style comes in.
+                let texts_selected = document
+                    .zip(self.selected.page())
+                    .and_then(|(doc, page)| doc.page(page))
+                    .is_some_and(|page| {
+                        self.selected.nodes().iter().any(|id| {
+                            page.node(*id).is_some_and(|n| match &n.kind {
+                                gafira_doc::NodeKind::Text(_) => true,
+                                gafira_doc::NodeKind::Shape(shape) => shape.text.is_some(),
+                                _ => false,
+                            })
+                        })
+                    });
+                if texts_selected {
+                    asked.brand_style = Some(style);
+                } else {
+                    asked.brand_text = Some((style, words));
+                }
+            }
+            Some(PanelAsk::DropText(style, words, at)) => {
+                if let Some((page, point)) = canvas::drop_point(&self.page_rects, self.zoom, at) {
+                    asked.brand_drop = Some((style, words, page, point));
+                }
+            }
+            Some(PanelAsk::DropFile(path, at)) => asked.library_add = Some((path, false, Some(at))),
+            Some(PanelAsk::Manage(kit)) => asked.brand = Some(kit),
+            Some(PanelAsk::Color(code)) => {
+                let color = crate::colors::hex(code);
+                let kinds: Vec<bool> = document
+                    .zip(self.selected.page())
+                    .and_then(|(doc, page)| doc.page(page))
+                    .map(|page| {
+                        self.selected
+                            .nodes()
+                            .iter()
+                            .filter_map(|id| page.node(*id))
+                            .map(|node| matches!(node.kind, gafira_doc::NodeKind::Text(_)))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if kinds.is_empty() {
+                    asked.page_background = Some(Some(gafira_doc::PageBackground::Solid(color)));
+                } else if kinds.iter().any(|text| *text) {
+                    asked.text_fill = Some(TextFill::Solid(color));
+                } else {
+                    asked.fill = Some(Some(color));
+                }
+            }
+        }
+    }
+
+    /// «Guardar como plantilla de marca»: the kit and the name, Cancelar
+    /// and Guardar; then, for a few seconds, how it went.
+    fn brand_template_dialog(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        asked: &mut Asked,
+    ) {
+        let now = ctx.input(|i| i.time);
+        if let Some((note, at)) = &self.brand_note {
+            if now - at > 4.0 {
+                self.brand_note = None;
+            } else {
+                let text = texts.t(note);
+                egui::Area::new(egui::Id::new("brand.note"))
+                    .order(egui::Order::Tooltip)
+                    .anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -64.0))
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .fill(theme.c("topbar.bg"))
+                            .corner_radius(10.0)
+                            .inner_margin(egui::Margin::symmetric(18, 12))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(text)
+                                        .font(theme.font("ui-label"))
+                                        .color(theme.c("topbar.fg")),
+                                );
+                            });
+                    });
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+            }
+        }
+        let mut panel = self.brand_panel.borrow_mut();
+        let kits: Vec<(String, String)> = panel
+            .kits()
+            .iter()
+            .map(|k| (k.id.clone(), k.name.clone()))
+            .collect();
+        let Some((kit, name)) = panel.saving.as_mut() else {
+            return;
+        };
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let mut save = false;
+        crate::brand_screen::modal(
+            ctx,
+            theme,
+            &texts.t(&gafira_doc::msg!("brand.save_as_template")),
+            |ui| {
+                if kits.is_empty() {
+                    ui.label(texts.t(&gafira_doc::msg!("brand.no_kits_panel")));
+                    ui.add_space(12.0);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if widgets::primary(
+                            ui,
+                            theme,
+                            texts.t(&gafira_doc::msg!("brand.create_title")),
+                        )
+                        .clicked()
+                        {
+                            asked.brand = Some(None);
+                            close = true;
+                        }
+                        if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("brand.cancel")))
+                            .clicked()
+                        {
+                            close = true;
+                        }
+                    });
+                    return;
+                }
+                if !kits.iter().any(|(id, _)| id == kit) {
+                    kit.clone_from(&kits[0].0);
+                }
+                ui.label(texts.t(&gafira_doc::msg!("brand.kit")));
+                let chosen = kits
+                    .iter()
+                    .find(|(id, _)| id == kit)
+                    .map(|(_, n)| n.clone())
+                    .unwrap_or_default();
+                egui::ComboBox::from_id_salt("brand.template.kit")
+                    .selected_text(chosen)
+                    .width(ui.available_width())
+                    .show_ui(ui, |ui| {
+                        for (id, kit_name) in &kits {
+                            ui.selectable_value(kit, id.clone(), kit_name);
+                        }
+                    });
+                ui.add_space(10.0);
+                ui.label(texts.t(&gafira_doc::msg!("brand.name")));
+                ui.add(widgets::field(
+                    name,
+                    texts.t(&gafira_doc::msg!("brand.template_name_hint")),
+                ));
+                ui.add_space(16.0);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let ready = !name.trim().is_empty();
+                    if ui
+                        .add_enabled_ui(ready, |ui| {
+                            widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("brand.save")))
+                        })
+                        .inner
+                        .clicked()
+                    {
+                        save = true;
+                    }
+                    if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("brand.cancel")))
+                        .clicked()
+                    {
+                        close = true;
+                    }
+                });
+            },
+        );
+        if save {
+            asked.brand_template = Some((kit.clone(), name.trim().to_owned()));
+            close = true;
+        }
+        if close {
+            panel.saving = None;
+        }
+    }
+
+    /// Save the open design as a brand template of the kit `kit` named
+    /// `name` (spec 093): a copy through the engine, then marked and kept
+    /// by the store. The design itself does not change.
+    fn save_brand_template(
+        &mut self,
+        engine: &mut Gafira,
+        document: Option<&Document>,
+        kit: &str,
+        name: &str,
+    ) {
+        let Some(store) = self.brand.clone() else {
+            return;
+        };
+        let kind = document
+            .and_then(|doc| doc.pages().first())
+            .and_then(|page| {
+                crate::design_sizes::SIZES
+                    .iter()
+                    .find(|size| size.page_size() == page.size)
+                    .map(|size| size.key)
+            });
+        let tmp =
+            std::env::temp_dir().join(format!("gafira-brand-template-{}.gaf", std::process::id()));
+        let saved = engine
+            .projects()
+            .save_copy(&tmp)
+            .map_err(|e| e.to_string())
+            .and_then(|()| {
+                store.add_template(kit, &tmp, &crate::brand::template_meta(kit, name, kind))
+            });
+        let _ = std::fs::remove_file(&tmp);
+        self.brand_note = Some((
+            match saved {
+                Ok(_) => gafira_doc::msg!("brand.template_saved"),
+                Err(error) => {
+                    eprintln!("brand template: {error}");
+                    gafira_doc::msg!("brand.template_failed")
+                }
+            },
+            self.brand_clock,
+        ));
+    }
+
     /// Put the template at `path` on the page in view (spec 091): its first
     /// page replaces the page's content, fitted to its size, and its other
     /// pages follow; with its media, in one step.
@@ -1152,8 +1406,8 @@ impl Editor {
         engine: &mut Gafira,
         theme: &Theme,
         texts: &Texts,
-        notice: Option<&str>,
         clipboard: &mut Option<Arc<Clip>>,
+        (notice, window): (Option<&str>, Option<&eframe::Frame>),
     ) -> Go {
         // The clipboard of the session lives in the shell, so a paste
         // reaches the next project too (spec 043). It is shared, so handing
@@ -1161,7 +1415,7 @@ impl Editor {
         if clipboard.is_some() {
             self.clip.clone_from(clipboard);
         }
-        let go = self.frame(ctx, engine, theme, texts, notice);
+        let go = self.frame(ctx, engine, theme, texts, notice, window);
         if std::mem::take(&mut self.copied)
             && let Some(clip) = self.clip.as_mut()
         {
@@ -1182,6 +1436,7 @@ impl Editor {
         theme: &Theme,
         texts: &Texts,
         notice: Option<&str>,
+        window: Option<&eframe::Frame>,
     ) -> Go {
         let document = engine.edit().document();
         let (can_undo, can_redo) = engine.edit().can_undo_redo();
@@ -1203,7 +1458,7 @@ impl Editor {
         // is of its strokes (S84-08).
         if let Some(eraser) = self.eraser.as_mut() {
             asked.eraser = eraser.show(ctx, theme, texts);
-            return self.apply(engine, &document, &asked, theme);
+            return self.apply(engine, &document, &asked, theme, window);
         }
         ctx.input(|i| {
             if i.modifiers.command && i.key_pressed(egui::Key::S) {
@@ -1494,6 +1749,16 @@ impl Editor {
         let editing = editing
             || (!self.font_panel
                 && self.effects_panel_of(ctx, (theme, texts), document.as_deref(), &mut asked));
+        // Spec 093: «Guardar como plantilla de marca» and its notice.
+        self.brand_clock = ctx.input(|i| i.time);
+        self.brand_template_dialog(ctx, theme, texts, &mut asked);
+        // Spec 093: the colours of the brand kit in use, for every picker.
+        if let Some(store) = &self.brand {
+            let mut panel = self.brand_panel.borrow_mut();
+            panel.refresh(store.as_ref(), ctx.input(|i| i.time));
+            let colors = panel.kit().map(crate::BrandKit::colors).unwrap_or_default();
+            crate::brand_panel::set_colors(ctx, colors);
+        }
         if !editing
             && let Some(step) = self.side_panel(ctx, theme, texts, document.as_deref(), &mut asked)
         {
@@ -1570,7 +1835,7 @@ impl Editor {
                 .map(|c| cell_id(c.node, c.from))
         };
         let before = field(&self.cells);
-        let go = self.apply(engine, &document, &asked, theme);
+        let go = self.apply(engine, &document, &asked, theme, window);
         // The keyboard goes to the cell being written, and leaves the one
         // before, in this very frame: no letter typed next is lost.
         let now = field(&self.cells);
@@ -1657,6 +1922,17 @@ impl Editor {
                     .clicked()
                 {
                     asked.save_version = true;
+                    ui.close();
+                }
+                // Spec 093: the design as a template of a brand kit.
+                if self.brand.is_some()
+                    && ui
+                        .button(texts.t(&gafira_doc::msg!("brand.save_as_template")))
+                        .clicked()
+                {
+                    let mut panel = self.brand_panel.borrow_mut();
+                    let kit = panel.kit().map(|k| k.id.clone()).unwrap_or_default();
+                    panel.saving = Some((kit, String::new()));
                     ui.close();
                 }
                 ui.separator();
@@ -1980,6 +2256,19 @@ impl Editor {
             .show(ctx, |ui| {
                 if self.font_panel {
                     self.fonts_panel(ui, theme, texts, asked);
+                    return;
+                }
+                if TABS[self.rail.tab].0 == "tab.identity" {
+                    if let Some(store) = &self.brand {
+                        let ask = crate::brand_panel::show(
+                            ui,
+                            theme,
+                            texts,
+                            &mut self.brand_panel.borrow_mut(),
+                            store.as_ref(),
+                        );
+                        self.brand_ask(ask, document, asked);
+                    }
                     return;
                 }
                 if TABS[self.rail.tab].0 == "tab.templates" {
@@ -3565,6 +3854,9 @@ impl Editor {
                 asked.page_background = Some(Some(PageBackground::Solid(color)));
             }
         });
+        if let Some(color) = crate::brand_panel::swatches(ui, texts) {
+            asked.page_background = Some(Some(PageBackground::Solid(color)));
+        }
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             for code in crate::colors::PALETTE {
@@ -4566,6 +4858,65 @@ impl Editor {
 
     /// `family` in `bold` and `italic` for every span of the selected text,
     /// or of the text of the selected shape, one undo step (spec 062).
+    /// A brand text style on every selected text and shape text (spec
+    /// 093): its font, size, bold and italic on every span; the words and
+    /// their colours stay. One undo step.
+    fn apply_brand_style(&mut self, engine: &mut Gafira, style: &gafira_doc::SpanStyle) {
+        let Some(page) = self.selected.page() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let restyle = |content: &gafira_doc::RichText| {
+            let mut content = content.clone();
+            for span in content
+                .paragraphs
+                .iter_mut()
+                .flat_map(|p| p.spans.iter_mut())
+            {
+                span.style.font.clone_from(&style.font);
+                span.style.size = style.size;
+                span.style.bold = style.bold;
+                span.style.italic = style.italic;
+            }
+            content
+        };
+        let commands: Vec<Box<dyn Command>> =
+            self.selected
+                .nodes()
+                .iter()
+                .filter_map(|id| {
+                    let node = on.node(*id)?;
+                    let property = match &node.kind {
+                        gafira_doc::NodeKind::Text(text) => {
+                            Property::TextContent(restyle(&text.content))
+                        }
+                        gafira_doc::NodeKind::Shape(shape) => {
+                            let mut text = shape.text.clone()?;
+                            text.content = restyle(&text.content);
+                            Property::ShapeText(Some(text))
+                        }
+                        _ => return None,
+                    };
+                    Some(Box::new(SetProperty::new(page, vec![*id], property, None))
+                        as Box<dyn Command>)
+                })
+                .collect();
+        if commands.is_empty() {
+            return;
+        }
+        let step = Transaction::new(MessageKey("edit.brand_style"), commands);
+        if let Err(error) = engine.edit().execute(Box::new(step)) {
+            eprintln!("brand style: {error}");
+        }
+        // A new size changes the height of the words (spec 061).
+        self.fit_pending = self.selected.single();
+    }
+
     fn apply_font(&mut self, engine: &mut Gafira, (family, bold, italic): (&str, bool, bool)) {
         let Some((page, node)) = self.selected.single() else {
             return;
@@ -6526,6 +6877,7 @@ impl Editor {
         document: &Option<Arc<Document>>,
         asked: &Asked,
         theme: &Theme,
+        window: Option<&eframe::Frame>,
     ) -> Go {
         let log = |what: &str, result: Result<(), gafira_engine::EngineError>| {
             if let Err(error) = result {
@@ -6667,7 +7019,7 @@ impl Editor {
         if asked.import_image
             && let Some(document) = document
         {
-            self.import_image(engine, document);
+            self.import_image(engine, document, window);
         }
         // A new empty frame, in the middle of the page or where it was
         // dropped, selected (spec 066, D-105).
@@ -6702,14 +7054,14 @@ impl Editor {
                 Err(error) => eprintln!("insert frame: {error}"),
             }
         }
-        self.qr_codes(engine, asked);
-        self.tables(engine, asked);
-        self.charts(engine, asked);
+        self.qr_codes(engine, asked, window);
+        self.tables(engine, asked, window);
+        self.charts(engine, asked, window);
         self.images(engine, asked);
         self.image_looks(engine, asked);
         self.text_looks(engine, asked);
         if asked.pick_frame_photo {
-            self.pick_frame_photo(engine);
+            self.pick_frame_photo(engine, window);
         }
         if let Some((file, design, at)) = asked.library_add.clone() {
             // An SVG of Biblioteca comes in the way it came in before: no
@@ -6759,7 +7111,7 @@ impl Editor {
         if asked.background_pick
             && let Some(page) = background_page
         {
-            let picked = rfd::FileDialog::new()
+            let picked = crate::files::picker(window)
                 .add_filter("Imagen", &crate::files::IMAGES)
                 .pick_file();
             if let Some(path) = picked
@@ -6892,12 +7244,55 @@ impl Editor {
             self.bring_sheet(engine, sheet, purpose, at);
         }
         if asked.import_frame_shape {
-            self.import_frame_shape(engine);
+            self.import_frame_shape(engine, window);
         }
         if let Some(path) = &asked.apply_template
             && let Some(document) = document
         {
             self.apply_template(engine, document, path);
+        }
+        if let Some((style, words)) = &asked.brand_text
+            && let Some(document) = document
+            && let Some(page) = self.current_page(document)
+            && let Ok(size) = page.size.to_px(document.dpi())
+        {
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let spec = canvas::new_text(px, words, style);
+            let page_id = page.id;
+            let next = NodeId::new(document.next_id());
+            let command = InsertNodes::new(page_id, None, page.roots.len(), vec![spec]);
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page_id, next);
+                    self.active = Some(page_id);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("insert brand text: {error}"),
+            }
+        }
+        if let Some((style, words, page_id, point)) = &asked.brand_drop
+            && let Some(document) = document
+            && let Some(page) = document.page(*page_id)
+            && let Ok(size) = page.size.to_px(document.dpi())
+        {
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let spec = canvas::text_at(px, words, style, *point);
+            let next = NodeId::new(document.next_id());
+            let command = InsertNodes::new(*page_id, None, page.roots.len(), vec![spec]);
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(*page_id, next);
+                    self.active = Some(*page_id);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("drop brand text: {error}"),
+            }
+        }
+        if let Some(style) = &asked.brand_style {
+            self.apply_brand_style(engine, style);
+        }
+        if let Some((kit, name)) = &asked.brand_template {
+            self.save_brand_template(engine, document.as_deref(), kit, name);
         }
         if let Some((preset, words)) = &asked.insert_text
             && let Some(document) = document
@@ -7528,6 +7923,8 @@ impl Editor {
         }
         if let Some(dark) = asked.dark {
             Go::Dark(dark)
+        } else if let Some(kit) = &asked.brand {
+            Go::Brand(kit.clone())
         } else if asked.settings {
             Go::Settings
         } else if let Some(name) = &asked.version {
@@ -8643,8 +9040,8 @@ impl Editor {
     }
 
     /// «Importar forma (SVG o PDF)…» of Elementos → Marcos (S66-10).
-    fn import_frame_shape(&mut self, engine: &mut Gafira) {
-        let picked = rfd::FileDialog::new()
+    fn import_frame_shape(&mut self, engine: &mut Gafira, window: Option<&eframe::Frame>) {
+        let picked = crate::files::picker(window)
             .add_filter("SVG, PDF", &["svg", "pdf"])
             .pick_file();
         if let Some(path) = picked
@@ -9379,7 +9776,7 @@ impl Editor {
     }
 
     /// The tables asked for this frame (spec 081).
-    fn tables(&mut self, engine: &mut Gafira, asked: &Asked) {
+    fn tables(&mut self, engine: &mut Gafira, asked: &Asked, window: Option<&eframe::Frame>) {
         if let Some((template, at)) = asked.insert_table {
             self.insert_table(engine, template, at);
         }
@@ -9436,7 +9833,7 @@ impl Editor {
                     self.change_table(engine, &act, None);
                 }
             }
-            Some(tables::Menu::Excel) => self.save_excel(engine),
+            Some(tables::Menu::Excel) => self.save_excel(engine, window),
             // With the charts, and what the frame does.
             Some(tables::Menu::Chart) => {}
             // These are done elsewhere, in the same frame.
@@ -9593,8 +9990,8 @@ impl Editor {
     }
 
     /// The file of a spreadsheet, picked.
-    fn pick_sheet() -> Option<std::path::PathBuf> {
-        rfd::FileDialog::new()
+    fn pick_sheet(window: Option<&eframe::Frame>) -> Option<std::path::PathBuf> {
+        crate::files::picker(window)
             .add_filter("Excel, CSV", &["xlsx", "xlsm", "csv", "tsv"])
             .pick_file()
     }
@@ -9931,7 +10328,7 @@ impl Editor {
     }
 
     /// The charts of a frame (spec 083).
-    fn charts(&mut self, engine: &mut Gafira, asked: &Asked) {
+    fn charts(&mut self, engine: &mut Gafira, asked: &Asked, window: Option<&eframe::Frame>) {
         use crate::chart_templates::Chosen;
         // Another field, another chart, or the controls at rest.
         if let Some((node, field, _)) = self.chart_gesture {
@@ -9958,7 +10355,7 @@ impl Editor {
                 self.put_chart(engine, template.chart(&texts), name, *at);
             }
             Some(Chosen::Data) => {
-                if let Some(path) = Self::pick_sheet() {
+                if let Some(path) = Self::pick_sheet(window) {
                     let purpose = crate::sheets::Purpose::Chart;
                     self.open_sheet(engine, &path, purpose, None);
                 }
@@ -9982,7 +10379,7 @@ impl Editor {
             self.chart_from(engine, &data, name.unwrap_or_default());
         }
         if let Some((page, node)) = asked.chart_import
-            && let Some(path) = Self::pick_sheet()
+            && let Some(path) = Self::pick_sheet(window)
         {
             let purpose = crate::sheets::Purpose::Data(page, node);
             self.open_sheet(engine, &path, purpose, None);
@@ -10087,7 +10484,7 @@ impl Editor {
     }
 
     /// «Guardar como Excel…» of the selected table (S81-14).
-    fn save_excel(&self, engine: &mut Gafira) {
+    fn save_excel(&self, engine: &mut Gafira, window: Option<&eframe::Frame>) {
         let Some((page, node)) = self.selected.single() else {
             return;
         };
@@ -10102,7 +10499,7 @@ impl Editor {
             .and_then(|p| p.node(node))
             .and_then(|n| n.base.name.clone())
             .unwrap_or_default();
-        let picked = rfd::FileDialog::new()
+        let picked = crate::files::picker(window)
             .add_filter("Excel", &["xlsx"])
             .set_file_name(format!(
                 "{}.xlsx",
@@ -10125,12 +10522,12 @@ impl Editor {
 
     /// The QR codes asked for this frame (spec 080): a new one, a change in
     /// Propiedades, a logo, or «Convertir en formas».
-    fn qr_codes(&mut self, engine: &mut Gafira, asked: &Asked) {
+    fn qr_codes(&mut self, engine: &mut Gafira, asked: &Asked, window: Option<&eframe::Frame>) {
         if let Some((code, at)) = &asked.insert_qr {
             self.insert_qr(engine, (**code).clone(), *at);
         }
         if asked.qr_panel_logo
-            && let Some(logo) = self.pick_logo(engine)
+            && let Some(logo) = self.pick_logo(engine, window)
         {
             self.qr_panel.borrow_mut().draft.logo = Some(logo);
         }
@@ -10142,7 +10539,7 @@ impl Editor {
             && let Some((page, node)) = selected
             && let Some(document) = engine.edit().document()
             && let Some(mut code) = qr_of(&document, page, node)
-            && let Some(logo) = self.pick_logo(engine)
+            && let Some(logo) = self.pick_logo(engine, window)
         {
             code.logo = Some(logo);
             self.set_qr(engine, page, node, code);
@@ -10218,8 +10615,12 @@ impl Editor {
     }
 
     /// Asks for an image and brings it into the document (S80-10).
-    fn pick_logo(&mut self, engine: &mut Gafira) -> Option<gafira_doc::QrLogo> {
-        let path = rfd::FileDialog::new()
+    fn pick_logo(
+        &mut self,
+        engine: &mut Gafira,
+        window: Option<&eframe::Frame>,
+    ) -> Option<gafira_doc::QrLogo> {
+        let path = crate::files::picker(window)
             .add_filter("Imagen", &crate::files::IMAGES)
             .pick_file()?;
         let Some(natural) = crate::files::dimensions(&path) else {
@@ -10285,12 +10686,12 @@ impl Editor {
     /// «Poner foto…» (spec 066, S66-06): pick an image, import it through
     /// `AssetService` and make it the photo of the selected frames, in one
     /// undo step; it fills them («Rellenar») unless they fit otherwise.
-    fn pick_frame_photo(&mut self, engine: &mut Gafira) {
+    fn pick_frame_photo(&mut self, engine: &mut Gafira, window: Option<&eframe::Frame>) {
         let Some(page) = self.selected.page() else {
             return;
         };
         let nodes = self.selected.nodes().to_vec();
-        let picked = rfd::FileDialog::new()
+        let picked = crate::files::picker(window)
             .add_filter("Imagen", &crate::files::IMAGES)
             .pick_file();
         let Some(path) = picked else { return };
@@ -10311,10 +10712,15 @@ impl Editor {
         }
     }
 
-    fn import_image(&mut self, engine: &mut Gafira, _document: &Document) {
+    fn import_image(
+        &mut self,
+        engine: &mut Gafira,
+        _document: &Document,
+        window: Option<&eframe::Frame>,
+    ) {
         // Images, SVG or PDF outlines for custom frames (spec 068), and
         // spreadsheets as tables (spec 082).
-        let picked = rfd::FileDialog::new()
+        let picked = crate::files::picker(window)
             .add_filter(
                 "Imagen, SVG, PDF, Excel, CSV",
                 &[
@@ -11803,6 +12209,10 @@ fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked
             asked.fill = Some(None);
         }
     });
+    // Spec 093: the colours of the brand kit in use.
+    if let Some(color) = crate::brand_panel::swatches(ui, texts) {
+        asked.fill = Some(Some(color));
+    }
 }
 
 /// A colour picker with its transparency (spec 063) showing `color`; the
@@ -12716,6 +13126,12 @@ fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut A
             asked.stroke = Some(None);
         }
     });
+    if let Some(color) = crate::brand_panel::swatches(ui, texts) {
+        let width = shape
+            .stroke
+            .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
+        asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(color, width)));
+    }
     if let Some(stroke) = shape.stroke {
         ui.horizontal(|ui| {
             ui.label(texts.t(&gafira_doc::msg!("inspector.outline_width")));
@@ -13075,6 +13491,9 @@ fn text_color_fields(
         }
         ui.label(plain(texts, "inspector.custom_color"));
     });
+    if let Some(color) = crate::brand_panel::swatches(ui, texts) {
+        asked.text_fill = Some(TextFill::Solid(color));
+    }
     let in_use = |fill: &TextFill| match fill {
         TextFill::Solid(c) => text.gradient.is_none() && *c == style.color,
         TextFill::Gradient(g) => text.gradient.as_ref() == Some(g),
@@ -13301,7 +13720,7 @@ fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32)
 }
 
 /// The egui family of a document font: the display face or the UI one.
-fn text_family(
+pub(crate) fn text_family(
     ctx: &egui::Context,
     theme: &Theme,
     style: &gafira_doc::SpanStyle,
@@ -13575,7 +13994,7 @@ pub(crate) mod tests {
 
     /// One frame's [`Asked`] applied by a fresh editor.
     fn run(engine: &mut Gafira, snapshot: &Option<Arc<Document>>, asked: &Asked) -> Go {
-        Editor::default().apply(engine, snapshot, asked, &theme())
+        Editor::default().apply(engine, snapshot, asked, &theme(), None)
     }
 
     fn theme() -> Theme {
@@ -13861,6 +14280,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         let shapes = the_shapes(&mut engine);
         assert_eq!(shapes.len(), 1);
@@ -13882,6 +14302,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         for _ in 0..3 {
             editor.apply(
@@ -13892,6 +14313,7 @@ pub(crate) mod tests {
                     ..Asked::default()
                 },
                 &theme,
+                None,
             );
         }
         editor.apply(
@@ -13902,6 +14324,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         let moved = the_shapes(&mut engine)[0].placement;
         assert_eq!((moved.x - origin.x, moved.y - origin.y), (15.0, 6.0));
@@ -13923,6 +14346,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert_eq!(the_shapes(&mut engine)[0].placement.w, 500.0);
 
@@ -13934,6 +14358,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert!(the_shapes(&mut engine).is_empty());
         assert_eq!(editor.selected, Selection::default());
@@ -13989,6 +14414,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         let origin = the_shapes(&mut engine)[0].placement;
         editor.zoom = 1.0;
@@ -14001,6 +14427,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         for _ in 0..2 {
             editor.apply(
@@ -14011,6 +14438,7 @@ pub(crate) mod tests {
                     ..Asked::default()
                 },
                 &theme,
+                None,
             );
         }
         editor.apply(
@@ -14021,6 +14449,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         let resized = the_shapes(&mut engine)[0].placement;
         assert_eq!(
@@ -14051,6 +14480,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         let blue = canvas::document_color(Color32::from_rgb(0, 0, 255));
         editor.apply(
@@ -14061,6 +14491,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert_eq!(the_shapes(&mut engine)[0].fill, Some(blue));
         editor.apply(
@@ -14071,6 +14502,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert_eq!(the_shapes(&mut engine)[0].opacity, 0.25);
         editor.apply(
@@ -14081,6 +14513,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert_eq!(the_shapes(&mut engine)[0].fill, None);
         engine.edit().undo().expect("an undo");
@@ -14097,7 +14530,7 @@ pub(crate) mod tests {
         let mut editor = Editor::default();
         let snapshot = engine.edit().document();
         let ask = |editor: &mut Editor, engine: &mut Gafira, asked: Asked| {
-            editor.apply(engine, &snapshot, &asked, &theme);
+            editor.apply(engine, &snapshot, &asked, &theme, None);
         };
         ask(
             &mut editor,
@@ -14166,6 +14599,7 @@ pub(crate) mod tests {
                     ..Asked::default()
                 },
                 &theme,
+                None,
             );
         }
         let page = engine.edit().document().expect("a document").pages()[0].clone();
@@ -14184,6 +14618,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         let page = engine.edit().document().expect("a document").pages()[0].clone();
         assert_eq!(
@@ -14208,7 +14643,7 @@ pub(crate) mod tests {
             insert_text: Some((canvas::TextPreset::Title, "Título".to_owned())),
             ..Asked::default()
         };
-        editor.apply(&mut engine, &snapshot, &asked, &theme);
+        editor.apply(&mut engine, &snapshot, &asked, &theme, None);
         let text = |engine: &mut Gafira| the_shapes(engine)[0].text.clone().expect("a text");
         let first = text(&mut engine);
         assert_eq!(first.content.plain_text(), "Título");
@@ -14229,6 +14664,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert_eq!(text(&mut engine).content, edited);
 
@@ -14245,6 +14681,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert!(
             text(&mut engine)
@@ -14263,6 +14700,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         assert_eq!(
             text(&mut engine).content.plain_text(),
@@ -15616,7 +16054,7 @@ pub(crate) mod tests {
         }
         let (theme, texts) = (theme(), Texts::new(gafira_ports::i18n::Locale::Es));
         let _ = ctx.run(input, |ctx| {
-            editor.show(ctx, engine, &theme, &texts, None, &mut None);
+            editor.show(ctx, engine, &theme, &texts, &mut None, (None, None));
         });
     }
 
@@ -15701,6 +16139,7 @@ pub(crate) mod tests {
                     ..Asked::default()
                 },
                 &theme,
+                None,
             );
         }
         let shapes = the_shapes(engine);
@@ -15715,6 +16154,7 @@ pub(crate) mod tests {
                 ..Asked::default()
             },
             &theme,
+            None,
         );
         (shapes[0].page, shapes[0].node, shapes[1].node)
     }
@@ -15722,7 +16162,7 @@ pub(crate) mod tests {
     /// `asked` applied by `editor` over the newest document.
     fn ask(engine: &mut Gafira, editor: &mut Editor, asked: Asked) -> Go {
         let snapshot = engine.edit().document();
-        editor.apply(engine, &snapshot, &asked, &theme())
+        editor.apply(engine, &snapshot, &asked, &theme(), None)
     }
 
     /// How many entries the history can undo.
@@ -16741,7 +17181,7 @@ pub(crate) mod tests {
         };
         let (theme, texts) = (theme(), Texts::new(gafira_ports::i18n::Locale::Es));
         ctx.run(input, |ctx| {
-            editor.show(ctx, engine, &theme, &texts, None, clip);
+            editor.show(ctx, engine, &theme, &texts, clip, (None, None));
         })
         .platform_output
     }

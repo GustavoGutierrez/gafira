@@ -104,11 +104,14 @@ pub(crate) enum Icon {
     Light,
     Dark,
     System,
+    /// Bold and italic of a text style (spec 093).
+    Bold,
+    Italic,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 63] = [
+    pub(crate) const ALL: [Self; 65] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -172,6 +175,8 @@ impl Icon {
         Self::Light,
         Self::Dark,
         Self::System,
+        Self::Bold,
+        Self::Italic,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -240,6 +245,8 @@ impl Icon {
             Self::Light => "sun",
             Self::Dark => "moon",
             Self::System => "monitor",
+            Self::Bold => "text-b",
+            Self::Italic => "text-italic",
         }
     }
 
