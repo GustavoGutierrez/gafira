@@ -36,6 +36,12 @@ fn red() -> PageBackground {
 /// The document: page 1 with rectangle 3 and a guide, page 2 empty.
 fn document() -> Document {
     let mut one = Page::new(P1, "Mía".to_owned(), size(200.0, 100.0));
+    one.guides = gafira_doc::GuideSet(vec![gafira_doc::Guide {
+        axis: gafira_doc::GuideAxis::Vertical,
+        position: Length::new(66.0, Unit::Px),
+        locked: true,
+    }]);
+    one.bleed = Length::new(3.0, Unit::Mm);
     one.nodes.insert(NodeId::new(3), Arc::new(rect(3, 1.0)));
     one.roots = vec![NodeId::new(3)];
     let two = Page::new(P2, String::new(), size(200.0, 100.0));
@@ -107,6 +113,8 @@ fn s91_10_the_page_takes_the_template_and_the_rest_follow_it() {
     assert_eq!(line.start.attached.map(|a| a.node), Some(child));
     let added = doc.page(ids[1]).expect("the added page");
     assert_eq!(added.size, size(200.0, 100.0), "the size of the page");
+    assert_eq!(added.guides, page.guides, "its folds and margins");
+    assert_eq!(added.bleed, page.bleed, "and its bleed");
     assert_eq!(added.nodes.len(), 1);
     // Every id is fresh: none is used twice in the document.
     let mut all: Vec<u64> = doc

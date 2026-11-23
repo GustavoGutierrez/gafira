@@ -263,6 +263,21 @@ impl Doc {
         self.add(page, "Anillo", at, kind, 1.0);
     }
 
+    /// An empty frame of `shape` («rect» or «ellipse»): a photo dropped on
+    /// it fills it and keeps the design (spec 066). An empty frame does not
+    /// print, so a placeholder goes under it.
+    fn photo_frame(&mut self, page: &mut Page, at: (f64, f64, f64, f64), shape: &str, radius: f64) {
+        let kind = json!({
+            "type": "frame",
+            "clip_shape": shape,
+            "corner_radius": radius,
+            "fit": "fill",
+            "content_offset": [0.0, 0.0],
+            "content_scale": 1.0
+        });
+        self.add(page, "Marco de foto", at, kind, 1.0);
+    }
+
     /// Turns the element added last by `degrees`.
     fn turn_last(page: &mut Page, degrees: f64) {
         if let Some(node) = page.nodes.last_mut() {
@@ -894,7 +909,7 @@ fn resume(l: Lang) -> Document {
     d.page((210.0, 297.0, "mm"), solid(WHITE), |d, p| {
         let (w, h) = (p.w, p.h);
         d.rect(p, (0.0, 0.0, w * 0.34, h), MIST, 0.0);
-        d.ellipse(p, (w * 0.07, 60.0, w * 0.2, w * 0.2), MINT, 1.0);
+        circle_photo(d, p, (w * 0.07, 60.0, w * 0.2, w * 0.2), MINT_TINT);
         d.text(p, (w * 0.04, 60.0 + w * 0.2 + 30.0, w * 0.26), l.pick("CONTACTO", "CONTACT"), font("Montserrat", 14.0, INK).bold().spaced(3.0));
         d.text(p, (w * 0.04, 60.0 + w * 0.2 + 60.0, w * 0.26), "+34 600 000 000\nnombre@correo.com\nMadrid", font("Inter", 12.0, SLATE).line(1.6));
         d.text(p, (w * 0.04, 60.0 + w * 0.2 + 170.0, w * 0.26), l.pick("HABILIDADES", "SKILLS"), font("Montserrat", 14.0, INK).bold().spaced(3.0));
@@ -1544,13 +1559,7 @@ fn final_project(l: Lang) -> Document {
         ];
         for (i, (name, color)) in people.iter().enumerate() {
             let x = 160.0 + i as f64 * 420.0;
-            d.ellipse(p, (x, 340.0, 300.0, 300.0), color, 1.0);
-            d.text(
-                p,
-                (x, 440.0, 300.0),
-                &name[..1],
-                font("Poppins", 110.0, INK).bold().center(),
-            );
+            circle_photo(d, p, (x, 340.0, 300.0, 300.0), color);
             d.text(
                 p,
                 (x, 690.0, 300.0),
@@ -1671,11 +1680,11 @@ fn portfolio(l: Lang) -> Document {
                 if (1..=2).contains(&row) && (1..=2).contains(&col) {
                     continue;
                 }
-                d.rect(
+                photo(
+                    d,
                     p,
                     (col as f64 * w + 4.0, row as f64 * h + 4.0, w - 8.0, h - 8.0),
                     tones[i % tones.len()],
-                    0.0,
                 );
                 i += 1;
             }
@@ -1705,7 +1714,7 @@ fn portfolio(l: Lang) -> Document {
         for (i, tone) in tones.iter().enumerate() {
             let (col, row) = (i % 3, i / 3);
             let (x, y) = (120.0 + col as f64 * 570.0, 300.0 + row as f64 * 360.0);
-            d.rect(p, (x, y, 530.0, 250.0), tone, 0.0);
+            photo(d, p, (x, y, 530.0, 250.0), tone);
             d.text(
                 p,
                 (x, y + 265.0, 530.0),
@@ -1798,8 +1807,7 @@ fn beauty_center(l: Lang) -> Document {
             "+34 600 000 000\nhola@centro.com\nCalle Mayor 12",
             font("Montserrat", 15.0, WHITE).center().line(1.8),
         );
-        d.ellipse(p, (2.0 * PANEL + 66.0, 150.0, 220.0, 220.0), MINT_TINT, 1.0);
-        d.ellipse(p, (2.0 * PANEL + 110.0, 194.0, 132.0, 132.0), MINT, 1.0);
+        circle_photo(d, p, (2.0 * PANEL + 66.0, 150.0, 220.0, 220.0), MINT_TINT);
         d.text(
             p,
             (panel(2), 480.0, PANEL_W),
@@ -1839,17 +1847,11 @@ fn beauty_center(l: Lang) -> Document {
         ];
         for (i, (title, body)) in services.iter().enumerate() {
             let x = panel(i as u32);
-            d.rect(
+            photo(
+                d,
                 p,
                 (x, 60.0, PANEL_W, 260.0),
                 if i == 1 { MINT_TINT } else { MINT_PALE },
-                0.0,
-            );
-            d.ellipse(
-                p,
-                (x + PANEL_W / 2.0 - 60.0, 130.0, 120.0, 120.0),
-                MINT,
-                1.0,
             );
             d.text(
                 p,
@@ -1920,11 +1922,11 @@ fn plant_nursery(l: Lang) -> Document {
         for (i, (title, body)) in sections.iter().enumerate() {
             let x = panel(i as u32);
             d.rect(p, (x, 70.0, PANEL_W, 680.0), WHITE, 24.0);
-            d.ellipse(
+            circle_photo(
+                d,
                 p,
                 (x + PANEL_W / 2.0 - 70.0, 120.0, 140.0, 140.0),
-                if i == 1 { CORAL } else { MINT },
-                1.0,
+                if i == 1 { CORAL_LIGHT } else { MINT_TINT },
             );
             d.text(
                 p,
@@ -1984,7 +1986,8 @@ fn interior_studio(l: Lang) -> Document {
             l.pick("DISEÑO DE INTERIORES", "INTERIOR DESIGN"),
             font("Montserrat", 13.0, INK).center().spaced(4.0),
         );
-        d.rect(
+        rounded_photo(
+            d,
             p,
             (2.0 * PANEL + 40.0, 500.0, PANEL - 80.0, 420.0),
             INK_LIGHT,
@@ -1994,7 +1997,7 @@ fn interior_studio(l: Lang) -> Document {
     d.page(TRIFOLD, solid(WHITE), |d, p| {
         d.text(p, (panel(0), 70.0, PANEL_W), l.pick("Quiénes\nsomos", "Who\nwe are"), font("Cormorant Garamond", 52.0, INK).line(0.95));
         d.text(p, (panel(0), 230.0, PANEL_W), l.pick("Un equipo de arquitectas y decoradoras que convierte casas en hogares, con calma y a medida.", "A team of architects and decorators who turn houses into homes, calmly and made to measure."), font("Montserrat", 15.0, SLATE).line(1.7));
-        d.rect(p, (panel(0), 520.0, PANEL_W, 230.0), MIST, 0.0);
+        photo(d, p, (panel(0), 520.0, PANEL_W, 230.0), MIST);
         d.rect(p, (PANEL, 0.0, PANEL, 816.0), MINT_PALE, 0.0);
         d.text(p, (panel(1), 70.0, PANEL_W), l.pick("Servicios", "Services"), font("Cormorant Garamond", 52.0, INK));
         let services = [l.pick("Proyecto integral", "Full project"), l.pick("Asesoría de color", "Colour advice"), l.pick("Mobiliario a medida", "Custom furniture"), l.pick("Reformas", "Renovations")];
@@ -2003,7 +2006,7 @@ fn interior_studio(l: Lang) -> Document {
             d.ellipse(p, (panel(1), y, 18.0, 18.0), MINT_DARK, 1.0);
             d.text(p, (panel(1) + 36.0, y - 6.0, PANEL_W - 36.0), s, font("Montserrat", 18.0, INK).bold());
         }
-        d.rect(p, (panel(2), 60.0, PANEL_W, 340.0), INK_LIGHT, 0.0);
+        photo(d, p, (panel(2), 60.0, PANEL_W, 340.0), INK_LIGHT);
         d.text(p, (panel(2), 440.0, PANEL_W), l.pick("Cada espacio cuenta una historia: la tuya.", "Every space tells a story: yours."), font("Cormorant Garamond", 32.0, INK).italic().line(1.1));
     });
     d.document()
@@ -2231,16 +2234,14 @@ fn travel_agency(l: Lang) -> Document {
         d.text(p, (panel(0), 60.0, PANEL_W), l.pick("HISTORIA", "HISTORY"), font("League Spartan", 34.0, INK).bold().spaced(3.0));
         d.text(p, (panel(0), 110.0, PANEL_W), l.pick("de la ciudad", "of the city"), font("Alice", 18.0, SLATE));
         d.text(p, (panel(0), 170.0, PANEL_W), l.pick("Calles con siglos de historia, mercados llenos de color y una cocina que se recuerda. Te llevamos a conocerla con guías locales.", "Centuries-old streets, colourful markets and food you won't forget. Local guides show you around."), font("Alice", 15.0, INK).line(1.7));
-        d.rect(p, (panel(0), 520.0, PANEL_W, 230.0), MINT, 0.0);
+        photo(d, p, (panel(0), 520.0, PANEL_W, 230.0), MINT_TINT);
         d.rect(p, (PANEL, 0.0, PANEL, 816.0), CANVAS, 0.0);
         d.polygon(p, (PANEL + 116.0, 260.0, 120.0, 120.0), MINT_DARK, &[(0.0, 0.55), (1.0, 0.0), (0.6, 1.0), (0.45, 0.6)], 1.0);
         d.text(p, (panel(1), 420.0, PANEL_W), l.pick("BORCELLE", "BORCELLE"), font("League Spartan", 34.0, INK).bold().center().spaced(6.0));
         d.text(p, (panel(1), 470.0, PANEL_W), l.pick("Agencia de viajes", "Travel agency"), font("Alice", 16.0, SLATE).center());
         d.text(p, (panel(2), 60.0, PANEL_W), l.pick("VISITA LA CIUDAD DE", "VISIT THE CITY OF"), font("League Spartan", 16.0, INK).bold().right().spaced(3.0));
         d.text(p, (panel(2), 90.0, PANEL_W), l.pick("MÉXICO", "MEXICO"), font("League Spartan", 60.0, INK).bold().right());
-        d.rect(p, (2.0 * PANEL, 200.0, PANEL, 420.0), MINT, 0.0);
-        d.ellipse(p, (2.0 * PANEL + 220.0, 240.0, 90.0, 90.0), CORAL, 1.0);
-        d.polygon(p, (2.0 * PANEL, 420.0, PANEL, 200.0), MINT_DARK, &[(0.0, 1.0), (0.0, 0.5), (0.3, 0.1), (0.55, 0.6), (0.75, 0.3), (1.0, 0.7), (1.0, 1.0)], 1.0);
+        photo(d, p, (2.0 * PANEL, 200.0, PANEL, 420.0), MINT_TINT);
         d.text(p, (panel(2), 680.0, PANEL_W), l.pick("Paquetes desde 899 €", "Packages from €899"), font("League Spartan", 22.0, INK).bold().right());
     });
     d.page(TRIFOLD, solid(WHITE), |d, p| {
@@ -2272,11 +2273,11 @@ fn travel_agency(l: Lang) -> Document {
         ];
         for (i, (day, title, body)) in days.iter().enumerate() {
             let x = panel(i as u32);
-            d.rect(
+            photo(
+                d,
                 p,
                 (x, 60.0, PANEL_W, 300.0),
                 if i == 1 { CORAL_LIGHT } else { MINT_TINT },
-                0.0,
             );
             d.text(
                 p,
@@ -2328,6 +2329,40 @@ fn photo(d: &mut Doc, p: &mut Page, (x, y, w, h): (f64, f64, f64, f64), back: &s
         ],
         0.9,
     );
+    d.photo_frame(p, (x, y, w, h), "rect", 0.0);
+}
+
+/// A round photo: a soft disc and an empty round frame over it.
+fn circle_photo(d: &mut Doc, p: &mut Page, (x, y, w, h): (f64, f64, f64, f64), back: &str) {
+    d.ellipse(p, (x, y, w, h), back, 1.0);
+    d.ellipse(p, (x + w * 0.3, y + h * 0.22, w * 0.4, h * 0.4), WHITE, 0.8);
+    d.photo_frame(p, (x, y, w, h), "ellipse", 0.0);
+}
+
+/// A photo with rounded corners of `radius`.
+fn rounded_photo(
+    d: &mut Doc,
+    p: &mut Page,
+    (x, y, w, h): (f64, f64, f64, f64),
+    back: &str,
+    radius: f64,
+) {
+    d.rect(p, (x, y, w, h), back, radius);
+    d.photo_frame(p, (x, y, w, h), "rect", radius);
+}
+
+/// A photo turned by `degrees`, as a print laid on the page.
+fn turned_photo(
+    d: &mut Doc,
+    p: &mut Page,
+    (x, y, w, h): (f64, f64, f64, f64),
+    back: &str,
+    degrees: f64,
+) {
+    d.rect(p, (x, y, w, h), back, 0.0);
+    Doc::turn_last(p, degrees);
+    d.photo_frame(p, (x, y, w, h), "rect", 0.0);
+    Doc::turn_last(p, degrees);
 }
 
 fn new_hobbies(l: Lang) -> Document {
@@ -2781,7 +2816,7 @@ fn oval_party(l: Lang) -> Document {
             font("Dancing Script", 20.0, CORAL).center(),
         );
         party_details(d, p, (60.0, 270.0, CW - 120.0), l, INK);
-        d.ellipse(p, (CW / 2.0 - 42.0, 330.0, 84.0, 84.0), MINT, 1.0);
+        circle_photo(d, p, (CW / 2.0 - 42.0, 330.0, 84.0, 84.0), MINT_TINT);
         d.ring(p, (CW / 2.0 - 42.0, 330.0, 84.0, 84.0), INK, 2.0);
         d.text(
             p,
@@ -3103,7 +3138,7 @@ fn big_birthday(l: Lang) -> Document {
         );
         d.rect(p, (180.0, 220.0, 170.0, 200.0), WHITE, 0.0);
         Doc::turn_last(p, 6.0);
-        d.rect(p, (192.0, 232.0, 146.0, 150.0), MINT_TINT, 0.0);
+        turned_photo(d, p, (192.0, 232.0, 146.0, 150.0), MINT_TINT, 6.0);
         Doc::turn_last(p, 6.0);
         d.polygon(
             p,
@@ -3253,6 +3288,367 @@ fn baby_shower(l: Lang) -> Document {
                 .center()
                 .line(1.4)
                 .spaced(1.0),
+        );
+    });
+    d.document()
+}
+
+// ------------------------------------------- Instagram posts (square)
+
+const SQUARE: (f64, f64, &str) = (1080.0, 1080.0, "px");
+
+fn tip_of_the_day(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(CANVAS), |d, p| {
+        d.rect(p, (0.0, 0.0, 1080.0, 260.0), INK, 0.0);
+        d.text(
+            p,
+            (80.0, 80.0, 920.0),
+            l.pick("CONSEJO DEL DÍA", "TIP OF THE DAY"),
+            font("Montserrat", 52.0, WHITE).bold().spaced(8.0),
+        );
+        d.text(
+            p,
+            (80.0, 330.0, 300.0),
+            "#07",
+            font("Archivo Black", 150.0, CORAL),
+        );
+        d.text(
+            p,
+            (80.0, 560.0, 920.0),
+            l.pick(
+                "Deja respirar tu diseño:\nel espacio vacío también comunica.",
+                "Let your design breathe:\nempty space speaks too.",
+            ),
+            font("Poppins", 52.0, INK).bold().line(1.1),
+        );
+        d.rect(p, (80.0, 900.0, 160.0, 10.0), CORAL, 5.0);
+        d.text(
+            p,
+            (600.0, 960.0, 400.0),
+            "@tumarca",
+            font("Inter", 28.0, SLATE).right(),
+        );
+    });
+    d.document()
+}
+
+fn before_after(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(MIST), |d, p| {
+        d.text(
+            p,
+            (60.0, 60.0, 960.0),
+            l.pick("ANTES Y DESPUÉS", "BEFORE AND AFTER"),
+            font("Bebas Neue", 96.0, INK).center().spaced(6.0),
+        );
+        photo(d, p, (60.0, 230.0, 470.0, 700.0), MINT_TINT);
+        photo(d, p, (550.0, 230.0, 470.0, 700.0), CORAL_LIGHT);
+        d.rect(p, (90.0, 860.0, 160.0, 50.0), INK, 25.0);
+        d.text(
+            p,
+            (90.0, 870.0, 160.0),
+            l.pick("ANTES", "BEFORE"),
+            font("Montserrat", 22.0, WHITE).bold().center(),
+        );
+        d.rect(p, (830.0, 860.0, 160.0, 50.0), CORAL, 25.0);
+        d.text(
+            p,
+            (830.0, 870.0, 160.0),
+            l.pick("DESPUÉS", "AFTER"),
+            font("Montserrat", 22.0, WHITE).bold().center(),
+        );
+        d.text(
+            p,
+            (60.0, 980.0, 960.0),
+            "@tumarca",
+            font("Inter", 26.0, SLATE).center(),
+        );
+    });
+    d.document()
+}
+
+fn new_product(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(MINT_TINT), |d, p| {
+        d.ellipse(p, (-120.0, -120.0, 420.0, 420.0), MINT, 0.6);
+        circle_photo(d, p, (290.0, 170.0, 500.0, 500.0), MINT);
+        d.ring(p, (270.0, 150.0, 540.0, 540.0), INK, 4.0);
+        d.text(
+            p,
+            (60.0, 740.0, 960.0),
+            l.pick("NUEVO", "NEW"),
+            font("Montserrat", 34.0, MINT_DARK)
+                .bold()
+                .center()
+                .spaced(10.0),
+        );
+        d.text(
+            p,
+            (60.0, 790.0, 960.0),
+            l.pick("Velas de soja", "Soy candles"),
+            font("DM Serif Display", 90.0, INK).center(),
+        );
+        d.burst(p, (820.0, 120.0, 200.0, 200.0), CORAL, 14, 0.4);
+        d.text(
+            p,
+            (820.0, 190.0, 200.0),
+            "12 €",
+            font("Archivo Black", 40.0, WHITE).center(),
+        );
+    });
+    d.document()
+}
+
+fn bold_quote(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(CORAL), |d, p| {
+        d.text(
+            p,
+            (60.0, 40.0, 300.0),
+            "“",
+            font("Archivo Black", 300.0, INK),
+        );
+        d.text(
+            p,
+            (90.0, 340.0, 900.0),
+            l.pick(
+                "HECHO\nES MEJOR\nQUE PERFECTO",
+                "DONE\nIS BETTER\nTHAN PERFECT",
+            ),
+            font("Archivo Black", 110.0, WHITE).line(0.85),
+        );
+        d.rect(p, (90.0, 880.0, 120.0, 8.0), INK, 4.0);
+        d.text(
+            p,
+            (90.0, 910.0, 900.0),
+            "@tumarca",
+            font("Inter", 30.0, INK).bold(),
+        );
+    });
+    d.document()
+}
+
+fn live_event(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(INK), |d, p| {
+        d.ring(p, (620.0, -160.0, 640.0, 640.0), MINT, 6.0);
+        d.ring(p, (700.0, -80.0, 480.0, 480.0), CORAL, 6.0);
+        d.rect(p, (80.0, 100.0, 220.0, 70.0), CORAL, 35.0);
+        d.text(
+            p,
+            (80.0, 116.0, 220.0),
+            l.pick("EN VIVO", "LIVE"),
+            font("Montserrat", 30.0, WHITE).bold().center().spaced(4.0),
+        );
+        d.text(
+            p,
+            (80.0, 260.0, 920.0),
+            l.pick(
+                "Charla:\ncómo empezar\ntu marca",
+                "Talk:\nhow to start\nyour brand",
+            ),
+            font("Poppins", 92.0, WHITE).bold().line(1.0),
+        );
+        let blocks = [
+            (l.pick("JUEVES", "THURSDAY"), "18"),
+            (l.pick("HORA", "TIME"), "19:00"),
+        ];
+        for (i, (label, value)) in blocks.iter().enumerate() {
+            let x = 80.0 + i as f64 * 330.0;
+            d.rect(p, (x, 780.0, 300.0, 200.0), INK_LIGHT, 24.0);
+            d.text(
+                p,
+                (x, 800.0, 300.0),
+                label,
+                font("Montserrat", 26.0, MINT).bold().center().spaced(4.0),
+            );
+            d.text(
+                p,
+                (x, 850.0, 300.0),
+                value,
+                font("Archivo Black", 80.0, WHITE).center(),
+            );
+        }
+    });
+    d.document()
+}
+
+fn recipe(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(CANVAS), |d, p| {
+        photo(d, p, (0.0, 0.0, 1080.0, 520.0), CORAL_LIGHT);
+        d.rect(p, (80.0, 430.0, 920.0, 580.0), WHITE, 32.0);
+        d.text(
+            p,
+            (130.0, 470.0, 820.0),
+            l.pick("Tostadas de aguacate", "Avocado toast"),
+            font("DM Serif Display", 66.0, INK),
+        );
+        d.text(
+            p,
+            (130.0, 580.0, 820.0),
+            l.pick("10 MIN  ·  2 PERSONAS", "10 MIN  ·  SERVES 2"),
+            font("Montserrat", 24.0, MINT_DARK).bold().spaced(4.0),
+        );
+        let items = [
+            l.pick("2 rebanadas de pan", "2 slices of bread"),
+            l.pick("1 aguacate maduro", "1 ripe avocado"),
+            l.pick("Limón, sal y pimienta", "Lemon, salt and pepper"),
+            l.pick("Semillas al gusto", "Seeds to taste"),
+        ];
+        for (i, item) in items.iter().enumerate() {
+            let y = 660.0 + i as f64 * 74.0;
+            d.ellipse(p, (130.0, y + 8.0, 20.0, 20.0), CORAL, 1.0);
+            d.text(p, (170.0, y, 780.0), item, font("Inter", 34.0, INK));
+        }
+    });
+    d.document()
+}
+
+fn flash_sale(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(MINT), |d, p| {
+        d.burst(p, (190.0, 150.0, 700.0, 700.0), CORAL, 20, 0.42);
+        d.text(
+            p,
+            (190.0, 300.0, 700.0),
+            l.pick("SOLO HOY", "TODAY ONLY"),
+            font("Montserrat", 40.0, WHITE).bold().center().spaced(6.0),
+        );
+        d.text(
+            p,
+            (190.0, 370.0, 700.0),
+            "-40%",
+            font("Archivo Black", 170.0, WHITE).center(),
+        );
+        d.text(
+            p,
+            (190.0, 600.0, 700.0),
+            l.pick("en toda la tienda", "on everything"),
+            font("Montserrat", 36.0, WHITE).center(),
+        );
+        d.text(
+            p,
+            (60.0, 930.0, 960.0),
+            l.pick("Usa el código  FLASH40", "Use code  FLASH40"),
+            font("Montserrat", 34.0, INK).bold().center().spaced(2.0),
+        );
+    });
+    d.document()
+}
+
+fn testimonial(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(MINT_PALE), |d, p| {
+        d.rect(p, (80.0, 160.0, 920.0, 760.0), WHITE, 40.0);
+        circle_photo(d, p, (430.0, 90.0, 220.0, 220.0), MINT_TINT);
+        for i in 0..5 {
+            d.star(p, (360.0 + f64::from(i) * 76.0, 350.0, 60.0, 60.0), CORAL);
+        }
+        d.text(
+            p,
+            (150.0, 460.0, 780.0),
+            l.pick(
+                "«Me encantó el resultado. Rápido, cercano y con mucho gusto por el detalle.»",
+                "\"I loved the result. Fast, friendly and with real care for detail.\"",
+            ),
+            font("DM Serif Display", 48.0, INK).center().line(1.2),
+        );
+        d.text(
+            p,
+            (150.0, 800.0, 780.0),
+            l.pick("María Torres · Clienta", "María Torres · Client"),
+            font("Montserrat", 28.0, SLATE).bold().center(),
+        );
+    });
+    d.document()
+}
+
+fn opening_hours(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(INK), |d, p| {
+        d.text(
+            p,
+            (80.0, 90.0, 920.0),
+            l.pick("HORARIO", "OPENING HOURS"),
+            font("Bebas Neue", 130.0, CANVAS).spaced(6.0),
+        );
+        let rows = [
+            (
+                l.pick("Lunes a viernes", "Monday to Friday"),
+                "9:00 – 20:00",
+            ),
+            (l.pick("Sábado", "Saturday"), "10:00 – 14:00"),
+            (l.pick("Domingo", "Sunday"), l.pick("Cerrado", "Closed")),
+        ];
+        for (i, (day, hours)) in rows.iter().enumerate() {
+            let y = 340.0 + i as f64 * 170.0;
+            d.rect(p, (80.0, y + 120.0, 920.0, 2.0), INK_LIGHT, 0.0);
+            d.text(
+                p,
+                (80.0, y + 30.0, 520.0),
+                day,
+                font("Montserrat", 40.0, CANVAS),
+            );
+            d.text(
+                p,
+                (560.0, y + 30.0, 440.0),
+                hours,
+                font("Montserrat", 40.0, MINT).bold().right(),
+            );
+        }
+        d.text(
+            p,
+            (80.0, 930.0, 920.0),
+            l.pick(
+                "Calle Mayor 12 · Te esperamos",
+                "12 Main Street · See you soon",
+            ),
+            font("Inter", 28.0, MIST),
+        );
+    });
+    d.document()
+}
+
+fn podcast(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(SQUARE, solid(CORAL_LIGHT), |d, p| {
+        d.rect(p, (0.0, 700.0, 1080.0, 380.0), INK, 0.0);
+        circle_photo(d, p, (590.0, 140.0, 420.0, 420.0), MINT_TINT);
+        d.ring(p, (570.0, 120.0, 460.0, 460.0), INK, 6.0);
+        d.text(
+            p,
+            (70.0, 120.0, 520.0),
+            "PODCAST",
+            font("Montserrat", 34.0, INK).bold().spaced(8.0),
+        );
+        d.text(
+            p,
+            (70.0, 180.0, 520.0),
+            l.pick("Ideas\nque\nsuman", "Ideas\nthat\nadd up"),
+            font("Archivo Black", 100.0, INK).line(0.85),
+        );
+        d.text(
+            p,
+            (70.0, 760.0, 940.0),
+            l.pick("EPISODIO 12", "EPISODE 12"),
+            font("Montserrat", 30.0, CORAL_LIGHT).bold().spaced(6.0),
+        );
+        d.text(
+            p,
+            (70.0, 820.0, 940.0),
+            l.pick("Cómo diseñar sin complicarte", "Design without the hassle"),
+            font("Poppins", 52.0, WHITE).bold(),
+        );
+        d.text(
+            p,
+            (70.0, 940.0, 940.0),
+            l.pick(
+                "Disponible en todas las plataformas",
+                "Out now on every platform",
+            ),
+            font("Inter", 28.0, MIST),
         );
     });
     d.document()
@@ -3928,6 +4324,177 @@ const DESIGNS: &[Design] = &[
         ],
         draw: baby_shower,
     },
+    Design {
+        folder: "social",
+        file: "tip-of-the-day",
+        names: ("Consejo del día", "Tip of the day"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "bold",
+        color: CORAL,
+        tags: &["consejo", "tip", "educación", "instagram", "post"],
+        draw: tip_of_the_day,
+    },
+    Design {
+        folder: "social",
+        file: "before-after",
+        names: ("Antes y después", "Before and after"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "minimal",
+        color: CORAL,
+        tags: &[
+            "antes",
+            "before",
+            "después",
+            "after",
+            "fotos",
+            "photos",
+            "instagram",
+            "post",
+        ],
+        draw: before_after,
+    },
+    Design {
+        folder: "social",
+        file: "new-product",
+        names: ("Nuevo producto", "New product"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "playful",
+        color: CORAL,
+        tags: &[
+            "producto",
+            "product",
+            "tienda",
+            "shop",
+            "lanzamiento",
+            "instagram",
+            "post",
+        ],
+        draw: new_product,
+    },
+    Design {
+        folder: "social",
+        file: "bold-quote",
+        names: ("Frase en grande", "Bold quote"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "bold",
+        color: CORAL,
+        tags: &[
+            "frase",
+            "quote",
+            "motivación",
+            "motivation",
+            "instagram",
+            "post",
+        ],
+        draw: bold_quote,
+    },
+    Design {
+        folder: "social",
+        file: "live-event",
+        names: ("Charla en vivo", "Live talk"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "bold",
+        color: CORAL,
+        tags: &[
+            "evento",
+            "event",
+            "en vivo",
+            "live",
+            "charla",
+            "instagram",
+            "post",
+        ],
+        draw: live_event,
+    },
+    Design {
+        folder: "social",
+        file: "recipe",
+        names: ("Receta", "Recipe"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "warm",
+        color: CORAL,
+        tags: &[
+            "receta",
+            "recipe",
+            "comida",
+            "food",
+            "cocina",
+            "instagram",
+            "post",
+        ],
+        draw: recipe,
+    },
+    Design {
+        folder: "social",
+        file: "flash-sale",
+        names: ("Oferta relámpago", "Flash sale"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "bold",
+        color: CORAL,
+        tags: &[
+            "oferta",
+            "sale",
+            "descuento",
+            "discount",
+            "instagram",
+            "post",
+        ],
+        draw: flash_sale,
+    },
+    Design {
+        folder: "social",
+        file: "testimonial",
+        names: ("Testimonio", "Testimonial"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "minimal",
+        color: CORAL,
+        tags: &[
+            "testimonio",
+            "review",
+            "opinión",
+            "cliente",
+            "instagram",
+            "post",
+        ],
+        draw: testimonial,
+    },
+    Design {
+        folder: "social",
+        file: "opening-hours",
+        names: ("Horario", "Opening hours"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "classic",
+        color: CORAL,
+        tags: &["horario", "hours", "tienda", "negocio", "instagram", "post"],
+        draw: opening_hours,
+    },
+    Design {
+        folder: "social",
+        file: "podcast",
+        names: ("Episodio de podcast", "Podcast episode"),
+        kind: "size.ig_square",
+        page_format: "social",
+        style: "bold",
+        color: CORAL,
+        tags: &[
+            "podcast",
+            "audio",
+            "episodio",
+            "episode",
+            "instagram",
+            "post",
+        ],
+        draw: podcast,
+    },
 ];
 
 // --------------------------------------------------------------- rendering
@@ -3999,6 +4566,296 @@ fn thumbnail(document: &Document, pages: &GraphPageRenderers) -> Thumbnail {
     }
 }
 
+// ------------------------------------------------------------- palettes
+
+/// The colours a design is drawn with, by the role each brand colour
+/// plays in it (D-122 lets templates leave the brand colours): `ink` for
+/// dark text and grounds, `accent` for calls and highlights, `second` for
+/// a second colour, and their light and dark tones.
+struct Palette {
+    ink: &'static str,
+    ink_light: &'static str,
+    slate: &'static str,
+    accent: &'static str,
+    accent_light: &'static str,
+    accent_soft: &'static str,
+    second: &'static str,
+    second_dark: &'static str,
+    second_pale: &'static str,
+    second_tint: &'static str,
+    paper: &'static str,
+    mist: &'static str,
+    border: &'static str,
+}
+
+impl Palette {
+    /// Each brand colour and the one it becomes.
+    fn pairs(&self) -> [(&'static str, &'static str); 13] {
+        [
+            (INK, self.ink),
+            (INK_LIGHT, self.ink_light),
+            (SLATE, self.slate),
+            (CORAL, self.accent),
+            (CORAL_LIGHT, self.accent_light),
+            ("#FFC9BF", self.accent_soft),
+            (MINT, self.second),
+            (MINT_DARK, self.second_dark),
+            (MINT_PALE, self.second_pale),
+            (MINT_TINT, self.second_tint),
+            (CANVAS, self.paper),
+            (MIST, self.mist),
+            (BORDER, self.border),
+        ]
+    }
+}
+
+const COFFEE: Palette = Palette {
+    ink: "#3B2A20",
+    ink_light: "#5A4032",
+    slate: "#6E5A4C",
+    accent: "#C0703A",
+    accent_light: "#D9935F",
+    accent_soft: "#F0D2B8",
+    second: "#A3B18A",
+    second_dark: "#5B6B45",
+    second_pale: "#EEF0E4",
+    second_tint: "#E2C9A8",
+    paper: "#F6EEE3",
+    mist: "#EDE3D6",
+    border: "#CDBBA7",
+};
+const BERRY: Palette = Palette {
+    ink: "#4A1530",
+    ink_light: "#6B2346",
+    slate: "#7D4A60",
+    accent: "#E0457B",
+    accent_light: "#F06C9B",
+    accent_soft: "#FFC2D6",
+    second: "#F7B32B",
+    second_dark: "#B5302F",
+    second_pale: "#FFF3F7",
+    second_tint: "#FFE0EA",
+    paper: "#FFF8F5",
+    mist: "#FBE4EC",
+    border: "#E8B8C8",
+};
+const OCEAN: Palette = Palette {
+    ink: "#0B2545",
+    ink_light: "#13315C",
+    slate: "#4A5D7A",
+    accent: "#F4A259",
+    accent_light: "#F7B97E",
+    accent_soft: "#FBD9B8",
+    second: "#2A9D8F",
+    second_dark: "#1D6E64",
+    second_pale: "#E8F4F8",
+    second_tint: "#CFE8F0",
+    paper: "#F7FAFC",
+    mist: "#E1EAF2",
+    border: "#B7C7D6",
+};
+const FOREST: Palette = Palette {
+    ink: "#1F3B2D",
+    ink_light: "#2E5240",
+    slate: "#50645A",
+    accent: "#E9C46A",
+    accent_light: "#F0D58F",
+    accent_soft: "#F6E7BC",
+    second: "#6A994E",
+    second_dark: "#386641",
+    second_pale: "#F2F7EE",
+    second_tint: "#DDEBD3",
+    paper: "#FAFAF2",
+    mist: "#E7EDE1",
+    border: "#BFCDB8",
+};
+const VIOLET: Palette = Palette {
+    ink: "#231942",
+    ink_light: "#3D2C6B",
+    slate: "#5E548E",
+    accent: "#FF6F91",
+    accent_light: "#FF8FAB",
+    accent_soft: "#FFC6D3",
+    second: "#9F86C0",
+    second_dark: "#5E548E",
+    second_pale: "#F4F0FA",
+    second_tint: "#E0D6F2",
+    paper: "#FBF9FE",
+    mist: "#ECE6F5",
+    border: "#C9BDE0",
+};
+const MONO: Palette = Palette {
+    ink: "#1A1A1A",
+    ink_light: "#333333",
+    slate: "#555555",
+    accent: "#B08D57",
+    accent_light: "#C9A97A",
+    accent_soft: "#EADBC2",
+    second: "#8A9A8B",
+    second_dark: "#4F5D50",
+    second_pale: "#F4F4F1",
+    second_tint: "#E5E5DF",
+    paper: "#FAF8F4",
+    mist: "#EDEBE6",
+    border: "#CFCBC2",
+};
+const SUNSET: Palette = Palette {
+    ink: "#2B193D",
+    ink_light: "#3E2558",
+    slate: "#5C4A6E",
+    accent: "#FF5E5B",
+    accent_light: "#FF8A5B",
+    accent_soft: "#FFD4B8",
+    second: "#FFC145",
+    second_dark: "#E07A1F",
+    second_pale: "#FFF6E5",
+    second_tint: "#FFE8B8",
+    paper: "#FFFBF5",
+    mist: "#FBEBDD",
+    border: "#F0C9A8",
+};
+const CRIMSON: Palette = Palette {
+    ink: "#5C0A14",
+    ink_light: "#7A1320",
+    slate: "#7A4A50",
+    accent: "#C8102E",
+    accent_light: "#E04A5F",
+    accent_soft: "#F7C6CD",
+    second: "#F2C14E",
+    second_dark: "#8C1C13",
+    second_pale: "#FFF5F3",
+    second_tint: "#FBE0E0",
+    paper: "#FFF9F2",
+    mist: "#F6E6E2",
+    border: "#E3BFC0",
+};
+
+/// The palette of the design whose file is `file`; `None` keeps the brand
+/// colours.
+fn palette_of(file: &str) -> Option<&'static Palette> {
+    Some(match file {
+        "corner-coffee" => &COFFEE,
+        "beauty-centre" | "plant-nursery" | "sticky-note" | "skincare-routine" | "thirty" => {
+            &FOREST
+        }
+        "tips-carousel" | "live-workshop" | "creative-brief" | "final-project"
+        | "marketing-agency" | "creative-routine" | "star-party" => &VIOLET,
+        "summer-sale" | "tricks-thumbnail" | "jazz-night" | "marketing-plan"
+        | "stationery-shop" | "month-in-numbers" | "big-birthday" => &SUNSET,
+        "quote-of-the-day" | "business-card" | "certificate" | "resume" | "brand-manual"
+        | "portfolio" | "interior-studio" | "launch-promo" | "wedding" => &MONO,
+        "we-are-hiring" | "newsletter" | "store-banner" | "web-design" | "travel-agency"
+        | "small-habits" | "julieta-25" | "baby-shower" => &OCEAN,
+        "birthday-invitation"
+        | "new-hobbies"
+        | "happy-birthday"
+        | "which-team"
+        | "oval-party"
+        | "girls-night" => &BERRY,
+        "new-collection" | "striped-party" | "turning-21" => &CRIMSON,
+        "tip-of-the-day" => &OCEAN,
+        "before-after" => &MONO,
+        "new-product" => &FOREST,
+        "bold-quote" => &SUNSET,
+        "live-event" => &VIOLET,
+        "recipe" => &COFFEE,
+        "flash-sale" => &BERRY,
+        "testimonial" => &OCEAN,
+        "opening-hours" => &CRIMSON,
+        "podcast" => &SUNSET,
+        _ => return None,
+    })
+}
+
+/// `#RRGGBB` of a colour object of the document.
+fn hex_of(color: &Value) -> Option<String> {
+    let c = |k: &str| color[k].as_f64().map(|v| (v * 255.0).round() as u8);
+    Some(format!("#{:02X}{:02X}{:02X}", c("r")?, c("g")?, c("b")?))
+}
+
+/// Every colour of `value` that the palette names, swapped for its own.
+fn repaint(value: &mut Value, palette: &Palette) {
+    match value {
+        Value::Object(map) => {
+            if map.get("space").and_then(Value::as_str) == Some("srgb") {
+                if let Some(hex) = hex_of(value)
+                    && let Some((_, to)) = palette.pairs().iter().find(|(from, _)| *from == hex)
+                {
+                    let a = value["a"].as_f64().unwrap_or(1.0);
+                    *value = rgba(to, a);
+                }
+                return;
+            }
+            for child in map.values_mut() {
+                repaint(child, palette);
+            }
+        }
+        Value::Array(list) => list.iter_mut().for_each(|v| repaint(v, palette)),
+        _ => {}
+    }
+}
+
+/// The bleed of a printed template, in mm.
+const BLEED_MM: f64 = 3.0;
+
+/// `document` with the guides of its size in «Crear un diseño» on every
+/// page (the folds, locked, and the safe margins) and, for print, a bleed
+/// of `BLEED_MM` with every shape that touches an edge carried out to it.
+fn finished(document: &Document, kind: &str, print: bool, palette: Option<&Palette>) -> Document {
+    let mut value: Value =
+        serde_json::from_str(&document.to_json().expect("json")).expect("a document");
+    if let Some(palette) = palette {
+        repaint(&mut value, palette);
+    }
+    let guides = gafira_ui::size_guides(kind).expect("a known size");
+    let bleed = BLEED_MM * MM;
+    for page in value["pages"].as_array_mut().expect("pages") {
+        page["guides"] = serde_json::to_value(&guides).expect("guides");
+        if !print {
+            continue;
+        }
+        page["bleed"] = json!({ "value": BLEED_MM, "unit": "mm" });
+        let k = match page["size"]["width"]["unit"].as_str() {
+            Some("mm") => MM,
+            Some("in") => INCH,
+            _ => 1.0,
+        };
+        let w = page["size"]["width"]["value"].as_f64().expect("width") * k;
+        let h = page["size"]["height"]["value"].as_f64().expect("height") * k;
+        for node in page["nodes"].as_array_mut().expect("nodes") {
+            let kind = node["kind"]["type"].as_str().unwrap_or_default();
+            if kind != "shape" && kind != "frame" {
+                continue;
+            }
+            let at = &mut node["base"]["placement"];
+            let turned = at["rotation_deg"].as_f64().unwrap_or(0.0) != 0.0;
+            if turned {
+                continue;
+            }
+            let get = |at: &Value, k: &str| at[k].as_f64().unwrap_or(0.0);
+            let (x, y, nw, nh) = (get(at, "x"), get(at, "y"), get(at, "w"), get(at, "h"));
+            let (mut x0, mut y0, mut x1, mut y1) = (x, y, x + nw, y + nh);
+            if x0 <= 0.5 {
+                x0 -= bleed;
+            }
+            if y0 <= 0.5 {
+                y0 -= bleed;
+            }
+            if x1 >= w - 0.5 {
+                x1 += bleed;
+            }
+            if y1 >= h - 0.5 {
+                y1 += bleed;
+            }
+            at["x"] = json!(x0);
+            at["y"] = json!(y0);
+            at["w"] = json!(x1 - x0);
+            at["h"] = json!(y1 - y0);
+        }
+    }
+    Document::from_json(value.to_string().as_bytes()).expect("a valid template")
+}
+
 fn main() {
     let root = Path::new("assets/templates");
     assert!(
@@ -4012,7 +4869,12 @@ fn main() {
             (Lang::Es, "es", design.names.0, design.names.1),
             (Lang::En, "en", design.names.1, design.names.0),
         ] {
-            let document = (design.draw)(lang);
+            let document = finished(
+                &(design.draw)(lang),
+                design.kind,
+                design.page_format == "print",
+                palette_of(design.file),
+            );
             // Its name in its language, and in the other one as words to
             // find it by: a search works in either language.
             let mut tags = vec![
@@ -4026,7 +4888,9 @@ fn main() {
                 tags,
                 page_format: design.page_format.to_owned(),
                 style: design.style.to_owned(),
-                color: design.color.to_owned(),
+                color: palette_of(design.file)
+                    .map_or(design.color, |p| p.accent)
+                    .to_owned(),
             };
             let thumb = thumbnail(&document, &pages);
             let dir = root.join(design.folder);
