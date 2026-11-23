@@ -76,9 +76,11 @@ fn s91_09_the_bundled_templates_open_with_kind_thumbnail_and_both_languages() {
         let folder = path.parent().expect("a folder").to_path_buf();
         let stem = path.file_name().expect("a name").to_string_lossy();
         let design = stem.split('.').next().expect("a design").to_owned();
-        // File names are English: lowercase words and hyphens.
+        // File names are English: lowercase words, numbers and hyphens.
         assert!(
-            design.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+            design
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
             "{design}"
         );
         designs.insert((format!("{}/{design}", folder.display()), lang.to_owned()));
