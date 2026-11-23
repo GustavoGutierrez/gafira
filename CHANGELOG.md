@@ -11,7 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - A new Inicio: search design types and templates, shortcuts to each category of «Crear un diseño», recent projects and templates by type.
 - Plantillas: browse every template by category and type, with search in Spanish or English; a template opens as a new design, fully editable.
 - Plantillas in the editor: the templates that suit the page's proportions; one replaces the page's content, adds its other pages after it, and undoes in one step.
-- 60 templates in Spanish and English, each with its own palette: Instagram posts (square and 4:5) and other social media, invitations, presentations, trifold brochures, print, documents, web and video. Their photos are frames you can drop a picture on; they carry the guides of their size, the folds of a brochure among them, and printed ones a 3 mm bleed.
+- 75 templates in Spanish and English, each with its own palette: Instagram posts (square and 4:5) and other social media, invitations, presentations, trifold brochures, business cards, certificates and diplomas, resumes, flyers, web and video. Their photos are frames you can drop a picture on; they carry the guides of their size, the folds of a brochure among them, and printed ones a 3 mm bleed.
 
 - Template details: a click on a template shows it large with its size, «Customise this template» and similar templates.
 
