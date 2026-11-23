@@ -28,7 +28,7 @@ pub use dirty::DirtySet;
 pub use error::CommandError;
 pub use history::{DEFAULT_BUDGET, History};
 pub use insert_nodes::{InsertNodes, NodeSpec};
-pub use pages::{DuplicatePage, InsertPage, RemovePage, ReorderPage};
+pub use pages::{ApplyTemplate, DuplicatePage, InsertPage, RemovePage, ReorderPage};
 pub use remove_nodes::RemoveNodes;
 pub use reorder::Reorder;
 pub use reparent::Reparent;
