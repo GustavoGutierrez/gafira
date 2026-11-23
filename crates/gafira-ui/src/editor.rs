@@ -400,6 +400,9 @@ pub(crate) struct Editor {
     /// spec 061), and the height measured when a text is drawn.
     fit_pending: Option<(PageId, NodeId)>,
     text_measure: Option<(PageId, NodeId, f64)>,
+    /// The box a curved text needs to hold its arc, found when its picture
+    /// is drawn again (spec 095).
+    curved_fit: Option<(PageId, NodeId, Option<Placement>)>,
     /// The Fuente panel takes the side panel (spec 062), with the font of
     /// the selected text and the families the document uses, as the
     /// Inspector last saw them.
@@ -573,6 +576,7 @@ impl Default for Editor {
             line_view: None,
             fit_pending: None,
             text_measure: None,
+            curved_fit: None,
             font_panel: false,
             selection_font: None,
             document_fonts: Vec::new(),
@@ -5186,10 +5190,21 @@ impl Editor {
                     let style = text.content.first_style().cloned().unwrap_or(default);
                     // The words and the height of the box in one command,
                     // so the whole edit stays one undo step (spec 061).
-                    let fitted = asked
+                    let mut fitted = asked
                         .edit_height
                         .and_then(|h| canvas::text_fit(text.sizing, &node.base.placement, h))
                         .unwrap_or(node.base.placement);
+                    // A box that grows sideways follows its widest line
+                    // as it is written (spec 095).
+                    if text.sizing == gafira_doc::TextSizing::AutoWidth {
+                        let mut written = text.clone();
+                        written.content = gafira_doc::RichText::plain(words, &style);
+                        let natural = canvas::natural_width(&written)
+                            .unwrap_or_else(|| crate::textbox::min_width(&written.content));
+                        if let Some(wide) = canvas::text_width_fit(text.align, &fitted, natural) {
+                            fitted = wide;
+                        }
+                    }
                     let commands: Vec<Box<dyn Command>> = vec![
                         Box::new(SetProperty::new(
                             editing.page,
@@ -5239,10 +5254,14 @@ impl Editor {
         }
         if asked.end_edit
             && let Some(editing) = self.editing.take()
-            && editing.gesture.is_some()
-            && let Err(error) = engine.edit().end_gesture()
         {
-            eprintln!("write: {error}");
+            // A curved text is fitted to its arc once written (spec 095).
+            self.fit_pending = Some((editing.page, editing.node));
+            if editing.gesture.is_some()
+                && let Err(error) = engine.edit().end_gesture()
+            {
+                eprintln!("write: {error}");
+            }
         }
         if let Some((align, valign)) = asked.shape_align
             && let Some((page, node)) = self.selected.single()
@@ -5340,6 +5359,34 @@ impl Editor {
             Some(gafira_doc::VerticalAlign::Top) | None => Align::TOP,
             Some(gafira_doc::VerticalAlign::Middle) => Align::Center,
             Some(gafira_doc::VerticalAlign::Bottom) => Align::BOTTOM,
+        };
+        // A box that grows sideways: the field is as wide as the longest
+        // line, so nothing wraps while it is written (spec 095).
+        let grows = matches!(&node.kind, gafira_doc::NodeKind::Text(t)
+            if t.sizing == gafira_doc::TextSizing::AutoWidth);
+        let field_rect = if grows {
+            let line = ui
+                .painter()
+                .layout_no_wrap(
+                    editing.words.clone(),
+                    egui::FontId::new(size.max(1.0), family.clone()),
+                    color,
+                )
+                .size()
+                .x
+                + size;
+            let w = field_rect.width().max(line);
+            let x = match align {
+                gafira_doc::TextAlign::Center => field_rect.center().x - w / 2.0,
+                gafira_doc::TextAlign::Right => field_rect.max.x - w,
+                gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => field_rect.min.x,
+            };
+            Rect::from_min_size(
+                Pos2::new(x, field_rect.min.y),
+                Vec2::new(w, field_rect.height()),
+            )
+        } else {
+            field_rect
         };
         let field = egui::TextEdit::multiline(&mut editing.words)
             .frame(false)
@@ -5767,9 +5814,20 @@ impl Editor {
                                                 && d.origins.first().map(|o| o.0)
                                                     == Some(shape.node)
                                         });
-                                        if (resized
-                                            || self.fit_pending == Some((page_doc.id, shape.node)))
-                                            && text.sizing == gafira_doc::TextSizing::AutoHeight
+                                        let asked_fit = resized
+                                            || self.fit_pending == Some((page_doc.id, shape.node));
+                                        // A curved text never leaves its box
+                                        // (spec 095).
+                                        if asked_fit && text.curve != 0.0 {
+                                            self.curved_fit = Some((
+                                                page_doc.id,
+                                                shape.node,
+                                                canvas::curved_fit(text, &shape.placement),
+                                            ));
+                                        }
+                                        if asked_fit
+                                            && text.sizing != gafira_doc::TextSizing::Fixed
+                                            && text.curve == 0.0
                                             && let Some(height) = canvas::curved_height(
                                                 text,
                                                 shape.placement.w,
@@ -6482,7 +6540,13 @@ impl Editor {
                         // canvas, over its element (spec 055).
                         self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
                         self.cell_field(ui, theme, pages, &page_rects, zoom, asked);
-                        if let Some(icon) = grip_cursor {
+                        // Moving elements: Gafira's own move pointer in
+                        // place of the system one (spec 095).
+                        let moving = self.drag.as_ref().is_some_and(|d| d.hold.is_none());
+                        if moving && let Some(at) = ui.input(|i| i.pointer.latest_pos()) {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                            move_pointer(ui.ctx(), theme, at);
+                        } else if let Some(icon) = grip_cursor {
                             ui.ctx().set_cursor_icon(icon);
                         }
                         // A press on a page makes it the active one;
@@ -7405,14 +7469,53 @@ impl Editor {
         }
         if let Some((preset, words, page, point)) = &asked.drop_text
             && let Some(document) = document
-        {
-            self.add_text(
+            && let Some(added) = self.add_text(
                 engine,
                 document,
                 theme,
                 (*preset, words),
                 (*page, Some(*point)),
+            )
+        {
+            self.fit_pending = Some(added);
+        }
+        // A curved text takes the box that holds its arc (spec 095): in the
+        // gesture being dragged, or as its own step.
+        let curved = self.curved_fit.take();
+        if let Some((page, node, _)) = curved
+            && self.drag.is_none()
+            && self.fit_pending == Some((page, node))
+        {
+            self.fit_pending = None;
+        }
+        if let Some((page, node, Some(fitted))) = curved
+            && engine
+                .edit()
+                .document()
+                .and_then(|d| {
+                    d.page(page)
+                        .and_then(|p| p.node(node))
+                        .map(|n| n.base.placement)
+                })
+                .is_some_and(|now| now != fitted)
+        {
+            let dragged = self
+                .drag
+                .as_ref()
+                .filter(|d| d.origins.first().map(|o| o.0) == Some(node))
+                .map(|d| d.gesture);
+            let gesture = match dragged {
+                Some(gesture) => gesture,
+                None => engine.edit().begin_gesture().ok(),
+            };
+            let command = SetProperty::new(page, vec![node], Property::Placement(fitted), gesture);
+            log(
+                "fit curved text",
+                engine.edit().execute(Box::new(command)).map(drop),
             );
+            if dragged.is_none() && gesture.is_some() {
+                log("end gesture", engine.edit().end_gesture());
+            }
         }
         // A box that grows with its words takes their height: in the
         // resize being dragged, or alone after a paste (spec 061).
@@ -7426,7 +7529,20 @@ impl Editor {
                 .as_ref()
                 .filter(|d| d.origins.first().map(|o| o.0) == Some(node))
                 .map(|d| d.gesture);
-            if let Some(fitted) = canvas::text_fit(text.sizing, &found.base.placement, laid) {
+            let mut fitted = canvas::text_fit(text.sizing, &found.base.placement, laid);
+            // A box that grows sideways takes the width of its widest line
+            // (spec 095); not while a corner scales it.
+            if text.sizing == gafira_doc::TextSizing::AutoWidth
+                && text.curve == 0.0
+                && dragged.is_none()
+                && let Some(natural) = canvas::natural_width(text)
+            {
+                let base = fitted.unwrap_or(found.base.placement);
+                if let Some(wide) = canvas::text_width_fit(text.align, &base, natural) {
+                    fitted = Some(wide);
+                }
+            }
+            if let Some(fitted) = fitted {
                 let gesture = match dragged {
                     Some(gesture) => gesture,
                     None => engine.edit().begin_gesture().ok(),
@@ -7488,6 +7604,8 @@ impl Editor {
                     "text curve",
                     engine.edit().execute(Box::new(step)).map(drop),
                 );
+                // The ends of the arc may pass the sides (spec 095).
+                self.fit_pending = self.selected.single();
             }
         }
         self.text_styles(engine, asked);
@@ -7636,6 +7754,21 @@ impl Editor {
                                     ));
                                     to
                                 } else {
+                                    // A side sets the width: the lines wrap
+                                    // in it from now on (spec 095).
+                                    let grows =
+                                        start.and_then(|page| page.node(*node)).is_some_and(|n| {
+                                            matches!(&n.kind, gafira_doc::NodeKind::Text(t)
+                                                if t.sizing == gafira_doc::TextSizing::AutoWidth)
+                                        });
+                                    if grows {
+                                        letters.push((
+                                            *node,
+                                            Property::TextSizing(
+                                                gafira_doc::TextSizing::AutoHeight,
+                                            ),
+                                        ));
+                                    }
                                     let least = crate::textbox::min_width(&words);
                                     let mut to = to;
                                     if to.w < least {
@@ -13616,12 +13749,13 @@ fn lay_text(
         let family = text_family(painter.ctx(), theme, style);
         let size = (style.size as f32 * zoom).max(1.0);
         let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
-        let galley = painter.layout(
-            words,
-            egui::FontId::new(size, family),
-            color,
-            at.width().max(1.0),
-        );
+        // A box that grows sideways never wraps its lines (spec 095).
+        let wrap = if text.sizing == gafira_doc::TextSizing::AutoWidth {
+            f32::INFINITY
+        } else {
+            at.width().max(1.0)
+        };
+        let galley = painter.layout(words, egui::FontId::new(size, family), color, wrap);
         let x = match text.align {
             gafira_doc::TextAlign::Center => at.center().x - galley.size().x / 2.0,
             gafira_doc::TextAlign::Right => at.max.x - galley.size().x,
@@ -13696,6 +13830,43 @@ fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32)
         return None;
     }
     Some(f64::from((pos.y + galley.size().y - at.min.y) / zoom))
+}
+
+/// The move pointer at `at` (spec 095): the brand ink with a white ring so
+/// it reads on any colour, above everything.
+fn move_pointer(ctx: &egui::Context, theme: &Theme, at: Pos2) {
+    const SIDE: f32 = 24.0;
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("gafira-move-pointer"),
+    ));
+    let square = |offset: Vec2| Rect::from_center_size(at + offset, Vec2::splat(SIDE));
+    let ring = 1.5;
+    for (dx, dy) in [
+        (-1.0, -1.0),
+        (0.0, -1.0),
+        (1.0, -1.0),
+        (-1.0, 0.0),
+        (1.0, 0.0),
+        (-1.0, 1.0),
+        (0.0, 1.0),
+        (1.0, 1.0),
+    ] {
+        crate::icons::paint(
+            &painter,
+            square(Vec2::new(dx, dy) * ring),
+            crate::icons::Icon::Move,
+            crate::icons::Weight::Regular,
+            Color32::WHITE,
+        );
+    }
+    crate::icons::paint(
+        &painter,
+        square(Vec2::ZERO),
+        crate::icons::Icon::Move,
+        crate::icons::Weight::Regular,
+        crate::style::color32(theme.tokens.brand.ink),
+    );
 }
 
 /// The egui family of a document font: the display face or the UI one.
