@@ -18,6 +18,7 @@ Alcance:
 - Catálogo de plantillas incluidas en la aplicación, ampliable dejando un `.gaf` en `assets/templates/`.
 - Un primer juego de plantillas propias (redes, presentación, impresos, documentos, video).
 - Barra superior: Plantillas activa y lleva a la pantalla de plantillas.
+- Pestaña Plantillas del riel del editor: busca entre las plantillas de proporción parecida a la página activa; una plantilla reemplaza el contenido y el fondo de esa página, ajustada a su tamaño, y sus demás páginas se añaden detrás, en un solo paso que se deshace de una vez.
 
 No alcance:
 
@@ -54,7 +55,9 @@ No alcance:
 | S91-07 | Inicio. | Muestra título, pestañas, buscador, accesos, «Recientes» y «Plantillas para ti» agrupadas por tipo con «Ver todo» que abre Plantillas filtrada. |
 | S91-08 | Pantalla Plantillas. | Buscador, chips de categoría, tipos, cuadrícula con carga progresiva y estado vacío; un clic en una plantilla abre el editor con ella. |
 | S91-09 | Primer juego de plantillas. | Al menos 20 plantillas, de al menos cinco categorías, que cargan sin error, con miniatura, en español y en inglés. |
-| S91-10 | Ampliable. | Añadir un `.gaf` con `template` a `assets/templates/` lo muestra en el catálogo sin tocar código. |
+| S91-12 | Ampliable. | Añadir un `.gaf` con `template` a `assets/templates/` lo muestra en el catálogo sin tocar código. |
+| S91-10 | Aplicar en el editor. | `ApplyTemplate` pone la primera página de la plantilla en la página activa (que conserva id, nombre, tamaño y guías) y añade las demás detrás, con ids nuevos y las líneas pegadas a sus formas; un deshacer lo quita todo; cumple las leyes de los comandos. `read_template` lee la plantilla sin tocar la sesión. |
+| S91-11 | Proporción y encaje. | El panel solo ofrece plantillas a menos de un 12 % de la proporción de la página; la plantilla se escala entera y centrada, con letras, contornos y esquinas a escala. |
 
 ## TDD
 
@@ -75,6 +78,8 @@ Casos que deben fallar primero:
 - `gafira-format`: `tests/templates.rs` (S91-01, S91-02): ida y vuelta del `template`, proyecto sin él, plantilla que abre, cinco `template` mal formados ignorados.
 - `gafira-engine`: `s91_03_a_template_opens_as_a_new_untitled_document`: otro `projectId`, sin ruta ni versiones ni cambios, guardable aunque la plantilla cargue de solo lectura, archivo intacto y sin bloqueo.
 - `gafira-ui`: `templates::tests` (S91-04, S91-07): nombre por `title:`, tipo, categoría e idioma, filtros, búsqueda en el otro idioma, páginas sin repetir y filas por tipo.
+- `gafira-edit`: `tests/apply_template.rs` (S91-10) y `apply_template_obeys_the_command_laws` (V14); `gafira-engine`: `s91_10_a_template_is_read_without_touching_the_session`; `gafira-ui`: `template_fit::tests` (S91-11).
+- Xephyr: en un post cuadrado el panel ofrece solo las dos plantillas cuadradas y «Café de barrio» llena la página, que pasa a «Usado recién»; en una presentación 16:9 ofrece las apaisadas parecidas y «Proyecto creativo» deja tres páginas; un deshacer vuelve a una página vacía.
 - `apps/gafira/tests/templates.rs` (S91-09): 32 plantillas (16 diseños × 2 idiomas) en 6 carpetas abren, con tipo, nombre, idioma y miniatura, y nombres de archivo en inglés. Todas suman 632 KB.
 - Xephyr con datos temporales: Inicio con accesos, recientes y plantillas por tipo; «coffee» con la interfaz en español encuentra «Café de barrio»; «facebook» muestra los tres tipos de Facebook y su plantilla; una plantilla abre «Sin título» editable; un acceso abre «Crear un diseño» en su categoría, con «Volver a Inicio» y «Plantillas»; la pestaña Plantillas con chips, tipos y cuadrícula.
 
@@ -82,4 +87,4 @@ Casos que deben fallar primero:
 
 - El tamaño del binario crece con las plantillas incluidas; se vigila (objetivo: menos de 5 MB entre todas).
 - Las plantillas iniciales solo usan formas, textos y los colores de la marca: sin fotos ni ilustraciones de terceros.
-- La pestaña Plantillas del riel del editor sigue apagada (D-119); esta spec cubre las pantallas de inicio.
+- «Usado recién» del panel dura lo que la sesión.
