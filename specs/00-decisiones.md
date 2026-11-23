@@ -1062,3 +1062,10 @@ Fecha: 23 de noviembre de 2026.
 
 - **Decisión** (titular): la barra superior de las pantallas de inicio muestra el logo horizontal de fondo oscuro en lugar del texto «Gafira», sin Proyectos, y con iconos en Inicio, Plantillas y Ajustes. Ajustes se rediseña: cada sección y opción mejora en diseño y uso, y el tema se elige con una miniatura de cada uno. Ajustes debe reflejar lo que Gafira hace hoy.
 - **Consecuencia**: se aplica en la spec 092; el texto de Privacidad deja de decir que Gafira no se conecta a internet.
+
+## D-124 Marca: kits y plantillas de marca
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas y una investigación de referencia): Gafira tiene kits de marca (varios, cada uno con nombre) con logos, paletas con HEX y CMYK, estilos de texto configurables, fuentes subidas, fotos, elementos gráficos e iconos, y plantillas de marca (guardar un diseño como plantilla de marca o subir una). Se gestionan en una pantalla Marca junto a Inicio y Plantillas, y se usan en el panel Marca del editor (insertar, arrastrar, aplicar estilo o color) y en los selectores de color. Sin voz de la marca, sin equipos ni controles de marca.
+- **Consecuencia**: se activa la pestaña Marca del riel (cambia D-119). Los kits viven fuera de los documentos, como Biblioteca; 03 §7.7 queda como referencia. Se aplica en la spec 093.
