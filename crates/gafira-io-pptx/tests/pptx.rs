@@ -131,6 +131,7 @@ fn document() -> Document {
                 end: LineEnd::new([1.0, 0.5], LineCap::Arrow),
                 color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
                 width: 4.0,
+                dash: Default::default(),
             }),
         ),
     ];

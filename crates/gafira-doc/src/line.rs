@@ -23,6 +23,56 @@ pub enum LineCap {
     DiamondFilled,
     /// A hollow square.
     Square,
+    /// A filled circle (spec 096).
+    CircleFilled,
+    /// A filled square (spec 096).
+    SquareFilled,
+    /// A short bar across the end (spec 096).
+    Bar,
+}
+
+/// How the stroke of a line is drawn (spec 096).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineDash {
+    #[default]
+    Solid,
+    /// Short dashes.
+    Dashed,
+    /// Round dots.
+    Dotted,
+}
+
+impl LineDash {
+    fn is_solid(&self) -> bool {
+        *self == Self::Solid
+    }
+}
+
+/// The pieces a stroke of `dash` and `width` px draws along `length` px,
+/// as `(start, end)` distances from its start: one for a solid stroke,
+/// dashes three widths long with two-width gaps, or a dot per two widths
+/// (each piece as long as the width, its middle the dot's centre). The
+/// pieces are centred so both ends look alike.
+#[must_use]
+pub fn line_pieces(dash: LineDash, width: f64, length: f64) -> Vec<(f64, f64)> {
+    if !(length > 0.0 && width > 0.0) || dash == LineDash::Solid {
+        return vec![(0.0, length.max(0.0))];
+    }
+    let (on, off) = match dash {
+        LineDash::Dashed => (width * 3.0, width * 2.0),
+        _ => (width, width),
+    };
+    let period = on + off;
+    let count = ((length + off) / period).floor().max(1.0) as usize;
+    let used = count as f64 * period - off;
+    let lead = ((length - used) / 2.0).max(0.0);
+    (0..count)
+        .map(|i| {
+            let s = lead + i as f64 * period;
+            (s, (s + on).min(length))
+        })
+        .collect()
 }
 
 /// One of the five points of a shape the magnet of a line end prefers
@@ -113,6 +163,9 @@ pub struct LineNode {
     pub color: Color,
     /// The width in document px, `0..=MAX_WIDTH`.
     pub width: f64,
+    /// Solid, dashed or dotted (spec 096). Additive to schema 1.
+    #[serde(default, skip_serializing_if = "LineDash::is_solid")]
+    pub dash: LineDash,
 }
 
 impl LineNode {

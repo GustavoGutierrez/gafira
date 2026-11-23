@@ -1276,6 +1276,7 @@ mod tests {
             end: LineEnd::new([1.0, 1.0], LineCap::Arrow),
             color: black,
             width,
+            dash: Default::default(),
         };
         doc.edit(&token).node_mut(PAGE, B).expect("a node").kind = NodeKind::Line(line(2.0));
         let original = doc.clone();

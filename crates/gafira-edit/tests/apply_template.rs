@@ -70,6 +70,7 @@ fn template() -> Vec<Page> {
             end: LineEnd::new([1.0, 1.0], LineCap::default()),
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             width: 2.0,
+            dash: Default::default(),
         }),
     );
     first.nodes.insert(NodeId::new(3), Arc::new(group));
