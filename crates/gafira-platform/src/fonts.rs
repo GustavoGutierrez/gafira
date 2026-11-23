@@ -83,6 +83,16 @@ pub fn scan_fonts(dirs: &[PathBuf]) -> Vec<SystemFace> {
     for dir in dirs {
         collect(dir, &mut files, 0);
     }
+    faces_of_files(files)
+}
+
+/// The faces of the font `files`, one per family, weight and style: for
+/// each family, the face nearest to a regular (400) and a bold (700)
+/// weight, upright and italic. Sorted by family. A family that comes as one
+/// file per weight (Thin, Light, Regular…) shows its regular, not its
+/// first file (spec 093).
+#[must_use]
+pub fn faces_of_files(files: Vec<PathBuf>) -> Vec<SystemFace> {
     // For each family and slot, the face whose weight is nearest to the
     // slot's: 400 for regular, 700 for bold.
     let mut best: std::collections::BTreeMap<(String, bool, bool), (SystemFace, f32)> =
@@ -143,6 +153,25 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../assets/fonts/library")
             .join(path)
+    }
+
+    // S93-03: of the files of an uploaded family, each slot takes the
+    // weight nearest to it (SemiBold 600 loses the bold slot to Bold 700).
+    #[test]
+    fn s93_03_uploaded_files_keep_the_weight_nearest_each_slot() {
+        let semibold = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/fonts/manual/Inter-SemiBold.ttf");
+        let bold = library("inter/Inter-Bold.ttf");
+        let regular = library("inter/Inter-Regular.ttf");
+        let faces = faces_of_files(vec![semibold, bold.clone(), regular.clone()]);
+        let slot = |b: bool| {
+            faces
+                .iter()
+                .find(|f| f.family == "Inter" && f.bold == b && !f.italic)
+        };
+        assert_eq!(slot(true).map(|f| f.path.clone()), Some(bold));
+        assert_eq!(slot(false).map(|f| f.path.clone()), Some(regular));
+        assert_eq!(faces.len(), 2, "one face per slot");
     }
 
     // S62-05: a font file gives its family and whether it is bold or

@@ -80,7 +80,8 @@ mod zoom;
 
 pub use brand::{
     BRAND_TAG, BrandColor, BrandFiles, BrandKit, BrandPalette, BrandStore, BrandTextStyle,
-    parse_hex as parse_brand_hex,
+    KIT_EXTENSION, KitError, new_id as new_kit_id, parse_hex as parse_brand_hex,
+    template_meta as brand_template_meta,
 };
 pub use export::{ExportPresets, PresetValue};
 pub use library::{LibraryEntry, LibraryStore};

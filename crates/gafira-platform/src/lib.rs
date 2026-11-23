@@ -29,7 +29,7 @@ mod settings;
 
 pub use clock::SystemClock;
 pub use dirs::data_dir;
-pub use fonts::{SystemFace, face_of, font_dirs, scan_fonts, system_fonts};
+pub use fonts::{SystemFace, face_of, faces_of_files, font_dirs, scan_fonts, system_fonts};
 pub use fs::StdFileSystem;
 pub use ids::RandomIds;
 pub use library::{ImportedFile, ImportedFiles, MAX_IMPORTED};

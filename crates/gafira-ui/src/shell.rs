@@ -133,6 +133,8 @@ pub(crate) enum Go {
     FromTemplate(PathBuf),
     /// Marca, on the page of a kit if given (spec 093).
     Brand(Option<String>),
+    /// Marca, importing this `.gafkit` (spec 094).
+    ImportKit(PathBuf),
     File(FileAction),
     /// Open a project of «Recientes».
     OpenRecent(PathBuf),
@@ -797,6 +799,13 @@ impl eframe::App for Shell {
                 if progress >= 1.0 {
                     grow_into_main_window(ctx);
                     match self.open_at_start.take() {
+                        Some(path)
+                            if path.extension().is_some_and(|e| {
+                                e.eq_ignore_ascii_case(crate::brand::KIT_EXTENSION)
+                            }) =>
+                        {
+                            Go::ImportKit(path)
+                        }
                         Some(path) => Go::OpenRecent(path),
                         None => Go::Home,
                     }
@@ -897,6 +906,12 @@ impl eframe::App for Shell {
             Go::Templates(kind) => {
                 let (list, thumbs) = self.recents();
                 self.screen = Screen::Home(Home::new(list, thumbs, Tab::Templates, kind));
+            }
+            Go::ImportKit(path) => {
+                self.screen = Screen::Brand(Box::new(crate::brand_screen::BrandScreen::importing(
+                    self.brand.as_ref(),
+                    path,
+                )));
             }
             Go::Brand(kit) => {
                 self.screen = Screen::Brand(Box::new(crate::brand_screen::BrandScreen::new(
