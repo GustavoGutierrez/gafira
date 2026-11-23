@@ -1,7 +1,7 @@
 //! Writing a `.gaf` (02 §7.1, D-68).
 
 use std::collections::BTreeMap;
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use gafira_doc::{AssetRef, AssetStorage, Document};
 use gafira_ports::repository::{RepositoryError, TemplateMeta, Thumbnail, Version, VersionKind};
@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
-use crate::{MIMETYPE, assets, manifest, thumbs, versions};
+use crate::read::{check_mimetype, corrupt, json, zip_error};
+use crate::{FORMAT, Limits, MIMETYPE, assets, manifest, thumbs, versions};
 
 fn io(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> RepositoryError {
     RepositoryError::Io(std::io::Error::other(error))
@@ -269,4 +270,49 @@ fn take_list(root: &mut serde_json::Map<String, Value>, key: &str) -> Vec<Value>
 /// The id of a page or a sequence as its file name.
 pub(crate) fn entry_id(item: &Value) -> String {
     item.get("id").map(Value::to_string).unwrap_or_default()
+}
+
+/// Copy the `.gaf` in `source` to `sink` with `meta` as its `template`
+/// (D-81, spec 093): every entry but the manifest is copied as it is, in
+/// its order and without packing it again; the manifest gets `template`,
+/// in place of any it had. «Guardar como plantilla de marca» and «Subir
+/// plantilla» make a template this way.
+///
+/// # Errors
+/// [`RepositoryError::Corrupt`] when `source` is not a `.gaf` within
+/// `limits`, [`RepositoryError::Io`] when a stream fails.
+pub fn set_template<R: Read + Seek, W: Write + Seek>(
+    source: R,
+    sink: W,
+    meta: &TemplateMeta,
+    limits: Limits,
+) -> Result<(), RepositoryError> {
+    let mut zip = zip::ZipArchive::new(source).map_err(zip_error)?;
+    if zip.len() > limits.max_entries {
+        return Err(corrupt(format!(
+            "{} entries, more than {}",
+            zip.len(),
+            limits.max_entries
+        )));
+    }
+    check_mimetype(&mut zip)?;
+    let mut manifest = json(&mut zip, "manifest.json", limits)?;
+    if manifest.get("format").and_then(Value::as_str) != Some(FORMAT) {
+        return Err(corrupt("the manifest is not a gafira-project"));
+    }
+    if let Some(fields) = manifest.as_object_mut() {
+        fields.insert("template".to_owned(), manifest::template_value(meta));
+    }
+    let mut out = ZipWriter::new(sink);
+    for index in 0..zip.len() {
+        let entry = zip.by_index_raw(index).map_err(zip_error)?;
+        if entry.name().map_err(zip_error)? == "manifest.json" {
+            drop(entry);
+            json_entry(&mut out, "manifest.json".to_owned(), &manifest)?;
+        } else {
+            out.raw_copy_file(entry).map_err(io)?;
+        }
+    }
+    out.finish().map_err(io)?;
+    Ok(())
 }
