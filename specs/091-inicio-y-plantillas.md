@@ -80,7 +80,7 @@ Casos que deben fallar primero:
 - `gafira-ui`: `templates::tests` (S91-04, S91-07): nombre por `title:`, tipo, categoría e idioma, filtros, búsqueda en el otro idioma, páginas sin repetir y filas por tipo.
 - `gafira-edit`: `tests/apply_template.rs` (S91-10) y `apply_template_obeys_the_command_laws` (V14); `gafira-engine`: `s91_10_a_template_is_read_without_touching_the_session`; `gafira-ui`: `template_fit::tests` (S91-11).
 - Xephyr: en un post cuadrado el panel ofrece solo las dos plantillas cuadradas y «Café de barrio» llena la página, que pasa a «Usado recién»; en una presentación 16:9 ofrece las apaisadas parecidas y «Proyecto creativo» deja tres páginas; un deshacer vuelve a una página vacía.
-- `apps/gafira/tests/templates.rs` (S91-09): 32 plantillas (16 diseños × 2 idiomas) en 6 carpetas abren, con tipo, nombre, idioma y miniatura, y nombres de archivo en inglés. Todas suman 632 KB.
+- `apps/gafira/tests/templates.rs` (S91-09): 100 plantillas (50 diseños × 2 idiomas: 16 redes sociales, 10 invitaciones, 10 presentaciones, 6 trípticos, 4 impresos, 1 documento, 2 web y 1 video) en 7 carpetas abren, con tipo, nombre, idioma y miniatura, y nombres de archivo en inglés. Todas suman 2,3 MB.
 - Xephyr con datos temporales: Inicio con accesos, recientes y plantillas por tipo; «coffee» con la interfaz en español encuentra «Café de barrio»; «facebook» muestra los tres tipos de Facebook y su plantilla; una plantilla abre «Sin título» editable; un acceso abre «Crear un diseño» en su categoría, con «Volver a Inicio» y «Plantillas»; la pestaña Plantillas con chips, tipos y cuadrícula.
 
 ## Riesgos y decisiones abiertas
