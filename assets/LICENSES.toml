@@ -3731,3 +3731,14 @@ license_file = "assets/icons/phosphor/LICENSE"
 upstream = "https://github.com/phosphor-icons/core"
 version = "2.1.1"
 source_file = "assets/regular/text-italic.svg"
+
+# Gafira's own icons (assets/icons/gafira): drawn in one weight, tinted like Phosphor.
+
+[[asset]]
+path = "assets/icons/gafira/cursor.svg"
+hash = "8c4a14fe2e65c288c81f905b7734841633316c8297518d3f791593c5c199a5df"
+license = "VERIFICAR"
+origin = "Cursor supplied by the owner (file noun_Cursor_2837542.svg, Noun Project), moved to the 256-unit icon grid and simplified to one path; the shape is unchanged."
+modificado = "true"
+source_file = "noun_Cursor_2837542.svg"
+license_note = "VERIFICAR: Noun Project icons are CC BY 3.0 (credit required) unless licensed royalty-free; the owner confirms which applies."
