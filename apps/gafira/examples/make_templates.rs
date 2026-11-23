@@ -278,6 +278,14 @@ impl Doc {
         self.add(page, "Marco de foto", at, kind, 1.0);
     }
 
+    /// Outlines the frame added last with `color`, `width` px wide: the
+    /// frame's own outline, so no other element covers it.
+    fn outline_last(page: &mut Page, color: &str, width: f64) {
+        if let Some(node) = page.nodes.last_mut() {
+            node["kind"]["stroke"] = json!({ "color": rgb(color), "width": width });
+        }
+    }
+
     /// Turns the element added last by `degrees`.
     fn turn_last(page: &mut Page, degrees: f64) {
         if let Some(node) = page.nodes.last_mut() {
@@ -2817,7 +2825,8 @@ fn oval_party(l: Lang) -> Document {
         );
         party_details(d, p, (60.0, 270.0, CW - 120.0), l, INK);
         circle_photo(d, p, (CW / 2.0 - 42.0, 330.0, 84.0, 84.0), MINT_TINT);
-        d.ring(p, (CW / 2.0 - 42.0, 330.0, 84.0, 84.0), INK, 2.0);
+        // The frame draws its own outline: nothing lies over it.
+        Doc::outline_last(p, INK, 2.0);
         d.text(
             p,
             (60.0, 430.0, CW - 120.0),
@@ -3372,8 +3381,8 @@ fn new_product(l: Lang) -> Document {
     let mut d = Doc::new();
     d.page(SQUARE, solid(MINT_TINT), |d, p| {
         d.ellipse(p, (-120.0, -120.0, 420.0, 420.0), MINT, 0.6);
-        circle_photo(d, p, (290.0, 170.0, 500.0, 500.0), MINT);
         d.ring(p, (270.0, 150.0, 540.0, 540.0), INK, 4.0);
+        circle_photo(d, p, (290.0, 170.0, 500.0, 500.0), MINT);
         d.text(
             p,
             (60.0, 740.0, 960.0),
@@ -3615,8 +3624,8 @@ fn podcast(l: Lang) -> Document {
     let mut d = Doc::new();
     d.page(SQUARE, solid(CORAL_LIGHT), |d, p| {
         d.rect(p, (0.0, 700.0, 1080.0, 380.0), INK, 0.0);
-        circle_photo(d, p, (590.0, 140.0, 420.0, 420.0), MINT_TINT);
         d.ring(p, (570.0, 120.0, 460.0, 460.0), INK, 6.0);
+        circle_photo(d, p, (590.0, 140.0, 420.0, 420.0), MINT_TINT);
         d.text(
             p,
             (70.0, 120.0, 520.0),
@@ -3649,6 +3658,785 @@ fn podcast(l: Lang) -> Document {
                 "Out now on every platform",
             ),
             font("Inter", 28.0, MIST),
+        );
+    });
+    d.document()
+}
+
+// ---------------------------------------------- business cards (85 × 55 mm)
+
+const BCARD: (f64, f64, &str) = (85.0, 55.0, "mm");
+const BW: f64 = 85.0 * MM;
+const BH: f64 = 55.0 * MM;
+
+fn card_minimal_line(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(BCARD, solid(CANVAS), |d, p| {
+        d.text(
+            p,
+            (24.0, 50.0, BW - 48.0),
+            "Daniela Ruiz",
+            font("Cormorant Garamond", 30.0, INK).center(),
+        );
+        d.rect(p, (BW / 2.0 - 30.0, 98.0, 60.0, 1.5), CORAL, 0.0);
+        d.text(
+            p,
+            (24.0, 110.0, BW - 48.0),
+            l.pick("ARQUITECTA", "ARCHITECT"),
+            font("Montserrat", 9.0, SLATE).center().spaced(4.0),
+        );
+        d.text(
+            p,
+            (24.0, 150.0, BW - 48.0),
+            "+34 600 000 000  ·  daniela@estudio.com",
+            font("Montserrat", 8.0, INK).center(),
+        );
+    });
+    d.page(BCARD, solid(INK), |d, p| {
+        d.ring(
+            p,
+            (BW / 2.0 - 34.0, BH / 2.0 - 34.0, 68.0, 68.0),
+            CORAL,
+            2.0,
+        );
+        d.text(
+            p,
+            (BW / 2.0 - 34.0, BH / 2.0 - 17.0, 68.0),
+            "DR",
+            font("Cormorant Garamond", 26.0, CANVAS).center(),
+        );
+    });
+    d.document()
+}
+
+fn card_split(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(BCARD, solid(WHITE), |d, p| {
+        d.rect(p, (0.0, 0.0, BW, 60.0), CORAL, 0.0);
+        d.text(
+            p,
+            (20.0, 18.0, BW - 40.0),
+            l.pick("PANADERÍA LA ESPIGA", "THE WHEAT BAKERY"),
+            font("Montserrat", 12.0, WHITE).bold().spaced(3.0),
+        );
+        d.text(
+            p,
+            (20.0, 82.0, BW - 40.0),
+            "Tomás Herrera",
+            font("Poppins", 20.0, INK).bold(),
+        );
+        d.text(
+            p,
+            (20.0, 112.0, BW - 40.0),
+            l.pick("Maestro panadero", "Master baker"),
+            font("Poppins", 10.0, CORAL),
+        );
+        d.text(
+            p,
+            (20.0, 145.0, BW - 40.0),
+            "+34 600 000 000\nhola@laespiga.com",
+            font("Inter", 9.0, SLATE).line(1.5),
+        );
+    });
+    d.page(BCARD, pattern("dots", CORAL_LIGHT, CORAL), |d, p| {
+        d.rect(
+            p,
+            (BW / 2.0 - 90.0, BH / 2.0 - 30.0, 180.0, 60.0),
+            WHITE,
+            30.0,
+        );
+        d.text(
+            p,
+            (BW / 2.0 - 90.0, BH / 2.0 - 12.0, 180.0),
+            l.pick("La Espiga", "The Wheat"),
+            font("Pacifico", 18.0, CORAL).center(),
+        );
+    });
+    d.document()
+}
+
+fn card_photo(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(BCARD, solid(MINT_PALE), |d, p| {
+        circle_photo(d, p, (22.0, BH / 2.0 - 50.0, 100.0, 100.0), MINT_TINT);
+        d.text(
+            p,
+            (140.0, 50.0, BW - 160.0),
+            "Lucía Romero",
+            font("Manrope", 17.0, INK).bold(),
+        );
+        d.text(
+            p,
+            (140.0, 76.0, BW - 160.0),
+            l.pick("Fotógrafa de bodas", "Wedding photographer"),
+            font("Inter", 9.0, MINT_DARK),
+        );
+        d.rect(p, (140.0, 102.0, 40.0, 2.0), MINT_DARK, 0.0);
+        d.text(
+            p,
+            (140.0, 114.0, BW - 160.0),
+            "+34 600 000 000\nlucia@foto.com\n@luciafoto",
+            font("Inter", 8.5, SLATE).line(1.5),
+        );
+    });
+    d.document()
+}
+
+fn card_bold(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(BCARD, solid(INK), |d, p| {
+        d.burst(p, (BW - 110.0, -40.0, 160.0, 160.0), MINT, 12, 0.35);
+        d.text(
+            p,
+            (20.0, 40.0, BW - 40.0),
+            l.pick("ESTUDIO\nNÓMADA", "NOMAD\nSTUDIO"),
+            font("Archivo Black", 26.0, WHITE).line(0.85),
+        );
+        d.text(
+            p,
+            (20.0, 125.0, BW - 40.0),
+            l.pick("Diseño y desarrollo web", "Web design and development"),
+            font("Inter", 9.0, MINT),
+        );
+        d.text(
+            p,
+            (20.0, 160.0, BW - 40.0),
+            "nomada.studio  ·  +34 600 000 000",
+            font("Inter", 8.0, MIST),
+        );
+    });
+    d.page(BCARD, solid(MINT), |d, p| {
+        d.text(
+            p,
+            (20.0, BH / 2.0 - 20.0, BW - 40.0),
+            "N.",
+            font("Archivo Black", 40.0, INK).center(),
+        );
+    });
+    d.document()
+}
+
+// ---------------------------------------- certificates (A4 horizontal)
+
+const A4H: (f64, f64, &str) = (297.0, 210.0, "mm");
+const AW: f64 = 297.0 * MM;
+const AH: f64 = 210.0 * MM;
+
+fn diploma_classic(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4H, solid(CANVAS), |d, p| {
+        d.rect(p, (0.0, 0.0, AW, 70.0), INK, 0.0);
+        d.rect(p, (0.0, AH - 70.0, AW, 70.0), INK, 0.0);
+        d.rect(p, (0.0, 70.0, AW, 6.0), CORAL, 0.0);
+        d.rect(p, (0.0, AH - 76.0, AW, 6.0), CORAL, 0.0);
+        d.text(
+            p,
+            (80.0, 130.0, AW - 160.0),
+            l.pick("DIPLOMA", "DIPLOMA"),
+            font("Cormorant Garamond", 70.0, INK)
+                .bold()
+                .center()
+                .spaced(12.0),
+        );
+        d.text(
+            p,
+            (80.0, 240.0, AW - 160.0),
+            l.pick(
+                "Se otorga el presente diploma a",
+                "This diploma is awarded to",
+            ),
+            font("Montserrat", 18.0, SLATE).center(),
+        );
+        d.text(
+            p,
+            (80.0, 290.0, AW - 160.0),
+            "Sofía Martínez",
+            font("Great Vibes", 80.0, INK).center(),
+        );
+        d.rect(p, (AW * 0.25, 410.0, AW * 0.5, 1.5), CORAL, 0.0);
+        d.text(
+            p,
+            (140.0, 430.0, AW - 280.0),
+            l.pick(
+                "por haber completado el curso de Diseño Gráfico con excelentes resultados.",
+                "for completing the Graphic Design course with excellent results.",
+            ),
+            font("Montserrat", 16.0, SLATE).center().line(1.4),
+        );
+        for (i, (who, role)) in [
+            ("Ana López", l.pick("Directora", "Director")),
+            ("Juan Pérez", l.pick("Profesor", "Teacher")),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let x = if i == 0 { 160.0 } else { AW - 420.0 };
+            d.rect(p, (x, 600.0, 260.0, 1.5), INK, 0.0);
+            d.text(
+                p,
+                (x, 610.0, 260.0),
+                who,
+                font("Montserrat", 14.0, INK).bold().center(),
+            );
+            d.text(
+                p,
+                (x, 632.0, 260.0),
+                role,
+                font("Montserrat", 12.0, SLATE).center(),
+            );
+        }
+    });
+    d.document()
+}
+
+fn certificate_modern(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4H, solid(WHITE), |d, p| {
+        d.rect(p, (0.0, 0.0, 300.0, AH), MINT_DARK, 0.0);
+        d.polygon(
+            p,
+            (220.0, 0.0, 160.0, AH),
+            MINT_DARK,
+            &[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)],
+            1.0,
+        );
+        d.burst(p, (70.0, 300.0, 160.0, 160.0), MINT, 24, 0.42);
+        d.ellipse(p, (100.0, 330.0, 100.0, 100.0), MINT_DARK, 1.0);
+        d.star(p, (125.0, 355.0, 50.0, 50.0), WHITE);
+        d.text(
+            p,
+            (420.0, 120.0, AW - 500.0),
+            l.pick("CERTIFICADO", "CERTIFICATE"),
+            font("Montserrat", 54.0, INK).bold().spaced(6.0),
+        );
+        d.text(
+            p,
+            (420.0, 200.0, AW - 500.0),
+            l.pick("DE PARTICIPACIÓN", "OF PARTICIPATION"),
+            font("Montserrat", 20.0, MINT_DARK).bold().spaced(6.0),
+        );
+        d.text(
+            p,
+            (420.0, 290.0, AW - 500.0),
+            l.pick("Otorgado a", "Presented to"),
+            font("Montserrat", 16.0, SLATE),
+        );
+        d.text(
+            p,
+            (420.0, 320.0, AW - 500.0),
+            "Carlos Vega",
+            font("DM Serif Display", 68.0, INK),
+        );
+        d.text(
+            p,
+            (420.0, 430.0, AW - 520.0),
+            l.pick(
+                "Por su participación en el Congreso de Innovación 2026, celebrado en Madrid.",
+                "For taking part in the 2026 Innovation Congress, held in Madrid.",
+            ),
+            font("Montserrat", 15.0, SLATE).line(1.5),
+        );
+        d.rect(p, (420.0, 620.0, 240.0, 1.5), INK, 0.0);
+        d.text(
+            p,
+            (420.0, 630.0, 240.0),
+            l.pick("Firma", "Signature"),
+            font("Montserrat", 12.0, SLATE),
+        );
+        d.rect(p, (720.0, 620.0, 240.0, 1.5), INK, 0.0);
+        d.text(
+            p,
+            (720.0, 630.0, 240.0),
+            l.pick("Fecha", "Date"),
+            font("Montserrat", 12.0, SLATE),
+        );
+    });
+    d.document()
+}
+
+fn kids_diploma(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4H, solid(MINT_PALE), |d, p| {
+        for (x, y, c) in [
+            (40.0, 40.0, CORAL),
+            (AW - 120.0, 50.0, MINT),
+            (60.0, AH - 120.0, MINT),
+            (AW - 140.0, AH - 130.0, CORAL),
+        ] {
+            d.star(p, (x, y, 80.0, 80.0), c);
+        }
+        d.frame(p, (30.0, 30.0, AW - 60.0, AH - 60.0), CORAL, 6.0, 30.0);
+        d.text(
+            p,
+            (120.0, 110.0, AW - 240.0),
+            l.pick("¡Diploma al\nmejor lector!", "Best Reader\nAward!"),
+            font("Chewy", 72.0, CORAL).center().line(0.95),
+        );
+        d.text(
+            p,
+            (120.0, 330.0, AW - 240.0),
+            l.pick("Para", "For"),
+            font("Chewy", 26.0, INK).center(),
+        );
+        d.text(
+            p,
+            (120.0, 370.0, AW - 240.0),
+            "Mateo García",
+            font("Chewy", 64.0, INK).center(),
+        );
+        d.text(
+            p,
+            (160.0, 480.0, AW - 320.0),
+            l.pick(
+                "Por leer 20 libros este curso. ¡Sigue soñando con cada página!",
+                "For reading 20 books this year. Keep dreaming with every page!",
+            ),
+            font("Poppins", 18.0, SLATE).center().line(1.4),
+        );
+        d.text(
+            p,
+            (120.0, 620.0, AW - 240.0),
+            l.pick("Seño Carmen · Junio 2026", "Miss Carmen · June 2026"),
+            font("Chewy", 22.0, MINT_DARK).center(),
+        );
+    });
+    d.document()
+}
+
+fn award_gold(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4H, solid(INK), |d, p| {
+        d.frame(p, (36.0, 36.0, AW - 72.0, AH - 72.0), CORAL, 3.0, 0.0);
+        d.frame(p, (52.0, 52.0, AW - 104.0, AH - 104.0), CORAL, 1.0, 0.0);
+        d.burst(p, (AW / 2.0 - 60.0, 90.0, 120.0, 120.0), CORAL, 16, 0.35);
+        d.text(
+            p,
+            (100.0, 240.0, AW - 200.0),
+            l.pick("RECONOCIMIENTO", "AWARD OF EXCELLENCE"),
+            font("Cormorant Garamond", 54.0, CANVAS)
+                .bold()
+                .center()
+                .spaced(8.0),
+        );
+        d.text(
+            p,
+            (100.0, 330.0, AW - 200.0),
+            l.pick("A la empleada del año", "Employee of the year"),
+            font("Montserrat", 18.0, CORAL).center().spaced(4.0),
+        );
+        d.text(
+            p,
+            (100.0, 380.0, AW - 200.0),
+            "Valeria Santos",
+            font("Great Vibes", 78.0, CANVAS).center(),
+        );
+        d.text(
+            p,
+            (160.0, 500.0, AW - 320.0),
+            l.pick(
+                "Por su liderazgo, su compromiso y su manera de inspirar al equipo.",
+                "For her leadership, her commitment and the way she inspires the team.",
+            ),
+            font("Montserrat", 15.0, MIST).center().line(1.4),
+        );
+        d.text(
+            p,
+            (100.0, 640.0, AW - 200.0),
+            l.pick("Diciembre 2026", "December 2026"),
+            font("Montserrat", 14.0, CORAL).center().spaced(3.0),
+        );
+    });
+    d.document()
+}
+
+// ------------------------------------------------- resumes (A4 vertical)
+
+const A4V: (f64, f64, &str) = (210.0, 297.0, "mm");
+const VW: f64 = 210.0 * MM;
+const VH: f64 = 297.0 * MM;
+
+/// The sections of a résumé, in `l`.
+fn resume_sections(l: Lang) -> [(&'static str, &'static str); 3] {
+    [
+        (l.pick("PERFIL", "PROFILE"), l.pick("Profesional organizada y curiosa, con seis años de experiencia en equipos de producto.", "An organised, curious professional with six years of experience in product teams.")),
+        (l.pick("EXPERIENCIA", "EXPERIENCE"), l.pick("Empresa Uno · 2022 – hoy\nCoordina proyectos y equipos.\n\nEmpresa Dos · 2019 – 2022\nAnalista de datos.", "Company One · 2022 – now\nRuns projects and teams.\n\nCompany Two · 2019 – 2022\nData analyst.")),
+        (l.pick("FORMACIÓN", "EDUCATION"), l.pick("Máster en Gestión · Universidad Central", "MSc in Management · Central University")),
+    ]
+}
+
+fn resume_header(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(WHITE), |d, p| {
+        d.rect(p, (0.0, 0.0, VW, 230.0), INK, 0.0);
+        circle_photo(d, p, (60.0, 50.0, 130.0, 130.0), INK_LIGHT);
+        d.text(
+            p,
+            (220.0, 70.0, VW - 260.0),
+            "Andrea Molina",
+            font("Poppins", 40.0, WHITE).bold(),
+        );
+        d.text(
+            p,
+            (220.0, 130.0, VW - 260.0),
+            l.pick("Gerente de proyectos", "Project manager"),
+            font("Poppins", 17.0, CORAL),
+        );
+        d.text(
+            p,
+            (220.0, 165.0, VW - 260.0),
+            "+34 600 000 000  ·  andrea@correo.com  ·  Madrid",
+            font("Inter", 11.0, MIST),
+        );
+        let mut y = 280.0;
+        for (title, body) in resume_sections(l) {
+            d.text(
+                p,
+                (60.0, y, VW - 120.0),
+                title,
+                font("Poppins", 15.0, CORAL).bold().spaced(3.0),
+            );
+            d.rect(p, (60.0, y + 28.0, VW - 120.0, 1.0), BORDER, 0.0);
+            d.text(
+                p,
+                (60.0, y + 44.0, VW - 120.0),
+                body,
+                font("Inter", 13.0, SLATE).line(1.6),
+            );
+            y += 90.0 + body.lines().count() as f64 * 22.0;
+        }
+        d.text(
+            p,
+            (60.0, y, VW - 120.0),
+            l.pick("HABILIDADES", "SKILLS"),
+            font("Poppins", 15.0, CORAL).bold().spaced(3.0),
+        );
+        for (i, skill) in [
+            l.pick("Liderazgo", "Leadership"),
+            l.pick("Planificación", "Planning"),
+            "Excel",
+            l.pick("Comunicación", "Communication"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let x = 60.0 + i as f64 * 165.0;
+            d.rect(p, (x, y + 40.0, 150.0, 34.0), MINT_TINT, 17.0);
+            d.text(
+                p,
+                (x, y + 48.0, 150.0),
+                skill,
+                font("Inter", 12.0, INK).center(),
+            );
+        }
+    });
+    d.document()
+}
+
+fn resume_two_columns(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(WHITE), |d, p| {
+        d.rect(p, (VW - 260.0, 0.0, 260.0, VH), MINT_PALE, 0.0);
+        d.text(
+            p,
+            (50.0, 70.0, VW - 340.0),
+            "Pablo\nIglesias",
+            font("DM Serif Display", 52.0, INK).line(0.95),
+        );
+        d.text(
+            p,
+            (50.0, 220.0, VW - 340.0),
+            l.pick("Desarrollador de software", "Software developer"),
+            font("Inter", 15.0, MINT_DARK).bold(),
+        );
+        let mut y = 290.0;
+        for (title, body) in resume_sections(l) {
+            d.text(
+                p,
+                (50.0, y, VW - 340.0),
+                title,
+                font("Inter", 13.0, INK).bold().spaced(3.0),
+            );
+            d.text(
+                p,
+                (50.0, y + 30.0, VW - 340.0),
+                body,
+                font("Inter", 12.5, SLATE).line(1.6),
+            );
+            y += 80.0 + body.lines().count() as f64 * 22.0;
+        }
+        let x = VW - 230.0;
+        rounded_photo(d, p, (x, 60.0, 200.0, 220.0), MINT_TINT, 16.0);
+        d.text(
+            p,
+            (x, 320.0, 200.0),
+            l.pick("CONTACTO", "CONTACT"),
+            font("Inter", 13.0, INK).bold().spaced(3.0),
+        );
+        d.text(
+            p,
+            (x, 350.0, 200.0),
+            "+34 600 000 000\npablo@correo.com\ngithub.com/pablo",
+            font("Inter", 11.5, SLATE).line(1.7),
+        );
+        d.text(
+            p,
+            (x, 470.0, 200.0),
+            l.pick("IDIOMAS", "LANGUAGES"),
+            font("Inter", 13.0, INK).bold().spaced(3.0),
+        );
+        d.text(
+            p,
+            (x, 500.0, 200.0),
+            l.pick(
+                "Español · nativo\nInglés · avanzado",
+                "Spanish · native\nEnglish · fluent",
+            ),
+            font("Inter", 11.5, SLATE).line(1.7),
+        );
+        d.text(
+            p,
+            (x, 600.0, 200.0),
+            l.pick("HERRAMIENTAS", "TOOLS"),
+            font("Inter", 13.0, INK).bold().spaced(3.0),
+        );
+        for (i, (tool, level)) in [("Rust", 0.9), ("TypeScript", 0.8), ("SQL", 0.7)]
+            .iter()
+            .enumerate()
+        {
+            let y = 640.0 + i as f64 * 50.0;
+            d.text(p, (x, y, 200.0), tool, font("Inter", 11.5, SLATE));
+            d.rect(p, (x, y + 22.0, 190.0, 6.0), BORDER, 3.0);
+            d.rect(p, (x, y + 22.0, 190.0 * level, 6.0), MINT_DARK, 3.0);
+        }
+    });
+    d.document()
+}
+
+fn resume_elegant(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(CANVAS), |d, p| {
+        d.text(
+            p,
+            (60.0, 70.0, VW - 120.0),
+            "ELENA  CASTRO",
+            font("Cormorant Garamond", 46.0, INK).center().spaced(8.0),
+        );
+        d.text(
+            p,
+            (60.0, 140.0, VW - 120.0),
+            l.pick("ABOGADA", "LAWYER"),
+            font("Montserrat", 13.0, CORAL).center().spaced(10.0),
+        );
+        d.rect(p, (60.0, 180.0, VW - 120.0, 1.0), INK, 0.0);
+        d.text(
+            p,
+            (60.0, 192.0, VW - 120.0),
+            "+34 600 000 000   ·   elena@despacho.com   ·   Sevilla",
+            font("Montserrat", 11.0, SLATE).center(),
+        );
+        d.rect(p, (60.0, 222.0, VW - 120.0, 1.0), INK, 0.0);
+        let mut y = 270.0;
+        for (title, body) in resume_sections(l) {
+            d.text(
+                p,
+                (60.0, y, 180.0),
+                title,
+                font("Cormorant Garamond", 18.0, INK).bold().spaced(2.0),
+            );
+            d.text(
+                p,
+                (250.0, y + 2.0, VW - 310.0),
+                body,
+                font("Montserrat", 12.0, SLATE).line(1.6),
+            );
+            y += 70.0 + body.lines().count() as f64 * 22.0;
+        }
+    });
+    d.document()
+}
+
+// ------------------------------------------------- flyers (A4 vertical)
+
+fn flyer_yoga(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(MINT_PALE), |d, p| {
+        d.ellipse(p, (VW / 2.0 - 300.0, 120.0, 600.0, 600.0), MINT_TINT, 1.0);
+        circle_photo(d, p, (VW / 2.0 - 230.0, 190.0, 460.0, 460.0), MINT);
+        d.text(
+            p,
+            (60.0, 720.0, VW - 120.0),
+            l.pick("Clases de yoga", "Yoga classes"),
+            font("DM Serif Display", 64.0, INK).center(),
+        );
+        d.text(
+            p,
+            (60.0, 820.0, VW - 120.0),
+            l.pick(
+                "Para todos los niveles · Primera clase gratis",
+                "All levels welcome · First class free",
+            ),
+            font("Montserrat", 17.0, MINT_DARK).center(),
+        );
+        d.rect(p, (VW / 2.0 - 160.0, 900.0, 320.0, 60.0), INK, 30.0);
+        d.text(
+            p,
+            (VW / 2.0 - 160.0, 916.0, 320.0),
+            l.pick("Lun y Mié · 19:00", "Mon & Wed · 7 PM"),
+            font("Montserrat", 17.0, WHITE).bold().center(),
+        );
+        d.text(
+            p,
+            (60.0, 1010.0, VW - 120.0),
+            "www.estudioyoga.com",
+            font("Montserrat", 14.0, SLATE).center(),
+        );
+    });
+    d.document()
+}
+
+fn flyer_real_estate(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(WHITE), |d, p| {
+        photo(d, p, (0.0, 0.0, VW, 560.0), MINT_TINT);
+        d.rect(p, (0.0, 520.0, 420.0, 90.0), CORAL, 0.0);
+        d.text(
+            p,
+            (40.0, 540.0, 360.0),
+            l.pick("EN VENTA", "FOR SALE"),
+            font("Montserrat", 34.0, WHITE).bold().spaced(6.0),
+        );
+        d.text(
+            p,
+            (40.0, 650.0, VW - 80.0),
+            l.pick(
+                "Casa con jardín en el centro",
+                "House with a garden downtown",
+            ),
+            font("Poppins", 34.0, INK).bold(),
+        );
+        photo(d, p, (40.0, 730.0, 220.0, 160.0), MINT_TINT);
+        photo(d, p, (287.0, 730.0, 220.0, 160.0), CORAL_LIGHT);
+        photo(d, p, (534.0, 730.0, 220.0, 160.0), MIST);
+        let facts = [
+            l.pick("3 habitaciones", "3 bedrooms"),
+            l.pick("2 baños", "2 bathrooms"),
+            "140 m²",
+        ];
+        for (i, fact) in facts.iter().enumerate() {
+            d.text(
+                p,
+                (40.0 + i as f64 * 247.0, 920.0, 220.0),
+                fact,
+                font("Montserrat", 16.0, SLATE).bold().center(),
+            );
+        }
+        d.rect(p, (0.0, VH - 120.0, VW, 120.0), INK, 0.0);
+        d.text(
+            p,
+            (40.0, VH - 85.0, VW - 80.0),
+            "320.000 €   ·   +34 600 000 000",
+            font("Montserrat", 24.0, WHITE).bold().center(),
+        );
+    });
+    d.document()
+}
+
+fn flyer_workshop(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(CORAL), |d, p| {
+        d.ring(p, (-200.0, -200.0, 600.0, 600.0), CORAL_LIGHT, 40.0);
+        d.ring(p, (VW - 300.0, VH - 360.0, 600.0, 600.0), CORAL_LIGHT, 40.0);
+        d.text(
+            p,
+            (70.0, 220.0, VW - 140.0),
+            l.pick("TALLER", "WORKSHOP"),
+            font("Bebas Neue", 70.0, INK).spaced(10.0),
+        );
+        d.text(
+            p,
+            (70.0, 300.0, VW - 140.0),
+            l.pick("Cerámica\npara\nprincipiantes", "Pottery\nfor\nbeginners"),
+            font("Archivo Black", 76.0, WHITE).line(0.9),
+        );
+        d.rect(p, (70.0, 720.0, VW - 140.0, 2.0), INK, 0.0);
+        let rows = [
+            (
+                l.pick("CUÁNDO", "WHEN"),
+                l.pick("Sábado 7 de marzo · 10:00", "Saturday, March 7 · 10 AM"),
+            ),
+            (
+                l.pick("DÓNDE", "WHERE"),
+                l.pick("Taller Arcilla, Calle Sol 4", "Clay Studio, 4 Sun Street"),
+            ),
+            (
+                l.pick("PRECIO", "PRICE"),
+                l.pick("35 € con materiales", "€35 materials included"),
+            ),
+        ];
+        for (i, (k, v)) in rows.iter().enumerate() {
+            let y = 750.0 + i as f64 * 70.0;
+            d.text(
+                p,
+                (70.0, y, 180.0),
+                k,
+                font("Montserrat", 16.0, INK).bold().spaced(3.0),
+            );
+            d.text(
+                p,
+                (260.0, y, VW - 330.0),
+                v,
+                font("Montserrat", 18.0, WHITE),
+            );
+        }
+    });
+    d.document()
+}
+
+fn flyer_restaurant(l: Lang) -> Document {
+    let mut d = Doc::new();
+    d.page(A4V, solid(INK), |d, p| {
+        d.text(
+            p,
+            (60.0, 80.0, VW - 120.0),
+            l.pick("Nuevo menú", "New menu"),
+            font("Great Vibes", 70.0, MINT).center(),
+        );
+        d.text(
+            p,
+            (60.0, 180.0, VW - 120.0),
+            "TRATTORIA ROMA",
+            font("Cormorant Garamond", 52.0, CANVAS)
+                .bold()
+                .center()
+                .spaced(8.0),
+        );
+        circle_photo(d, p, (VW / 2.0 - 200.0, 290.0, 400.0, 400.0), INK_LIGHT);
+        let dishes = [
+            (l.pick("Pasta fresca al pesto", "Fresh pesto pasta"), "12 €"),
+            (l.pick("Pizza margarita", "Margherita pizza"), "10 €"),
+            (l.pick("Tiramisú de la casa", "House tiramisu"), "6 €"),
+        ];
+        for (i, (dish, price)) in dishes.iter().enumerate() {
+            let y = 760.0 + i as f64 * 70.0;
+            d.text(
+                p,
+                (120.0, y, VW - 360.0),
+                dish,
+                font("Cormorant Garamond", 26.0, CANVAS),
+            );
+            d.text(
+                p,
+                (VW - 240.0, y, 120.0),
+                price,
+                font("Cormorant Garamond", 26.0, MINT).bold().right(),
+            );
+            d.rect(p, (120.0, y + 44.0, VW - 240.0, 1.0), INK_LIGHT, 0.0);
+        }
+        d.text(
+            p,
+            (60.0, 1020.0, VW - 120.0),
+            l.pick("Reservas: +34 600 000 000", "Bookings: +34 600 000 000"),
+            font("Montserrat", 15.0, MIST).center(),
         );
     });
     d.document()
@@ -4495,6 +5283,180 @@ const DESIGNS: &[Design] = &[
         ],
         draw: podcast,
     },
+    Design {
+        folder: "print",
+        file: "card-minimal-line",
+        names: ("Tarjeta minimalista", "Minimal card"),
+        kind: "size.business_card",
+        page_format: "print",
+        style: "minimal",
+        color: CORAL,
+        tags: &["tarjeta", "card", "contacto", "arquitectura"],
+        draw: card_minimal_line,
+    },
+    Design {
+        folder: "print",
+        file: "card-bakery",
+        names: ("Tarjeta de panadería", "Bakery card"),
+        kind: "size.business_card",
+        page_format: "print",
+        style: "playful",
+        color: CORAL,
+        tags: &["tarjeta", "card", "negocio", "panadería", "bakery"],
+        draw: card_split,
+    },
+    Design {
+        folder: "print",
+        file: "card-photographer",
+        names: ("Tarjeta con foto", "Photo card"),
+        kind: "size.business_card",
+        page_format: "print",
+        style: "minimal",
+        color: CORAL,
+        tags: &["tarjeta", "card", "foto", "photo", "fotógrafa"],
+        draw: card_photo,
+    },
+    Design {
+        folder: "print",
+        file: "card-studio",
+        names: ("Tarjeta de estudio", "Studio card"),
+        kind: "size.business_card",
+        page_format: "print",
+        style: "bold",
+        color: CORAL,
+        tags: &["tarjeta", "card", "web", "estudio", "studio"],
+        draw: card_bold,
+    },
+    Design {
+        folder: "print",
+        file: "diploma-classic",
+        names: ("Diploma clásico", "Classic diploma"),
+        kind: "size.a4_h",
+        page_format: "print",
+        style: "classic",
+        color: CORAL,
+        tags: &["diploma", "certificado", "certificate", "curso", "course"],
+        draw: diploma_classic,
+    },
+    Design {
+        folder: "print",
+        file: "certificate-participation",
+        names: (
+            "Certificado de participación",
+            "Certificate of participation",
+        ),
+        kind: "size.a4_h",
+        page_format: "print",
+        style: "minimal",
+        color: CORAL,
+        tags: &["certificado", "certificate", "congreso", "participación"],
+        draw: certificate_modern,
+    },
+    Design {
+        folder: "print",
+        file: "kids-diploma",
+        names: ("Diploma infantil", "Kids' diploma"),
+        kind: "size.a4_h",
+        page_format: "print",
+        style: "playful",
+        color: CORAL,
+        tags: &["diploma", "niños", "kids", "escuela", "school", "lectura"],
+        draw: kids_diploma,
+    },
+    Design {
+        folder: "print",
+        file: "award",
+        names: ("Reconocimiento", "Award"),
+        kind: "size.a4_h",
+        page_format: "print",
+        style: "classic",
+        color: CORAL,
+        tags: &[
+            "reconocimiento",
+            "award",
+            "premio",
+            "empleado",
+            "certificado",
+        ],
+        draw: award_gold,
+    },
+    Design {
+        folder: "documents",
+        file: "resume-header",
+        names: ("Currículum con encabezado", "Resume with header"),
+        kind: "size.resume",
+        page_format: "print",
+        style: "bold",
+        color: CORAL,
+        tags: &["cv", "currículum", "resume", "foto", "photo"],
+        draw: resume_header,
+    },
+    Design {
+        folder: "documents",
+        file: "resume-columns",
+        names: ("Currículum en dos columnas", "Two-column resume"),
+        kind: "size.resume",
+        page_format: "print",
+        style: "minimal",
+        color: CORAL,
+        tags: &["cv", "currículum", "resume", "desarrollador", "developer"],
+        draw: resume_two_columns,
+    },
+    Design {
+        folder: "documents",
+        file: "resume-elegant",
+        names: ("Currículum elegante", "Elegant resume"),
+        kind: "size.resume",
+        page_format: "print",
+        style: "classic",
+        color: CORAL,
+        tags: &["cv", "currículum", "resume", "abogada", "lawyer"],
+        draw: resume_elegant,
+    },
+    Design {
+        folder: "print",
+        file: "flyer-yoga",
+        names: ("Volante de clases de yoga", "Yoga class flyer"),
+        kind: "size.flyer_a4",
+        page_format: "print",
+        style: "minimal",
+        color: CORAL,
+        tags: &["volante", "flyer", "yoga", "clases", "bienestar"],
+        draw: flyer_yoga,
+    },
+    Design {
+        folder: "print",
+        file: "flyer-real-estate",
+        names: ("Volante inmobiliario", "Real estate flyer"),
+        kind: "size.flyer_a4",
+        page_format: "print",
+        style: "classic",
+        color: CORAL,
+        tags: &["volante", "flyer", "casa", "house", "venta", "inmobiliaria"],
+        draw: flyer_real_estate,
+    },
+    Design {
+        folder: "print",
+        file: "flyer-workshop",
+        names: ("Volante de taller", "Workshop flyer"),
+        kind: "size.flyer_a4",
+        page_format: "print",
+        style: "bold",
+        color: CORAL,
+        tags: &["volante", "flyer", "taller", "workshop", "cerámica"],
+        draw: flyer_workshop,
+    },
+    Design {
+        folder: "print",
+        file: "flyer-restaurant",
+        names: ("Volante de restaurante", "Restaurant flyer"),
+        kind: "size.flyer_a4",
+        page_format: "print",
+        style: "classic",
+        color: CORAL,
+        tags: &["volante", "flyer", "menú", "menu", "restaurante", "comida"],
+        draw: flyer_restaurant,
+    },
 ];
 
 // --------------------------------------------------------------- rendering
@@ -4763,6 +5725,21 @@ fn palette_of(file: &str) -> Option<&'static Palette> {
         "testimonial" => &OCEAN,
         "opening-hours" => &CRIMSON,
         "podcast" => &SUNSET,
+        "card-minimal-line" => &MONO,
+        "card-bakery" => &SUNSET,
+        "card-photographer" => &OCEAN,
+        "card-studio" => &VIOLET,
+        "diploma-classic" => &MONO,
+        "certificate-participation" => &FOREST,
+        "kids-diploma" => &SUNSET,
+        "award" => &MONO,
+        "resume-header" => &OCEAN,
+        "resume-columns" => &FOREST,
+        "resume-elegant" => &MONO,
+        "flyer-yoga" => &FOREST,
+        "flyer-real-estate" => &OCEAN,
+        "flyer-workshop" => &SUNSET,
+        "flyer-restaurant" => &CRIMSON,
         _ => return None,
     })
 }
@@ -4795,6 +5772,36 @@ fn repaint(value: &mut Value, palette: &Palette) {
     }
 }
 
+/// Stops when a shape lies over the middle of a photo frame: a click or a
+/// dropped photo would reach the shape, not the frame.
+fn covered_frames(page: &Value) {
+    let nodes = page["nodes"].as_array().expect("nodes");
+    let boxed = |n: &Value| {
+        let at = &n["base"]["placement"];
+        let get = |k: &str| at[k].as_f64().unwrap_or(0.0);
+        (get("x"), get("y"), get("w"), get("h"))
+    };
+    for (i, frame) in nodes.iter().enumerate() {
+        if frame["kind"]["type"] != "frame" {
+            continue;
+        }
+        let (x, y, w, h) = boxed(frame);
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        for above in &nodes[i + 1..] {
+            if above["kind"]["type"] != "shape" {
+                continue;
+            }
+            let (ax, ay, aw, ah) = boxed(above);
+            let over = (ax..=ax + aw).contains(&cx) && (ay..=ay + ah).contains(&cy);
+            assert!(
+                !over,
+                "a shape covers the photo frame at ({x:.0}, {y:.0}): {}",
+                above["base"]["name"]
+            );
+        }
+    }
+}
+
 /// The bleed of a printed template, in mm.
 const BLEED_MM: f64 = 3.0;
 
@@ -4810,6 +5817,7 @@ fn finished(document: &Document, kind: &str, print: bool, palette: Option<&Palet
     let guides = gafira_ui::size_guides(kind).expect("a known size");
     let bleed = BLEED_MM * MM;
     for page in value["pages"].as_array_mut().expect("pages") {
+        covered_frames(page);
         page["guides"] = serde_json::to_value(&guides).expect("guides");
         if !print {
             continue;
