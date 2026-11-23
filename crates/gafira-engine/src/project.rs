@@ -113,6 +113,19 @@ impl ProjectService {
         self.install(document, None, false, Vec::new())
     }
 
+    /// A new document with the content of the template at `path` (spec 091,
+    /// D-81): a project of its own, with a new id, no file, no versions and
+    /// nothing to save yet. The template is only read: it is not locked and
+    /// it never becomes the session's file.
+    ///
+    /// # Errors
+    /// Those of [`ProjectService::open`]; the old session stays.
+    pub fn new_document_from_template(&self, path: &Path) -> Result<(), EngineError> {
+        let loaded = self.repository.load(path)?;
+        let document = loaded.document.with_project_id(self.ids.project_id());
+        self.install(document, None, false, Vec::new())
+    }
+
     /// End the session: the document and its history go, and so do its
     /// recovery slots, because the person chose to leave (spec 016). The UI
     /// asks «¿Guardar los cambios?» first (03 §6.1). Nothing is published.
@@ -1449,6 +1462,58 @@ mod tests {
         engine.projects().open(Path::new(TARGET)).expect("an open");
         assert_eq!(session_id(&mut engine), id(2), "a nil id gets the next one");
         assert!(!engine.projects().is_modified());
+    }
+
+    // S91-03
+    #[test]
+    fn s91_03_a_template_opens_as_a_new_untitled_document() {
+        use gafira_ports::common::UnixTime;
+        use gafira_ports::repository::{Version, VersionId, VersionInfo, VersionKind};
+
+        let fs = MemoryFs::default();
+        let theirs = ProjectId::from_u128(0xfeed);
+        let template = two_page_document().with_project_id(theirs);
+        let version = Version {
+            info: VersionInfo {
+                id: VersionId(1),
+                name: "draft".to_owned(),
+                kind: VersionKind::Named,
+                created: UnixTime(5),
+                app: "Gafira".to_owned(),
+                schema: 2,
+            },
+            document: Arc::new(template.clone()),
+        };
+        let bytes = encoded(&template, &[version]);
+        fs.put(TARGET, &bytes);
+        let repository = Arc::new(MemoryRepository::new(&fs, true));
+        let mut engine = engine_on(&fs, &repository);
+
+        engine
+            .projects()
+            .new_document_from_template(Path::new(TARGET))
+            .expect("a document from the template");
+
+        let document = engine.edit().document().expect("a session");
+        assert_eq!(
+            document.pages().len(),
+            template.pages().len(),
+            "its content"
+        );
+        assert_eq!(document.project_id(), id(1), "a project of its own");
+        assert_eq!(engine.projects().path(), None, "never saved");
+        assert!(engine.projects().list_versions().is_empty(), "no versions");
+        assert!(!engine.projects().is_modified(), "nothing to save yet");
+        assert!(
+            matches!(engine.projects().save(), Err(EngineError::NoPath)),
+            "writable, though the template loaded read-only: save asks for a path"
+        );
+        assert_eq!(fs.file(TARGET), Some(bytes), "the template stays as it was");
+        assert_eq!(
+            fs.file(&format!("{TARGET}.lock")),
+            None,
+            "and is not locked"
+        );
     }
 
     // S12-04
