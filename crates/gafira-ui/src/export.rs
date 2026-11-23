@@ -1241,7 +1241,7 @@ pub(crate) mod tests {
     }
 
     /// An engine with a new Redes document of `pages` pages.
-    fn document_engine(pages: usize) -> Gafira {
+    fn document_engine(pages: usize) -> crate::editor::tests::TestEngine {
         let mut engine = engine();
         start(&mut engine, StartFormat::Social).expect("a document");
         for at in 1..pages {

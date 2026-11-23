@@ -13471,14 +13471,53 @@ pub(crate) mod tests {
         }
     }
 
+    /// An engine of a test and the folder its settings and instances live
+    /// in: it acts as the engine, and when it goes the engine closes first
+    /// and the folder goes with it, so a test run leaves nothing in the
+    /// temporary folder.
+    pub(crate) struct TestEngine {
+        engine: Option<Gafira>,
+        dir: std::path::PathBuf,
+    }
+
+    impl std::ops::Deref for TestEngine {
+        type Target = Gafira;
+
+        fn deref(&self) -> &Gafira {
+            self.engine.as_ref().expect("an engine until dropped")
+        }
+    }
+
+    impl std::ops::DerefMut for TestEngine {
+        fn deref_mut(&mut self) -> &mut Gafira {
+            self.engine.as_mut().expect("an engine until dropped")
+        }
+    }
+
+    impl Drop for TestEngine {
+        fn drop(&mut self) {
+            drop(self.engine.take());
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A folder removed when this goes out of scope.
+    pub(crate) struct RemovedOnDrop(pub(crate) std::path::PathBuf);
+
+    impl Drop for RemovedOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     /// An engine over the real platform adapters, with no format and no
     /// store, as the app composes it (spec 018).
-    pub(crate) fn engine() -> Gafira {
+    pub(crate) fn engine() -> TestEngine {
         engine_over(Arc::new(Nothing))
     }
 
     /// [`engine`] with `repository` in place of the absent format.
-    pub(crate) fn engine_over(repository: Arc<dyn ProjectRepository>) -> Gafira {
+    pub(crate) fn engine_over(repository: Arc<dyn ProjectRepository>) -> TestEngine {
         engine_with(repository, Arc::new(Nothing))
     }
 
@@ -13486,13 +13525,16 @@ pub(crate) mod tests {
     pub(crate) fn engine_with(
         repository: Arc<dyn ProjectRepository>,
         store: Arc<dyn ContentStore>,
-    ) -> Gafira {
+    ) -> TestEngine {
         // A folder of its own: two tests saving their settings at once
         // would race on the same `settings.json.tmp`.
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("gafira-ui-{}-{n}", std::process::id()));
-        engine_in(&dir, repository, store)
+        TestEngine {
+            engine: Some(engine_in(&dir, repository, store)),
+            dir,
+        }
     }
 
     /// An engine whose settings and instances live in `dir`.
@@ -13906,6 +13948,8 @@ pub(crate) mod tests {
         // Two engines over the same settings: the second reads what the
         // first saved.
         let dir = std::env::temp_dir().join(format!("gafira-ui-s21-{}", std::process::id()));
+        // Declared before the engines, so it goes last, even on a failure.
+        let _gone = RemovedOnDrop(dir.clone());
         let fresh = || engine_in(&dir, Arc::new(Nothing), Arc::new(Nothing));
         let mut engine = fresh();
         start(&mut engine, StartFormat::Social).expect("a new document");
@@ -18296,7 +18340,7 @@ pub(crate) mod tests {
         assert_eq!(the_shapes(&mut other).len(), 1);
     }
 
-    fn engine_with_new_document() -> Gafira {
+    fn engine_with_new_document() -> TestEngine {
         let mut engine = engine();
         start(&mut engine, StartFormat::Social).expect("a new document");
         engine
