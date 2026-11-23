@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.1.0-beta.4] - 2026-11-23
+
+A new Inicio with templates, and brand kits.
+
 ### Added
 
 - A new Inicio: search design types and templates, shortcuts to each category of «Crear un diseño», recent projects and templates by type.
