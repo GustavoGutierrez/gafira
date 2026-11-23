@@ -42,6 +42,9 @@ pub enum Property {
     TextEffects(Vec<gafira_doc::TextEffect>),
     /// Where the lines of a text element sit across its box.
     TextAlign(gafira_doc::TextAlign),
+    /// How a text box follows its words: wide as its lines, or with a
+    /// fixed width that wraps them (spec 095).
+    TextSizing(gafira_doc::TextSizing),
     /// The letter spacing (thousandths of an em) and line height (`None`
     /// for the font's own) of a text element (FD-41).
     TextSpacing(f64, Option<f64>),
@@ -120,6 +123,7 @@ impl Property {
             Self::TextCurve(_) => "set_property.text_curve",
             Self::TextEffects(_) => "set_property.text_effects",
             Self::TextAlign(_) => "set_property.text_align",
+            Self::TextSizing(_) => "set_property.text_sizing",
             Self::TextSpacing(..) => "set_property.text_spacing",
             Self::TextGradient(_) => "set_property.text_gradient",
             Self::PageName(_) => "set_property.page_name",
@@ -233,6 +237,7 @@ impl Property {
             (Self::TextCurve(_), NodeKind::Text(t)) => Self::TextCurve(t.curve),
             (Self::TextEffects(_), NodeKind::Text(t)) => Self::TextEffects(t.effects.clone()),
             (Self::TextAlign(_), NodeKind::Text(t)) => Self::TextAlign(t.align),
+            (Self::TextSizing(_), NodeKind::Text(t)) => Self::TextSizing(t.sizing),
             (Self::TextSpacing(..), NodeKind::Text(t)) => {
                 Self::TextSpacing(t.letter_spacing, t.line_height)
             }
@@ -274,6 +279,7 @@ impl Property {
             (Self::TextCurve(v), NodeKind::Text(t)) => t.curve = *v,
             (Self::TextEffects(v), NodeKind::Text(t)) => t.effects.clone_from(v),
             (Self::TextAlign(v), NodeKind::Text(t)) => t.align = *v,
+            (Self::TextSizing(v), NodeKind::Text(t)) => t.sizing = *v,
             (Self::TextSpacing(letters, lines), NodeKind::Text(t)) => {
                 t.letter_spacing = *letters;
                 t.line_height = *lines;
@@ -1283,6 +1289,51 @@ mod tests {
         let mut on_group = set(&[GROUP], Property::Line(line(1.0)));
         assert!(apply(&mut on_group, &mut doc).is_err());
         assert_eq!(doc, original);
+    }
+
+    // S95-01: how a text box follows its words is set and reverted in one
+    // step, and refused on a node that is not a text.
+    #[test]
+    fn s95_01_text_sizing_is_set_and_reverted() {
+        let mut doc = fixture();
+        let style = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 24.0,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
+        };
+        {
+            let token = EditToken::__new_for_gafira_edit_only();
+            let mut edit = doc.edit(&token);
+            let page = edit.page_mut(PAGE).expect("page");
+            let text = Node::new(
+                ElementBase::new(B, at(0.0)),
+                NodeKind::Text(TextNode::plain("Hola", &style)),
+            );
+            page.nodes.insert(B, Arc::new(text));
+        }
+        let original = doc.clone();
+        let sizing = |doc: &Document| match &node(doc, B).kind {
+            NodeKind::Text(t) => t.sizing,
+            _ => panic!("not a text"),
+        };
+        assert_eq!(sizing(&doc), gafira_doc::TextSizing::AutoHeight);
+        let mut grow = set(
+            &[B],
+            Property::TextSizing(gafira_doc::TextSizing::AutoWidth),
+        );
+        assert_eq!(apply(&mut grow, &mut doc), Ok(Applied::Changed));
+        assert_eq!(sizing(&doc), gafira_doc::TextSizing::AutoWidth);
+        let mut same = set(
+            &[B],
+            Property::TextSizing(gafira_doc::TextSizing::AutoWidth),
+        );
+        assert_eq!(apply(&mut same, &mut doc), Ok(Applied::Unchanged));
+        revert(&mut grow, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut on_shape = set(&[A], Property::TextSizing(gafira_doc::TextSizing::Fixed));
+        assert!(apply(&mut on_shape, &mut doc).is_err() || node(&doc, A) == node(&original, A));
     }
 
     // S55-02: the text of a shape is set, changed and taken away in one

@@ -1076,3 +1076,10 @@ Fecha: 23 de noviembre de 2026.
 
 - **Decisión** (titular): un kit de marca se exporta a un archivo `.gafkit` (ZIP con `kit.json` y sus logos, fotos, gráficos, iconos, fuentes subidas y plantillas) y se importa en otro Gafira; si ya hay un kit con el mismo nombre, se pregunta si reemplazarlo. `.gafkit` es un tipo de archivo del sistema (`application/vnd.gafira.brandkit+zip`) con su propio icono, derivado del de `.gaf`.
 - **Consecuencia**: el puerto `BrandStore` exporta, lee e importa paquetes; los instaladores registran el tipo. Se aplica en la spec 094.
+
+## D-126 Cajas de texto que siguen a sus palabras
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas): un texto nuevo es tan ancho como su línea más larga y crece o se encoge a lo ancho al escribir o borrar; Enter abre otra línea. Arrastrar un lado fija el ancho y desde entonces las líneas se parten en él. La caja de un texto curvo siempre contiene todo su arco. Mover un elemento muestra el puntero de mover de Gafira.
+- **Consecuencia**: los textos nuevos usan `TextSizing::AutoWidth` (ya en el modelo, 02 §3.1) y la edición gana la propiedad `TextSizing`. Se aplica en la spec 095.

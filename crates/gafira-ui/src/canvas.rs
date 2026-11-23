@@ -920,7 +920,10 @@ impl TextPreset {
 /// A new text element of `preset` saying `text`, centred on a page of
 /// `page_px`, 60 % of its width across and one line high.
 pub(crate) fn new_text(page_px: Vec2, text: &str, style: &SpanStyle) -> NodeSpec {
-    let w = f64::from(page_px.x) * 0.6;
+    // As wide as its words, and it grows sideways with them (spec 095).
+    let mut node = TextNode::plain(text, style);
+    node.sizing = gafira_doc::TextSizing::AutoWidth;
+    let w = natural_width(&node).unwrap_or(f64::from(page_px.x) * 0.6);
     let h = style.size * 1.4;
     let placement = Placement::new(
         (f64::from(page_px.x) - w) / 2.0,
@@ -928,7 +931,95 @@ pub(crate) fn new_text(page_px: Vec2, text: &str, style: &SpanStyle) -> NodeSpec
         w,
         h,
     );
-    NodeSpec::new(NodeKind::Text(TextNode::plain(text, style)), placement)
+    NodeSpec::new(NodeKind::Text(node), placement)
+}
+
+/// The width a text needs to lay each paragraph on one line (spec 095):
+/// the narrowest at which the export lays out its widest line whole.
+/// `None` when it draws nothing (no words).
+pub(crate) fn natural_width(text: &TextNode) -> Option<f64> {
+    use kurbo::Shape as _;
+    let size = text.content.first_style()?.size;
+    let mut flat = text.clone();
+    flat.align = gafira_doc::TextAlign::Left;
+    flat.curve = 0.0;
+    let lay = |w: f64| gafira_render::text_outline(&flat, (w, size * 2.0), text_fonts());
+    let (path, _, one_line) = lay(NATURAL_ROOM)?;
+    let right = path.bounding_box().x1;
+    if !right.is_finite() {
+        return None;
+    }
+    // The letters end before their advance: widen from the ink until the
+    // export lays no paragraph on two lines.
+    let step = (size * 0.02).max(1.0);
+    let mut w = (right.max(0.0) + 1.0).ceil();
+    for _ in 0..40 {
+        match lay(w) {
+            Some((_, _, lines)) if lines > one_line + 0.5 => w += step,
+            _ => break,
+        }
+    }
+    Some(w.ceil())
+}
+
+/// The width a text is laid out in to measure its lines.
+const NATURAL_ROOM: f64 = 100_000.0;
+
+/// The box of a text as wide as its lines, `natural` px (spec 095): it
+/// keeps the side its lines are aligned to (left edge, centre or right
+/// edge). `None` when it changes by half a px or less.
+pub(crate) fn text_width_fit(
+    align: gafira_doc::TextAlign,
+    placement: &Placement,
+    natural: f64,
+) -> Option<Placement> {
+    if !natural.is_finite() || natural <= 0.0 || (placement.w - natural).abs() <= 0.5 {
+        return None;
+    }
+    let mut fitted = *placement;
+    fitted.x = match align {
+        gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => placement.x,
+        gafira_doc::TextAlign::Center => placement.x + (placement.w - natural) / 2.0,
+        gafira_doc::TextAlign::Right => placement.x + placement.w - natural,
+    };
+    fitted.w = natural;
+    Some(fitted)
+}
+
+/// The box of a curved text that holds all its letters (spec 095): as
+/// high as its arc, and widened the same on both sides when the ends of
+/// the arc go past it, so its centre stays. `None` when it already fits.
+pub(crate) fn curved_fit(text: &TextNode, placement: &Placement) -> Option<Placement> {
+    use kurbo::Shape as _;
+    if text.curve == 0.0 {
+        return None;
+    }
+    let size = text.content.first_style()?.size;
+    let mut fitted = *placement;
+    fitted.w = fitted.w.abs().max(1.0);
+    fitted.h = fitted.h.abs().max(1.0);
+    for _ in 0..8 {
+        let (path, _, _) = gafira_render::text_outline(text, (fitted.w, fitted.h), text_fonts())?;
+        let b = path.bounding_box();
+        if !(b.x0.is_finite() && b.x1.is_finite() && b.y1.is_finite()) {
+            return None;
+        }
+        let over = (-b.x0).max(b.x1 - fitted.w).max(0.0);
+        let h = (b.y1 + size * 0.25).max(1.0);
+        if over <= 0.5 && (fitted.h - h).abs() <= 0.5 {
+            break;
+        }
+        if over > 0.5 {
+            let grow = over.ceil() + 1.0;
+            fitted.x -= grow;
+            fitted.w += 2.0 * grow;
+        }
+        fitted.h = h;
+    }
+    let moved = (fitted.x - placement.x).abs() > 1e-9
+        || (fitted.w - placement.w).abs() > 0.5
+        || (fitted.h - placement.h).abs() > 0.5;
+    moved.then_some(fitted)
 }
 
 /// The box a text of `sizing` placed at `placement` takes when its text,
@@ -940,7 +1031,7 @@ pub(crate) fn text_fit(
     placement: &Placement,
     laid: f64,
 ) -> Option<Placement> {
-    if sizing != gafira_doc::TextSizing::AutoHeight
+    if sizing == gafira_doc::TextSizing::Fixed
         || !laid.is_finite()
         || (placement.h - laid).abs() <= 0.5
     {
@@ -2046,8 +2137,11 @@ mod tests {
             italic: false,
         };
         let spec = new_text(Vec2::new(1000.0, 1000.0), "Hola", &style);
-        assert_eq!((spec.placement.w, spec.placement.h), (600.0, 56.0));
-        assert_eq!((spec.placement.x, spec.placement.y), (200.0, 472.0));
+        // As wide as «Hola» (spec 095), centred on the page.
+        let p = spec.placement;
+        assert!(p.w > 40.0 && p.w < 200.0, "{}", p.w);
+        assert_eq!(p.h, 56.0);
+        assert_eq!((p.x + p.w / 2.0, p.y), (500.0, 472.0));
         let mut page = page();
         let base = gafira_doc::ElementBase::new(NodeId::new(9), spec.placement);
         page.nodes
@@ -2493,6 +2587,11 @@ mod s41_tests {
         );
         assert_eq!(text_fit(TextSizing::AutoHeight, &at, 40.4), None);
         assert_eq!(text_fit(TextSizing::Fixed, &at, 96.0), None);
+        assert_eq!(
+            text_fit(TextSizing::AutoWidth, &at, 96.0).map(|p| p.h),
+            Some(96.0),
+            "a box as wide as its lines is as high as them too"
+        );
         assert_eq!(text_fit(TextSizing::AutoHeight, &at, f64::NAN), None);
     }
 
@@ -2509,7 +2608,107 @@ mod s41_tests {
         let spec = text_at(Vec2::new(1000.0, 800.0), "Hola", &style, (300.0, 100.0));
         let p = spec.placement;
         assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 100.0));
-        assert_eq!((p.w, p.h), (600.0, 28.0), "the size of a new text");
+        assert_eq!(p.h, 28.0, "the height of a new text");
+    }
+
+    fn style_of(size: f64) -> SpanStyle {
+        SpanStyle {
+            font: "Inter".to_owned(),
+            size,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
+        }
+    }
+
+    // S95-02: a box as wide as its lines keeps the side its lines are
+    // aligned to: the left edge, the centre or the right edge.
+    #[test]
+    fn s95_02_a_box_as_wide_as_its_lines_keeps_its_anchor() {
+        use gafira_doc::TextAlign;
+        let at = Placement::new(100.0, 20.0, 300.0, 40.0);
+        let left = text_width_fit(TextAlign::Left, &at, 120.0).expect("it narrows");
+        assert_eq!(left, Placement::new(100.0, 20.0, 120.0, 40.0));
+        let centre = text_width_fit(TextAlign::Center, &at, 120.0).expect("it narrows");
+        assert_eq!(centre, Placement::new(190.0, 20.0, 120.0, 40.0));
+        let right = text_width_fit(TextAlign::Right, &at, 120.0).expect("it narrows");
+        assert_eq!(right, Placement::new(280.0, 20.0, 120.0, 40.0));
+        let wider = text_width_fit(TextAlign::Center, &at, 500.0).expect("it widens");
+        assert_eq!(wider, Placement::new(0.0, 20.0, 500.0, 40.0));
+        assert_eq!(text_width_fit(TextAlign::Left, &at, 300.4), None);
+        assert_eq!(text_width_fit(TextAlign::Left, &at, f64::NAN), None);
+    }
+
+    // S95-03: the width a text needs is that of its widest line, and at
+    // that width the export lays every paragraph on one line.
+    #[test]
+    fn s95_03_the_natural_width_is_the_widest_line_and_wraps_nothing() {
+        let style = style_of(40.0);
+        let width = |words: &str| natural_width(&TextNode::plain(words, &style)).expect("laid");
+        assert!(width("Hola mundo") > width("Hola"));
+        assert!(width("Hola\nmundo") < width("Hola mundo"));
+        let title = TextNode::plain("Agregar un título de prueba", &style);
+        let wide = natural_width(&title).expect("laid");
+        let (_, _, one_line) =
+            gafira_render::text_outline(&title, (10_000.0, 100.0), text_fonts()).expect("laid");
+        let (_, _, at_width) =
+            gafira_render::text_outline(&title, (wide, 100.0), text_fonts()).expect("laid");
+        assert!(
+            (at_width - one_line).abs() < 0.5,
+            "{at_width} vs {one_line}"
+        );
+    }
+
+    // S95-04: a new text grows sideways with its words.
+    #[test]
+    fn s95_04_a_new_text_is_as_wide_as_its_words() {
+        let style = style_of(40.0);
+        let spec = new_text(Vec2::new(1080.0, 1080.0), "Hola", &style);
+        let NodeKind::Text(text) = &spec.kind else {
+            panic!("a text");
+        };
+        assert_eq!(text.sizing, gafira_doc::TextSizing::AutoWidth);
+        assert_eq!(Some(spec.placement.w), natural_width(text));
+        let p = spec.placement;
+        assert!(
+            (p.x + p.w / 2.0 - 540.0).abs() < 1e-9,
+            "centred on the page"
+        );
+    }
+
+    // S95-05: a curved text never leaves its box: the box takes the height
+    // of its arc and widens about its centre when the ends go past it.
+    #[test]
+    fn s95_05_a_curved_text_fits_inside_its_box() {
+        use kurbo::Shape as _;
+        let style = style_of(40.0);
+        for curve in [-100.0, -50.0, 50.0, 100.0] {
+            let mut text = TextNode::plain("Texto curvo de prueba largo", &style);
+            text.curve = curve;
+            let at = Placement::new(100.0, 50.0, 300.0, 60.0);
+            let fitted = curved_fit(&text, &at).expect("it changes");
+            assert!(
+                (fitted.x + fitted.w / 2.0 - 250.0).abs() < 1e-6,
+                "{curve}: the centre stays"
+            );
+            let (path, _, _) =
+                gafira_render::text_outline(&text, (fitted.w, fitted.h), text_fonts())
+                    .expect("laid");
+            let b = path.bounding_box();
+            assert!(
+                b.x0 >= -0.5 && b.x1 <= fitted.w + 0.5,
+                "{curve}: {b:?} in {fitted:?}"
+            );
+            assert!(
+                b.y0 >= -0.5 && b.y1 <= fitted.h + 0.5,
+                "{curve}: {b:?} in {fitted:?}"
+            );
+            assert_eq!(
+                curved_fit(&text, &fitted),
+                None,
+                "{curve}: a fitted box stays"
+            );
+        }
     }
 
     // S52-02: a shape dropped on a page lands on the point under the
