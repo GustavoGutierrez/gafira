@@ -249,6 +249,64 @@ pub fn parse_hex(text: &str) -> Option<u32> {
     u32::from_str_radix(&full, 16).ok()
 }
 
+/// The main colours of the picture in `bytes` (PNG, JPEG, WebP, AVIF or
+/// SVG), `0xRRGGBB`, the largest area first; clear parts do not count. None
+/// when it is not a picture (spec 093).
+#[must_use]
+pub fn colors_of_image(bytes: &[u8]) -> Vec<u32> {
+    // A small copy is enough to find them and keeps a big photo quick.
+    const SIDE: u32 = 256;
+    let Some(image) = picture(bytes) else {
+        return Vec::new();
+    };
+    let Some(small) = crate::looks::fitted(&image, SIDE) else {
+        return Vec::new();
+    };
+    gafira_raster::dominant_colors(small.view())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|entry| match entry.color {
+            gafira_color::Color::Srgb(c) => {
+                let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
+                Some((byte(c.r) << 16) | (byte(c.g) << 8) | byte(c.b))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// `bytes` decoded: a raster image, or an SVG drawn at its own size.
+fn picture(bytes: &[u8]) -> Option<image::DynamicImage> {
+    if let Ok(image) = image::load_from_memory(bytes) {
+        return Some(image);
+    }
+    use resvg::{tiny_skia, usvg};
+    let tree = usvg::Tree::from_data(bytes, &usvg::Options::default()).ok()?;
+    let size = tree.size().to_int_size();
+    // Drawn at most 512 px on its longest side.
+    let scale = (512.0_f32 / size.width().max(size.height()) as f32).min(1.0);
+    let (w, h) = (
+        ((size.width() as f32 * scale).ceil() as u32).max(1),
+        ((size.height() as f32 * scale).ceil() as u32).max(1),
+    );
+    let mut pixmap = tiny_skia::Pixmap::new(w, h)?;
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    // tiny-skia keeps premultiplied pixels; the image crate wants straight.
+    let straight: Vec<u8> = pixmap
+        .pixels()
+        .iter()
+        .flat_map(|p: &tiny_skia::PremultipliedColorU8| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect();
+    image::RgbaImage::from_raw(w, h, straight).map(image::DynamicImage::ImageRgba8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +364,40 @@ mod tests {
         assert_eq!(parse_hex(" #abc "), Some(0xAABBCC));
         assert_eq!(parse_hex("#12345"), None);
         assert_eq!(parse_hex("azul"), None);
+    }
+
+    /// A PNG of `w` x `h` whose pixel `i` is `px(i)`.
+    fn png(w: u32, h: u32, px: impl Fn(u32) -> [u8; 4]) -> Vec<u8> {
+        let image = image::RgbaImage::from_fn(w, h, |x, y| image::Rgba(px(y * w + x)));
+        let mut out = std::io::Cursor::new(Vec::new());
+        image
+            .write_to(&mut out, image::ImageFormat::Png)
+            .expect("a PNG");
+        out.into_inner()
+    }
+
+    #[test]
+    fn s93_08_the_colours_of_an_image_come_largest_first_without_its_clear_parts() {
+        // 60 red, 30 blue, 10 clear pixels.
+        let bytes = png(10, 10, |i| match i {
+            0..60 => [0xE5, 0x3B, 0x2F, 255],
+            60..90 => [0x1D, 0x4E, 0xD8, 255],
+            _ => [0, 0, 0, 0],
+        });
+        assert_eq!(colors_of_image(&bytes), [0xE53B2F, 0x1D4ED8]);
+    }
+
+    #[test]
+    fn s93_08_an_svg_logo_gives_its_colours_too() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">
+            <rect width="30" height="20" fill="#3FBFA9"/>
+            <rect x="30" width="10" height="20" fill="#18243B"/></svg>"##;
+        assert_eq!(colors_of_image(svg), [0x3FBFA9, 0x18243B]);
+    }
+
+    #[test]
+    fn s93_08_what_is_not_an_image_gives_no_colours() {
+        assert!(colors_of_image(b"not an image").is_empty());
     }
 
     #[test]

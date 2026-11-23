@@ -412,7 +412,7 @@ fn files(
     }
     row(ui, |ui| {
         for path in kit.files(kind) {
-            let (response, _) = file_tile(ui, theme, path, 96.0);
+            let (response, _) = file_tile(ui, theme, path, 96.0, false);
             let response = response.interact(Sense::click_and_drag());
             let name = path
                 .file_name()

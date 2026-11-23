@@ -4,6 +4,13 @@
 # Both catalogs must have the same keys and parameters (checked by the build).
 
 [brand]
+extract = "Extraer de una imagen"
+extract_title = "Extraer colores de una imagen"
+extract_pick = "Elige una imagen del kit o sube una desde tu equipo."
+extract_upload = "Subir imagen"
+extract_choose = "Colores encontrados: elige los que quieres en la paleta"
+extract_none = "No encontramos colores en esta imagen."
+extract_add = "Añadir {n} a la paleta"
 save_as_template = "Guardar como plantilla de marca"
 template_saved = "Se guardó como plantilla de marca."
 colors_of_brand = "Colores de la marca"

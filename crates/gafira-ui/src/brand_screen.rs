@@ -79,6 +79,8 @@ pub(crate) struct BrandScreen {
     /// The kit whose name is being changed, and the new name.
     renaming: Option<(String, String)>,
     color: Option<ColorEdit>,
+    /// «Extraer colores de una imagen», while it is open.
+    extract: Option<Extract>,
     /// The style being edited.
     style: Option<StyleDraft>,
     /// Whether «Administrar fuentes subidas» is open.
@@ -88,6 +90,32 @@ pub(crate) struct BrandScreen {
     thumbs: BTreeMap<PathBuf, Thumb>,
     /// A message for the person, such as a template that could not be added.
     notice: Option<String>,
+}
+
+/// «Extraer colores de una imagen» for a palette: the image chosen, the
+/// colours found in it and which of them the person keeps.
+#[derive(Default)]
+struct Extract {
+    palette: usize,
+    image: Option<PathBuf>,
+    found: Vec<u32>,
+    chosen: Vec<bool>,
+}
+
+impl Extract {
+    /// The colours of the image at `path`: all chosen but those the
+    /// palette already has.
+    fn pick(&mut self, path: PathBuf, palette: &BrandPalette) {
+        self.found = std::fs::read(&path)
+            .map(|bytes| brand::colors_of_image(&bytes))
+            .unwrap_or_default();
+        self.chosen = self
+            .found
+            .iter()
+            .map(|rgb| palette.colors.iter().all(|c| c.rgb != *rgb))
+            .collect();
+        self.image = Some(path);
+    }
 }
 
 /// The file kinds of a kit and the keys of their titles.
@@ -110,6 +138,7 @@ impl BrandScreen {
             creating: None,
             renaming: None,
             color: None,
+            extract: None,
             style: None,
             fonts_open: false,
             jump: None,
@@ -342,6 +371,7 @@ impl BrandScreen {
             FILE_SECTIONS[0],
         );
         self.colors_section(ui, theme, texts, &mut kit);
+        self.extract_modal(ui.ctx(), theme, texts, &mut kit, window);
         self.styles_section(ui, theme, texts, store, &mut kit, window);
         for files in &FILE_SECTIONS[1..] {
             self.files_section(ui, theme, texts, (store, window), &mut kit, *files);
@@ -378,7 +408,7 @@ impl BrandScreen {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(12.0);
                     for (i, path) in kit.files(kind).iter().enumerate() {
-                        if file_tile(ui, theme, path, 120.0).1 {
+                        if file_tile(ui, theme, path, 120.0, true).1 {
                             remove = Some(i);
                         }
                     }
@@ -441,6 +471,15 @@ impl BrandScreen {
                                     .clicked()
                                 {
                                     remove_palette = Some(p);
+                                }
+                                if widgets::secondary(ui, theme, t(texts, "brand.extract"))
+                                    .clicked()
+                                {
+                                    self.color = None;
+                                    self.extract = Some(Extract {
+                                        palette: p,
+                                        ..Extract::default()
+                                    });
                                 }
                             });
                         });
@@ -531,6 +570,175 @@ impl BrandScreen {
                 name: t(texts, "brand.palette_name"),
                 colors: Vec::new(),
             });
+        }
+    }
+
+    /// «Extraer colores de una imagen»: an image of the kit, or one from
+    /// the computer, then its colours, the person choosing which go into
+    /// the palette.
+    fn extract_modal(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        kit: &mut BrandKit,
+        window: Option<&eframe::Frame>,
+    ) {
+        let Some(extract) = self.extract.as_mut() else {
+            return;
+        };
+        let Some(palette) = kit.palettes.get(extract.palette).cloned() else {
+            self.extract = None;
+            return;
+        };
+        let images: Vec<PathBuf> = [
+            BrandFiles::Logos,
+            BrandFiles::Photos,
+            BrandFiles::Graphics,
+            BrandFiles::Icons,
+        ]
+        .into_iter()
+        .flat_map(|kind| kit.files(kind).iter().cloned())
+        .collect();
+        let mut close = false;
+        let mut add = false;
+        modal_of(ctx, theme, &t(texts, "brand.extract_title"), 620.0, |ui| {
+            ui.label(
+                RichText::new(t(texts, "brand.extract_pick"))
+                    .font(theme.font("body-sm"))
+                    .color(theme.c("text.secondary")),
+            );
+            ui.add_space(10.0);
+            egui::ScrollArea::horizontal()
+                .id_salt("brand.extract.images")
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        for path in &images {
+                            let on = extract.image.as_ref() == Some(path);
+                            let (response, _) = file_tile(ui, theme, path, 84.0, false);
+                            if on {
+                                ui.painter().rect_stroke(
+                                    response.rect,
+                                    10.0,
+                                    Stroke::new(3.0, theme.c("accent")),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+                            if response
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                extract.pick(path.clone(), &palette);
+                            }
+                        }
+                    });
+                });
+            ui.add_space(10.0);
+            if widgets::secondary(ui, theme, t(texts, "brand.extract_upload")).clicked()
+                && let Some(path) = crate::files::picker(window)
+                    .add_filter(
+                        t(texts, "brand.images"),
+                        &["png", "jpg", "jpeg", "webp", "avif", "svg"],
+                    )
+                    .pick_file()
+            {
+                extract.pick(path, &palette);
+            }
+            if extract.image.is_some() {
+                ui.add_space(16.0);
+                if extract.found.is_empty() {
+                    ui.label(
+                        RichText::new(t(texts, "brand.extract_none"))
+                            .font(theme.font("body-sm"))
+                            .color(theme.c("text.muted")),
+                    );
+                } else {
+                    ui.label(
+                        RichText::new(t(texts, "brand.extract_choose"))
+                            .font(theme.font("ui-label"))
+                            .color(theme.c("text")),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::splat(10.0);
+                        for (rgb, chosen) in extract.found.iter().zip(extract.chosen.iter_mut()) {
+                            let response = ui
+                                .vertical(|ui| {
+                                    let response = color_tile(ui, theme, *rgb, *chosen);
+                                    if *chosen {
+                                        let mark = Rect::from_center_size(
+                                            response.rect.right_top() + Vec2::new(-10.0, 10.0),
+                                            Vec2::splat(18.0),
+                                        );
+                                        ui.painter().circle_filled(
+                                            mark.center(),
+                                            9.0,
+                                            theme.c("accent"),
+                                        );
+                                        ui.painter().circle_stroke(
+                                            mark.center(),
+                                            9.0,
+                                            Stroke::new(1.5, Color32::WHITE),
+                                        );
+                                        // A tick, drawn: two strokes.
+                                        let c = mark.center();
+                                        ui.painter().line(
+                                            vec![
+                                                c + Vec2::new(-4.5, 0.0),
+                                                c + Vec2::new(-1.5, 3.0),
+                                                c + Vec2::new(4.5, -3.5),
+                                            ],
+                                            Stroke::new(2.0, theme.c("accent.fg")),
+                                        );
+                                    }
+                                    ui.label(
+                                        RichText::new(format!("#{rgb:06x}"))
+                                            .font(theme.font("caption"))
+                                            .color(theme.c("text.secondary")),
+                                    );
+                                    response
+                                })
+                                .inner;
+                            if response
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                *chosen = !*chosen;
+                            }
+                        }
+                    });
+                }
+            }
+            ui.add_space(18.0);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let count = extract.chosen.iter().filter(|c| **c).count();
+                let label = t(texts, "brand.extract_add").replace("{n}", &count.to_string());
+                if ui
+                    .add_enabled_ui(count > 0, |ui| widgets::primary(ui, theme, label))
+                    .inner
+                    .clicked()
+                {
+                    add = true;
+                }
+                if widgets::secondary(ui, theme, t(texts, "brand.cancel")).clicked() {
+                    close = true;
+                }
+            });
+        });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            close = true;
+        }
+        if add && let Some(palette) = kit.palettes.get_mut(extract.palette) {
+            for (rgb, chosen) in extract.found.iter().zip(&extract.chosen) {
+                if *chosen && palette.colors.iter().all(|c| c.rgb != *rgb) {
+                    palette.colors.push(BrandColor::rgb(*rgb));
+                }
+            }
+            close = true;
+        }
+        if close {
+            self.extract = None;
         }
     }
 
@@ -1188,11 +1396,13 @@ fn kit_card(
             tile.min + Vec2::splat(16.0),
             egui::pos2(tile.max.x - 16.0, tile.max.y - 30.0),
         );
-        match kit.logos.first() {
-            Some(logo) => {
-                egui::Image::new(file_uri(logo))
-                    .fit_to_exact_size(picture.size())
-                    .paint_at(ui, picture);
+        match kit
+            .logos
+            .first()
+            .and_then(|logo| file_image(ui.ctx(), logo))
+        {
+            Some(image) => {
+                paint_fitted(ui, image, picture);
             }
             None => {
                 ui.painter().text(
@@ -1273,44 +1483,106 @@ pub(crate) fn rgb(c: u32) -> Color32 {
     Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
 }
 
-/// The URI egui's image loaders read `path` from.
-pub(crate) fn file_uri(path: &Path) -> String {
-    format!("file://{}", path.display())
+/// The picture of the file at `path`, read once and kept for the session:
+/// egui's loaders read it from its bytes (no file loader is built in).
+/// `None` when the file cannot be read.
+pub(crate) fn file_image(ctx: &egui::Context, path: &Path) -> Option<egui::Image<'static>> {
+    type Cache = std::collections::HashMap<PathBuf, Option<std::sync::Arc<[u8]>>>;
+    let id = egui::Id::new("brand.file_bytes");
+    let bytes = ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<Cache>(id)
+            .entry(path.to_path_buf())
+            .or_insert_with(|| std::fs::read(path).ok().map(std::sync::Arc::from))
+            .clone()
+    })?;
+    // The extension stays at the end of the URI: it picks the loader.
+    let uri = format!("bytes://{}", path.display());
+    Some(egui::Image::from_bytes(
+        uri,
+        egui::load::Bytes::Shared(bytes),
+    ))
 }
 
-/// A file of a kit: its picture on a tile and a cross on hover; the
-/// response and whether the cross was clicked.
+/// `image` as large as fits in `rect`, centred, its proportions kept
+/// (a photo or an SVG is never stretched to the tile).
+pub(crate) fn paint_fitted(ui: &egui::Ui, image: egui::Image<'_>, rect: Rect) {
+    let size = image
+        .load_for_size(ui.ctx(), rect.size())
+        .ok()
+        .and_then(|poll| poll.size())
+        .filter(|s| s.x > 0.0 && s.y > 0.0);
+    let at = size.map_or(rect, |s| {
+        Rect::from_center_size(
+            rect.center(),
+            s * (rect.width() / s.x).min(rect.height() / s.y),
+        )
+    });
+    image.paint_at(ui, at);
+}
+
+/// A file of a kit: its picture on a tile and, when `removable`, a cross on
+/// hover; the response and whether the cross was clicked. The cross shows
+/// while the pointer is anywhere on the tile, the cross included, so it
+/// stays put to be clicked.
 pub(crate) fn file_tile(
     ui: &mut egui::Ui,
     theme: &Theme,
     path: &Path,
     side: f32,
+    removable: bool,
 ) -> (egui::Response, bool) {
     let (tile, response) = ui.allocate_exact_size(Vec2::splat(side), Sense::click());
     ui.painter()
         .rect_filled(tile, 10.0, theme.c("surface.sunken"));
-    egui::Image::new(file_uri(path))
-        .fit_to_exact_size(tile.shrink(10.0).size())
-        .paint_at(ui, tile.shrink(10.0));
+    let inner = tile.shrink(10.0);
+    match file_image(ui.ctx(), path) {
+        Some(image) => paint_fitted(ui, image, inner),
+        None => {
+            ui.painter().text(
+                inner.center(),
+                egui::Align2::CENTER_CENTER,
+                path.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                theme.font("caption"),
+                theme.c("text.muted"),
+            );
+        }
+    }
+    let over = ui.rect_contains_pointer(tile);
     let mut removed = false;
-    if response.hovered() {
+    if over {
         ui.painter().rect_stroke(
             tile,
             10.0,
             Stroke::new(2.0, theme.c("accent")),
             egui::StrokeKind::Inside,
         );
+    }
+    if over && removable {
         let cross =
-            Rect::from_center_size(tile.right_top() + Vec2::new(-14.0, 14.0), Vec2::splat(22.0));
-        let hit = ui.interact(cross, response.id.with("remove"), Sense::click());
+            Rect::from_center_size(tile.right_top() + Vec2::new(-14.0, 14.0), Vec2::splat(24.0));
+        let hit = ui
+            .interact(cross, response.id.with("remove"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let fill = if hit.hovered() {
+            theme.c("error.bg")
+        } else {
+            theme.c("surface")
+        };
+        ui.painter().circle_filled(cross.center(), 12.0, fill);
         ui.painter()
-            .circle_filled(cross.center(), 11.0, theme.c("surface"));
-        ui.painter().text(
-            cross.center(),
-            egui::Align2::CENTER_CENTER,
-            "×",
-            theme.font("ui-label"),
-            theme.c("text"),
+            .circle_stroke(cross.center(), 12.0, Stroke::new(1.0, theme.c("border")));
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(cross.center(), Vec2::splat(14.0)),
+            Icon::Delete,
+            Weight::Regular,
+            if hit.hovered() {
+                theme.c("error.fg")
+            } else {
+                theme.c("text")
+            },
         );
         removed = hit.clicked();
     }
@@ -1848,6 +2120,17 @@ pub(crate) fn modal(
     title: &str,
     add: impl FnOnce(&mut egui::Ui),
 ) {
+    modal_of(ctx, theme, title, 420.0, add);
+}
+
+/// [`modal`] `width` px wide, centred on the window whatever its height.
+pub(crate) fn modal_of(
+    ctx: &egui::Context,
+    theme: &Theme,
+    title: &str,
+    width: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     let screen = ctx.content_rect();
     egui::Area::new(egui::Id::new("brand.modal.dim"))
         .order(egui::Order::Foreground)
@@ -1857,10 +2140,11 @@ pub(crate) fn modal(
             ui.painter()
                 .rect_filled(rect, 0.0, Color32::from_black_alpha(120));
         });
-    let size = Vec2::new(420.0, 210.0);
+    let size = Vec2::new(width, 0.0);
     egui::Area::new(egui::Id::new("brand.modal"))
         .order(egui::Order::Tooltip)
-        .fixed_pos(screen.center() - size / 2.0)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .fixed_pos(screen.center())
         .show(ctx, |ui| {
             egui::Frame::NONE
                 .fill(theme.c("surface"))

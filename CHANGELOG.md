@@ -19,6 +19,7 @@ A new Inicio with templates, and brand kits.
 
 - Template details: a click on a template shows it large with its size, «Customise this template» and similar templates.
 
+- Marca: a palette can take colours from an image of the kit or of the computer; Gafira finds its main colours and the person chooses which ones to add.
 - Marca: brand kits with logos, colour palettes (HEX and CMYK), text styles, uploaded fonts, photos, graphics and icons, managed on their own screen and used from the Marca panel of the editor and in the colour pickers; a design can be saved as a brand template, or a .gaf uploaded as one.
 
 ### Changed
