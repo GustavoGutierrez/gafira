@@ -72,7 +72,9 @@ fn gaf(document: &Document) -> Vec<u8> {
 
 fn entries(bytes: &[u8]) -> Vec<String> {
     let zip = ZipArchive::new(Cursor::new(bytes)).expect("a zip");
-    zip.file_names().map(str::to_owned).collect::<Vec<_>>()
+    zip.file_names()
+        .map(|name| name.expect("name").into_owned())
+        .collect::<Vec<_>>()
 }
 
 fn entry(bytes: &[u8], name: &str) -> Value {
@@ -121,12 +123,12 @@ fn replaced(name: &str, with: &[u8]) -> Vec<u8> {
         let mut file = zip.by_index(index).expect("an entry");
         let mut data = Vec::new();
         file.read_to_end(&mut data).expect("bytes");
-        let data = if file.name() == name {
+        let data = if file.name().expect("name") == name {
             with.to_vec()
         } else {
             data
         };
-        parts.push((file.name().to_owned(), data));
+        parts.push((file.name().expect("name").into_owned(), data));
     }
     let parts: Vec<(&str, CompressionMethod, &[u8])> = parts
         .iter()
@@ -257,6 +259,25 @@ fn s19_05_unsafe_entry_names_are_refused() {
             "{name}: {error:?}"
         );
     }
+}
+
+// S19-05: a name that says it is UTF-8 and is not is a damaged file.
+#[test]
+fn s19_05_a_name_that_is_not_text_is_refused() {
+    let mut bytes = crafted(&[
+        ("mimetype", CompressionMethod::Stored, MIMETYPE.as_bytes()),
+        ("pages/é.json", CompressionMethod::Stored, b"{}"),
+    ]);
+    let found: Vec<usize> = bytes
+        .windows(2)
+        .enumerate()
+        .filter_map(|(at, two)| (two == "é".as_bytes()).then_some(at))
+        .collect();
+    assert_eq!(found.len(), 2, "the local header and the central one");
+    for at in found {
+        bytes[at + 1] = b'(';
+    }
+    assert!(matches!(read(bytes), Err(RepositoryError::Corrupt { .. })));
 }
 
 #[test]

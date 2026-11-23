@@ -25,6 +25,10 @@ The first version with the desktop application and with binaries for Linux and W
 
 - Duplicating a page now reports the copied elements as changed.
 
+### Security
+
+- `zip` updated to 9.8 and `url` to 2.5.9 for their security advisories; a `.gaf` file with an entry name that is not text is refused.
+
 ### Notes
 
 - Pre-release: the Windows installer is not signed, so Windows warns of an unknown publisher.

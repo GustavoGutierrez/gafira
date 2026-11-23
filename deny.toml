@@ -11,6 +11,16 @@ targets = [
 [advisories]
 # Needs network (advisory database); runs in CI, may be skipped locally.
 yanked = "deny"
+# Unmaintained crates with no maintained release to move to; each comes in
+# through an upstream crate. Owner-approved exceptions; drop each one when
+# the upstream crate moves off it.
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; pulled in by rav1e/ravif for AVIF export" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; pulled in by ab_glyph through epaint/egui" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names is unmaintained; pulled in by accesskit and rfd on Linux" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant is unmaintained; pulled in by accesskit and rfd on Linux" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive is unmaintained; pulled in by accesskit and rfd on Linux" },
+]
 
 [licenses]
 allow = [

@@ -35,6 +35,9 @@ Specs 046 (iconos) y 078 (paquetes de Linux); ADR 0003; D-121 (esta spec). Depen
 
 - Compilado con mingw e instalado con Wine 11: archivos, registro de `.gaf` con su icono y orden, `--version`, la ventana de Inicio y la desinstalación completa.
 - El instalador de Actions se compila con MSVC y el propio flujo lo instala, comprueba el registro y lo desinstala.
+- Ensayo de `release.yml` en `develop` (ejecución 45079357708): Linux y Windows en verde, con el instalador instalado, el registro comprobado y desinstalado en Windows real.
+- `cargo deny check` completo, con avisos: `zip` 9.8 y `url` 2.5.9 corrigen sus vulnerabilidades; cinco crates sin mantenimiento y sin versión a la que pasar (`paste`, `ttf-parser`, `zbus_names`, `zvariant`, `zvariant_derive`) quedan exceptuados en `deny.toml` con la aprobación del titular.
+- Suite completa: 3640 pruebas, 0 fallos. CI compila sin información de depuración para no llenar el disco del runner.
 - V14 y `forbid(unsafe_code)` de `gafira-photos`, que fallaban desde antes, corregidos. La ley 4 descubrió que `DuplicatePage::touches` no declaraba los nodos de la copia; corregido.
 
 ## Riesgos y decisiones abiertas
