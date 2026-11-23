@@ -203,7 +203,7 @@ struct Shell {
     /// The textures of the thumbnails of «Recientes» (spec 033).
     thumbs: Thumbs,
     /// The templates of Inicio and Plantillas (spec 091).
-    catalogue: Catalogue,
+    catalogue: std::rc::Rc<std::cell::RefCell<Catalogue>>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -300,7 +300,10 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 saving: None,
                 waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
-                catalogue: Catalogue::new(config.templates, &cc.egui_ctx),
+                catalogue: std::rc::Rc::new(std::cell::RefCell::new(Catalogue::new(
+                    config.templates,
+                    &cc.egui_ctx,
+                ))),
             }))
         }),
     )
@@ -319,6 +322,7 @@ impl Shell {
     fn new_editor(&self) -> Box<Editor> {
         let mut editor = Box::<Editor>::default();
         editor.library = Some(std::rc::Rc::clone(&self.library));
+        editor.templates = Some(std::rc::Rc::clone(&self.catalogue));
         editor
             .photo_panel
             .get_mut()
@@ -796,7 +800,7 @@ impl eframe::App for Shell {
                 &self.texts,
                 unix_now(),
                 &mut self.thumbs,
-                &mut self.catalogue,
+                &mut self.catalogue.borrow_mut(),
             ),
             Screen::Create(create) => {
                 create.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)

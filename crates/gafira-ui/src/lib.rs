@@ -62,6 +62,8 @@ mod style;
 mod system_fonts;
 mod table_templates;
 mod tables;
+mod template_fit;
+mod template_panel;
 mod templates;
 mod text;
 mod text_effects;

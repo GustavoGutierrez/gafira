@@ -1584,6 +1584,10 @@ s_cosmos = "Cosmos"
 s_poster = "Cartel"
 
 [templates]
+search_for = "Busca plantillas de {size}"
+used = "Usado recién"
+for_you = "Más plantillas para ti"
+none_for_size = "No hay plantillas para este tamaño. Cambia el tamaño o busca otra palabra."
 search_hint = "Busca plantillas"
 explore = "Explorar por tipo"
 all = "Todas las plantillas"

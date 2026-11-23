@@ -47,7 +47,8 @@ use crate::zoom::{self, Zoom, ZoomAsk};
 
 /// The tabs of the rail, in the order of 03 §2.3, with their icons.
 /// The tabs of the rail (owner request): Elementos first, the one open
-/// when a design opens; Marca and Plantillas last, still to come.
+/// when a design opens; Marca, still to come, and Plantillas (spec 091)
+/// last.
 const TABS: [(&str, Icon); 6] = [
     ("tab.pieces", Icon::Pieces),
     ("tab.text", Icon::Text),
@@ -58,7 +59,7 @@ const TABS: [(&str, Icon); 6] = [
 ];
 
 /// The tabs that do nothing yet: they say so and cannot be opened.
-const SOON: [&str; 2] = ["tab.identity", "tab.templates"];
+const SOON: [&str; 1] = ["tab.identity"];
 
 /// The margin around the page on the canvas, in logical px.
 const CANVAS_MARGIN: f32 = 48.0;
@@ -297,6 +298,10 @@ pub(crate) struct Editor {
     frames_view: std::cell::RefCell<(String, Option<usize>)>,
     /// The search of «Fondo de la página» (spec 069).
     background_query: std::cell::RefCell<String>,
+    /// The templates, shared with Inicio, and the panel of Plantillas
+    /// (spec 091).
+    pub(crate) templates: Option<std::rc::Rc<std::cell::RefCell<crate::templates::Catalogue>>>,
+    template_panel: std::cell::RefCell<crate::template_panel::Panel>,
     library_previews: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Preview>>,
     /// The decoded pixels of the photos of frames, by content hash, cut
     /// out by each frame's shape into a texture (spec 066).
@@ -516,6 +521,8 @@ impl Default for Editor {
             library_view: std::cell::RefCell::default(),
             frames_view: std::cell::RefCell::default(),
             background_query: std::cell::RefCell::default(),
+            templates: None,
+            template_panel: std::cell::RefCell::default(),
             library_previews: std::cell::RefCell::default(),
             drag: None,
             marquee: None,
@@ -568,6 +575,8 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// A template to put on the page in view (spec 091).
+    apply_template: Option<std::path::PathBuf>,
     /// A freehand stroke to add to its page (spec 079).
     draw_stroke: Option<(PageId, gafira_edit::NodeSpec)>,
     /// Strokes the eraser went over, to remove in one step (spec 079).
@@ -1041,6 +1050,46 @@ fn page_sizes(document: &Document) -> Vec<Vec2> {
 }
 
 impl Editor {
+    /// Put the template at `path` on the page in view (spec 091): its first
+    /// page replaces the page's content, fitted to its size, and its other
+    /// pages follow; with its media, in one step.
+    fn apply_template(&mut self, engine: &mut Gafira, document: &Document, path: &std::path::Path) {
+        let Some(page) = self.current_page(document) else {
+            return;
+        };
+        let Ok(px) = page.size.to_px(document.dpi()) else {
+            return;
+        };
+        let template = match engine.projects().read_template(path) {
+            Ok(template) => template,
+            Err(error) => {
+                eprintln!("template {}: {error}", path.display());
+                return;
+            }
+        };
+        let pages = crate::template_fit::fitted(&template, px.width(), px.height());
+        let mut commands: Vec<Box<dyn gafira_edit::Command>> = template
+            .assets()
+            .iter()
+            .map(|(reference, entry)| {
+                Box::new(gafira_edit::InsertAsset::new(*reference, entry.clone()))
+                    as Box<dyn gafira_edit::Command>
+            })
+            .collect();
+        let id = page.id;
+        commands.push(Box::new(gafira_edit::ApplyTemplate::new(id, pages)));
+        let step = Transaction::new(MessageKey("edit.apply_template"), commands);
+        match engine.edit().execute(Box::new(step)) {
+            Ok(_) => {
+                self.selected = Selection::default();
+                self.scope = None;
+                self.active = Some(id);
+                self.template_panel.borrow_mut().used(path);
+            }
+            Err(error) => eprintln!("apply template: {error}"),
+        }
+    }
+
     /// The page of the selection, or the first page.
     fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
         let ids: Vec<PageId> = document.pages().iter().map(|page| page.id).collect();
@@ -1445,7 +1494,9 @@ impl Editor {
         let editing = editing
             || (!self.font_panel
                 && self.effects_panel_of(ctx, (theme, texts), document.as_deref(), &mut asked));
-        if !editing && let Some(step) = self.side_panel(ctx, theme, texts, &mut asked) {
+        if !editing
+            && let Some(step) = self.side_panel(ctx, theme, texts, document.as_deref(), &mut asked)
+        {
             self.rail.apply(step);
         }
         self.inspector(
@@ -1909,6 +1960,7 @@ impl Editor {
         ctx: &egui::Context,
         theme: &Theme,
         texts: &Texts,
+        document: Option<&Document>,
         asked: &mut Asked,
     ) -> Option<Move> {
         // Hidden from the rail (S64-06); «Fuente» shows all the same.
@@ -1928,6 +1980,21 @@ impl Editor {
             .show(ctx, |ui| {
                 if self.font_panel {
                     self.fonts_panel(ui, theme, texts, asked);
+                    return;
+                }
+                if TABS[self.rail.tab].0 == "tab.templates" {
+                    if let (Some(catalogue), Some(document)) = (&self.templates, document)
+                        && let Some(page) = self.current_page(document)
+                    {
+                        asked.apply_template = crate::template_panel::show(
+                            ui,
+                            theme,
+                            texts,
+                            &mut self.template_panel.borrow_mut(),
+                            &mut catalogue.borrow_mut(),
+                            (document, page),
+                        );
+                    }
                     return;
                 }
                 if TABS[self.rail.tab].0 == "tab.library" {
@@ -6826,6 +6893,11 @@ impl Editor {
         }
         if asked.import_frame_shape {
             self.import_frame_shape(engine);
+        }
+        if let Some(path) = &asked.apply_template
+            && let Some(document) = document
+        {
+            self.apply_template(engine, document, path);
         }
         if let Some((preset, words)) = &asked.insert_text
             && let Some(document) = document

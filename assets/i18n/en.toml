@@ -1584,6 +1584,10 @@ s_cosmos = "Cosmos"
 s_poster = "Poster"
 
 [templates]
+search_for = "Search templates for {size}"
+used = "Recently used"
+for_you = "More templates for you"
+none_for_size = "No templates for this size. Change the size or try another word."
 search_hint = "Search templates"
 explore = "Browse by type"
 all = "All templates"
