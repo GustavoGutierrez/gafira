@@ -151,6 +151,9 @@ name = "Gafira"
 version = "Version {version}"
 
 [home]
+title = "What will you design today?"
+search_hint = "Search design types and templates"
+design_types = "Design types"
 question = "What do you want to create today?"
 start = "Start designing"
 templates = "Explore templates"
@@ -1251,6 +1254,7 @@ italic = "Italic"
 bold_italic = "Bold italic"
 
 [create]
+back_home = "Back to Home"
 title = "Create a design"
 for_you = "For you"
 social = "Social media"
@@ -1578,3 +1582,12 @@ s_breeze = "Breeze"
 s_console = "Console"
 s_cosmos = "Cosmos"
 s_poster = "Poster"
+
+[templates]
+search_hint = "Search templates"
+explore = "Browse by type"
+all = "All templates"
+clear = "See all"
+none = "No templates match that search."
+loading = "Loading templates…"
+failed = "We couldn't open this template. Try again."

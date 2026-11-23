@@ -151,6 +151,9 @@ name = "Gafira"
 version = "Versión {version}"
 
 [home]
+title = "¿Qué vas a diseñar hoy?"
+search_hint = "Busca tipos de diseño y plantillas"
+design_types = "Tipos de diseño"
 question = "¿Qué quieres crear hoy?"
 start = "Empezar a diseñar"
 templates = "Explorar plantillas"
@@ -1251,6 +1254,7 @@ italic = "Cursiva"
 bold_italic = "Negrita cursiva"
 
 [create]
+back_home = "Volver a Inicio"
 title = "Crear un diseño"
 for_you = "Para ti"
 social = "Redes sociales"
@@ -1578,3 +1582,12 @@ s_breeze = "Brisa"
 s_console = "Consola"
 s_cosmos = "Cosmos"
 s_poster = "Cartel"
+
+[templates]
+search_hint = "Busca plantillas"
+explore = "Explorar por tipo"
+all = "Todas las plantillas"
+clear = "Ver todas"
+none = "No hay plantillas con esa búsqueda."
+loading = "Cargando plantillas…"
+failed = "No pudimos abrir esta plantilla. Inténtalo de nuevo."
