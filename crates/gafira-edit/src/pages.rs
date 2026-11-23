@@ -388,7 +388,8 @@ struct Templated {
 
 /// Puts a template on a page (spec 091): the content and background of
 /// the first template page replace the page's, and every other template
-/// page follows it as a new page of the same size. The page keeps its id,
+/// page follows it as a new page of the same size, guides, margins and
+/// bleed. The page keeps its id,
 /// name, size, guides and margins; every node and new page gets a new id.
 ///
 /// The template pages come already fitted to the page; their ids are
@@ -441,7 +442,12 @@ impl Command for ApplyTemplate {
                 .alloc_page_id()
                 .map_err(|_| CommandError::IdSpaceExhausted)?;
             let (roots, nodes) = renumbered(doc, source)?;
+            // A page like the one the template went on: its size, guides,
+            // margins and bleed.
             let mut page = Page::new(id, source.name.clone(), old.size);
+            page.guides.clone_from(&old.guides);
+            page.margins = old.margins;
+            page.bleed = old.bleed;
             page.roots = roots;
             page.nodes = nodes;
             page.background.clone_from(&source.background);
