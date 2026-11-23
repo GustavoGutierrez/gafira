@@ -1069,3 +1069,10 @@ Fecha: 23 de noviembre de 2026.
 
 - **Decisión** (titular, con capturas y una investigación de referencia): Gafira tiene kits de marca (varios, cada uno con nombre) con logos, paletas con HEX y CMYK, estilos de texto configurables, fuentes subidas, fotos, elementos gráficos e iconos, y plantillas de marca (guardar un diseño como plantilla de marca o subir una). Se gestionan en una pantalla Marca junto a Inicio y Plantillas, y se usan en el panel Marca del editor (insertar, arrastrar, aplicar estilo o color) y en los selectores de color. Sin voz de la marca, sin equipos ni controles de marca.
 - **Consecuencia**: se activa la pestaña Marca del riel (cambia D-119). Los kits viven fuera de los documentos, como Biblioteca; 03 §7.7 queda como referencia. Se aplica en la spec 093.
+
+## D-125 Kits de marca en archivos .gafkit
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular): un kit de marca se exporta a un archivo `.gafkit` (ZIP con `kit.json` y sus logos, fotos, gráficos, iconos, fuentes subidas y plantillas) y se importa en otro Gafira; si ya hay un kit con el mismo nombre, se pregunta si reemplazarlo. `.gafkit` es un tipo de archivo del sistema (`application/vnd.gafira.brandkit+zip`) con su propio icono, derivado del de `.gaf`.
+- **Consecuencia**: el puerto `BrandStore` exporta, lee e importa paquetes; los instaladores registran el tipo. Se aplica en la spec 094.

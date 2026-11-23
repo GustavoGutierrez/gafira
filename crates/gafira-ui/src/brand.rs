@@ -178,6 +178,18 @@ impl BrandKit {
     }
 }
 
+/// The extension of a packaged brand kit (spec 094).
+pub const KIT_EXTENSION: &str = "gafkit";
+
+/// Why a `.gafkit` could not be read, written or installed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KitError {
+    /// The file is not a brand kit of Gafira (or one of a newer version).
+    NotAKit,
+    /// Reading or writing failed; what the system said.
+    Io(String),
+}
+
 /// The tag that ties a template to its kit.
 pub const BRAND_TAG: &str = "brand:";
 
@@ -194,6 +206,9 @@ pub trait BrandStore {
     /// Copy `source` into the folder of `kind` of the kit `id`; its path
     /// there.
     fn add_file(&self, id: &str, kind: BrandFiles, source: &Path) -> Option<PathBuf>;
+    /// Delete a file of a kit (one `add_file` copied); a font leaves
+    /// Gafira's fonts.
+    fn remove_file(&self, path: &Path);
     /// The kit in use, if one was chosen.
     fn active(&self) -> Option<String>;
     fn set_active(&self, id: &str);
@@ -210,6 +225,24 @@ pub trait BrandStore {
     fn remove_template(&self, path: &Path);
     /// The thumbnail of the template at `path`.
     fn thumbnail(&self, path: &Path) -> Option<RecentThumbnail>;
+    /// Write the kit `id`, with all its files, fonts and templates, to the
+    /// `.gafkit` at `dest` (spec 094).
+    ///
+    /// # Errors
+    /// When the kit is unknown or the file cannot be written.
+    fn export_kit(&self, id: &str, dest: &Path) -> Result<(), KitError>;
+    /// The name of the kit in the `.gafkit` at `source`.
+    ///
+    /// # Errors
+    /// When it is not a brand kit.
+    fn peek_kit(&self, source: &Path) -> Result<String, KitError>;
+    /// Install the kit in the `.gafkit` at `source`: a new kit, or in place
+    /// of the kit `replace`, whose former files go. Its id.
+    ///
+    /// # Errors
+    /// When it is not a brand kit or it cannot be installed; nothing
+    /// changes then.
+    fn import_kit(&self, source: &Path, replace: Option<&str>) -> Result<String, KitError>;
 }
 
 /// An id no kit of `kits` has: `kit-<n>`.

@@ -21,6 +21,9 @@ pub struct SystemFont {
 pub struct SystemFonts(
     Arc<RwLock<Option<Arc<Vec<SystemFont>>>>>,
     Arc<RwLock<Vec<SystemFont>>>,
+    /// Every uploaded file and the family it brings, all its weights
+    /// included, so a family is listed and uninstalled whole.
+    Arc<RwLock<Vec<(PathBuf, String)>>>,
 );
 
 impl SystemFonts {
@@ -71,6 +74,23 @@ impl SystemFonts {
         }
     }
 
+    /// The uploaded faces are now `faces` (spec 093): after an upload or
+    /// an uninstall the store gives them all again.
+    pub fn set_added(&self, faces: Vec<SystemFont>, files: Vec<(PathBuf, String)>) {
+        if let Ok(mut added) = self.1.write() {
+            *added = faces;
+        }
+        if let Ok(mut all) = self.2.write() {
+            *all = files;
+        }
+    }
+
+    /// Every uploaded file and its family.
+    #[must_use]
+    pub fn uploaded_files(&self) -> Vec<(PathBuf, String)> {
+        self.2.read().map(|a| a.clone()).unwrap_or_default()
+    }
+
     /// The faces the person uploaded, in the order they came.
     #[must_use]
     pub fn added(&self) -> Vec<SystemFont> {
@@ -113,6 +133,53 @@ pub(crate) fn install(fonts: SystemFonts) {
 /// The catalogue of this run, or an empty one (a test).
 pub(crate) fn catalogue() -> SystemFonts {
     CATALOGUE.get().cloned().unwrap_or_default()
+}
+
+/// The faces of the system or uploaded family `family` installed in egui
+/// the first time something draws it (specs 062 and 093): a style of a
+/// brand kit, the font lists and the canvas then show it in its own face.
+/// A family of Gafira is already there.
+pub(crate) fn load_family(ctx: &egui::Context, family: &str) {
+    if gafira_theme::library().iter().any(|f| f.family == family) {
+        return;
+    }
+    let id = egui::Id::new("system_fonts.loaded");
+    if ctx.data(|d| {
+        d.get_temp::<std::sync::Arc<std::collections::BTreeSet<String>>>(id)
+            .is_some_and(|set| set.contains(family))
+    }) {
+        return;
+    }
+    let system = catalogue();
+    let faces: Vec<SystemFont> = system
+        .faces()
+        .iter()
+        .filter(|f| f.family == family)
+        .cloned()
+        .collect();
+    // Not found while the scan runs: it may come with it, so try again.
+    if faces.is_empty() && !system.ready() {
+        return;
+    }
+    ctx.data_mut(|d| {
+        let set =
+            d.get_temp_mut_or_default::<std::sync::Arc<std::collections::BTreeSet<String>>>(id);
+        std::sync::Arc::make_mut(set).insert(family.to_owned());
+    });
+    for face in faces {
+        let Ok(bytes) = std::fs::read(&face.path) else {
+            continue;
+        };
+        let key = gafira_theme::face_key(&face.family, face.bold, face.italic);
+        ctx.add_font(egui::epaint::text::FontInsert::new(
+            &key,
+            egui::FontData::from_owned(bytes),
+            vec![egui::epaint::text::InsertFontFamily {
+                family: egui::FontFamily::Name(key.clone().into()),
+                priority: egui::epaint::text::FontPriority::Highest,
+            }],
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -160,5 +227,9 @@ mod tests {
         assert_eq!(fonts.added().len(), 1, "a file is added once");
         assert!(fonts.families(&[]).contains(&"Marca Sans".to_owned()));
         assert!(fonts.path("Marca Sans").is_some());
+        // Uninstalled, it leaves every list.
+        fonts.set_added(Vec::new(), Vec::new());
+        assert!(fonts.added().is_empty());
+        assert!(!fonts.families(&[]).contains(&"Marca Sans".to_owned()));
     }
 }

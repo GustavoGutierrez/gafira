@@ -83,13 +83,19 @@ pub(crate) struct BrandScreen {
     extract: Option<Extract>,
     /// The style being edited.
     style: Option<StyleDraft>,
-    /// Whether «Administrar fuentes subidas» is open.
-    fonts_open: bool,
     /// The section the left list asked to show.
     jump: Option<&'static str>,
     thumbs: BTreeMap<PathBuf, Thumb>,
     /// A message for the person, such as a template that could not be added.
     notice: Option<String>,
+    /// A `.gafkit` whose kit has the name of one already here: its path,
+    /// the name and the id of that kit, while the person chooses (spec 094).
+    clash: Option<(PathBuf, String, String)>,
+    /// A `.gafkit` to import as soon as the screen shows (opened from the
+    /// system).
+    pending: Option<PathBuf>,
+    /// What an export or an import did, and when, for a moment.
+    toast: Option<(String, bool, f64)>,
 }
 
 /// «Extraer colores de una imagen» for a palette: the image chosen, the
@@ -140,10 +146,197 @@ impl BrandScreen {
             color: None,
             extract: None,
             style: None,
-            fonts_open: false,
             jump: None,
             thumbs: BTreeMap::new(),
             notice: None,
+            clash: None,
+            pending: None,
+            toast: None,
+        }
+    }
+
+    /// The screen, importing the `.gafkit` at `path` first.
+    pub(crate) fn importing(store: &dyn BrandStore, path: PathBuf) -> Self {
+        let mut screen = Self::new(store, None);
+        screen.pending = Some(path);
+        screen
+    }
+
+    /// Start importing the `.gafkit` at `path`: straight in, or the
+    /// question when a kit has its name.
+    fn import(&mut self, store: &dyn BrandStore, texts: &Texts, path: PathBuf, now: f64) {
+        match store.peek_kit(&path) {
+            Err(error) => self.kit_failed(texts, &error, now),
+            Ok(name) => {
+                let same = self
+                    .kits
+                    .iter()
+                    .find(|k| k.name.trim().to_lowercase() == name.trim().to_lowercase());
+                match same {
+                    Some(kit) => self.clash = Some((path, name, kit.id.clone())),
+                    None => self.install(store, texts, &path, None, now),
+                }
+            }
+        }
+    }
+
+    /// Install the `.gafkit` at `path`, new or over the kit `replace`, and
+    /// open it. A new kit with the name of another takes « (2)».
+    fn install(
+        &mut self,
+        store: &dyn BrandStore,
+        texts: &Texts,
+        path: &Path,
+        replace: Option<&str>,
+        now: f64,
+    ) {
+        match store.import_kit(path, replace) {
+            Err(error) => self.kit_failed(texts, &error, now),
+            Ok(id) => {
+                let mut kits = store.kits();
+                if replace.is_none()
+                    && let Some(kit) = kits.iter().find(|k| k.id == id).cloned()
+                {
+                    let taken = |name: &str| {
+                        kits.iter().any(|k| {
+                            k.id != id && k.name.trim().to_lowercase() == name.to_lowercase()
+                        })
+                    };
+                    if taken(kit.name.trim()) {
+                        let name = (2..)
+                            .map(|n| format!("{} ({n})", kit.name.trim()))
+                            .find(|n| !taken(n))
+                            .unwrap_or_default();
+                        let mut kit = kit;
+                        kit.name = name;
+                        store.save(&kit);
+                        kits = store.kits();
+                    }
+                }
+                self.kits = kits;
+                store.set_active(&id);
+                self.view = View::Kit(id);
+                self.toast = Some((t(texts, "brand.kit_imported"), true, now));
+            }
+        }
+    }
+
+    fn kit_failed(&mut self, texts: &Texts, error: &brand::KitError, now: f64) {
+        let message = match error {
+            brand::KitError::NotAKit => t(texts, "brand.not_a_kit"),
+            brand::KitError::Io(detail) => {
+                eprintln!("brand kit: {detail}");
+                t(texts, "brand.kit_failed")
+            }
+        };
+        self.toast = Some((message, false, now));
+    }
+
+    /// Export the kit `id` to a `.gafkit` the person names.
+    fn export(
+        &mut self,
+        store: &dyn BrandStore,
+        texts: &Texts,
+        id: &str,
+        window: Option<&eframe::Frame>,
+        now: f64,
+    ) {
+        let name = self
+            .kits
+            .iter()
+            .find(|k| k.id == id)
+            .map(|k| k.name.trim().to_owned())
+            .unwrap_or_default();
+        let file: String = name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || " -_()".contains(c) {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let Some(mut dest) = crate::files::picker(window)
+            .add_filter(t(texts, "brand.kit_file"), &[brand::KIT_EXTENSION])
+            .set_file_name(format!("{}.{}", file.trim(), brand::KIT_EXTENSION))
+            .save_file()
+        else {
+            return;
+        };
+        if dest.extension().is_none_or(|e| e != brand::KIT_EXTENSION) {
+            dest.set_extension(brand::KIT_EXTENSION);
+        }
+        match store.export_kit(id, &dest) {
+            Ok(()) => self.toast = Some((t(texts, "brand.kit_exported"), true, now)),
+            Err(error) => self.kit_failed(texts, &error, now),
+        }
+    }
+
+    /// Ask for a `.gafkit` and import it.
+    fn pick_import(
+        &mut self,
+        store: &dyn BrandStore,
+        texts: &Texts,
+        window: Option<&eframe::Frame>,
+        now: f64,
+    ) {
+        if let Some(path) = crate::files::picker(window)
+            .add_filter(t(texts, "brand.kit_file"), &[brand::KIT_EXTENSION])
+            .pick_file()
+        {
+            self.import(store, texts, path, now);
+        }
+    }
+
+    /// «Ya tienes un kit con ese nombre»: replace it, keep both or cancel.
+    fn clash_modal(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        store: &dyn BrandStore,
+        now: f64,
+    ) {
+        let Some((path, name, id)) = self.clash.clone() else {
+            return;
+        };
+        let mut choice = None;
+        modal_of(
+            ctx,
+            theme,
+            &t(texts, "brand.clash_title").replace("{name}", &name),
+            480.0,
+            |ui| {
+                ui.label(
+                    RichText::new(t(texts, "brand.clash_body"))
+                        .font(theme.font("body-sm"))
+                        .color(theme.c("text.secondary")),
+                );
+                ui.add_space(18.0);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if widgets::primary(ui, theme, t(texts, "brand.clash_replace")).clicked() {
+                        choice = Some(Some(true));
+                    }
+                    if widgets::secondary(ui, theme, t(texts, "brand.clash_keep")).clicked() {
+                        choice = Some(Some(false));
+                    }
+                    if widgets::secondary(ui, theme, t(texts, "brand.cancel")).clicked() {
+                        choice = Some(None);
+                    }
+                });
+            },
+        );
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            choice = Some(None);
+        }
+        match choice {
+            Some(Some(replace)) => {
+                self.clash = None;
+                self.install(store, texts, &path, replace.then_some(id.as_str()), now);
+            }
+            Some(None) => self.clash = None,
+            None => {}
         }
     }
 
@@ -155,6 +348,10 @@ impl BrandScreen {
         store: &dyn BrandStore,
         window: Option<&eframe::Frame>,
     ) -> Go {
+        let now = ctx.input(|i| i.time);
+        if let Some(path) = self.pending.take() {
+            self.import(store, texts, path, now);
+        }
         let mut go = create::start_topbar(ctx, theme, texts, Some(Tab::Brand)).unwrap_or(Go::Stay);
         egui::SidePanel::left("brand.nav")
             .exact_width(252.0)
@@ -192,7 +389,7 @@ impl BrandScreen {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         let next = match self.view.clone() {
-                            View::Kits => self.kits_view(ui, theme, texts, store),
+                            View::Kits => self.kits_view(ui, theme, texts, store, window),
                             View::Kit(id) => self.kit_view(ui, theme, texts, store, &id, window),
                             View::Templates => self.templates_view(ui, theme, texts, store),
                         };
@@ -208,7 +405,50 @@ impl BrandScreen {
         if self.renaming.is_some() {
             self.rename_modal(ctx, theme, texts, store);
         }
+        if self.clash.is_some() {
+            self.clash_modal(ctx, theme, texts, store, now);
+        }
+        self.show_toast(ctx, theme, now);
         go
+    }
+
+    /// What an export or an import did, at the foot of the window for a
+    /// few seconds.
+    fn show_toast(&mut self, ctx: &egui::Context, theme: &Theme, now: f64) {
+        let Some((message, ok, since)) = &self.toast else {
+            return;
+        };
+        if now - since > 4.0 {
+            self.toast = None;
+            return;
+        }
+        let screen = ctx.content_rect();
+        egui::Area::new(egui::Id::new("brand.toast"))
+            .order(egui::Order::Tooltip)
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .fixed_pos(egui::pos2(screen.center().x, screen.max.y - 28.0))
+            .show(ctx, |ui| {
+                egui::Frame::NONE
+                    .fill(if *ok {
+                        theme.c("topbar.bg")
+                    } else {
+                        theme.c("error.bg")
+                    })
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::symmetric(16, 10))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new(message.as_str())
+                                .font(theme.font("body-sm"))
+                                .color(if *ok {
+                                    theme.c("topbar.fg")
+                                } else {
+                                    theme.c("error.fg")
+                                }),
+                        );
+                    });
+            });
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
 
     /// The list on the left.
@@ -276,14 +516,18 @@ impl BrandScreen {
         theme: &Theme,
         texts: &Texts,
         store: &dyn BrandStore,
+        window: Option<&eframe::Frame>,
     ) -> Option<Go> {
-        if title_row(
+        let now = ui.input(|i| i.time);
+        match title_actions(
             ui,
             theme,
             &t(texts, "brand.kits"),
-            Some(&t(texts, "brand.add_new")),
+            &[&t(texts, "brand.add_new"), &t(texts, "brand.import_kit")],
         ) {
-            self.creating = Some(String::new());
+            Some(0) => self.creating = Some(String::new()),
+            Some(_) => self.pick_import(store, texts, window, now),
+            None => {}
         }
         if self.kits.is_empty() {
             empty_state(
@@ -298,6 +542,7 @@ impl BrandScreen {
         let width = ((ui.available_width() + gap) / 4.0 - gap).clamp(200.0, 300.0);
         let mut open = None;
         let mut delete = None;
+        let mut export = None;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(gap, gap);
             for kit in &self.kits {
@@ -307,6 +552,7 @@ impl BrandScreen {
                         self.renaming = Some((kit.id.clone(), kit.name.clone()))
                     }
                     Some(CardAction::Delete) => delete = Some(kit.id.clone()),
+                    Some(CardAction::Export) => export = Some(kit.id.clone()),
                     None => {}
                 }
             }
@@ -314,6 +560,9 @@ impl BrandScreen {
         if let Some(id) = delete {
             store.delete(&id);
             self.kits = store.kits();
+        }
+        if let Some(id) = export {
+            self.export(store, texts, &id, window, now);
         }
         if let Some(id) = open {
             store.set_active(&id);
@@ -347,6 +596,7 @@ impl BrandScreen {
         let mut kit = self.kits[index].clone();
         let before = kit.clone();
         let mut go = None;
+        let mut export = false;
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(&kit.name)
@@ -359,7 +609,19 @@ impl BrandScreen {
             if icon_button(ui, theme, Icon::Drawing, &t(texts, "brand.rename")) {
                 self.renaming = Some((kit.id.clone(), kit.name.clone()));
             }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if widgets::secondary(ui, theme, t(texts, "brand.export_kit"))
+                    .on_hover_text(t(texts, "brand.export_hint"))
+                    .clicked()
+                {
+                    export = true;
+                }
+            });
         });
+        if export {
+            let now = ui.input(|i| i.time);
+            self.export(store, texts, &kit.id, window, now);
+        }
         ui.add_space(18.0);
         // Logos first, then colours and fonts, and the other files.
         self.files_section(
@@ -414,7 +676,8 @@ impl BrandScreen {
                     }
                 });
                 if let Some(i) = remove {
-                    kit.files_mut(kind).remove(i);
+                    let path = kit.files_mut(kind).remove(i);
+                    store.remove_file(&path);
                 }
                 false
             }
@@ -454,7 +717,8 @@ impl BrandScreen {
             let mut remove_palette = None;
             for (p, palette) in kit.palettes.iter_mut().enumerate() {
                 egui::Frame::NONE
-                    .fill(theme.c("surface.sunken"))
+                    .fill(theme.c("surface"))
+                    .stroke(Stroke::new(1.0, theme.c("border")))
                     .corner_radius(10.0)
                     .inner_margin(egui::Margin::same(14))
                     .show(ui, |ui| {
@@ -807,6 +1071,7 @@ impl BrandScreen {
                                             search: String::new(),
                                             picking: false,
                                             size: format!("{:.0}", style.size),
+                                            upload: false,
                                         });
                                     }
                                     ui.label(
@@ -830,62 +1095,132 @@ impl BrandScreen {
                     kit.styles.remove(i);
                     self.style = None;
                 }
-                // «Administrar fuentes subidas (n)».
-                let label = format!("{} ({})", t(texts, "brand.manage_fonts"), kit.fonts.len());
-                if ui
-                    .link(
-                        RichText::new(label)
-                            .font(theme.font("body-sm"))
-                            .color(theme.c("link")),
-                    )
-                    .clicked()
-                {
-                    self.fonts_open = !self.fonts_open;
-                }
-                if self.fonts_open {
-                    ui.add_space(8.0);
-                    let mut drop_font = None;
-                    for (k, path) in kit.fonts.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            let family = uploaded
-                                .iter()
-                                .find(|(p, _)| p == path)
-                                .map_or_else(String::new, |(_, f)| f.clone());
-                            ui.label(
-                                RichText::new(&family)
-                                    .font(theme.font("ui-label"))
-                                    .color(theme.c("text")),
-                            );
-                            ui.label(
-                                RichText::new(
-                                    path.file_name()
-                                        .map(|n| n.to_string_lossy().into_owned())
-                                        .unwrap_or_default(),
-                                )
-                                .font(theme.font("caption"))
-                                .color(theme.c("text.muted")),
-                            );
-                            if icon_button(ui, theme, Icon::Delete, &t(texts, "brand.delete")) {
-                                drop_font = Some(k);
-                            }
-                        });
-                    }
-                    if let Some(k) = drop_font {
-                        kit.fonts.remove(k);
-                    }
-                    if add_button(ui, theme, &t(texts, "brand.upload_font")).clicked()
-                        && let Some(files) = crate::files::picker(window)
-                            .add_filter(t(texts, "brand.font_files"), &["ttf", "otf"])
-                            .pick_files()
+                // «Subir fuente» in a style's font list: the font is
+                // uploaded and the style takes it.
+                if let Some(draft) = self.style.as_mut().filter(|d| d.upload) {
+                    draft.upload = false;
+                    if let Some(family) = upload_fonts(store, kit, window, texts).into_iter().next()
                     {
-                        for file in files {
-                            if let Some(copied) = store.add_file(&kit.id, BrandFiles::Fonts, &file)
-                            {
-                                kit.fonts.push(copied);
+                        draft.style.font = family;
+                        draft.picking = false;
+                    }
+                }
+                // The uploaded fonts, always in view: each in itself, a bin,
+                // and «Subir fuente». An uploaded font is in every font list
+                // of Gafira, the editor's too.
+                ui.add_space(6.0);
+                egui::Frame::NONE
+                    .fill(theme.c("surface"))
+                    .stroke(Stroke::new(1.0, theme.c("border")))
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::same(14))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} ({})",
+                                    t(texts, "brand.uploaded_fonts"),
+                                    uploaded_family_count(kit)
+                                ))
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                            );
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                if add_button(ui, theme, &t(texts, "brand.upload_font")).clicked() {
+                                    upload_fonts(store, kit, window, texts);
+                                }
+                            });
+                        });
+                        ui.add_space(4.0);
+                        if kit.fonts.is_empty() {
+                            ui.label(
+                                RichText::new(t(texts, "brand.no_fonts"))
+                                    .font(theme.font("body-sm"))
+                                    .color(theme.c("text.muted")),
+                            );
+                            return;
+                        }
+                        // One row per family, whatever its number of files
+                        // (a family often comes as one file per weight).
+                        let uploaded = uploaded_families(kit);
+                        let mut families: Vec<(String, usize)> = Vec::new();
+                        for path in &kit.fonts {
+                            let family = uploaded.iter().find(|(p, _)| p == path).map_or_else(
+                                || {
+                                    path.file_stem()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default()
+                                },
+                                |(_, f)| f.clone(),
+                            );
+                            match families.iter_mut().find(|(f, _)| *f == family) {
+                                Some((_, n)) => *n += 1,
+                                None => families.push((family, 1)),
                             }
                         }
-                    }
-                }
+                        let mut drop_family = None;
+                        for (family, files) in &families {
+                            ui.horizontal(|ui| {
+                                let sample = BrandTextStyle {
+                                    font: family.clone(),
+                                    name: family.clone(),
+                                    size: 20.0,
+                                    bold: false,
+                                    italic: false,
+                                };
+                                let face = crate::editor::text_family(
+                                    ui.ctx(),
+                                    theme,
+                                    &span_style(&sample),
+                                );
+                                ui.label(
+                                    RichText::new(family)
+                                        .font(egui::FontId::new(20.0, face))
+                                        .color(theme.c("text")),
+                                );
+                                ui.label(
+                                    RichText::new(if *files == 1 {
+                                        t(texts, "brand.font_file_one")
+                                    } else {
+                                        t(texts, "brand.font_files_count")
+                                            .replace("{n}", &files.to_string())
+                                    })
+                                    .font(theme.font("caption"))
+                                    .color(theme.c("text.muted")),
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if icon_button(
+                                        ui,
+                                        theme,
+                                        Icon::Delete,
+                                        &t(texts, "brand.uninstall_font"),
+                                    ) {
+                                        drop_family = Some(family.clone());
+                                    }
+                                });
+                            });
+                        }
+                        // Uninstall: every file of the family is deleted
+                        // and leaves Gafira's fonts.
+                        if let Some(family) = drop_family {
+                            let of_family = |path: &PathBuf| {
+                                uploaded.iter().find(|(p, _)| p == path).map_or_else(
+                                    || {
+                                        path.file_stem()
+                                            .is_some_and(|n| n.to_string_lossy() == family)
+                                    },
+                                    |(_, f)| *f == family,
+                                )
+                            };
+                            let (gone, kept): (Vec<PathBuf>, Vec<PathBuf>) =
+                                kit.fonts.drain(..).partition(of_family);
+                            kit.fonts = kept;
+                            for path in gone {
+                                store.remove_file(&path);
+                            }
+                        }
+                    });
                 false
             },
         );
@@ -904,6 +1239,7 @@ impl BrandScreen {
                 search: String::new(),
                 picking: true,
                 size: format!("{:.0}", kit.styles[index].size),
+                upload: false,
             });
         }
     }
@@ -1261,6 +1597,37 @@ fn title_row(ui: &mut egui::Ui, theme: &Theme, title: &str, action: Option<&str>
     clicked
 }
 
+/// [`title_row`] with several actions on its right, the first rightmost;
+/// the index of the one clicked.
+fn title_actions(ui: &mut egui::Ui, theme: &Theme, title: &str, actions: &[&str]) -> Option<usize> {
+    let mut clicked = None;
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(title)
+                .font(egui::FontId::new(
+                    30.0,
+                    egui::FontFamily::Name(DISPLAY.into()),
+                ))
+                .color(theme.c("text")),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            for (i, action) in actions.iter().enumerate() {
+                let response = if i == 0 {
+                    add_button(ui, theme, action)
+                } else {
+                    widgets::secondary(ui, theme, (*action).to_owned())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                };
+                if response.clicked() {
+                    clicked = Some(i);
+                }
+            }
+        });
+    });
+    ui.add_space(18.0);
+    clicked
+}
+
 /// «+ Añadir uno nuevo»: the secondary button of the interface.
 fn add_button(ui: &mut egui::Ui, theme: &Theme, label: &str) -> egui::Response {
     widgets::secondary(ui, theme, format!("+  {label}"))
@@ -1373,6 +1740,7 @@ fn empty_state(ui: &mut egui::Ui, theme: &Theme, title: &str, line: &str) {
 enum CardAction {
     Open,
     Rename,
+    Export,
     Delete,
 }
 
@@ -1465,6 +1833,10 @@ fn kit_card(
                     }
                     if ui.button(t(texts, "brand.rename")).clicked() {
                         action = Some(CardAction::Rename);
+                        ui.close();
+                    }
+                    if ui.button(t(texts, "brand.export_kit")).clicked() {
+                        action = Some(CardAction::Export);
                         ui.close();
                     }
                     if ui.button(t(texts, "brand.delete")).clicked() {
@@ -1820,6 +2192,8 @@ pub(crate) struct StyleDraft {
     picking: bool,
     /// The size as typed.
     size: String,
+    /// «Subir fuente» was pressed in its font list.
+    upload: bool,
 }
 
 /// The sizes the size list offers, in px.
@@ -1883,17 +2257,54 @@ fn size_combo(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, draft: &mut Style
     });
 }
 
+/// Ask for TTF or OTF files and copy them into `kit`, where Gafira finds
+/// them as fonts; the families they bring, in their order.
+fn upload_fonts(
+    store: &dyn BrandStore,
+    kit: &mut BrandKit,
+    window: Option<&eframe::Frame>,
+    texts: &Texts,
+) -> Vec<String> {
+    let Some(files) = crate::files::picker(window)
+        .add_filter(t(texts, "brand.font_files"), &["ttf", "otf", "ttc"])
+        .pick_files()
+    else {
+        return Vec::new();
+    };
+    let mut families = Vec::new();
+    for file in files {
+        if let Some(copied) = store.add_file(&kit.id, BrandFiles::Fonts, &file) {
+            kit.fonts.push(copied);
+        }
+    }
+    for (_, family) in uploaded_families(kit) {
+        if !families.contains(&family) {
+            families.push(family);
+        }
+    }
+    // The newest last: bring its family first.
+    if let Some(last) = kit.fonts.last()
+        && let Some((_, family)) = uploaded_families(kit).into_iter().find(|(p, _)| p == last)
+    {
+        families.retain(|f| f != &family);
+        families.insert(0, family);
+    }
+    families
+}
+
+/// How many families the fonts uploaded to `kit` bring.
+fn uploaded_family_count(kit: &BrandKit) -> usize {
+    let families: std::collections::BTreeSet<String> =
+        uploaded_families(kit).into_iter().map(|(_, f)| f).collect();
+    families.len()
+}
+
 /// The families of the fonts uploaded to `kit`, by file.
 fn uploaded_families(kit: &BrandKit) -> Vec<(PathBuf, String)> {
-    let added = crate::system_fonts::catalogue().added();
+    let files = crate::system_fonts::catalogue().uploaded_files();
     kit.fonts
         .iter()
-        .filter_map(|path| {
-            added
-                .iter()
-                .find(|f| &f.path == path)
-                .map(|f| (path.clone(), f.family.clone()))
-        })
+        .filter_map(|path| files.iter().find(|(p, _)| p == path).cloned())
         .collect()
 }
 
@@ -2025,6 +2436,10 @@ fn style_editor(
                         &mut draft.search,
                         t(texts, "brand.font_search"),
                     ));
+                    ui.add_space(6.0);
+                    if add_button(ui, theme, &t(texts, "brand.upload_font")).clicked() {
+                        draft.upload = true;
+                    }
                     let words = draft.search.trim().to_lowercase();
                     let keep =
                         |family: &str| words.is_empty() || family.to_lowercase().contains(&words);

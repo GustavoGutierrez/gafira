@@ -21,6 +21,13 @@
       <key>LSHandlerRank</key><string>Owner</string>
       <key>LSItemContentTypes</key><array><string>app.gafira.project</string></array>
     </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Gafira brand kit</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleTypeIconFile</key><string>gafira-brandkit</string>
+      <key>LSHandlerRank</key><string>Owner</string>
+      <key>LSItemContentTypes</key><array><string>app.gafira.brandkit</string></array>
+    </dict>
   </array>
   <key>UTExportedTypeDeclarations</key>
   <array>
@@ -33,6 +40,17 @@
       <dict>
         <key>public.filename-extension</key><array><string>gaf</string></array>
         <key>public.mime-type</key><string>application/vnd.gafira.project+zip</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key><string>app.gafira.brandkit</string>
+      <key>UTTypeDescription</key><string>Gafira brand kit</string>
+      <key>UTTypeIconFile</key><string>gafira-brandkit</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>gafkit</string></array>
+        <key>public.mime-type</key><string>application/vnd.gafira.brandkit+zip</string>
       </dict>
     </dict>
   </array>

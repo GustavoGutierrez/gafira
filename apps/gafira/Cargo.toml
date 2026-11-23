@@ -28,6 +28,8 @@ gafira-vision = { workspace = true, features = ["online", "onnx"] }
 eframe.workspace = true
 # Spec 074: the export settings kept per format, as JSON.
 serde_json.workspace = true
+# Spec 094: the .gafkit package of a brand kit is a ZIP.
+zip.workspace = true
 
 [dev-dependencies]
 # Spec 091: `examples/make_templates.rs` builds and draws the templates.

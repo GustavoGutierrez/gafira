@@ -19,6 +19,8 @@ A new Inicio with templates, and brand kits.
 
 - Template details: a click on a template shows it large with its size, «Customise this template» and similar templates.
 
+- Marca: a brand kit is exported to a .gafkit file with all its colours, styles, fonts, files and templates, and imported in another Gafira (opening a .gafkit imports it); when a kit of that name exists, Gafira asks whether to replace it. The .gafkit type has its own icon on Linux, Windows and macOS.
+- Marca: fonts are uploaded (several at once) from the Fuentes tipográficas section or a style's font list, shown in their own face, available in every font list of Gafira, and uninstalled whole by family.
 - Marca: a palette can take colours from an image of the kit or of the computer; Gafira finds its main colours and the person chooses which ones to add.
 - Marca: brand kits with logos, colour palettes (HEX and CMYK), text styles, uploaded fonts, photos, graphics and icons, managed on their own screen and used from the Marca panel of the editor and in the colour pickers; a design can be saved as a brand template, or a .gaf uploaded as one.
 

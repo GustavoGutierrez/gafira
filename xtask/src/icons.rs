@@ -1,4 +1,5 @@
-//! `gen-icons`: the application and `.gaf` document icons (03 §5.3, DIS-13).
+//! `gen-icons`: the application, `.gaf` document and `.gafkit` brand kit
+//! icons (03 §5.3, DIS-13, spec 094).
 //!
 //! Every icon comes from the brand SVGs through this code, never from a hand
 //! export: the application tile is composed as SVG text from the symbol and
@@ -18,6 +19,8 @@ pub const SIZES: [u32; 8] = [16, 24, 32, 48, 64, 128, 256, 512];
 pub const SYMBOL_SOURCE: &str = "assets/gafira-logo-symbol.svg";
 /// The `.gaf` document icon of the brand manual (§7.12).
 pub const DOCUMENT_SOURCE: &str = "docs/manuals/marca/assets/gafira-gaf-icon.svg";
+/// The `.gafkit` brand kit icon (spec 094), derived from the `.gaf` one.
+pub const KIT_SOURCE: &str = "docs/manuals/marca/assets/gafira-gafkit-icon.svg";
 /// Where the generated `hicolor` tree lives, relative to the repository root.
 pub const OUT_DIR: &str = "assets/app-icon/hicolor";
 /// The Windows and macOS icons, relative to the repository root: of the
@@ -26,6 +29,8 @@ pub const WINDOWS_APP: &str = "assets/app-icon/windows/gafira.ico";
 pub const WINDOWS_DOCUMENT: &str = "assets/app-icon/windows/gafira-project.ico";
 pub const MACOS_APP: &str = "assets/app-icon/macos/gafira.icns";
 pub const MACOS_DOCUMENT: &str = "assets/app-icon/macos/gafira-project.icns";
+pub const WINDOWS_KIT: &str = "assets/app-icon/windows/gafira-brandkit.ico";
+pub const MACOS_KIT: &str = "assets/app-icon/macos/gafira-brandkit.icns";
 /// The sizes of an `.ico`, in pixels.
 pub const ICO_SIZES: [u32; 7] = [16, 24, 32, 48, 64, 128, 256];
 /// The sizes of an `.icns`, in pixels, and the kind of each.
@@ -41,6 +46,9 @@ pub const APP_ICON: &str = "gafira";
 /// The icon name of the `.gaf` MIME type `application/vnd.gafira.project+zip`
 /// (freedesktop: the `/` becomes `-`).
 pub const DOCUMENT_ICON: &str = "application-vnd.gafira.project+zip";
+/// The icon name of the `.gafkit` MIME type
+/// `application/vnd.gafira.brandkit+zip`.
+pub const KIT_ICON: &str = "application-vnd.gafira.brandkit+zip";
 
 /// The side of the tile SVG, in user units.
 const SIDE: f64 = 512.0;
@@ -68,10 +76,12 @@ pub fn generate(root: &Path) -> Result<Vec<Output>, String> {
     let symbol = read(root, SYMBOL_SOURCE)?;
     let tile = tile_svg(&symbol)?;
     let document = read(root, DOCUMENT_SOURCE)?;
+    let kit = read(root, KIT_SOURCE)?;
     let mut out = Vec::new();
     for (svg, windows, macos) in [
         (&tile, WINDOWS_APP, MACOS_APP),
         (&document, WINDOWS_DOCUMENT, MACOS_DOCUMENT),
+        (&kit, WINDOWS_KIT, MACOS_KIT),
     ] {
         let tree = usvg::Tree::from_data(svg.as_bytes(), &usvg::Options::default())
             .map_err(|e| format!("{windows}: {e}"))?;
@@ -86,6 +96,7 @@ pub fn generate(root: &Path) -> Result<Vec<Output>, String> {
     }
     push_theme(&mut out, "apps", APP_ICON, tile.into_bytes())?;
     push_theme(&mut out, "mimetypes", DOCUMENT_ICON, document.into_bytes())?;
+    push_theme(&mut out, "mimetypes", KIT_ICON, kit.into_bytes())?;
     Ok(out)
 }
 
@@ -312,8 +323,12 @@ mod tests {
     fn dis_13_pngs_have_the_hicolor_sizes() {
         let out = generate(&root()).expect("generate");
         // And the Windows and macOS ones.
-        assert_eq!(out.len(), 2 * (SIZES.len() + 1) + 4);
-        for (context, name) in [("apps", APP_ICON), ("mimetypes", DOCUMENT_ICON)] {
+        assert_eq!(out.len(), 3 * (SIZES.len() + 1) + 6);
+        for (context, name) in [
+            ("apps", APP_ICON),
+            ("mimetypes", DOCUMENT_ICON),
+            ("mimetypes", KIT_ICON),
+        ] {
             for size in SIZES {
                 let png = file(
                     &out,
@@ -339,6 +354,7 @@ mod tests {
         for (windows, macos, context, name) in [
             (WINDOWS_APP, MACOS_APP, "apps", APP_ICON),
             (WINDOWS_DOCUMENT, MACOS_DOCUMENT, "mimetypes", DOCUMENT_ICON),
+            (WINDOWS_KIT, MACOS_KIT, "mimetypes", KIT_ICON),
         ] {
             let ico = &file(&out, windows).bytes;
             let number = |at: usize, n: usize| -> usize {

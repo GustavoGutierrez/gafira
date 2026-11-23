@@ -5122,32 +5122,11 @@ impl Editor {
     /// egui the first time they are needed (spec 062): the canvas then draws
     /// those texts in their own face. A family of Gafira is already there.
     fn load_system_fonts(&self, ctx: &egui::Context) {
-        let system = system_fonts::catalogue();
-        if !system.ready() {
-            return;
-        }
         let mut loaded = self.loaded_fonts.borrow_mut();
         for family in &self.document_fonts {
-            if loaded.contains(family) {
-                continue;
-            }
-            loaded.insert(family.clone());
-            if gafira_theme::library().iter().any(|f| f.family == family) {
-                continue;
-            }
-            for face in system.faces().iter().filter(|f| &f.family == family) {
-                let Ok(bytes) = std::fs::read(&face.path) else {
-                    continue;
-                };
-                let key = gafira_theme::face_key(&face.family, face.bold, face.italic);
-                ctx.add_font(egui::epaint::text::FontInsert::new(
-                    &key,
-                    egui::FontData::from_owned(bytes),
-                    vec![egui::epaint::text::InsertFontFamily {
-                        family: egui::FontFamily::Name(key.clone().into()),
-                        priority: egui::epaint::text::FontPriority::Highest,
-                    }],
-                ));
+            if !loaded.contains(family) && system_fonts::catalogue().ready() {
+                loaded.insert(family.clone());
+                system_fonts::load_family(ctx, family);
             }
         }
     }
@@ -13741,7 +13720,9 @@ pub(crate) fn text_family(
             return face;
         }
     }
-    // A family of the system, once its faces are installed (spec 062).
+    // A family of the system or uploaded to a brand kit, installed the
+    // first time it is drawn (specs 062 and 093).
+    system_fonts::load_family(ctx, &style.font);
     let system = system_fonts::catalogue();
     let faces = system.faces();
     if let Some((bold, italic)) = gafira_theme::nearest_face(

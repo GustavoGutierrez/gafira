@@ -254,6 +254,7 @@ La metáfora no es un pincel ni un lienzo literal: son **fragmentos visuales que
 | <span class="logo-preview small"><img src="assets/gafira-logo-symbol-mono-navy.svg" alt="gafira-logo-symbol-mono-navy.svg" /></span> <span class="logo-preview dark small"><img src="assets/gafira-logo-symbol-mono-white.svg" alt="gafira-logo-symbol-mono-white.svg" /></span> | Símbolo monocromo | `gafira-logo-symbol-mono-navy.svg`, `gafira-logo-symbol-mono-white.svg` | Grabado, sellos y usos a una tinta |
 | <span class="logo-preview"><img src="assets/gafira-favicon.svg" alt="gafira-favicon.svg" /></span> | Favicon | `gafira-favicon.svg` | Pestañas del navegador; también PNG de 16–512 px |
 | <span class="logo-preview"><img src="assets/gafira-gaf-icon.svg" alt="gafira-gaf-icon.svg" /></span> | Icono de archivo de proyecto | `gafira-gaf-icon.svg` | Archivos `.gaf` en el sistema y en el producto (ver 7.12) |
+| <span class="logo-preview"><img src="assets/gafira-gafkit-icon.svg" alt="gafira-gafkit-icon.svg" /></span> | Icono de archivo de kit de marca | `gafira-gafkit-icon.svg` | Archivos `.gafkit` en el sistema y en el producto (ver 7.13) |
 
 Las variantes vectoriales conservan el contorno del símbolo y la tipografía vistos en el PNG, simplificando la antialiasing y normalizando los rellenos a los colores HEX de esta guía. Son **vectorizaciones aproximadas**, no trazados originales recuperados.
 
@@ -365,6 +366,7 @@ El SVG es el original: **no recrear el icono en otro editor**. El PNG es una exp
 3. Conservar el fondo transparente y colocarlo sobre superficies claras o neutras.
 4. Respetar el área de protección: **X = 1/5 del ancho visible**, igual que el logotipo.
 5. Aportarlo a la aplicación en la asociación de archivos `.gaf` de Windows, macOS y Linux.
+6. No confundirlo con el icono de kit de marca `.gafkit` (ver 7.13): cada extensión lleva el suyo.
 
 **Tamaños**
 
@@ -385,6 +387,44 @@ Son límites conservadores basados en inspección visual; conviene una prueba fi
 - ❌ Invertir los colores sobre fondos oscuros: el interior blanco y el símbolo perderían su lectura. Sobre fondo oscuro, colocar el icono sobre una superficie clara.
 - ❌ Repetir la extensión `.gaf` como texto junto al icono: la barra inferior ya la declara.
 - ❌ Usarlo como marca de agua sobre el lienzo del usuario.
+
+### 7.13. Icono de archivo de kit de marca (.gafkit)
+
+![Icono de archivo de kit de marca Gafira (.gafkit)](assets/gafira-gafkit-icon.svg)
+
+El icono de kit de marca identifica un **kit de marca empaquetado de Gafira** (extensión `.gafkit`): el archivo que reúne los colores, los estilos de texto, las fuentes subidas, los logos, las fotos, los elementos gráficos, los iconos y las plantillas de una marca para compartirla o llevarla a otro equipo. Al abrirlo, Gafira lo importa en la pantalla Marca. Es un activo de marca hermano del icono de proyecto (7.12): mismo pliego y misma lectura, otro tipo de archivo.
+
+**Anatomía del icono**
+
+1. **Pliego de documento** en azul grafito `#18243B` con interior blanco `#FFFFFF`, igual que el de `.gaf`, con la **esquina superior derecha doblada en coral** `#FF6B57`: es lo que primero lo distingue de un proyecto.
+2. **Denominación «Gafira»** en la parte superior, en grafito, como en el icono de proyecto.
+3. **Símbolo de tres paneles** (grafito, coral y verde agua), algo más pequeño y más alto que en `.gaf`.
+4. **Paleta de cuatro muestras** bajo el símbolo, en grafito `#18243B`, coral `#FF6B57`, verde agua `#3FBFA9` y niebla `#E7EAF2` (esta con contorno grafito): dice «kit de marca».
+5. **Filete coral** sobre la **barra inferior grafito**, que lleva la extensión `.gafkit` en blanco (Manrope ExtraBold, convertida a trazos).
+
+**Archivos**
+
+| Formato | Archivo | Uso |
+|---|---|---|
+| Vectorial | [`assets/gafira-gafkit-icon.svg`](assets/gafira-gafkit-icon.svg) | Archivo maestro; escala sin pérdida |
+| Rasterizado | [`assets/gafira-gafkit-icon.png`](assets/gafira-gafkit-icon.png) | 512 × 512 px, para donde el SVG no esté disponible |
+
+El SVG se deriva del de `.gaf`: comparte sus trazados y solo cambia lo descrito arriba. La aplicación genera desde él los iconos del sistema (tamaños de Linux, `.ico` de Windows e `.icns` de macOS) con `cargo xtask gen-icons`; **no se exportan a mano**.
+
+**Uso correcto**
+
+1. Mostrarlo como icono de tipo de archivo de `.gafkit` en el explorador del sistema y en los diálogos de importar y exportar kits.
+2. Mantener su proporción, su fondo transparente y el área de protección de 7.12.
+3. Aportarlo a la aplicación en la asociación de archivos `.gafkit` (`application/vnd.gafira.brandkit+zip`) de Windows, macOS y Linux.
+
+**Tamaños**: los mismos de 7.12. A 16 × 16 px la paleta se reduce a una línea de color; la esquina coral sigue distinguiéndolo del proyecto.
+
+**Uso incorrecto**
+
+- ❌ Usarlo para proyectos `.gaf`, o el de proyecto para kits.
+- ❌ Cambiar los colores de la paleta por los de un kit concreto: el icono es de Gafira, no de la marca que contiene.
+- ❌ Recolorear la esquina coral, el pliego o la barra; añadir sombras, contornos, degradados o texturas.
+- ❌ Retirar la paleta o la extensión `.gafkit` de la barra inferior.
 
 ---
 
@@ -493,7 +533,7 @@ Usar rectángulos de esquinas moderadas, recortes rectos, capas, formas que se a
 
 Iconos de trazo simple, grosor consistente y geometría contenida. Las acciones frecuentes deben reconocerse sin una etiqueta compleja; acompañar con texto o tooltip cuando el significado no sea inequívoco.
 
-El icono de archivo `.gaf` (ver 7.12) es la única excepción a este sistema: es un icono **de marca**, no de trazo, y se usa sin variantes monocromas.
+Los iconos de archivo `.gaf` (ver 7.12) y `.gafkit` (ver 7.13) son la única excepción a este sistema: son iconos **de marca**, no de trazo, y se usan sin variantes monocromas.
 
 ### 10.3. Ilustraciones e imágenes
 
@@ -558,6 +598,7 @@ Incluir navegación por teclado, foco visible, contraste suficiente, alternativa
 | Impresión B/N | Monocromo oscuro | Blanco |
 | Marca de agua discreta | Monocromo, opacidad controlada | Superficie que garantice legibilidad |
 | Archivo de proyecto `.gaf` | Icono de archivo Gafira (7.12) | Transparente o superficie clara |
+| Kit de marca `.gafkit` | Icono de archivo de kit de marca (7.13) | Transparente o superficie clara |
 
 ### 12.1. Landing page
 
@@ -656,7 +697,8 @@ No publicar páginas para capacidades aún no disponibles, ni repetir palabras c
 5. Favicon SVG e iconos PNG de **16, 32, 48, 180, 192 y 512 px**.
 6. Copia del PNG original utilizado como referencia.
 7. Icono de archivo de proyecto `.gaf` (**SVG + PNG 512 × 512**).
-7. Tokens iniciales en **CSS y JSON**, además del manual en **Markdown y PDF**.
+8. Icono de archivo de kit de marca `.gafkit` (**SVG + PNG 512 × 512**).
+9. Tokens iniciales en **CSS y JSON**, además del manual en **Markdown y PDF**.
 
 ### 14.3. Siguientes validaciones
 
