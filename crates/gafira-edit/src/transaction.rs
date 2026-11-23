@@ -1,9 +1,11 @@
 //! `Transaction`: many commands, one history entry, all or nothing (ADR-03).
 
+use std::any::Any;
+
 use gafira_doc::DocMut;
 use gafira_doc::msg::CommandLabel;
 
-use crate::{Applied, Command, CommandError, DirtySet};
+use crate::{Applied, Command, CommandError, DirtySet, MergeKey};
 
 /// A Composite command that applies its children in order.
 ///
@@ -12,6 +14,12 @@ use crate::{Applied, Command, CommandError, DirtySet};
 /// it started. If one of those reverts fails too, the document may not match
 /// its prior state and the error is `RollbackFailed`; a caller that applies
 /// on a copy (`History`) just drops it.
+///
+/// A transaction merges like its children (spec 040): one whose children
+/// all have keys on one page and in one gesture has a `"transaction"` key
+/// with their nodes in order, and it absorbs a later transaction whose
+/// children pair up with its own by equal keys. So the frames of a drag of
+/// several elements, one transaction each, are one history entry.
 #[derive(Debug)]
 pub struct Transaction {
     label: CommandLabel,
@@ -71,6 +79,61 @@ impl Command for Transaction {
         for command in self.commands.iter_mut().rev() {
             command.revert(doc)?;
         }
+        Ok(())
+    }
+
+    fn merge_key(&self) -> Option<MergeKey> {
+        let keys = self
+            .commands
+            .iter()
+            .map(|c| c.merge_key())
+            .collect::<Option<Vec<_>>>()?;
+        let first = keys.first()?;
+        if keys
+            .iter()
+            .any(|k| k.page != first.page || k.gesture != first.gesture)
+        {
+            return None;
+        }
+        Some(MergeKey {
+            kind: "transaction",
+            page: first.page,
+            nodes: keys.iter().flat_map(|k| k.nodes.iter().copied()).collect(),
+            gesture: first.gesture,
+        })
+    }
+
+    /// Absorbs a transaction with as many children, each with the key of
+    /// the child at its index; hands anything else back untouched.
+    fn merge(&mut self, next: Box<dyn Command>) -> Result<(), Box<dyn Command>> {
+        if !(&*next as &dyn Any).is::<Transaction>() {
+            return Err(next);
+        }
+        let any: Box<dyn Any + Send + Sync> = next;
+        let Ok(mut other) = any.downcast::<Transaction>() else {
+            unreachable!("probed above")
+        };
+        let pairs = self.commands.len() == other.commands.len()
+            && self
+                .commands
+                .iter()
+                .zip(&other.commands)
+                .all(|(mine, theirs)| {
+                    let key = mine.merge_key();
+                    key.is_some() && key == theirs.merge_key()
+                });
+        if !pairs {
+            return Err(other);
+        }
+        let mut refused = Vec::new();
+        for (mine, theirs) in self.commands.iter_mut().zip(other.commands.drain(..)) {
+            if let Err(theirs) = mine.merge(theirs) {
+                refused.push(theirs);
+            }
+        }
+        // A child that refuses an equal key breaks the merge contract; run
+        // it after the others rather than lose its change.
+        self.commands.extend(refused);
         Ok(())
     }
 
@@ -329,8 +392,61 @@ mod tests {
     }
 
     #[test]
-    fn a_transaction_never_merges() {
+    fn an_empty_transaction_has_no_key() {
         let tx = Transaction::new(label(), Vec::new());
         assert_eq!(tx.merge_key(), None);
+    }
+
+    /// A step with a key that still refuses every merge, against the
+    /// contract of `MergeKey`.
+    #[derive(Debug)]
+    struct Stubborn(Box<Step>);
+
+    impl Command for Stubborn {
+        fn label(&self) -> CommandLabel {
+            self.0.label()
+        }
+
+        fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+            self.0.apply(doc)
+        }
+
+        fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+            self.0.revert(doc)
+        }
+
+        fn merge_key(&self) -> Option<MergeKey> {
+            Some(MergeKey {
+                kind: "test.stubborn",
+                page: None,
+                nodes: Vec::new(),
+                gesture: None,
+            })
+        }
+
+        fn touches(&self) -> DirtySet {
+            self.0.touches()
+        }
+    }
+
+    // S40-04: a child that refuses an equal key keeps its change: it runs
+    // after the others.
+    #[test]
+    fn s40_04_a_refused_child_is_kept_after_the_merged_ones() {
+        let log = Log::default();
+        let token = EditToken::__new_for_gafira_edit_only();
+        let mut doc = Document::default();
+        let before = doc.clone();
+        let stubborn =
+            |dpi| Box::new(Stubborn(Step::new("s", &log, Effect::SetDpi(dpi)))) as Box<dyn Command>;
+        let mut first = Transaction::new(label(), vec![stubborn(300)]);
+        assert_eq!(first.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        let mut second: Box<dyn Command> = Box::new(Transaction::new(label(), vec![stubborn(600)]));
+        assert_eq!(second.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        assert!(first.merge(second).is_ok());
+        first.revert(&mut doc.edit(&token)).unwrap();
+        assert_eq!(doc, before);
+        assert_eq!(first.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        assert_eq!(doc.dpi().get(), 600);
     }
 }

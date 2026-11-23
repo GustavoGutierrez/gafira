@@ -1,5 +1,5 @@
 //! Benchmark of the parallel shadow (ARQ-114, 02 §6.7 row "Sombra < 100 ms con radio ≤ 40 px en
-//! 1080p", P11 of `specs/history/2026-11-02-layer-2/design.md`).
+//! 1080p", P11 of `specs/done/legacy/history/2026-11-02-layer-2/design.md`).
 
 use std::hint::black_box;
 

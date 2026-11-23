@@ -1,0 +1,21 @@
+[package]
+name = "gafira-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-edit.workspace = true
+# Spec 033: the region and the time of the thumbnail render.
+gafira-geom.workspace = true
+gafira-time.workspace = true
+# Spec 039: the preview of the export dialog leaves as straight 8-bit sRGB.
+gafira-raster.workspace = true
+crossbeam-channel.workspace = true
+
+[lints]
+workspace = true

@@ -3,7 +3,29 @@
 use std::fmt;
 
 use crate::node::MAX_EXTENSION_DEPTH;
-use crate::{Document, Dpi, NodeId, PageId, PageLayoutError, PageSizeError};
+use crate::timeline::TimelineError;
+use crate::{ClipId, Document, Dpi, NodeId, PageId, PageLayoutError, PageSizeError, SequenceId};
+
+/// What is wrong with a shape path (spec 054).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathProblem {
+    /// It has no order.
+    Empty,
+    /// Its first order is not a `MoveTo`.
+    NoStart,
+    /// It has more than `ShapePath::MAX_COMMANDS` orders.
+    TooLong { len: usize },
+}
+
+impl fmt::Display for PathProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("the path has no order"),
+            Self::NoStart => f.write_str("the path does not start with move_to"),
+            Self::TooLong { len } => write!(f, "the path has {len} orders, more than allowed"),
+        }
+    }
+}
 
 /// A numeric field of a node, named in value errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +48,28 @@ pub enum NodeField {
     FillChannel,
     /// The alpha channel of a shape fill.
     FillAlpha,
+    /// A red, green or blue channel of a shape outline (spec 038).
+    StrokeChannel,
+    /// The alpha channel of a shape outline.
+    StrokeAlpha,
+    /// The width of a shape outline.
+    StrokeWidth,
+    /// The corner radius of a shape.
+    CornerRadius,
+    /// The font size of a text span (spec 027).
+    FontSize,
+    /// A red, green or blue channel of a text span colour.
+    TextColorChannel,
+    /// The alpha channel of a text span colour.
+    TextColorAlpha,
+    /// A coordinate of a point of a shape path (spec 054).
+    PathCoordinate,
+    /// How much a text bends (FD-44).
+    TextCurve,
+    /// The letter spacing of a text (FD-41).
+    LetterSpacing,
+    /// The line height of a text (FD-41).
+    LineHeight,
 }
 
 impl fmt::Display for NodeField {
@@ -40,6 +84,17 @@ impl fmt::Display for NodeField {
             Self::Opacity => "opacity",
             Self::FillChannel => "fill channel",
             Self::FillAlpha => "fill alpha",
+            Self::StrokeChannel => "stroke channel",
+            Self::StrokeAlpha => "stroke alpha",
+            Self::StrokeWidth => "stroke width",
+            Self::PathCoordinate => "path coordinate",
+            Self::TextCurve => "text curve",
+            Self::LetterSpacing => "letter spacing",
+            Self::LineHeight => "line height",
+            Self::CornerRadius => "corner radius",
+            Self::FontSize => "font size",
+            Self::TextColorChannel => "text color channel",
+            Self::TextColorAlpha => "text color alpha",
         })
     }
 }
@@ -61,7 +116,8 @@ impl fmt::Display for NodeField {
 ///         | PageLayout { .. } | DanglingRoot { .. } | DuplicateRoot { .. } | NonFinite { .. }
 ///         | OutOfRange { .. } | EmptyExtensionTypeId { .. } | ExtensionTooDeep { .. }
 ///         | ChildrenOnLeaf { .. } | DanglingChild { .. } | MultipleParents { .. }
-///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } => {}
+///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } | DanglingScene { .. }
+///         | DanglingAsset { .. } | DanglingImage { .. } | TimelineLaw { .. } => {}
 ///     }
 /// }
 /// ```
@@ -105,6 +161,35 @@ pub enum ValidationError {
     EmptyExtensionTypeId { node: NodeId },
     /// P4: an extension payload nests deeper than `MAX_EXTENSION_DEPTH`.
     ExtensionTooDeep { node: NodeId, depth: usize },
+    /// P4: a shape path is not well formed (spec 054).
+    InvalidPath { node: NodeId, problem: PathProblem },
+    /// P3/P7: a page background cannot be drawn or shows an image missing
+    /// from the asset table (spec 069).
+    InvalidBackground { page: PageId },
+    /// P4/P7: a frame has numbers it cannot draw or a photo missing from
+    /// the asset table (spec 066).
+    InvalidFrame { node: NodeId },
+    /// P4/P7: a QR code has numbers or colours it cannot draw, or a logo
+    /// missing from the asset table (spec 080).
+    InvalidQr { node: NodeId },
+    /// P4: a table whose sizes, cells and merges do not agree (spec 081).
+    InvalidTable { node: NodeId },
+    /// P4: a text whose effects are too many or out of range (spec 089).
+    InvalidText { node: NodeId },
+    /// P4: an image whose look has numbers out of their range (spec 085).
+    InvalidImage { node: NodeId },
+    /// P4: a chart whose data or numbers cannot be drawn (spec 083).
+    InvalidChart { node: NodeId },
+    /// P4: an effect is not well formed (spec 065).
+    InvalidEffect {
+        node: NodeId,
+        problem: crate::EffectProblem,
+    },
+    /// P4: a gradient fill is not well formed (spec 063).
+    InvalidGradient {
+        node: NodeId,
+        problem: crate::GradientProblem,
+    },
     /// P4: a shape or extension lists children.
     ChildrenOnLeaf { node: NodeId },
     /// P4: a child id is not in the parent's arena.
@@ -117,6 +202,19 @@ pub enum ValidationError {
     Orphan { node: NodeId },
     /// P6: a node cannot be reached from any root, so it is in or below a cycle.
     Cycle { node: NodeId },
+    /// P7: a `Scene` clip names a page the document does not have.
+    DanglingScene { clip: ClipId, page: PageId },
+    /// P7: a `Media` or `Audio` clip names an entry the asset table does not
+    /// have (P9 of the timeline design).
+    DanglingAsset { clip: ClipId },
+    /// P7: an image element names an entry the asset table does not have
+    /// (spec 029).
+    DanglingImage { node: NodeId },
+    /// P8: a sequence breaks a law of the timeline model (FV-01, FV-03, P11).
+    TimelineLaw {
+        sequence: SequenceId,
+        error: TimelineError,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -158,6 +256,34 @@ impl fmt::Display for ValidationError {
                 f,
                 "node {node}: extension payload is {depth} levels deep, the limit is {MAX_EXTENSION_DEPTH}"
             ),
+            Self::InvalidPath { node, problem } => write!(f, "node {node}: {problem}"),
+            Self::InvalidBackground { page } => {
+                write!(f, "page {page}: the background is not valid")
+            }
+            Self::InvalidQr { node } => {
+                write!(f, "node {node}: the QR code is not valid")
+            }
+            Self::InvalidTable { node } => {
+                write!(f, "node {node}: the table is not valid")
+            }
+            Self::InvalidText { node } => {
+                write!(f, "node {node}: the effects of the text are not valid")
+            }
+            Self::InvalidImage { node } => {
+                write!(f, "node {node}: the look of the image is not valid")
+            }
+            Self::InvalidChart { node } => {
+                write!(f, "node {node}: the chart is not valid")
+            }
+            Self::InvalidFrame { node } => {
+                write!(f, "node {node}: the frame is not valid")
+            }
+            Self::InvalidEffect { node, problem } => {
+                write!(f, "node {node}: the effect is not valid ({problem:?})")
+            }
+            Self::InvalidGradient { node, problem } => {
+                write!(f, "node {node}: the gradient is not valid ({problem:?})")
+            }
             Self::ChildrenOnLeaf { node } => {
                 write!(f, "node {node}: only groups can have children")
             }
@@ -170,6 +296,21 @@ impl fmt::Display for ValidationError {
             }
             Self::Orphan { node } => write!(f, "node {node}: is not a root and has no parent"),
             Self::Cycle { node } => write!(f, "node {node}: is in or below a cycle"),
+            Self::DanglingScene { clip, page } => {
+                write!(
+                    f,
+                    "clip {clip}: the page {page} it shows is not in the document"
+                )
+            }
+            Self::DanglingAsset { clip } => {
+                write!(f, "clip {clip}: the asset it names is not in the table")
+            }
+            Self::DanglingImage { node } => {
+                write!(f, "image {node}: the asset it shows is not in the table")
+            }
+            Self::TimelineLaw { sequence, error } => {
+                write!(f, "sequence {sequence}: {error}")
+            }
         }
     }
 }
@@ -307,6 +448,13 @@ mod tests {
             (Opacity, "opacity"),
             (FillChannel, "fill channel"),
             (FillAlpha, "fill alpha"),
+            (StrokeChannel, "stroke channel"),
+            (StrokeAlpha, "stroke alpha"),
+            (StrokeWidth, "stroke width"),
+            (CornerRadius, "corner radius"),
+            (FontSize, "font size"),
+            (TextColorChannel, "text color channel"),
+            (TextColorAlpha, "text color alpha"),
         ];
         for (field, name) in rows {
             assert_eq!(field.to_string(), name);

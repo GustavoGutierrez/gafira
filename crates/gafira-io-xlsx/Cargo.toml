@@ -1,0 +1,25 @@
+[package]
+name = "gafira-io-xlsx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-color.workspace = true
+gafira-table.workspace = true
+# The OPC package is a ZIP (already in the tree for .gaf).
+zip.workspace = true
+# The backend of `zip`; not used directly.
+flate2.workspace = true
+# Spec 082: reading a workbook; already in the tree through usvg.
+roxmltree.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

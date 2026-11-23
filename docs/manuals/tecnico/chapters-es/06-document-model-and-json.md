@@ -62,4 +62,4 @@ La carga devuelve un error y nunca entra en pánico, desborda la pila ni devuelv
 
 ## Planificado
 
-La lectura y escritura de archivos `.gafira`, los guardados atómicos, los medios vinculados, las carpetas de versiones y las migraciones de esquema por pasos están especificados (spec 02, sección 7) para `gafira-format` y no están implementados. El subcomando `gafira-cli validate` se mueve con él (D-13).
+La lectura y escritura de archivos `.gaf`, los guardados atómicos, los medios vinculados, las versiones dentro del archivo (`versions/`) y las migraciones de esquema por pasos están especificados (spec 02, sección 7) para `gafira-format` y no están implementados. El subcomando `gafira-cli validate` se mueve con él (D-13).

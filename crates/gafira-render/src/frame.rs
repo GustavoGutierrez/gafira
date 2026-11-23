@@ -413,6 +413,8 @@ mod tests {
         TargetDesc {
             width: TILE_SIZE,
             height: TILE_SIZE,
+            origin: (0, 0),
+            page: (TILE_SIZE, TILE_SIZE),
             format: PixelFormat::Rgba8,
         }
     }
@@ -430,6 +432,7 @@ mod tests {
                         row: 0,
                     },
                     priority: Priority::Visible,
+                    region: IRect::new(0, 0, 256, 256),
                     ops: Vec::new(),
                 })
                 .collect(),
@@ -637,6 +640,12 @@ mod tests {
         let kind = NodeKind::Shape(ShapeNode {
             geometry: ShapeGeometry::Rect,
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
+            stroke: None,
+            corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));

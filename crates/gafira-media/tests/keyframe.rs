@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use gafira_doc::contract::{CancelToken, NoProgress};
 use gafira_media::{KeyframeIndex, Medium, Ports, SeekOutcome};
-use gafira_ports::media::{SeekMode, StreamIdx};
+use gafira_ports::media::{MediaError, SeekMode, StreamIdx};
 use gafira_testkit::ports::container::{FakeContainer, FakePacket};
 use gafira_testkit::ports::decoder::FrameDecoder;
+use gafira_testkit::progress::{ProgressViolation, check_progress_contract};
 use gafira_time::Flicks;
 use support::{FakeClock, FakeFileSystem, FakePool, MEDIUM};
 
@@ -48,6 +49,85 @@ fn open(packets: &[FakePacket], duration_ms: i64, fps: u32) -> Medium {
         &NoProgress,
     )
     .expect("the medium opens")
+}
+
+/// The packets of a minute of material at 20 fps: 120 frames, one every
+/// 50 ms, with a keyframe every 24 frames.
+fn frames_of_a_minute() -> Vec<FakePacket> {
+    (0..120)
+        .map(|frame| {
+            let ms = frame * 50;
+            if frame % 24 == 0 {
+                FakePacket::Keyframe(ms)
+            } else {
+                FakePacket::Frame(ms)
+            }
+        })
+        .collect()
+}
+
+/// The contract of the progress of the scan, over a container that declares
+/// `fps` frames per second over six seconds and holds the 120 packets of
+/// the minute.
+fn scan_progress_contract(fps: u32) -> Result<(), ProgressViolation> {
+    check_progress_contract(0.02, |cancel, progress| {
+        let bytes = FakeContainer::medium(1920, 1080, fps, 6_000, &frames_of_a_minute());
+        let file_system = FakeFileSystem::with_file(MEDIUM, bytes);
+        let pool = FakePool::new(2);
+        let clock = FakeClock::new(Duration::from_millis(10));
+        let ports = Ports {
+            file_system: &file_system,
+            pool: &pool,
+            clock: &clock,
+        };
+        match Medium::open(
+            &ports,
+            Path::new(MEDIUM),
+            &FakeContainer,
+            StreamIdx(0),
+            cancel,
+            progress,
+        ) {
+            Ok(_) => Ok(false),
+            Err(MediaError::Cancelled(_)) => Ok(true),
+            Err(other) => Err(other),
+        }
+    })
+    .expect("the contract check itself does not fail")
+}
+
+// ARQ-139: the progress of the scan follows the contract with a container
+// that declares more frames than it holds: the fraction never falls, stays
+// in `[0, 1]` and only reaches `1.0` at the end.
+#[test]
+fn arq_139_the_scan_progress_follows_the_contract_when_the_container_declares_more_frames() {
+    assert_eq!(
+        scan_progress_contract(30),
+        Ok(()),
+        "the container declares 30 fps over 6 s (180 frames) and holds 120 packets"
+    );
+}
+
+// ARQ-139: the progress of the scan follows the contract with a container
+// that declares fewer frames than it holds.
+#[test]
+fn arq_139_the_scan_progress_follows_the_contract_when_the_container_declares_fewer_frames() {
+    assert_eq!(
+        scan_progress_contract(4),
+        Ok(()),
+        "the container declares 4 fps over 6 s (24 frames) and holds 120 packets"
+    );
+}
+
+// ARQ-139: the progress of the scan follows the contract with a container
+// whose declared frame rate is the real one.
+#[test]
+fn arq_139_the_scan_progress_follows_the_contract_with_the_real_frame_rate() {
+    assert_eq!(
+        scan_progress_contract(20),
+        Ok(()),
+        "the container declares 20 fps over 6 s (120 frames) and holds 120 packets"
+    );
 }
 
 // ARQ-144: a medium with keyframes at 0 s, 2 s and 4 s: a seek to 3,5 s

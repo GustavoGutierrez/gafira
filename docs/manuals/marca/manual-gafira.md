@@ -241,19 +241,19 @@ La metáfora no es un pincel ni un lienzo literal: son **fragmentos visuales que
 
 ### 7.3. Familia de versiones y archivos
 
-| Variante | Archivo SVG | Dónde usarla |
-|---|---|---|
-| Horizontal principal | `gafira-logo-primary.svg` | Web clara, emails, documentos |
-| Horizontal para fondo oscuro | `gafira-logo-dark-background.svg` | Hero oscuro, presentaciones, video |
-| Vertical o apilada | `gafira-logo-stacked.svg` | Composiciones centradas, posters, portada |
-| Solo texto (wordmark) | `gafira-wordmark.svg` | Nombre sin isotipo, sobre fondos claros |
-| Símbolo a color | `gafira-logo-symbol.svg` | Avatar, acceso rápido, icono de aplicación |
-| Símbolo para fondo oscuro | `gafira-logo-symbol-dark.svg` | Aplicaciones sobre azul grafito |
-| Horizontal monocroma grafito | `gafira-logo-mono-navy.svg` | Impresión a una tinta sobre blanco |
-| Horizontal monocroma clara | `gafira-logo-mono-white.svg` | Impresión/inversión sobre fondo oscuro |
-| Símbolo monocromo | `gafira-logo-symbol-mono-navy.svg`, `gafira-logo-symbol-mono-white.svg` | Grabado, sellos y usos a una tinta |
-| Favicon | `gafira-favicon.svg` | Pestañas del navegador; también PNG de 16–512 px |
-| Icono de archivo de proyecto | `gafira-gaf-icon.svg` | Archivos `.gaf` en el sistema y en el producto (ver 7.12) |
+| Vista previa | Variante | Archivo SVG | Dónde usarla |
+|:---:|---|---|---|
+| <span class="logo-preview"><img src="assets/gafira-logo-primary.svg" alt="gafira-logo-primary.svg" /></span> | Horizontal principal | `gafira-logo-primary.svg` | Web clara, emails, documentos |
+| <span class="logo-preview dark"><img src="assets/gafira-logo-dark-background.svg" alt="gafira-logo-dark-background.svg" /></span> | Horizontal para fondo oscuro | `gafira-logo-dark-background.svg` | Hero oscuro, presentaciones, video |
+| <span class="logo-preview"><img src="assets/gafira-logo-stacked.svg" alt="gafira-logo-stacked.svg" /></span> | Vertical o apilada | `gafira-logo-stacked.svg` | Composiciones centradas, posters, portada |
+| <span class="logo-preview"><img src="assets/gafira-wordmark.svg" alt="gafira-wordmark.svg" /></span> | Solo texto (wordmark) | `gafira-wordmark.svg` | Nombre sin isotipo, sobre fondos claros |
+| <span class="logo-preview"><img src="assets/gafira-logo-symbol.svg" alt="gafira-logo-symbol.svg" /></span> | Símbolo a color | `gafira-logo-symbol.svg` | Avatar, acceso rápido, icono de aplicación |
+| <span class="logo-preview dark"><img src="assets/gafira-logo-symbol-dark.svg" alt="gafira-logo-symbol-dark.svg" /></span> | Símbolo para fondo oscuro | `gafira-logo-symbol-dark.svg` | Aplicaciones sobre azul grafito |
+| <span class="logo-preview"><img src="assets/gafira-logo-mono-navy.svg" alt="gafira-logo-mono-navy.svg" /></span> | Horizontal monocroma grafito | `gafira-logo-mono-navy.svg` | Impresión a una tinta sobre blanco |
+| <span class="logo-preview dark"><img src="assets/gafira-logo-mono-white.svg" alt="gafira-logo-mono-white.svg" /></span> | Horizontal monocroma clara | `gafira-logo-mono-white.svg` | Impresión/inversión sobre fondo oscuro |
+| <span class="logo-preview small"><img src="assets/gafira-logo-symbol-mono-navy.svg" alt="gafira-logo-symbol-mono-navy.svg" /></span> <span class="logo-preview dark small"><img src="assets/gafira-logo-symbol-mono-white.svg" alt="gafira-logo-symbol-mono-white.svg" /></span> | Símbolo monocromo | `gafira-logo-symbol-mono-navy.svg`, `gafira-logo-symbol-mono-white.svg` | Grabado, sellos y usos a una tinta |
+| <span class="logo-preview"><img src="assets/gafira-favicon.svg" alt="gafira-favicon.svg" /></span> | Favicon | `gafira-favicon.svg` | Pestañas del navegador; también PNG de 16–512 px |
+| <span class="logo-preview"><img src="assets/gafira-gaf-icon.svg" alt="gafira-gaf-icon.svg" /></span> | Icono de archivo de proyecto | `gafira-gaf-icon.svg` | Archivos `.gaf` en el sistema y en el producto (ver 7.12) |
 
 Las variantes vectoriales conservan el contorno del símbolo y la tipografía vistos en el PNG, simplificando la antialiasing y normalizando los rellenos a los colores HEX de esta guía. Son **vectorizaciones aproximadas**, no trazados originales recuperados.
 
@@ -394,11 +394,11 @@ Son límites conservadores basados en inspección visual; conviene una prueba fi
 
 | Token | Nombre | HEX | Uso principal |
 |---|---|---|---|
-| `brand.ink` | Azul grafito | `#18243B` | Logotipo, texto, navegación y fondos oscuros |
-| `brand.coral` | Coral creativo | `#FF6B57` | Acentos, CTA y personalidad de marca |
-| `brand.canvas` | Blanco cálido | `#FAFAF7` | Fondos editoriales y superficies amplias |
-| `brand.mint` | Verde agua | `#3FBFA9` | Acentos secundarios e ilustración |
-| `brand.mist` | Gris azulado | `#E7EAF2` | Tarjetas, divisores y superficies neutras |
+| `brand.ink` | Azul grafito | <span class="color-chip" style="background:#18243B"></span>`#18243B` | Logotipo, texto, navegación y fondos oscuros |
+| `brand.coral` | Coral creativo | <span class="color-chip" style="background:#FF6B57"></span>`#FF6B57` | Acentos, CTA y personalidad de marca |
+| `brand.canvas` | Blanco cálido | <span class="color-chip" style="background:#FAFAF7"></span>`#FAFAF7` | Fondos editoriales y superficies amplias |
+| `brand.mint` | Verde agua | <span class="color-chip" style="background:#3FBFA9"></span>`#3FBFA9` | Acentos secundarios e ilustración |
+| `brand.mist` | Gris azulado | <span class="color-chip" style="background:#E7EAF2"></span>`#E7EAF2` | Tarjetas, divisores y superficies neutras |
 
 ### 8.2. Proporciones orientativas
 
@@ -413,15 +413,17 @@ Son proporciones conceptuales para comunicación de marca, **no** porcentajes ob
 
 | Texto | Fondo | Contraste aprox. | Observación |
 |---|---|---:|---|
-| `#18243B` | `#FAFAF7` | **14.83:1** | Excelente para texto normal |
-| `#FFFFFF` | `#18243B` | **15.51:1** | Excelente sobre fondo oscuro |
-| `#18243B` | `#FF6B57` | **5.53:1** | Válido para texto normal AA |
-| `#FFFFFF` | `#FF6B57` | **2.80:1** | **Evitar** para texto normal |
-| `#18243B` | `#3FBFA9` | **6.82:1** | Válido para texto normal AA |
+| <span class="color-chip" style="background:#18243B"></span>`#18243B` | <span class="color-chip" style="background:#FAFAF7"></span>`#FAFAF7` | **14.83:1** | Excelente para texto normal |
+| <span class="color-chip" style="background:#FFFFFF"></span>`#FFFFFF` | <span class="color-chip" style="background:#18243B"></span>`#18243B` | **15.51:1** | Excelente sobre fondo oscuro |
+| <span class="color-chip" style="background:#18243B"></span>`#18243B` | <span class="color-chip" style="background:#FF6B57"></span>`#FF6B57` | **5.53:1** | Válido para texto normal AA |
+| <span class="color-chip" style="background:#FFFFFF"></span>`#FFFFFF` | <span class="color-chip" style="background:#FF6B57"></span>`#FF6B57` | **2.80:1** | **Evitar** para texto normal |
+| <span class="color-chip" style="background:#18243B"></span>`#18243B` | <span class="color-chip" style="background:#3FBFA9"></span>`#3FBFA9` | **6.82:1** | Válido para texto normal AA |
 
 Como orientación WCAG AA, utilizar contraste mínimo **4.5:1** en texto ordinario y **3:1** en texto grande y ciertos componentes no textuales. Las cifras son cálculos a partir de los colores propuestos; validar cada combinación nueva.
 
 **Decisión de UI:** el botón coral lleva **texto azul grafito**; no colocar letras blancas pequeñas sobre coral.
+
+<div class="page-break"></div>
 
 ### 8.4. Tokens CSS iniciales
 

@@ -15,36 +15,33 @@ Gafira is a local-first desktop editor for graphic design, images and video, wri
 | Area | State |
 |---|---|
 | Workspace, CI, license gate | Implemented |
-| `gafira-geom` (lengths, transforms) | Implemented |
-| `gafira-color` (color spaces, conversions) | Implemented |
-| `gafira-doc` (document model, JSON, validation, edit capability) | Implemented |
-| `gafira-time` (flicks, frame and sample rates, time ranges, timecode) | Implemented |
-| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`) | Implemented |
-| `gafira-pathops` (path booleans, stroke outline, simplification, hit testing) | Implemented |
+| Layers 0 and 1: `gafira-geom`, `gafira-color`, `gafira-time`, `gafira-anim`, `gafira-doc`, `gafira-edit` | Implemented |
+| Layer 2: `gafira-pathops`, `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment` | Implemented |
+| Layers 3 and 4: `gafira-ports`, `gafira-render`, `gafira-media`, `gafira-render-cpu` | Implemented; the render graph emits fills and layers only, and the CPU backend returns an error for images, masks, effects and transitions (`crates/gafira-render-cpu/src/backend.rs`) |
 | `gafira-testkit` (document generator, command property harness) | Implemented (test support only) |
 | `gafira-cli` | Only `--help` and `--version` |
-| Format, render, engine, UI, codecs, licensing | **Planned** (see the architecture chapter) |
+| `gafira-engine`, `gafira-format`, `gafira-ui`, codecs, licensing, packaging | **Planned** (the architecture chapter holds the full inventory) |
 
-Workspace version: `0.1.0-beta.1`. Edition 2024, toolchain `1.93.1` pinned in `rust-toolchain.toml`.
+The table groups the crates by layer; the architecture chapter lists the full crate inventory.
+
+Workspace version: `0.1.0-beta.2`. Edition 2024, toolchain `1.93.1` pinned in `rust-toolchain.toml`.
 
 ## Repository map
 
 | Path | Content |
 |---|---|
-| `crates/` | Library crates (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`, `gafira-pathops`, `gafira-testkit`) |
+| `crates/` | Seventeen library crates in layers 0 to 4, including the test-support crate `gafira-testkit`; the architecture chapter holds the full inventory |
 | `apps/gafira-cli/` | Command-line binary |
-| `specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
+| `specs/` | Numbered specs (active, `backlog/`, `done/`; index in `specs/README.md`) and the product and architecture documents; `00-decisiones.md` holds owner decisions |
 | `docs/manuals/` | Brand manual (`marca/`) and this technical manual (`tecnico/`) |
-| `specs/capabilities/` | Main specs per capability, merged at archive time; fast-lane changes do not edit them |
-| `specs/changes/` | Active change folders, only for work that needs one; closed ones move to `specs/history/` |
-| `.odd/state.json` | The active outcomes of ODD lite (see the methodology chapter) |
-| `.agents/agents/` | Agents of the development flow (`.claude/agents` is a symlink) |
+| `specs/done/legacy/` | Record of the earlier flow: capability specs, change folders and closed changes |
+| `.agents/agents/` | The `manual-writer` agent (`.claude/agents` is a symlink) |
 | `.github/workflows/ci.yml` | CI: tests, policy checks, `cargo-deny` |
 | `deny.toml`, `.cargo/mutants.toml` | License and source policy; mutation-testing settings (the `mutants` profile is in `Cargo.toml`) |
-| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane, ADR 0011 ODD lite, accepted) |
+| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0018 simple spec flow, which supersedes ADR 0001, 0002, 0004 and 0011) |
 
 ## Reading order
 
 1. Architecture and layering, to know where code may live.
 2. The crate chapters, bottom-up: geometry, color, document, edit.
-3. Tooling and methodology, before sending a change. Product specs run through the flow described in the methodology chapter (ODD lite and the fast lane).
+3. Tooling and methodology, before sending a change. Specs run through the flow in `AGENTS.md` and the `gafira-specs` skill (ADR 0018), which the methodology chapter describes.

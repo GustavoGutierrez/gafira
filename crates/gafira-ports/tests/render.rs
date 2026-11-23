@@ -83,6 +83,13 @@ fn tile_key(column: u32) -> TileKey {
     }
 }
 
+/// The page region of the tile in `column` (ARQ-149): 256 px per side at the
+/// level zero.
+fn tile_region(column: u32) -> IRect {
+    let x0 = column as i32 * 256;
+    IRect::new(x0, 0, x0 + 256, 256)
+}
+
 impl RenderBackend for TickBackend {
     fn caps(&self) -> BackendCaps {
         BackendCaps {
@@ -146,6 +153,7 @@ fn plan(n: u32) -> RenderPlan {
             .map(|column| TileTask {
                 key: tile_key(column),
                 priority: Priority::Visible,
+                region: tile_region(column),
                 ops: vec![RenderOp::PushLayer],
             })
             .collect(),
@@ -156,6 +164,8 @@ fn target(format: PixelFormat) -> TargetDesc {
     TargetDesc {
         width: 1,
         height: 1,
+        origin: (0, 0),
+        page: (1, 1),
         format,
     }
 }
@@ -239,7 +249,13 @@ fn arq_06_render_op_is_closed() {
             RenderOp::PushLayer => "push_layer",
             RenderOp::PopLayer { .. } => "pop_layer",
             RenderOp::FillPath { .. } => "fill_path",
+            // Spec 063: added on purpose, with every backend handling it.
+            RenderOp::FillGradient { .. } => "fill_gradient",
             RenderOp::DrawImage { .. } => "draw_image",
+            // Spec 073: added on purpose, with every backend handling it.
+            RenderOp::Text { .. } => "text",
+            // Spec 066: added on purpose, with every backend handling it.
+            RenderOp::ClipPath { .. } => "clip_path",
             RenderOp::ApplyMask { .. } => "apply_mask",
             RenderOp::ApplyEffect { .. } => "apply_effect",
             RenderOp::ApplyTransition { .. } => "apply_transition",

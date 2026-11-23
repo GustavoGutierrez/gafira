@@ -1,0 +1,20 @@
+[package]
+name = "gafira-chart"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-color.workspace = true
+gafira-doc.workspace = true
+# The values of the cells.
+gafira-table.workspace = true
+kurbo.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

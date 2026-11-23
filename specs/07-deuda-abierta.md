@@ -4,65 +4,105 @@
 |---|---|
 | Documento | Especificación 07 |
 | Estado | Vigente (no ejecutable): inventario, sin requisitos propios |
-| Alcance | Ítems 39 a 77 de `specs/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
-| Fuentes | `specs/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
-| Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
+| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/done/legacy/README.md`, ítems 133 y 134 de D-78, ítems 138 a 153 de D-83, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
+| Fuentes | `specs/done/legacy/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
+| Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran; los ítems nuevos siguen la numeración desde el 133. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
 | Copia duradera | Las listas crudas estaban en el scratchpad de una sesión, que es temporal. Este documento es la copia que queda |
 
 ## 0. Resumen
 
 | Medida | Cifra |
 |---|---|
-| Ítems 39 a 77 | 39: 34 abiertos, 2 remiten a otro ítem (70, 71), 3 cerrados o solo registro (51, 64, 65) |
+| Ítems 39 a 77 | 39: 25 abiertos, 3 remiten a otro ítem (55, 70, 71), 7 cerrados o solo registro (42, 51, 54, 60, 64, 65, 69), 4 obsoletos por ADR 0018 (39, 41, 46, 66) |
+| Ítems 104 a 111 | 8: 6 abiertos, 1 no se corrige porque el registro legacy es inmutable (110), 1 obsoleto por ADR 0018 (108) (archivo de `gafira-timeline`) |
+| Ítems 112 a 132 | 21: 16 abiertos, 1 solo registro (129), 3 no se corrigen porque el registro legacy es inmutable (122, 127, 128), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
+| Ítems 133 y 134 | 2 abiertos, tareas de D-78 (antes Q-34 y Q-48) |
+| Ítems 135 a 137 | 3 abiertos, spikes que 01, 02, 04 y 05 citaban sin seguimiento (R-03, R-19, CAL-07) |
+| Ítems 138 a 153 | 16 abiertos, VERIFICAR y *spikes* de 01, 02, 04 y 05 que no tenían seguimiento (D-83): 9 legales o de licencia y 7 técnicos; ninguno lleva ya una decisión del titular pendiente (D-84, D-85) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
+| Tras la spec 013 (D-66) | 57 muertos (42 de text, 15 de raster), 34 equivalentes excluidos en `.cargo/mutants.toml` (18 y 16), **7 sin matar** (5 y 2; ítems 74 y 75) |
 | Mutantes colgantes confirmados | 8, no son deuda (§3.1) |
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
 
-## 1. Seguimientos abiertos (ítems 39 a 77)
+## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 153)
 
-La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí.
+La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 133 y 134 no vienen del README: son las tareas de D-78; los 135 a 137 son spikes que las specs de producto citaban sin seguimiento, y los 138 a 153, los VERIFICAR y *spikes* que D-83 pide registrar, agrupados por tema (138 a 146 legales o de licencia, 147 a 153 técnicos). Lo que ya tenía ítem (133 a 137) no se repite, y un ítem cuyo tema también está en 05 §C11 cita ese punto. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
 
 ### 1.1 Abiertos
 
 | Ítem | Qué falta | Se cierra cuando |
 |---|---|---|
-| 39 | Una entrada heredada de un outcome cerrado se toma como activa en una rama sin fusionar (W9 de `odd-lite`). | La regla de resume de `coordinator.md` y `AGENTS.md` trata como heredada una entrada de una rama sin commit propio sobre `develop`. |
 | 40 | `prepare_dir` crea carpetas antes de comprobar la ruta resuelta. | La comprobación va antes de `create_dir_all` y un test confirma que un rechazo no deja carpetas. |
-| 41 | Timeout por el bloqueo del caché de paquetes de cargo que un re-run atrapa; «Hanging mutants» no lo nombra. | Se decide si la regla lo cubre; si no, se nombra en `AGENTS.md` y en `verify`, o se sube `--minimum-test-timeout`. |
-| 42 | 02 sigue con la prueba gratuita y el modo de solo lectura que D-12 sustituyó; Q-19 difiere entre documentos. | 02 pasa al modo sin licencia, Q-19 queda cerrada en 02 y 05 como en 01, y 02 entra en la tabla de D-12. |
 | 43 | `Display` de `Cancelled` y `ParamError` sin test. | El titular decide si la spec fija el texto: un test por `Display`, o se acepta la exclusión. |
 | 44 | Diez sobrevivientes no críticos de `gafira-testkit`. | Se resuelve con el ítem 38, y se decide test o exclusión para `axis_length` y `failure_persistence`. |
 | 45 | ARQ-102 omite 8 enums sin dueño y su «Cumplimiento» está desactualizado. | Cada enum tiene dueño en la fila de 02 y «Cumplimiento» está al día. |
-| 46 | El registro de Flow-change de D1 no da pack ni motivo. | El próximo cambio de flujo los registra y se decide si la plantilla los exige. |
 | 47 | Los tests de atomicidad de `contract_cancel.rs` pierden potencia en máquinas pequeñas. | El titular aprueba `loom` o acepta el test actual. |
 | 48 | El manual técnico omite `gafira-doc` como dependencia de `gafira-pathops`. | La fila y la línea 89 quedan corregidas en los dos idiomas, según el `Cargo.toml`. |
 | 49 | T4 de `gafira-audio` sin resolver (§3.2, anexo A). | El titular decide si hay ronda de arreglo; en ese caso, `specifier` y test primero por sobreviviente. |
 | 50 | T4 de `gafira-segment` completo, de `gafira-testkit` y de `layer-2-scaffold` (§3.3). | Corre el T4 de `layer-2-scaffold`; los de segment y testkit solo si el titular lo reabre. |
 | 52 | V07 marcada como fiable con IoU 0.53. | `specifier` revisa el umbral de fiabilidad, con test primero. |
-| 53 | ARQ-43 a 96.8 ms en un hilo con carga, fuera de D-03. | Se mide en hardware D-03 (ítem 55). |
-| 54 | Regla de banda stray fuera de ARQ-133. | `specifier` la añade a la spec, test después. Ver §1.3. |
-| 55 | Q-48 abierta en hardware D-03. | Se mide en D-03; va al titular solo si `bench_segment_4000` falla. |
+| 53 | ARQ-43 a 96.8 ms en un hilo con carga, fuera de D-03. | Se mide en hardware D-03 (ítem 134). |
 | 56 | Redacción desactualizada en 01 P-04 y 04 FD-38. | `specifier` actualiza la redacción. |
 | 57 | Decisión sin tomar: el texto `modificado` del splash. | El titular la decide. |
 | 58 | W5 a W9 de RS5/RS6: ambigüedades de ARQ-122 y FD-26, huecos de test y cuatro mutantes de cierre no reaplicados. | Huecos de test primero; `specifier` para W5 y W6. |
 | 59 | `GpuEffect::bind` no recibe `cx`. | `specifier` decide la firma, con test primero. |
-| 60 | Tamaño mínimo de FD-28 (b) sin fijar. | El titular lo fija; después, test primero. Ver §1.3. |
 | 61 | W37 (FD-45 «Funciona con Listas» sin construir), W38 (un run vacío mueve el salto de línea) y S19. | `specifier` y test primero para W37 y W38; S19 del mismo informe. |
 | 62 | W13 sin registro TDD; unión de párrafos de `RichText` sin cubrir. | Test primero para la unión; el registro se corrige en el próximo cambio. |
 | 63 | W22 y W23 sin test en `loudness.rs`; S15 gasta memoria por frame. | Test primero para W22 y W23; S15 con suma corrida o energía por paso. |
-| 66 | «S1 con filas de cuelgue de layout», sin origen en los informes leídos. | El coordinador confirma el origen antes de actuar. |
 | 67 | Avisos de SC1: `assert_no_alloc` como dependencia normal e `icu_plurals` opcional. | Candidato del informe: `--all-features` en el paso del CI. |
 | 68 | Memoria de mipmaps a 16 384 px, sin origen en los informes leídos. | El titular decide si se mide o se acota. |
-| 69 | `proptest-regressions/` de `gafira-raster` sin decidir. | Se decide borrar o versionar. Ver §1.3. |
 | 72 | Fila de diseño P7 y XP3 sin actualizar tras TX. | P7 y XP3 reflejan lo que entregó TX1; solo docs. |
 | 73 | T4 de `gafira-segment` parado por orden del titular (§3.3, anexo B). | El titular decide si se prueba el resto; los sobrevivientes, test primero. |
-| 74 | T4 de `gafira-text`: 65 críticos (§2). | El titular decide cuándo; después, `specifier` y test primero. Un T4 del crate sin críticos vivos lo confirma. |
-| 75 | T4 de `gafira-raster`: 33 críticos (§2). | Se confirma la suposición de `cost_hint` (§2.2); después, `specifier` y test primero. Un T4 del crate sin críticos vivos lo confirma. |
+| 74 | T4 de `gafira-text`: reducido por la spec 013 (D-66). De 65 críticos, 42 muertos y 18 equivalentes excluidos en `.cargo/mutants.toml`; quedan 5 en la frontera exacta de `TIE` de `columns.rs` (`223:23` ×2, `233:65` ×2, `251:14`), sin test forzado (§2.3). | Un T4 completo del crate sin críticos vivos fuera de esos 5 lo confirma. |
+| 75 | T4 de `gafira-raster`: reducido por la spec 013 (D-66). De 33 críticos, 15 muertos y 16 equivalentes excluidos en `.cargo/mutants.toml`; quedan 2 en un empate exacto de ΔE2000 (`palette.rs:158:31`, `232:46`). `cost_hint` sigue como suposición (§2.2). | Se confirma `cost_hint` (§2.2) y un T4 completo del crate, posterior a los cambios de `blend.rs`, `effects/shadow.rs` y `transitions/`, no da críticos vivos fuera de esos 2. |
 | 76 | SG3-W8: Q-48 y la cita de §4.17 aún dan 1055 ms y 43 ms. | `specifier` pone las cifras medidas tras el arreglo. |
 | 77 | SG3-W9: el stub de test imprime un `WARNING ... 0/12` falso. | Se corrige el stub o la condición en `gate.rs`, test primero. |
+| 104 | La regla de la velocidad no absorbe el resto en el offset de origen; el registro redefine «absorbe» como «reporta» (W3 de `gafira-timeline`). | El `specifier` decide si el offset de origen absorbe el resto o si el diseño dice que lo reporta, y hay test. |
+| 105 | AC4 no puede comprobar «dentro de su fuente» ni «dentro de la secuencia»: faltan la duración de la fuente (Q5) y la longitud guardada de la secuencia (P4) (W4 de `gafira-timeline`). | El `specifier` da a AC4 las dos cotas, o lo reduce a lo que el modelo puede sostener. |
+| 106 | FV-04 citada sin un test que la nombre; la mitad de ARQ-13 sí quedó probada por TL3 (W5 de `gafira-timeline`). | El `specifier` decide si FV-04 se prueba en el change de comandos o se retira de la tarjeta. |
+| 107 | La cláusula de deshacer de AC10 no tiene código ni test; los comandos están diferidos por Q4 (W6 de `gafira-timeline`). | Se prueba en el change de comandos, con el camino de `gafira-edit::History`. |
+| 109 | La carga no reaplica las leyes del constructor: un lado de píxel cero y un marcador negativo cargan (TL3-S1 de `gafira-timeline`). | Se decide si la carga reaplica esas dos leyes y hay test. |
+| 111 | `.expect("{name} still loads")` no interpola en `timeline_wire.rs:336` (TL3-S3 de `gafira-timeline`). | El mensaje nombra la fixture y un fallo lo confirma. |
+| 112 | AC1 de CB2 pone la mezcla y la opacidad en `PushLayer`; el puerto las pone en `PopLayer` (W1 de `gafira-render-cpu`). | `specifier` decide si el registro deja constancia o enmienda AC1; las tarjetas archivadas no se editan. |
+| 113 | AC4 de CB2 cita un error de validación de plan que el puerto no tiene; `DriverBlocked` se reutiliza (W2 de `gafira-render-cpu`). | `architect` decide si el puerto gana la variante; si no, el registro lo declara. |
+| 114 | Ningún test ejecuta `execute` después de un `trim` a mitad de frame (S1 de CB2). | Test primero: `execute` tras `trim` con el frame abierto. |
+| 116 | M4 (la previa a escala 2.0) es equivalente en CB3; el muestreo de CB4 debería volverla observable y el registro de CB4 no lo confirma (W6 de CB3). | Un test de la previa a escala 2.0 con imagen, o el registro confirma que CB4 la mata. |
+| 117 | `arq_113_one_altered_byte_fails_on_this_platform` fija `differing == 1` en modo Exact (S4 de CB3). | Test primero: la aserción sigue a `current_mode()`. |
+| 118 | D9 nombra `golden::compare` y la entrega usa su propio comparador (S5 de CB3). | `architect` enmienda D9 o extiende el testkit. |
+| 119 | Una página sin raíces planifica una tarea por región y ningún test lo fija (W9 de CB3b). | Test primero: página sin raíces que pinta el fondo. |
+| 120 | El golden almacenado tiene una sola raíz; no hay golden entre plataformas con varias (S6 de CB3b). | El coordinador decide si se regenera sobre una escena multi-raíz. |
+| 121 | El sentido de la rotación no queda fijado: el tablero y el fixture de 45° son invariantes al signo (S7 de CB4). | `specifier` añade un caso que lo fije; test primero. |
+| 123 | El buffer dibujado del tile está fuera de la contabilidad y el pico acotado no es el del frame (W10 de CB5, ronda 2). | `architect` decide la contabilidad; después test. |
+| 124 | Una ROI decreciente antes de una que dilata deja un borde sin pedir; hoy es inalcanzable (W11 de CB5, ronda 2). | `specifier` nombra o excluye la forma; test si entra. |
+| 125 | SP7 del diseño de `gafira-render-cpu` (no es el SP7 de 02 §5.6): el rectángulo de `ApplyMask` en espacio de página; máscara-luego-efecto no es equivalente por tiles (W4 de CB5, ronda 2; O16). | `specifier` responde esa petición en 02 §4.6 o la excluye. Bloquea ARQ-134. |
+| 126 | Tamaños sin decisión registrada: CB3b W8 (576 frente a 180), CB4 S9 (1228 frente a 360), CB5 S2 (1586 frente a 420), CB5b W14 (378 frente a 120) y CB8 W19 (597 frente a 160). | El coordinador acepta o rechaza cada uno. Ninguno bloquea. |
+| 130 | ARQ-143 no tiene regla para un tile más largo que su etapa de 8 ms (W22 de CB6). | `specifier` añade la regla; test después. |
+| 131 | D10 (opción a) y la fila 106 del diseño describen `GraphPageRenderer`; el bench arma el plan a mano (S11 de CB6). | `specifier` enmienda D10 y la fila 106. |
+| 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
+| 133 | Revisión visual de las fórmulas de 04 FD-33 y del catálogo de filtros de 04 FD-34 (antes Q-34; D-40, D-78). Las pruebas fijan el valor de las fórmulas, no su aspecto. | El titular revisa las fórmulas sobre imágenes de muestra cuando exista el corte de efectos y da el catálogo de FD-34 con nombres y valores; las fórmulas aprobadas dejan de ser PROPUESTA. Es una tarea de revisión y no bloquea 04 (D-86): hasta entonces, las fórmulas son valores provisionales que fijan las pruebas. |
+| 134 | Medición de la segmentación en el hardware de referencia de D-03 con la copia de 2048 px de D-45 (antes Q-48; D-78). Lo de SG3 es indicativo (i7-12700H con carga): CAL-06 1055 ms con 1 hilo, ARQ-43 43 ms, CAL-26 de 35 a 303 MB solo del segmentador. | `bench_segment_4000` < 5 s y `bench_cancel_segment` ≤ 100 ms en la gama media de D-03, y CAL-26 medida en el proceso con 20 páginas e imágenes. Si alguna falla, decide el titular. Cierra también los ítems 53 y 55. |
+| 135 | Spike de AV1 por software ≥ 10 fps a 1080p en el hardware de D-03 (R-03 de 02 y 05). | Medición con el codificador elegido; si no llega, decide el titular entre otro preset, otro códec por defecto o el límite de resolución. |
+| 136 | Spike del primer frame de la Pantalla de arranque < 300 ms con la creación del dispositivo de eframe en los tres perfiles (R-19 de 02, D-09). | `splash_first_frame_ms` medido en Windows, macOS y Linux; si no cumple, se aplica la mitigación de R-19 (ventana propia antes del dispositivo). |
+| 137 | Viabilidad de CAL-07: aislar sujeto de 4000 px < 2 s con GPU (01 CAL-07, C-12; 04 R-04). | `bench_segment_4000` con GPU en la gama media de D-03; si no llega, el titular decide si CAL-07 baja a objetivo. |
+| 138 | Dictamen legal sobre `cpal` y la `libasound` del sistema (LGPL-2.1), enlazada de forma dinámica y nunca empaquetada (R-06 y §9.1 de 02, ARQ-79; 05 FV-33 y C11, punto 3). | Hay dictamen; si lo exige, se aplica la alternativa de R-06 (backend propio por PipeWire o PulseAudio). |
+| 139 | Licencia de la herramienta de MSI. El MSI no se hace con WiX (D-85: MS-RL fuera de la allowlist y Open Source Maintenance Fee de pago desde v6); se usa una herramienta de empaquetado con licencia permisiva, con candidatas `cargo-packager` y `msitools` (`wixl`) (02 §10.1; 05 FV-30, R-F y C11, punto 2). | Al implementar el empaquetado de Windows se elige la herramienta y se comprueba su licencia y la de lo que entra en el MSI; si ninguna candidata tiene licencia permisiva, decide el titular. |
+| 140 | Dictamen sobre si H.264/AAC solo mediante las API del sistema cubre al distribuidor en cada mercado, y fecha de caducidad de la última patente de H.264 en EE. UU. (29 de noviembre de 2027, de fuentes secundarias) (D-02; 01 Q-02; 02 §9.3 y R-01; 05 C11, punto 8). | Hay dictamen y la fecha está confirmada en una fuente primaria; se revisa al caducar. |
+| 141 | Obligaciones de patentes de AV1 (pool de Sisvel, demanda de Dolby contra Snap), Opus, Vorbis y FLAC (D-02; 02 §9.3; 05 C11, punto 9). | Hay memo legal; si el riesgo sube, decide el titular. |
+| 142 | Patentes de MP3 para la importación con `nanomp3` (D-07; 01 §12.4, punto 5; 02 §9.2 y Q-09). | Un dictamen o una fuente primaria confirma que las patentes centrales están caducadas en los mercados de publicación. |
+| 143 | Patentes de importar HEVC y HEIC solo con el decodificador del SO (D-59; 04 FD-31 y §17; 05 C11, punto 10). | Un dictamen confirma que el distribuidor no tiene obligaciones propias. |
+| 144 | Reputación de SmartScreen con un certificado Authenticode normal frente a uno de validación extendida (05 FV-30; C11, punto 15). | Se comprueba con el certificado elegido antes de publicar; si la reputación no se consolida, se valora el certificado de validación extendida que FV-30 da como opción. |
+| 145 | Marca: búsqueda de disponibilidad con abogado (incluidas AFIRA, afira y GAIRA) y de los nombres ingleses del glosario (D-04, D-77; R-17 de 02; 05 C11, puntos 12 y 13). El primer país de registro queda aplazado (D-84; 01 §12.4, punto 4; pendiente 4 de 00) y no bloquea 01 (D-83). | Hay informe de las búsquedas. El país se elige más adelante, cuando el titular lo retome. |
+| 146 | Licencia y activación, para cuando haya venta (D-70): estado real del `license-hub` (R-12 de 02) y respaldo de archivo local cuando falta el llavero de Linux (R-14 de 02). | Se comprueban al redactar la spec 06; no bloquean la versión gratuita. |
+| 147 | egui y eframe en la versión elegida (02 §8): respaldo `glow` o software sin GPU (ADR-06, §8.1), propiedad de idioma en AccessKit (§8.3) y ventana raíz oculta con una secundaria sin decoraciones en las tres plataformas, también en Wayland (§8.4, R-19). | Una prueba por punto en Windows, macOS y Linux; si una falla, se aplica el respaldo de 02 o se anota el límite. El tiempo del primer frame es el ítem 136. |
+| 148 | i18n (02 §14): crate de Core Foundation de `objc2` en macOS (§14.3), categorías de plural del español en la versión de datos de CLDR usada (§14.5), estabilidad del formateador de tiempo relativo de ICU4X (§14.5) y MessageFormat 2 en ICU4X (ADR-09, §14.8). | Cada punto confirmado contra la versión fijada en `Cargo.lock`. |
+| 149 | Dependencias y compilación al implementar (02): algoritmo o crate de *time-stretch* (§4.9), nombres de crate de los encoders vetados en `deny.toml` (§9.1), `candle` como alternativa a `ort` (§9.2), `rusqlite` o `redb` para el índice de la Biblioteca (§9.2; 04 FD-26), versión de `zune-jpeg` y JPEG progresivo (ARQ-66) y ausencia de FMA en aarch64 (§3.4, ARQ-12). | Cada punto se cierra en el cambio que introduce la dependencia, con `cargo deny check` en verde; el de aarch64, con el ensamblador o la prueba golden de ARQ-12 en el *runner* `aarch64-apple-darwin`. |
+| 150 | Empaquetado y versiones mínimas (05 Parte C; 02 §10.1): build mínima de Windows 10 según wgpu y Media Foundation (FV-30), glibc de la LTS de Ubuntu más antigua en soporte (FV-33), herramienta de firma de `.deb` y `.rpm` (FV-33; 02 §10.1), dos distribuciones de referencia para el `.tar.gz` (FV-33 e) y ningún entitlement de red en macOS según `codesign -d --entitlements` (FV-34). | Cada punto fijado y comprobado al preparar el primer paquete de su plataforma (05 C11, puntos 20 y 21). |
+| 151 | Importar y exportar (04; 01): lector de referencia de QR (FD-20 a), modo de la sombra en SVG (FD-35 b), efectos de texto complejos en PDF (FD-43 b), lector de referencia del PDF con contraseña (FD-56 c) y cifrado AES-256 con biblioteca permisiva (R-A), programas de presentaciones de referencia (FD-62 a), clase legal de importar PDF (04 §17; 02 §11.2) y PDF/X (01 C-17). | Cada herramienta o modo se elige en el cambio que implementa la función; PDF/X sigue fuera de 02 hasta que una spec lo pida. |
+| 152 | Plataformas de publicación, en cada versión: medidas de Destinos (04 FD-53, R-C), zonas de seguridad del video vertical (04 FD-05) y aceptación del MP4 con AV1 y Opus (R-11 de 02; 05 FV-12). | Se comprueban contra cada plataforma vigente al preparar la versión y se actualizan `assets/sizes.toml` y las recomendaciones. |
+| 153 | Viabilidad de funciones futuras: subtítulos automáticos solo locales (01 RF-41; 05 FV-08) y algoritmo de los marcadores de compás de Fase 2 (D-72; 01 Q-15; 05 FV-10). | Un *spike* antes de la fase que las incluye; si no es viable, decide el titular. |
 
 ### 1.2 Cerrados o sin trabajo propio
 
@@ -70,7 +110,27 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 - **64**: registro. El titular aceptó la ruptura de TDD de W1 en SG1; no queda acción.
 - **65**: registro. Aviso de tamaño de `pi-agent-sync`, ya integrado; no queda acción sobre esa entrega.
 - **70**: sin trabajo propio. Es el ítem 47.
-- **71**: sin trabajo propio. Es el ítem 42.
+- **71**: sin trabajo propio. Es el ítem 42, ya resuelto.
+- **55**: sin trabajo propio. Es el ítem 134 (D-78). Texto anterior: Q-48 abierta en hardware D-03. Se cerraba cuando: se mide en D-03; va al titular solo si `bench_segment_4000` falla.
+- **129**: registro. El titular aceptó las 825 líneas de CB6 el 2026-11-07 (W20 de `gafira-render-cpu`); no queda acción.
+- **60**: resuelto el 2026-11-16 por D-86. 04 FD-28 (b) toma el mínimo de ARQ-122: los dos lados de la original ≥ 128 px con mitad por media 2×2, o ≥ 640 px con mitad bilineal o por vecino más cercano; por debajo no hay cota. La rama de 128 px ya la prueba `arq_122_dhash_an_image_and_its_half_are_similar` (`crates/gafira-raster/src/dhash.rs`); la de 640 px se prueba primero en el cambio que implemente FD-28. Texto anterior: Tamaño mínimo de FD-28 (b) sin fijar. Se cerraba cuando: El titular lo fija; después, test primero.
+- **42**: resuelto el 2026-11-16. 02 está en modo sin licencia (§4.14, §13.1, §13.3); Q-19 queda cerrada por D-12 en 02 (§12.2) y en 05 (tabla de preguntas y riesgos), como en 01 (§12); R-13 de 02 queda sin efecto; D-12 en `00-decisiones.md` registra que se aplicó a 02 y 05.
+- **54**: resuelto. La regla de la banda está en ARQ-133 (D-47; 02 §4.17.6) y tiene pruebas: `arq_133_half_of_the_pixels_in_the_band_pins` y `arq_133_five_percent_of_the_band_is_a_real_colour` (`crates/gafira-segment/src/cut.rs:459`, `cut.rs:555`), y `crates/gafira-segment/tests/strays.rs` (`arq_133_a_narrow_contact_with_the_border_stays_reliable`, `arq_133_a_wide_contact_with_the_border_is_not_reliable`; `cargo test -p gafira-segment --locked arq_133` en verde el 2026-11-16).
+- **69**: resuelto. `crates/gafira-raster/proptest-regressions/` no existe en el árbol, así que no queda nada que borrar ni versionar; los archivos `*.proptest-regressions` de los demás crates están versionados (`git ls-files '*proptest-regressions'`: `gafira-anim`, `gafira-pathops`, `gafira-time`).
+- **39**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: Una entrada heredada de un outcome cerrado se toma como activa en una rama sin fusionar (W9 de `odd-lite`). Se cerraba cuando: La regla de resume de `coordinator.md` y `AGENTS.md` trata como heredada una entrada de una rama sin commit propio sobre `develop`.
+- **41**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: Timeout por el bloqueo del caché de paquetes de cargo que un re-run atrapa; «Hanging mutants» no lo nombra. Se cerraba cuando: Se decide si la regla lo cubre; si no, se nombra en `AGENTS.md` y en `verify`, o se sube `--minimum-test-timeout`.
+- **46**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: El registro de Flow-change de D1 no da pack ni motivo. Se cerraba cuando: El próximo cambio de flujo los registra y se decide si la plantilla los exige.
+- **66**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: «S1 con filas de cuelgue de layout», sin origen en los informes leídos. Se cerraba cuando: El coordinador confirma el origen antes de actuar.
+- **108**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: `tier: T0` en las tarjetas de TL2 y TL3, que escriben Rust crítico (S3 de `gafira-timeline`). Se cerraba cuando: El `specifier` corrige la etiqueta o deja constancia de que las tarjetas archivadas no se editan.
+- **115**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: CB2 registra `tier: T0` para código crítico de Rust (S2 de CB2). Se cerraba cuando: Se corrige la etiqueta o se deja constancia, como el ítem 108.
+- **110**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: La tabla de commits del registro lista 6 de 8, y el golden mide 2 220 bytes, no 2 221 (TL3-S2 de `gafira-timeline`). Se cerraba cuando: El registro archivado queda corregido al revisarlo; no bloquea.
+- **122**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: Los renglones HM1 y HM2 del registro de CB4 no reproducen (S10 de CB4). Se cerraba cuando: Se corrige el registro de CB4.
+- **127**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: Dos resbalones del registro de CB5b: sitios de construcción y cifras de src (S1 de CB5b). Se cerraba cuando: Se corrige al revisar el registro; no bloquea.
+- **128**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: Una cifra del registro de CB8 sin la línea «con este registro» (S2 de CB8). Se cerraba cuando: Se corrige la cifra; no bloquea.
+- **W15 de CB8** (contador de la curva sRGB en un frame): cerrado en CB6 por `afc55de`.
+- **W16 de CB8** (`read_rows` con el span del clip): cerrado en CB6 por `d2a2f49`; su gemelo de escritura (C3 de CB6) por `012b433`.
+- **W18 de CB8** (comparación de la vista previa en frío con ARQ-143): cerrado en CB6 por `74207ab`, la nota de diseño; el banco de vista previa está en `21707d6`.
+- **S3 de CB8** (`drawn` con una región que termina fuera de la página): cerrado en CB6 por `d31909f`.
 
 ### 1.3 Desajustes con el README, sin corregir
 
@@ -79,18 +139,17 @@ Comprobados contra el árbol en esta rama. El README sigue mandando hasta que el
 | Ítem | Desajuste |
 |---|---|
 | 39 | Lo que pide «incluir `develop` en la comparación» ya está en `AGENTS.md:71` y `coordinator.md:17`. Sigue faltando tratar como heredada la entrada de una rama sin commit propio. `backup/pi-agent-sync-preverify` sigue 3 commits por delante. |
-| 42 | Los números de línea de 02 han cambiado: Q-19 está en la 1860 (el ítem dice 1772) y Q-20 en la 1861 (dice 1773). |
 | 53 | Da un margen de 2.3x para 96.8 ms. Con 100 ms de límite, ese margen es el de 43 ms (la cifra de Q-48); 96.8 ms deja 1,03x. Los 818 ms del ítem no aparecen en los informes de SG3. |
-| 54 | ARQ-133 ya recoge la regla de la banda (D-47, aplicado a 02 §4.17.6, ARQ-131 y ARQ-133). El ítem parece hecho. |
 | 56 | El ítem no dice qué redacción está mal. El origen probable es SG3-W1, y P-04 ya da «9 de 12». No se pudo confirmar qué falta. |
-| 60 | El mínimo ya está en ARQ-122 desde `1b159f9` (128 px con media 2×2, 640 px con bilineal o vecino). 04 FD-28 (b) sigue sin cifra. |
-| 69 | `crates/gafira-raster/proptest-regressions/` no existe en ninguno de los dos worktrees. No queda nada que decidir salvo que exista en otra copia. |
+| 60 | El mínimo ya está en ARQ-122 desde `1b159f9` (128 px con media 2×2, 640 px con bilineal o vecino). 04 FD-28 (b) lo toma desde D-86 (§1.2). |
 | 49, 50, 73 | El 50 dice que el titular saltó el T4 de segment; el 73 y la tabla de estado hablan de una corrida parcial parada. Es la segunda (§3.3). El 73 no cuenta 18 no viables: 983 + 236 + 34 + 18 = 1271. |
 | 75 y tabla de estado | Dan 39 críticos. El mismo ítem cuenta 11 `cost_hint` como no críticos, más `error.rs:40` y `view.rs:211`: 48 − 13 = 35, no 39 (§2.1). |
 
 ## 2. Sobrevivientes críticos del T4 a 4a59889
 
-Corridas sobre 4a59889. `gafira-text` y `gafira-raster` no han cambiado desde entonces, así que las líneas valen en esta rama. Por orden del titular, no se corrigen antes de publicar (ítem 74).
+La spec 013 (`specs/done/013-mutant-debt-text-raster.md`) trabajó los bloques de §2.3: su tabla dice qué test mata cada mutante y por qué los demás son equivalentes o quedan sin matar.
+
+Corridas sobre 4a59889; las líneas de las listas son las de ese commit. Desde entonces la spec 013 añadió tests a los dos crates, y `gafira-raster` cambió además en `blend.rs`, `effects/shadow.rs` y `transitions/` (spec 013, «Dependencias»). D-66 sustituye la orden anterior de no corregirlos antes de publicar: se atacaron en paralelo al engine, y de los 98 críticos quedan 7 sin matar (ítems 74 y 75).
 
 Crítico según `AGENTS.md`: validación, ids, transformaciones, límites y toda regla de spec con invariante. No crítico: `Display`, accesores triviales y ayudas de test.
 
@@ -430,7 +489,7 @@ Los demás timeouts de la corrida completa fueron de carga y el re-run los atrap
 
 ### 3.2 `gafira-audio` (ítem 49)
 
-889 mutantes: 835 atrapados, 29 perdidos, 13 no viables y 12 timeouts, de los que quedan 10 tras un re-run con límite de 700 s. El informe da 25 críticos. La lista cruda no los marca y el reparto no se encuentra en `specs/history/2026-11-02-gafira-audio/`, así que el 25 no se puede reproducir línea a línea. Los candidatos a los 4 no críticos son `block.rs:96`, `chain.rs:52`, `processor.rs:27` y `processor.rs:31`, sin confirmar. Los 10 timeouts no están clasificados como colgantes.
+889 mutantes: 835 atrapados, 29 perdidos, 13 no viables y 12 timeouts, de los que quedan 10 tras un re-run con límite de 700 s. El informe da 25 críticos. La lista cruda no los marca y el reparto no se encuentra en `specs/done/legacy/history/2026-11-02-gafira-audio/`, así que el 25 no se puede reproducir línea a línea. Los candidatos a los 4 no críticos son `block.rs:96`, `chain.rs:52`, `processor.rs:27` y `processor.rs:31`, sin confirmar. Los 10 timeouts no están clasificados como colgantes.
 
 La lista cruda sobrevivió: anexo A. El código de `gafira-audio` no ha cambiado desde la corrida.
 
@@ -442,7 +501,7 @@ La lista cruda sobrevivió: anexo A. El código de `gafira-audio` no ha cambiado
 
 ## 4. Orden de trabajo
 
-Nada de esto arranca sin la decisión del titular de los ítems 74 y 75. Sigue valiendo un escritor a la vez: lo paralelo de abajo solo significa que los bloques no chocan en archivos, y requiere worktrees separados.
+D-66 decidió los ítems 74 y 75, y la spec 013 hizo las tandas A, B y C sobre la lista de §2.3; queda la tanda D, el T4 completo de cada crate, que la spec 013 dejó fuera de su alcance. La tabla queda como registro. Sigue valiendo un escritor a la vez: lo paralelo de abajo solo significa que los bloques no chocan en archivos, y requiere worktrees separados.
 
 | Tanda | Bloques | Por qué |
 |---|---|---|

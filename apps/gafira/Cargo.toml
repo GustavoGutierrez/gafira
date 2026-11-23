@@ -1,0 +1,37 @@
+[package]
+name = "gafira"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ui.workspace = true
+gafira-engine.workspace = true
+gafira-platform.workspace = true
+gafira-format.workspace = true
+gafira-assets.workspace = true
+gafira-i18n.workspace = true
+gafira-ports.workspace = true
+gafira-render.workspace = true
+gafira-render-cpu.workspace = true
+gafira-theme.workspace = true
+gafira-io-image.workspace = true
+gafira-io-pdf.workspace = true
+gafira-io-svg.workspace = true
+gafira-io-pptx.workspace = true
+gafira-io-xlsx.workspace = true
+# D-111: Elementos → Fotos, the only network besides the licence.
+gafira-photos = { workspace = true, features = ["online"] }
+gafira-vision = { workspace = true, features = ["online", "onnx"] }
+eframe.workspace = true
+# Spec 074: the export settings kept per format, as JSON.
+serde_json.workspace = true
+
+[build-dependencies]
+# Spec 090: the icon and the details of the Windows executable.
+winresource.workspace = true
+
+[lints]
+workspace = true

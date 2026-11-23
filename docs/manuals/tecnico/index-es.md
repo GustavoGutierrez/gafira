@@ -13,3 +13,4 @@ El orden de esta lista es el orden del manual. Manténgala sincronizada con `cha
 - [Herramientas y puertas de calidad](chapters-es/09-tooling-and-quality.md)
 - [Metodología de desarrollo](chapters-es/10-methodology.md)
 - [Glosario](chapters-es/11-glossary.md)
+- [gafira-ports: los puertos y sus registros](chapters-es/12-crate-gafira-ports.md)

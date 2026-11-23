@@ -1,0 +1,40 @@
+[package]
+name = "gafira-vision"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# D-115: downloading a model needs the network, opt-in and turned on by the
+# binary alone (ARQ-08).
+online = ["dep:ureq"]
+# D-115: ONNX Runtime, loaded from the library the person installs (ARQ-08).
+onnx = ["dep:ort"]
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-raster.workspace = true
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+# The backend of `zip`; not used directly.
+flate2.workspace = true
+rayon.workspace = true
+image.workspace = true
+# Inference in pure Rust, always there (MIT OR Apache-2.0).
+tract-onnx = { workspace = true }
+tract-linalg = { workspace = true }
+# The optional, faster runtime: only `load-dynamic`, so nothing native is
+# linked or fetched in a build (02 §9.2).
+ort = { workspace = true, optional = true }
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier"], optional = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

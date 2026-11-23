@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The .gaf project type (00-decisiones, 02 §7.1) with its document icon (spec 046). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.gafira.project+zip">
+    <comment>Gafira project</comment>
+    <comment xml:lang="es">Proyecto de Gafira</comment>
+    <sub-class-of type="application/zip"/>
+    <icon name="application-vnd.gafira.project+zip"/>
+    <glob pattern="*.gaf" weight="60"/>
+  </mime-type>
+</mime-info>

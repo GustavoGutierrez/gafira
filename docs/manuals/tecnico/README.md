@@ -6,16 +6,19 @@ Technical documentation of what is implemented in the repository today, in Engli
 docs/manuals/tecnico/
   index.md, chapters/        English edition (source): ordered list and NN-slug.md files
   index-es.md, chapters-es/  Spanish edition: same numbers and file names
+  cover.tex, backcover.tex   Title page and back cover templates (filled at build time)
   manual.py                  list, new, check, build (standard library only)
   build/                     generated Markdown, HTML and PDF (gitignored, never committed)
 ```
 
 Outputs: `build/Gafira_Technical_Manual.pdf` (English) and `build/Gafira_Manual_Tecnico.pdf` (Spanish).
+`build` renders **every** edition; `--lang en|es` limits it to one. A failure in one edition does
+not stop the other, and the exit code is non-zero if either could not be produced.
 
 ## Requirements
 
 - Python 3.9 or newer (no packages).
-- For the PDF: `pandoc` plus one engine. `build` tries, in order: `xelatex`, then `google-chrome` or `chromium` (headless print), then `wkhtmltopdf`. Force one with `--engine xelatex|chrome|wkhtmltopdf`.
+- For the PDF: `pandoc` plus one engine. `build` tries, in order: `xelatex`, then `google-chrome` or `chromium` (headless print), then `wkhtmltopdf`. Force one with `--engine xelatex|chrome|wkhtmltopdf`. The `xelatex` path uses `fontspec`, `fvextra`, `etoolbox`, `sectsty`, `tikz` and the brand faces under `assets/fonts/`: a full TeX Live satisfies all of them, a minimal install does not.
 
 ## Write or update a chapter
 
@@ -53,4 +56,8 @@ python3 docs/manuals/tecnico/manual.py build
 python3 docs/manuals/tecnico/manual.py build --lang es
 ```
 
-Each PDF has a title page with the workspace version and the date, a table of contents, numbered sections, and every chapter starting on a new page (the first chapter does not share a page with the table of contents). Layout is handled by the build: with `xelatex`, inline code gets break points after separators (`/`, `.`, `_`, `-`), code blocks wrap, and tables use small type with wrapping cells; the HTML engines get equivalent CSS. The `build/` folder is gitignored: do not commit the PDFs. Publish them as release or CI artifacts when needed.
+Each PDF opens with a cover and closes with a back cover, follows with a table of contents, numbered sections, and every chapter starting on a new page (the first chapter does not share a page with the table of contents). Layout is handled by the build: with `xelatex`, inline code gets break points after separators (`/`, `.`, `_`, `-`), code blocks wrap, and tables use small type with wrapping cells; the HTML engines get equivalent CSS. The `build/` folder is gitignored: do not commit the PDFs. Publish them as release or CI artifacts when needed.
+
+## Cover and back cover
+
+`cover.tex` and `backcover.tex` are the two page designs. `manual.py` fills their `{{...}}` placeholders from the `LANGS` table (title, kicker, blurb, author, edition, legal notice, version and date) and rejects a template with an unfilled placeholder. The pages use the brand tokens — ink `#18243B`, coral `#FF6B57`, canvas `#FAFAF7`, mint `#3FBFA9`, mist `#E7EAF2` — from `docs/manuals/marca/manual-gafira.md`, the primary logo on light and the dark-background logo on ink, and the display families of the brand manual (`Manrope` for titles, `Inter` for text) taken from `assets/fonts/`. Both pages belong to the `xelatex` path only; the HTML fallbacks render the document without them.

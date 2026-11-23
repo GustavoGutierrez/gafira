@@ -1,8 +1,10 @@
-//! File system, clock and notifier ports (02 §6.4, §7.2).
+//! File system, clock, process and notifier ports (02 §6.4, §7.2).
 
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use gafira_doc::ProjectId;
 
 use crate::common::UnixTime;
 
@@ -78,6 +80,34 @@ pub trait Clock: Send + Sync {
 
     /// Time since an arbitrary fixed start; never goes back.
     fn monotonic(&self) -> Duration;
+}
+
+/// Mints project identities (D-63, spec 012), so the engine needs no
+/// randomness of its own (ARQ-02). The platform adapter returns a random
+/// RFC 9562 version-4 UUID; it never returns [`ProjectId::NIL`].
+pub trait IdSource: Send + Sync {
+    /// A fresh identity, distinct from every earlier one.
+    fn project_id(&self) -> ProjectId;
+}
+
+/// An operating-system process identifier (spec 028).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ProcessId(pub u32);
+
+/// Who this process is and whether another one still runs, so the engine can
+/// tell its own recovery slots and file locks from another instance's
+/// (02 §7.2 «Bloqueos de archivo», spec 028) without reading the OS itself
+/// (ARQ-02).
+pub trait ProcessProbe: Send + Sync {
+    /// This process.
+    fn current(&self) -> ProcessId;
+
+    /// The name of this machine; empty when the platform gives none.
+    fn host(&self) -> String;
+
+    /// True when `pid` runs on this machine. An adapter that cannot tell
+    /// answers `true`, so nothing of a live instance is taken over.
+    fn is_alive(&self, pid: ProcessId) -> bool;
 }
 
 /// Shows a message outside the app, best effort. The text is already

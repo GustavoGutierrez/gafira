@@ -3,9 +3,10 @@
 use std::fmt;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{Document, Dpi, Page, ValidationError};
+use crate::timeline::{AssetTable, Sequence};
+use crate::{Document, Dpi, Page, ProjectId, ValidationError};
 
 /// Why a document could not be read.
 #[derive(Debug)]
@@ -36,13 +37,24 @@ impl std::error::Error for LoadError {
 }
 
 /// The unchecked wire shape of a [`Document`].
+///
+/// `sequences` and `assets` are the fields the timeline joined schema 1 with:
+/// they are read with a default, so a document written before them loads with
+/// an empty timeline and an empty table (ADR 0006 rule 1), and they are always
+/// written back (rule 3).
 #[derive(Deserialize)]
 pub(crate) struct DocumentWire {
     schema_version: u32,
     next_id: u64,
     #[serde(default)]
+    project_id: ProjectId,
+    #[serde(default)]
     dpi: Dpi,
     pages: Vec<Arc<Page>>,
+    #[serde(default)]
+    sequences: Vec<Arc<Sequence>>,
+    #[serde(default)]
+    assets: AssetTable,
 }
 
 impl TryFrom<DocumentWire> for Document {
@@ -52,8 +64,11 @@ impl TryFrom<DocumentWire> for Document {
         let doc = Document {
             schema_version: w.schema_version,
             next_id: w.next_id,
+            project_id: w.project_id,
             dpi: w.dpi,
             pages: w.pages,
+            sequences: w.sequences,
+            assets: w.assets,
         };
         doc.validate()?;
         Ok(doc)
@@ -70,6 +85,41 @@ impl Document {
     /// Writes the compact canonical JSON form (no trailing newline).
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
+    }
+}
+
+impl Serialize for Document {
+    // Every field is written, the empty timeline and the empty table included
+    // (ADR 0006 rule 3), in one order: the header, the pages, the sequences
+    // and the asset table their clips name (02 §7.1 lists them in this order).
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut out = serializer.serialize_struct("Document", 7)?;
+        out.serialize_field("schema_version", &self.schema_version)?;
+        out.serialize_field("next_id", &self.next_id)?;
+        out.serialize_field("project_id", &self.project_id)?;
+        out.serialize_field("dpi", &self.dpi)?;
+        out.serialize_field("pages", &self.pages)?;
+        out.serialize_field("sequences", &self.sequences)?;
+        out.serialize_field("assets", &self.assets)?;
+        out.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Document {
+    // The validate-while-loading rule of ARQ-13 keeps its shape: the wire read
+    // validates the same way the derive's `try_from` did, now over the
+    // timeline too. The derive left the struct, so this manual pair keeps the
+    // wire bytes identical to the field order of `Serialize`.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = DocumentWire::deserialize(deserializer)?;
+        Document::try_from(wire).map_err(serde::de::Error::custom)
     }
 }
 
@@ -113,6 +163,27 @@ mod tests {
         node(id, NodeKind::Group(GroupNode {}))
     }
 
+    // Spec 012, S12-02: the identity is always written, in the header, and a
+    // document written before the field loads with the nil id (ADR 0006).
+    #[test]
+    fn s12_02_project_id_is_written_in_the_header_and_defaults_to_nil() {
+        let id = crate::ProjectId::from_u128(0x0123_abcd_4567_89ef_0a1b_2c3d_4e5f_6789);
+        let d = test_document(3, Dpi::new(96), Vec::new()).with_project_id(id);
+        let json = d.to_json().unwrap();
+        assert!(json.starts_with(concat!(
+            r#"{"schema_version":1,"next_id":3,"#,
+            r#""project_id":"0123abcd-4567-89ef-0a1b-2c3d4e5f6789","dpi":96,"#
+        )));
+        let back = Document::from_json(json.as_bytes()).unwrap();
+        assert_eq!(back.project_id(), id);
+        assert_eq!(back, d);
+
+        let old = Document::from_json(br#"{"schema_version":1,"next_id":3,"pages":[]}"#).unwrap();
+        assert!(old.project_id().is_nil());
+        let bad = br#"{"schema_version":1,"next_id":3,"project_id":"x","pages":[]}"#;
+        assert!(matches!(Document::from_json(bad), Err(LoadError::Json(_))));
+    }
+
     #[test]
     fn minimal_document_has_exact_bytes() {
         let p = Page::new(PageId::new(1), "P".to_string(), px(100.0, 200.0));
@@ -120,14 +191,16 @@ mod tests {
         assert_eq!(
             d.to_json().unwrap(),
             concat!(
-                r#"{"schema_version":1,"next_id":3,"dpi":96,"pages":[{"id":1,"name":"P","#,
+                r#"{"schema_version":1,"next_id":3,"#,
+                r#""project_id":"00000000-0000-0000-0000-000000000000","#,
+                r#""dpi":96,"pages":[{"id":1,"name":"P","#,
                 r#""size":{"width":{"value":100.0,"unit":"px"},"height":{"value":200.0,"unit":"px"}},"#,
                 r#""bleed":{"value":0.0,"unit":"mm"},"margins":{"top":{"value":0.0,"unit":"px"},"#,
                 r#""right":{"value":0.0,"unit":"px"},"bottom":{"value":0.0,"unit":"px"},"#,
                 r#""left":{"value":0.0,"unit":"px"},"linked":true},"guides":[],"#,
                 r#""grid":{"visible":false,"step":{"value":10.0,"unit":"px"},"subdivisions":1,"#,
                 r#""style":"lines","snap":true},"#,
-                r#""locked":false,"hidden":false,"roots":[],"nodes":[]}]}"#
+                r#""locked":false,"hidden":false,"roots":[],"nodes":[]}],"sequences":[],"assets":{}}"#
             )
         );
     }
@@ -331,6 +404,14 @@ mod tests {
         };
         let mut second = Page::new(PageId::new(10), String::new(), a4);
         second.hidden = true;
+        // The duration is written when the page has one, in its canonical
+        // position: after the grid and before `locked` (ADR 0006 rule 3).
+        // The type is not named here: the domain names the time types only in
+        // the data of the timeline (ARQ-136).
+        second.duration = Some(
+            serde_json::from_value(serde_json::Value::from(3_528_000_000_i64))
+                .expect("the duration fits"),
+        );
         let d = test_document(20, Dpi::new(300), vec![Arc::new(page), Arc::new(second)]);
         let golden = include_str!("../tests/golden/full.json");
         assert_eq!(d.to_json().unwrap(), golden);

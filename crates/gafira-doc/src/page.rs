@@ -6,10 +6,12 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use gafira_geom::Length;
+use gafira_time::Flicks;
 
 use crate::layout::{check_bleed, default_bleed};
 use crate::{
-    Dpi, GridSettings, GuideSet, Margins, Node, NodeId, PageId, PageLayoutError, PageSize,
+    Dpi, GridSettings, GuideSet, Margins, Node, NodeId, PageField, PageId, PageLayoutError,
+    PageSize,
 };
 
 /// One page: its size, flags, root order and the arena that owns its nodes.
@@ -38,12 +40,23 @@ pub struct Page {
     /// The background grid.
     #[serde(default)]
     pub grid: GridSettings,
+    /// The duration of the page, when it has one (02 §3.1).
+    ///
+    /// The field is absent in the wire form when the page has no duration, so
+    /// a document written before the timeline edge still loads (ADR 0006
+    /// rule 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<Flicks>,
     /// Whether the whole page is protected from edits.
     #[serde(default)]
     pub locked: bool,
     /// Whether the whole page is hidden.
     #[serde(default)]
     pub hidden: bool,
+    /// The background under every element (spec 069); `None` is white.
+    /// Written only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<crate::PageBackground>,
     /// Top-level node ids, back to front.
     #[serde(default)]
     pub roots: Vec<NodeId>,
@@ -53,13 +66,26 @@ pub struct Page {
 }
 
 impl Page {
-    /// Checks the layout data against its ranges: bleed, margins, guides,
-    /// then grid. The first failure is returned; nothing is changed.
+    /// Checks the page against its ranges: bleed, margins, guides, grid, then
+    /// the duration. The first failure is returned; nothing is changed.
     pub fn check_layout(&self, dpi: Dpi) -> Result<(), PageLayoutError> {
         check_bleed(self.bleed, dpi)?;
         self.margins.check()?;
         self.guides.check()?;
-        self.grid.check()
+        self.grid.check()?;
+        self.check_duration()
+    }
+
+    /// The duration is a count of flicks at least zero: a page either has no
+    /// duration or one that is not before its own start (02 §3.1).
+    fn check_duration(&self) -> Result<(), PageLayoutError> {
+        match self.duration {
+            Some(duration) if duration.ticks() < 0 => Err(PageLayoutError::OutOfRange {
+                field: PageField::DurationTicks,
+                value: duration.ticks() as f64,
+            }),
+            _ => Ok(()),
+        }
     }
 
     /// An unlocked, visible page with no nodes.
@@ -72,8 +98,10 @@ impl Page {
             margins: Margins::default(),
             guides: GuideSet::default(),
             grid: GridSettings::default(),
+            duration: None,
             locked: false,
             hidden: false,
+            background: None,
             roots: Vec::new(),
             nodes: BTreeMap::new(),
         }
@@ -213,6 +241,46 @@ mod tests {
                 r#""step":{"value":10.0,"unit":"px"},"subdivisions":1,"style":"lines","#,
                 r#""snap":true},"locked":false,"hidden":false,"roots":[],"nodes":[]}"#
             )
+        );
+        assert_eq!(serde_json::from_str::<Page>(&json).unwrap(), p);
+    }
+
+    // ADR 0006 rule 3: the field excepted from "always written" is written
+    // when it has a value, in the canonical position §3.1 gives it — after
+    // the grid, before `locked` — and it is never `null`. This is the present
+    // side; `page_wire_form_writes_every_field` is the absent one.
+    #[test]
+    fn adr_0006_a_present_duration_sits_between_grid_and_locked() {
+        let mut p = Page::new(PageId::new(1), "P".to_string(), size());
+        p.duration = Some(Flicks::from_ticks(705_600_000));
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"id":1,"name":"P","size":{"width":{"value":100.0,"unit":"px"},"#,
+                r#""height":{"value":50.0,"unit":"px"}},"bleed":{"value":0.0,"unit":"mm"},"#,
+                r#""margins":{"top":{"value":0.0,"unit":"px"},"right":{"value":0.0,"unit":"px"},"#,
+                r#""bottom":{"value":0.0,"unit":"px"},"left":{"value":0.0,"unit":"px"},"#,
+                r#""linked":true},"guides":[],"grid":{"visible":false,"#,
+                r#""step":{"value":10.0,"unit":"px"},"subdivisions":1,"style":"lines","#,
+                r#""snap":true},"duration":705600000,"locked":false,"hidden":false,"#,
+                r#""roots":[],"nodes":[]}"#
+            )
+        );
+
+        // The exact byte position: the field opens right after the grid
+        // object closes and the next field is `locked`.
+        let grid = r#""style":"lines","snap":true}"#;
+        let at = json.find(grid).expect("the grid is written") + grid.len();
+        let tail = r#","duration":705600000,"locked":false"#;
+        assert_eq!(
+            &json[at..at + tail.len()],
+            tail,
+            "the duration sits between the grid and `locked`:\n{json}"
+        );
+        assert!(
+            !json.contains("null"),
+            "an absent duration is omitted, never written as null:\n{json}"
         );
         assert_eq!(serde_json::from_str::<Page>(&json).unwrap(), p);
     }

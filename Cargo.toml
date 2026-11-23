@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*"]
+members = ["crates/*", "apps/*", "xtask"]
 
 [workspace.package]
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 edition = "2024"
 rust-version = "1.93"
 license = "LicenseRef-Gafira-Proprietary"
@@ -26,7 +26,27 @@ gafira-segment = { path = "crates/gafira-segment" }
 gafira-ports = { path = "crates/gafira-ports" }
 gafira-render = { path = "crates/gafira-render" }
 gafira-media = { path = "crates/gafira-media" }
+gafira-render-cpu = { path = "crates/gafira-render-cpu" }
+gafira-engine = { path = "crates/gafira-engine" }
+gafira-theme = { path = "crates/gafira-theme" }
+gafira-ui = { path = "crates/gafira-ui" }
+gafira-platform = { path = "crates/gafira-platform" }
+gafira-format = { path = "crates/gafira-format" }
+gafira-assets = { path = "crates/gafira-assets" }
+gafira-i18n = { path = "crates/gafira-i18n" }
+gafira-io-image = { path = "crates/gafira-io-image" }
+gafira-io-pdf = { path = "crates/gafira-io-pdf" }
+gafira-io-svg = { path = "crates/gafira-io-svg" }
+gafira-io-pptx = { path = "crates/gafira-io-pptx" }
+gafira-io-vector = { path = "crates/gafira-io-vector" }
+gafira-table = { path = "crates/gafira-table" }
+gafira-chart = { path = "crates/gafira-chart" }
+gafira-vision = { path = "crates/gafira-vision" }
+gafira-io-xlsx = { path = "crates/gafira-io-xlsx" }
+gafira-qr = { path = "crates/gafira-qr" }
+gafira-photos = { path = "crates/gafira-photos" }
 blake3 = "1"
+crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
@@ -34,10 +54,53 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1"
 png = "0.18"
+# Spec 080, FD-20: only the matrix of a QR code; no image, SVG or EPS output.
+qrcode = { version = "0.15", default-features = false, features = ["std"] }
+# Spec 080: the reader the tests of the QR codes use (FD-20 a, (MIT OR Apache-2.0) AND ISC); never in a product binary.
+rqrr = { version = "0.11", default-features = false }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 parley = { version = "0.12", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = ["std"] }
 rayon = "1"
 assert_no_alloc = "1.1"
+# ICU4X for gafira-i18n (02 §14.8), with its compiled CLDR data; `toml` is a build dependency only.
+icu_locale_core = "2.4"
+icu_plurals = "2.4"
+icu_decimal = "2.4"
+toml = "1"
+
+eframe = { version = "0.33", default-features = false, features = ["glow", "x11", "wayland", "accesskit"] }
+egui = { version = "0.33", default-features = false }
+getrandom = "0.3"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
+x11rb = { version = "0.13", default-features = false, features = ["randr"] }
+roxmltree = "0.20"
+# D-115: inference for the image models (spec 084).
+tract-onnx = { version = "0.23", default-features = false }
+tract-linalg = { version = "0.23", default-features = false, features = ["multithread-mm"] }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std", "webgpu", "api-22"] }
+# Its `deflate` would switch flate2 to zlib-rs in the whole workspace, and with
+# it the bytes of every PNG (CAL-11): the Rust backend, as before.
+zip = { version = "9", default-features = false, features = ["deflate-flate2", "deflate-zopfli"] }
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
+# WebP: spec 087, with `image-webp`, already in the tree.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+# Spec 087, D-118: AVIF without native code; no assembler, so a build needs no `nasm`.
+re_rav1d = { version = "0.1.3", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
+ravif = { version = "0.13", default-features = false, features = ["threading"] }
+# Spec 067: images pasted from the system clipboard; the features egui-winit already uses.
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+# Spec 033: the lossless WebP thumbnails of the `.gaf` (`thumbs/`, 02 §7.1); already in the tree through krilla.
+image-webp = "0.2"
+# FD-56, 02 §9.2: PDF export; only the feature that draws images (no text shaping).
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
+# Spec 090: the icon and the details of the Windows executable (build only).
+winresource = { version = "0.1.34", default-features = false }
+# Spec 046: `xtask gen-icons` rasterizes the brand SVGs (DIS-13); already in the tree through egui_extras.
+resvg = { version = "0.45", default-features = false }
+# Reads the exported PDF back in the gafira-io-pdf tests.
+hayro-syntax = { version = "0.9", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -2,13 +2,13 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 04 de 05 |
-| Estado | Borrador para revisión |
+| Documento | Especificación 04 |
+| Estado | Aprobado (D-83, 2026-11-16) |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-45, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
-| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 están confirmadas en bloque (D-34) |
+| Depende de | `00-decisiones.md` (D-01 a D-86, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
+| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78; no bloquea esta spec, D-86). D-80 confirma las decisiones PROPUESTA, salvo el campo `template` del manifiesto (FD-16, §15), que fija D-81, y las fórmulas de FD-33 (D-78) |
 
-**Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o PROPUESTA) · *Aceptación* (criterios verificables) · *RF*.
+**Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o cifra propia, confirmada por D-71) · *Aceptación* (criterios verificables) · *RF*.
 
 **Reglas generales de todas las funciones**
 
@@ -45,7 +45,7 @@
 
 **FD-01 · Tamaño, unidades y orientación** (RF-06)
 - *Propósito*: crear y cambiar el tamaño del lienzo de cualquier proyecto.
-- *Comportamiento y reglas*: tamaños predefinidos (Destinos de FD-53) y personalizados con Ancho y Alto en **px, pulgada (in), mm o cm**; la unidad base interna es el píxel lógico y la conversión usa un DPI por proyecto (por defecto 96; 300 para Impresión). Orientación vertical/horizontal intercambia ancho y alto. Límites: 1–16 384 px por lado (PROPUESTA; acorde con la textura máxima de la GPU y la exportación por tiles). Al cambiar la unidad, los valores se convierten sin cambiar el tamaño real. Cambiar el tamaño de una página existente no escala el contenido (para eso, FD-54).
+- *Comportamiento y reglas*: tamaños predefinidos (Destinos de FD-53) y personalizados con Ancho y Alto en **px, pulgada (in), mm o cm**; la unidad base interna es el píxel lógico y la conversión usa un DPI por proyecto (por defecto 96; 300 para Impresión). Orientación vertical/horizontal intercambia ancho y alto. Límites: 1–16 384 px por lado (confirmada, D-71; acorde con la textura máxima de la GPU y la exportación por tiles). Al cambiar la unidad, los valores se convierten sin cambiar el tamaño real. Cambiar el tamaño de una página existente no escala el contenido (para eso, FD-54).
 - *UI*: Archivo → Nuevo; botón Tamaño de la Barra superior; Inicio («Tamaño propio»).
 - *Técnica*: `gafira-geom` (`Unit`, conversión por DPI), `Page.size: PageSize` (02 §3.1); `Command` `SetProperty<PageSize>`.
 - *Presupuesto*: aplicar < 100 ms (CAL-05).
@@ -61,7 +61,7 @@
 
 **FD-03 · Reglas y Guías** (RF-07)
 - *Propósito*: alinear con precisión usando referencias visuales.
-- *Comportamiento y reglas*: **Reglas** horizontal y vertical en la unidad del proyecto, con el origen en la esquina de la página activa. Las **Guías** se arrastran desde la regla; un doble clic sobre la guía permite escribir su posición numérica; se pueden bloquear y borrar arrastrándolas fuera. Las guías son por página y se guardan en el documento (`Page.guides`). Una guía tiene eje (vertical u horizontal), posición y bloqueo. La posición se mide desde la esquina superior izquierda de la página, en la unidad en que se escribió, y se guarda sin redondear. Puede quedar fuera de la página, como un nodo (02 §3.2). No se exportan. Visibilidad con `Ctrl+Shift+R` (Reglas) y `Ctrl+;` (Guías).
+- *Comportamiento y reglas*: **Reglas** horizontal y vertical en la unidad del proyecto, con el origen en la esquina de la página activa. Las **Guías** se arrastran desde la regla; un doble clic sobre la guía permite escribir su posición numérica; se pueden bloquear y borrar arrastrándolas fuera. Las guías son comunes a todas las páginas (D-99): cada página las guarda en `Page.guides` y la interfaz las mantiene iguales en todas. Una guía tiene eje (vertical u horizontal), posición y bloqueo. La posición se mide desde la esquina superior izquierda de la página, en la unidad en que se escribió, y se guarda sin redondear. Puede quedar fuera de la página, como un nodo (02 §3.2). No se exportan. Visibilidad con `Ctrl+Shift+R` (Reglas) y `Ctrl+;` (Guías).
 - *UI*: Ver → Reglas, Guías; arrastre desde las reglas.
 - *Técnica*: `gafira-layout` (operaciones sobre guías), overlay de `Tool::overlay` (02 §6.1: no invalida tiles). Los datos están en `Page.guides` (02 §3.1). `Guide` y `GuideSet` se definen en `gafira-doc` (ADR 0008).
 - *Presupuesto*: arrastrar una guía a 60 fps (CAL-02).
@@ -69,9 +69,9 @@
 
 **FD-04 · Generador de guías** (RF-07)
 - *Propósito*: crear rejillas de guías sin dibujarlas una a una.
-- *Comportamiento y reglas*: ajustes predefinidos «12 columnas» (12 columnas, sin filas), «3 columnas» (3 columnas, sin filas), «Rejilla 3×3» (3 columnas y 3 filas), todos con espacio de 24 px y margen de 24 px (PROPUESTA), y «Personalizada» (columnas, filas, espacio y margen). La **vista previa** se actualiza en vivo sobre la página al cambiar cada valor; «Aplicar» crea las guías como un único `Command` y «Reemplazar guías existentes» es una casilla.
+- *Comportamiento y reglas*: ajustes predefinidos «12 columnas» (12 columnas, sin filas), «3 columnas» (3 columnas, sin filas), «Rejilla 3×3» (3 columnas y 3 filas), todos con espacio de 24 px y margen de 24 px (confirmada, D-71), y «Personalizada» (columnas, filas, espacio y margen). La **vista previa** se actualiza en vivo sobre la página al cambiar cada valor; «Aplicar» crea las guías como un único `Command` y «Reemplazar guías existentes» es una casilla.
   - **Cálculo** (D-15): en cada eje con `n ≥ 1` divisiones, el área útil mide `A = lado − 2 × margen` y cada columna o fila mide `c = (A − (n − 1) × espacio) / n`. Se generan 2 guías de margen, en `margen` y en `lado − margen`, y 2 guías por cada espacio, en `margen + i × c + (i − 1) × espacio` y en `margen + i × (c + espacio)`, para `i = 1..n−1`. El total por eje es `2n`. Las columnas usan el ancho y las filas el alto. Con `n = 0`, ese eje no genera guías.
-  - **Reglas**: las posiciones no se redondean. Con margen 0, las 2 guías de margen se generan igual, sobre los bordes de la página. Dos guías de un eje en la misma posición exacta se emiten una vez (PROPUESTA): pasa con espacio 0. La salida da primero las verticales y luego las horizontales, cada grupo en orden ascendente.
+  - **Reglas**: las posiciones no se redondean. Con margen 0, las 2 guías de margen se generan igual, sobre los bordes de la página. Dos guías de un eje en la misma posición exacta se emiten una vez (confirmada, D-71): pasa con espacio 0. La salida da primero las verticales y luego las horizontales, cada grupo en orden ascendente.
   - **Validación**: `c ≥ 1 px`, el mismo mínimo que el lado de una página (`PageSize::MIN_PX`). Si no se cumple, hay error y ninguna guía. Espacio y margen son finitos y ≥ 0; columnas y filas son enteros ≥ 0. El margen es una entrada del generador: no lee ni cambia `Page.margins`. El DPI que convierte las unidades también es una entrada.
 - *UI*: Ver → Generador de guías (diálogo con vista previa).
 - *Técnica*: `gafira-layout::guides::generate(spec, page)` es función pura; se aplica con `SetProperty` y `Property::Guides`.
@@ -80,7 +80,7 @@
 
 **FD-05 · Márgenes, Sangrado y Zona de seguridad** (RF-07)
 - *Propósito*: preparar piezas para impresión y para plataformas que recortan bordes.
-- *Comportamiento y reglas*: **Márgenes** por página (`Page.margins: Margins`: cuatro lados, ligados por defecto con `linked`, o independientes; 0 por defecto). **Sangrado** de 0–10 mm (`Page.bleed: Length`, el mismo en los cuatro lados; por defecto 0; 3 mm en Impresión) que se dibuja como borde exterior (`canvas.bleed`) y se incluye al exportar PDF con marcas de corte. **Zona de seguridad**: área interior (por defecto 5 % por lado, D-38; `safe_rect` recibe el porcentaje como entrada) y en video vertical zonas que cubren las interfaces de plataformas (PROPUESTA; valores VERIFICAR por plataforma). Un contenido que sobresale de la Zona de seguridad dispara el aviso «Parte del contenido queda fuera de la zona de seguridad.» (no bloquea).
+- *Comportamiento y reglas*: **Márgenes** por página (`Page.margins: Margins`: cuatro lados, ligados por defecto con `linked`, o independientes; 0 por defecto). **Sangrado** de 0–10 mm (`Page.bleed: Length`, el mismo en los cuatro lados; por defecto 0; 3 mm en Impresión) que se dibuja como borde exterior (`canvas.bleed`) y se incluye al exportar PDF con marcas de corte. **Zona de seguridad**: área interior (por defecto 5 % por lado, D-38; `safe_rect` recibe el porcentaje como entrada) y en video vertical zonas que cubren las interfaces de plataformas (confirmada, D-80; valores VERIFICAR por plataforma). Un contenido que sobresale de la Zona de seguridad dispara el aviso «Parte del contenido queda fuera de la zona de seguridad.» (no bloquea).
   - **Cálculo**: `bleed_rect` amplía el rectángulo de la página por el sangrado en los cuatro lados. `safe_rect` lo reduce un porcentaje de su ancho a izquierda y derecha, y de su alto arriba y abajo. El rectángulo de márgenes lo reduce por cada margen. El DPI que convierte mm a px es una entrada.
   - **`overflow(bounds, rect)`**: da el exceso ≥ 0 por lado e indica si la caja queda totalmente fuera. Un borde sobre el límite no sobresale. La caja está totalmente fuera si no comparte área con `rect`: `bounds.x0 ≥ rect.x1`, `bounds.x1 ≤ rect.x0`, y lo mismo en `y`. El aviso aparece si algún exceso es `> 0`.
   - **Validación**: dan error un sangrado fuera de 0–10 mm, unos márgenes que quitan algo y dejan el rectángulo sin área, y un porcentaje fuera de `[0, 50)`. Una caja de tamaño 0 con márgenes 0 es válida. La regla por eje y el redondeo están en 02 §4.17.2.
@@ -91,7 +91,7 @@
 
 **FD-06 · Imán (snap)** (RF-08)
 - *Propósito*: alinear con precisión al arrastrar sin medir.
-- *Comportamiento y reglas*: Imán es una función propia, activa por defecto (D-28) y activable con `Ctrl+Shift+'`. Se engancha a: Guías, bordes y centro de la página, Márgenes, Cuadrícula, y bordes y centros de otros elementos, con **umbral de 6 px de pantalla** (configurable de 2 a 16 px; D-28). Al engancharse dibuja una línea guía temporal con el valor de distancia a los vecinos; mantener `Alt` lo desactiva mientras se arrastra. El Imán no cambia el modelo: solo corrige la posición final del `Command`.
+- *Comportamiento y reglas*: Imán es una función propia, activa por defecto (D-28) y activable con `Ctrl+Shift+'`. Se engancha a: Guías, bordes y centro de la página, Márgenes, Cuadrícula, y bordes y centros de otros elementos, con **umbral de 6 px de pantalla** (configurable de 2 a 16 px; D-28). Al engancharse dibuja una línea guía temporal con el valor de distancia a los vecinos; mantener `Ctrl` (`Cmd` en macOS) lo desactiva mientras se mueve o se redimensiona (D-90; antes `Alt`). El Imán no cambia el modelo: solo corrige la posición final del `Command`.
   - **Regla** (D-16): cada eje se resuelve por separado. En `x` se comparan el borde izquierdo, el centro y el borde derecho de la caja en movimiento con los destinos verticales; en `y`, el borde superior, el centro y el inferior con los horizontales. Gana el destino más cercano con distancia ≤ umbral. En un empate exacto, la prioridad es Guía > Margen > Página > Elemento > Cuadrícula. Si sigue el empate, gana la menor coordenada de destino y, después, la referencia izquierda o superior antes que el centro, y el centro antes que la derecha o inferior.
   - **Unidades**: `umbral en página = umbral en px / zoom`. El zoom es una entrada, en píxeles de pantalla por unidad de página (1,0 = 100 %; rango de FD-08). Las guías en otra unidad se convierten con el DPI, que también es una entrada.
   - **Cajas**: todas son rectángulos alineados a los ejes en coordenadas de página. Un nodo girado usa su caja alineada a los ejes (D-28).
@@ -102,13 +102,13 @@
 - *UI*: Ver → Imán; Ajustes → General (umbral).
 - *Técnica*: `gafira-layout::snap`; resultados aplicados por el `Command` de mover; overlay por `Tool::overlay`.
 - *Presupuesto*: cálculo de snap < 2 ms con 1 000 nodos (02 §6.7, `bench_snap_1000`); el arrastre mantiene 60 fps (CAL-02).
-- *Aceptación*: (a) arrastrar un elemento a 5 px de una Guía, con zoom 100 % y umbral 6, deja su borde sobre ella con error ≤ 1e-9; (b) con `Alt` no se engancha; (c) la función respeta la visibilidad: elementos ocultos o bloqueados no atraen, ni la selección movida ni sus descendientes, ni un nodo bajo un antecesor oculto o bloqueado; un nodo dentro de un grupo visible sí atrae, y el grupo atrae por la unión de sus hijos; un grupo que contiene algo de la selección no atrae, y sus demás hijos sí; (d) prueba de propiedad: el resultado nunca desplaza más que el umbral en ningún eje; (e) a distancia 6 engancha y a 6,01 no; con zoom 200 %, a distancia 3 engancha y a 3,01 no; (f) con una Guía y el borde de página a la misma distancia gana la Guía, y cada par vecino de la prioridad se prueba igual; con la Cuadrícula a 2 y una Guía a 3 gana la Cuadrícula, porque está más cerca; (g) cada eje es independiente: `x` puede engancharse a una Guía e `y` a un elemento en el mismo movimiento; (h) sin destinos, el desplazamiento es (0, 0); (i) con `Shift`, 7,4° da 0° y 7,5° da 15°.
+- *Aceptación*: (a) arrastrar un elemento a 5 px de una Guía, con zoom 100 % y umbral 6, deja su borde sobre ella con error ≤ 1e-9; (b) con `Ctrl/Cmd` no se engancha (D-90); (c) la función respeta la visibilidad: elementos ocultos o bloqueados no atraen, ni la selección movida ni sus descendientes, ni un nodo bajo un antecesor oculto o bloqueado; un nodo dentro de un grupo visible sí atrae, y el grupo atrae por la unión de sus hijos; un grupo que contiene algo de la selección no atrae, y sus demás hijos sí; (d) prueba de propiedad: el resultado nunca desplaza más que el umbral en ningún eje; (e) a distancia 6 engancha y a 6,01 no; con zoom 200 %, a distancia 3 engancha y a 3,01 no; (f) con una Guía y el borde de página a la misma distancia gana la Guía, y cada par vecino de la prioridad se prueba igual; con la Cuadrícula a 2 y una Guía a 3 gana la Cuadrícula, porque está más cerca; (g) cada eje es independiente: `x` puede engancharse a una Guía e `y` a un elemento en el mismo movimiento; (h) sin destinos, el desplazamiento es (0, 0); (i) con `Shift`, 7,4° da 0° y 7,5° da 15°.
 
 **FD-07 · Cuadrícula** (RF-08)
 - *Propósito*: referencia regular de fondo para composición.
-- *Comportamiento y reglas*: Cuadrícula es una función propia, activable con `Ctrl+'`. Paso configurable (1–500 en la unidad del paso; por defecto 10 px), subdivisiones (1–10; por defecto 1, PROPUESTA) y estilo (líneas o puntos; por defecto líneas). Es independiente de las Guías, vive en la página (`Page.grid: GridSettings { visible, step, subdivisions, style, snap }`, 02 §3.1) y no se exporta (ARQ-15). Por defecto, `visible` es falso y `snap` verdadero (PROPUESTA).
+- *Comportamiento y reglas*: Cuadrícula es una función propia, activable con `Ctrl+'`. Paso configurable (1–500 en la unidad del paso; por defecto 10 px), subdivisiones (1–10; por defecto 1, confirmada, D-71) y estilo (líneas o puntos; por defecto líneas). Es independiente de las Guías, vive en la página (`Page.grid: GridSettings { visible, step, subdivisions, style, snap }`, 02 §3.1) y no se exporta (ARQ-15). Por defecto, `visible` es falso y `snap` verdadero (confirmada, D-71).
   - **Líneas**: el origen es la esquina superior izquierda de la página. La **cuadrícula mayor** tiene líneas cada `paso` y la **menor** cada `paso / subdivisiones`.
-  - **Qué se muestra**: a zoom < 25 % solo la cuadrícula mayor. A 25 % o más, también la menor. Si la separación en pantalla de un nivel es < 6 px (PROPUESTA), ese nivel no se muestra. Si tampoco cabe la mayor, se usa el menor múltiplo `paso × 2^k` con separación ≥ 6 px.
+  - **Qué se muestra**: a zoom < 25 % solo la cuadrícula mayor. A 25 % o más, también la menor. Si la separación en pantalla de un nivel es < 6 px (confirmada, D-71), ese nivel no se muestra. Si tampoco cabe la mayor, se usa el menor múltiplo `paso × 2^k` con separación ≥ 6 px.
   - **Imán**: con Imán activo, cada eje se engancha a la línea mostrada más cercana, así que los elementos caen en las intersecciones (regla de FD-06).
 - *UI*: Ver → Cuadrícula; Barra contextual del lienzo.
 - *Técnica*: `gafira-layout::grid`; dibujo como overlay.
@@ -125,7 +125,7 @@
 
 **FD-09 · Recorte visual de elementos fuera de la página** (RF-12)
 - *Propósito*: permitir trabajar con elementos que sobresalen sin perderlos.
-- *Comportamiento y reglas*: el contenido fuera del área de la página no se pinta en la exportación (salvo el área de Sangrado en el PDF de Impresión) y se atenúa en el lienzo; reaparece al moverlo dentro. Es no destructivo: los nodos conservan su geometría. La caja de selección muestra una etiqueta con cuánto sobresale («+24 px a la derecha»). Los elementos totalmente fuera se listan en Capas con un icono de aviso.
+- *Comportamiento y reglas*: el contenido fuera del área de la página no se pinta en la exportación (salvo el área de Sangrado en el PDF de Impresión) y se recorta en el lienzo, con el marco de selección completo por encima (D-92); reaparece al moverlo dentro. Es no destructivo: los nodos conservan su geometría. La caja de selección muestra una etiqueta con cuánto sobresale («+24 px a la derecha»). Un elemento que se suelta totalmente fuera de su página se elimina, en un paso de deshacer con el movimiento (D-93); los que un documento ya traiga totalmente fuera se listan en Capas con un icono de aviso.
 - *UI*: lienzo, Capas.
 - *Técnica*: recorte al renderizar por `RenderGraph`; `layout::overflow(bounds, page)` (02 §3.2).
 - *Presupuesto*: sin coste medible (CAL-02).
@@ -145,7 +145,7 @@
 
 **FD-11 · Alinear y distribuir** (RF-10)
 - *Propósito*: ordenar elementos en un solo gesto.
-- *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la caja de la selección (dos o más); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (el modo es una entrada; por defecto, espacio igual). Los elementos bloqueados no se mueven. Atajos: `Ctrl+Alt+L/C/R`.
+- *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la caja de la selección (dos o más); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (el modo es una entrada; por defecto, espacio igual). Los elementos bloqueados no se mueven. Atajos (D-88): `Alt+A/H/D` (izquierda, centro, derecha) y `Alt+W/V/S` (arriba, medio, abajo).
   - **Cajas**: rectángulos alineados a los ejes en coordenadas de página; un nodo girado usa su caja alineada a los ejes (D-28).
   - **Alinear con bloqueados**: la caja de la selección incluye los elementos bloqueados (D-29). Alinear no cambia el otro eje.
   - **Distribuir** (D-17, D-28): solo cuentan los elementos libres. Se ordenan por su posición en el eje: borde inicial con espacio igual y centro con centros; un empate conserva el orden de entrada. El primero y el último no se mueven. Con menos de 3 libres no hace nada. Un elemento libre puede quedar sobre uno bloqueado.
@@ -166,7 +166,7 @@
 
 **FD-13 · Agrupar, bloquear, ocultar y Duplicar** (RF-10)
 - *Propósito*: tratar varios elementos como uno y evitar cambios accidentales.
-- *Comportamiento y reglas*: **Agrupar** (`Ctrl+G`) crea un `GroupNode`; Desagrupar (`Ctrl+Shift+G`). Los hijos conservan su posición en espacio de página y la caja del grupo es la unión de la de sus hijos (02 §3.2, D-35). El Inspector no ofrece sesgo en grupos. Bloquear y Ocultar afectan a la selección y se ven en Capas. **Duplicar** (`Ctrl/Cmd+D` o `Alt+arrastrar`) crea una copia desplazada y con nombre «{nombre} copia». Los elementos de la Identidad visual pueden bloquearse como grupo (RF-29).
+- *Comportamiento y reglas*: **Agrupar** (`Ctrl+G`) crea un `GroupNode`; Desagrupar (`Ctrl+Shift+G`). Los hijos conservan su posición en espacio de página y la caja del grupo es la unión de la de sus hijos (02 §3.2, D-35). El Inspector no ofrece sesgo en grupos. Bloquear y Ocultar afectan a la selección y se ven en Capas. Un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo ni con el marco ni con `Ctrl/Cmd+A`; se selecciona desde Capas, sin tiradores (D-91). **Duplicar** (`Ctrl/Cmd+D` o `Alt+arrastrar`) crea una copia desplazada y con nombre «{nombre} copia». Los elementos de la Identidad visual pueden bloquearse como grupo (RF-29).
 - *UI*: Barra contextual, menú contextual, Capas.
 - *Técnica*: `GroupNode`, `InsertNodes`, `Reparent` en `gafira-edit`.
 - *Presupuesto*: < 100 ms con 100 elementos.
@@ -181,7 +181,7 @@
 - *Comportamiento y reglas*: la pestaña **Plantillas** muestra una cuadrícula de miniaturas (carga perezosa) filtrada **por el formato actual** por defecto. Búsqueda por texto y filtros por formato, estilo, color, orientación, tema y duración (video). Cada miniatura tiene metadatos accesibles: tipo, formato, estilo, color principal, fuentes, licencia y elementos reemplazables (requisito del PRD). Las plantillas son locales: empaquetadas con la app (`BundledProvider`) y propias (`UserLibraryProvider`). Un recurso sin licencia registrada no se lista (02 §4.11). No hay descargas ni catálogo remoto.
 - *UI*: Panel lateral → Plantillas; Inicio («Explorar plantillas»).
 - *Técnica*: `AssetProvider` (`kinds() = [Template]`), búsqueda federada (Composite) en `gafira-assets`; índice local (`LibraryRepository`).
-- *Presupuesto*: búsqueda < 100 ms con 5 000 plantillas (PROPUESTA; CAL-05).
+- *Presupuesto*: búsqueda < 100 ms con 5 000 plantillas (confirmada, D-71; CAL-05).
 - *Aceptación*: (a) abrir la pestaña muestra primero las plantillas del formato actual; (b) cada plantilla de `assets/` tiene licencia en `LICENSES.toml` (ARQ-75); (c) la búsqueda funciona sin red (ARQ-04).
 
 **FD-15 · Aplicar una plantilla** (RF-15)
@@ -189,12 +189,12 @@
 - *Comportamiento y reglas*: un clic aplica la plantilla **añadiendo una página nueva** con textos y elementos totalmente editables (no se reemplaza la página actual, salvo opción «Reemplazar esta página»). Si el tamaño de la plantilla difiere del de la página, se ofrece «Adaptar al tamaño actual» (usa FD-54). Las fuentes ausentes se sustituyen con aviso (FD-48). El aplicado es una transacción: un solo Deshacer lo revierte.
 - *UI*: Plantillas; Inicio.
 - *Técnica*: `Command` `ApplyTemplate` (02 §4.3), `materialize` del `AssetProvider`.
-- *Presupuesto*: aplicar una plantilla de 50 elementos < 300 ms hasta ser editable (PROPUESTA).
+- *Presupuesto*: aplicar una plantilla de 50 elementos < 300 ms hasta ser editable (confirmada, D-71).
 - *Aceptación*: (a) tras aplicar, todos los textos se pueden editar y los elementos mover; (b) un solo Deshacer elimina la página añadida; (c) las fuentes de la plantilla ausentes generan el aviso «Falta la fuente “{nombre}”…».
 
 **FD-16 · Guardar como plantilla propia** (RF-15)
 - *Propósito*: reutilizar diseños propios.
-- *Comportamiento y reglas*: Archivo → Guardar como plantilla (o menú contextual sobre la selección) pide Nombre, Etiquetas y Estilo; guarda el diseño o la selección como un `.gafira` marcado como plantilla (`manifest.json`: campo `template` con etiquetas, formato, estilo y color; PROPUESTA) en la biblioteca local, con miniatura. Las imágenes se incrustan; los elementos de texto se marcan como reemplazables. Se pueden renombrar, editar y borrar desde la pestaña Plantillas.
+- *Comportamiento y reglas*: Archivo → Guardar como plantilla (o menú contextual sobre la selección) pide Nombre, Etiquetas y Estilo; guarda el diseño o la selección como un `.gaf` marcado como plantilla (`manifest.json`: objeto opcional `template` con `tags`, `pageFormat` (id de formato de inicio de 03 §6.2), `style` y `color` `#RRGGBB`; D-81, 02 §7.1) en la biblioteca local, con miniatura. Las imágenes se incrustan; los elementos de texto se marcan como reemplazables. Se pueden renombrar, editar y borrar desde la pestaña Plantillas.
 - *UI*: Archivo → Guardar como plantilla; menú contextual; Plantillas → «Mías».
 - *Técnica*: `gafira-format` (`ProjectRepository`), `UserLibraryProvider`.
 - *Presupuesto*: guardar < 500 ms para 20 páginas.
@@ -208,7 +208,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-17 · Formas y Líneas** (RF-16)
 - *Propósito*: construir composiciones con geometría simple.
-- *Comportamiento y reglas*: formas: rectángulo (radio de esquina editable), elipse, polígono (3–12 lados), estrella (3–12 puntas) y ruta libre; **Líneas** con grosor, estilo (continua, discontinua, punteada), remates y flechas. Relleno sólido, degradado lineal o radial, o sin relleno; contorno con color y grosor. Las formas son vectoriales y editables nodo a nodo (doble clic). Booleanas (unir, restar, intersectar) en Fase 2 (PROPUESTA).
+- *Comportamiento y reglas*: formas: rectángulo (radio de esquina editable), elipse, polígono (3–12 lados), estrella (3–12 puntas) y ruta libre; **Líneas** con grosor, estilo (continua, discontinua, punteada), remates y flechas. Relleno sólido, degradado lineal o radial, o sin relleno; contorno con color y grosor. Las formas son vectoriales y editables nodo a nodo (doble clic). Booleanas (unir, restar, intersectar) en Fase 2 (confirmada, D-80).
 - *UI*: Piezas → Formas, Líneas; herramientas Forma (R, O) y Línea (L).
 - *Técnica*: `ShapeNode`, `gafira-pathops` (contorno de trazo, simplificación), `gafira-geom` (kurbo).
 - *Presupuesto*: insertar < 100 ms; arrastrar a 60 fps (CAL-02).
@@ -224,7 +224,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-19 · Iconos e Ilustraciones** (RF-16)
 - *Propósito*: enriquecer el diseño con gráficos vectoriales listos.
-- *Comportamiento y reglas*: Los Iconos y las Ilustraciones incluidos son SVG con licencia permisiva registrada; se insertan como `Group` de `ShapeNode`, escalan sin pérdida y permiten **cambiar color** por muestra de la Identidad. Se pueden importar SVG propios (FD-31). El tamaño de insertado es el 25 % de la página (PROPUESTA).
+- *Comportamiento y reglas*: Los Iconos y las Ilustraciones incluidos son SVG con licencia permisiva registrada; se insertan como `Group` de `ShapeNode`, escalan sin pérdida y permiten **cambiar color** por muestra de la Identidad. Se pueden importar SVG propios (FD-31). El tamaño de insertado es el 25 % de la página (confirmada, D-71).
 - *UI*: Piezas → Iconos, Ilustraciones.
 - *Técnica*: `gafira-io-svg` (usvg), `AssetProvider` `BundledProvider`; `assets/LICENSES.toml`.
 - *Presupuesto*: insertar < 100 ms.
@@ -234,13 +234,13 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: generar códigos QR sin conexión.
 - *Comportamiento y reglas*: se introduce un texto o URL; opciones: nivel de corrección (L, M, Q, H; por defecto M), color de primer plano y de fondo, margen. El código se dibuja como vectores y se regenera al editar el contenido. Advertencia si el contraste primer plano/fondo es < 3:1 («Este código puede no leerse bien.»). El contenido nunca sale del equipo.
 - *UI*: Piezas → Códigos QR.
-- *Técnica*: nodo `Extension` con `type_id = "gafira.qr"` (ADR-02, `NodeExtension` interno); generación con crate permisivo (VERIFICAR, p. ej. `qrcode`) o implementación propia.
+- *Técnica*: `QrNode` (`NodeKind::Qr`, D-113); generación con crate permisivo (p. ej. `qrcode` 0.14.1, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)) o implementación propia.
 - *Presupuesto*: generar < 50 ms para 300 caracteres.
-- *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) el nodo sobrevive a abrir sin el registro (ARQ-11).
+- *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) sustituida por D-113.
 
 **FD-21 · Tablas** (RF-16)
 - *Propósito*: presentar datos tabulares dentro del diseño.
-- *Comportamiento y reglas*: tablas de 1–50 filas y 1–20 columnas; edición de celdas con texto; fila de encabezado; fila alterna; redimensionar columnas y filas arrastrando; estilos que toman colores de la Identidad. Combinar celdas en Fase 2 (PROPUESTA). Pegar desde portapapeles (texto con tabuladores) rellena celdas.
+- *Comportamiento y reglas*: tablas de 1–50 filas y 1–20 columnas; edición de celdas con texto; fila de encabezado; fila alterna; redimensionar columnas y filas arrastrando; estilos que toman colores de la Identidad. Combinar celdas en Fase 2 (confirmada, D-80). Pegar desde portapapeles (texto con tabuladores) rellena celdas.
 - *UI*: Piezas → Tablas.
 - *Técnica*: `TableNode` (02 §3.2), `gafira-text` para cada celda.
 - *Presupuesto*: edición de una celda < 50 ms (CAL-03).
@@ -250,9 +250,9 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: visualizar datos simples.
 - *Comportamiento y reglas*: barras, líneas, circular y anillo; editor de datos en una tabla; títulos, etiquetas, leyenda y paleta de la Identidad; los gráficos se redibujan al editar datos. Todos los colores llevan etiqueta o patrón además del color (DIS-33).
 - *UI*: Piezas → Gráficos.
-- *Técnica*: nodo `Extension` `type_id = "gafira.chart"`; `gafira-text`, `gafira-geom`.
+- *Técnica*: `ChartNode` (`NodeKind::Chart`, D-114); `gafira-chart`, `gafira-text`, `gafira-geom`.
 - *Presupuesto*: redibujar < 100 ms con 100 puntos.
-- *Aceptación*: (a) editar un valor actualiza el gráfico; (b) la exportación vectorial conserva la etiqueta de cada serie; (c) un gráfico abierto sin el registro se conserva intacto (ARQ-11).
+- *Aceptación*: (a) editar un valor actualiza el gráfico; (b) la exportación vectorial conserva la etiqueta de cada serie; (c) sustituida por D-114.
 
 **FD-23 · Nota adhesiva** (RF-16)
 - *Propósito*: anotar sobre el diseño sin que forme parte del resultado.
@@ -268,7 +268,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-24 · Lápiz, Marcador, Resaltador y Borrador** (RF-17)
 - *Propósito*: dibujar a mano alzada con trazos vectoriales editables.
-- *Comportamiento y reglas*: pestaña **Dibujo** y herramientas flotantes: **Lápiz** (trazo fino opaco), **Marcador** (trazo grueso opaco), **Resaltador** (translúcido con mezcla «multiplicar»), **Borrador** (por defecto elimina el trazo entero que toca; con `Shift` lo divide). Selector de color (colores del documento y de la Identidad) y de grosor (1–100 px). El trazo se suaviza (Catmull-Rom → Bézier con simplificación) y se almacena como `ShapeNode`; cada trazo termina al soltar el puntero y es una entrada de historial. Soporte de lápiz con presión en Fase 2 (PROPUESTA).
+- *Comportamiento y reglas*: pestaña **Dibujo** y herramientas flotantes: **Lápiz** (trazo fino opaco), **Marcador** (trazo grueso opaco), **Resaltador** (translúcido con mezcla «multiplicar»), **Borrador** (por defecto elimina el trazo entero que toca; con `Shift` lo divide). Selector de color (colores del documento y de la Identidad) y de grosor (1–100 px). El trazo se suaviza (Catmull-Rom → Bézier con simplificación) y se almacena como `ShapeNode`; cada trazo termina al soltar el puntero y es una entrada de historial. Soporte de lápiz con presión en Fase 2 (confirmada, D-80).
 - *UI*: Panel lateral → Dibujo; herramientas P, M, E (Resaltador: Shift+H).
 - *Técnica*: `Tool` (máquina de estados, 02 §4.2), `gafira-pathops` (simplificación), `ShapeNode`.
 - *Presupuesto*: latencia de trazo < 16 ms por evento (CAL-01).
@@ -283,16 +283,16 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Comportamiento y reglas*: pestañas internas **Imágenes, Video, Audio, Diseños**. Se importa arrastrando archivos o carpetas (importación masiva) o con «Importar». Las miniaturas y los metadatos se generan en segundo plano; los archivos se guardan por contenido (BLAKE3) y se incrustan en el proyecto al usarse. La biblioteca vive en el directorio de datos de la app, es local y puede exportarse como carpeta.
 - *UI*: Panel lateral → Biblioteca; Archivo → Importar (`Ctrl+Shift+I`).
 - *Técnica*: `ContentStore`, `LibraryRepository`, `Importer` (02 §4.5) en `gafira-assets`.
-- *Presupuesto*: importar 100 imágenes de 12 MP con miniaturas sin bloquear la UI; miniatura de una imagen < 50 ms (PROPUESTA).
+- *Presupuesto*: importar 100 imágenes de 12 MP con miniaturas sin bloquear la UI; miniatura de una imagen < 50 ms (confirmada, D-71).
 - *Aceptación*: (a) arrastrar 50 archivos no bloquea la interfaz (ARQ-41); (b) un archivo no compatible muestra el mensaje de 03 §12; (c) los recursos duplicados por hash se guardan una sola vez (02 §3.2).
 
 **FD-26 · Búsqueda por etiqueta y color** (RF-18)
 - *Propósito*: encontrar archivos rápido.
-- *Comportamiento y reglas*: búsqueda por nombre, **etiqueta** (con autocompletado), **color dominante** (selector de muestra; se calculan 5 colores dominantes por imagen), tipo, tamaño, duración y licencia. Se pueden combinar filtros. La búsqueda semántica es opcional y solo local (Fase 3, PROPUESTA).
+- *Comportamiento y reglas*: búsqueda por nombre, **etiqueta** (con autocompletado), **color dominante** (selector de muestra; se calculan 5 colores dominantes por imagen), tipo, tamaño, duración y licencia. Se pueden combinar filtros. La búsqueda semántica es opcional y solo local (Fase 3, confirmada, D-80).
 - *UI*: Biblioteca → barra de búsqueda y filtros.
 - *Técnica*: `LibraryRepository` (índice `rusqlite` o `redb`, VERIFICAR; 02 §9.2), cálculo de paleta en `gafira-raster` (ARQ-122), con Lab y ΔE2000 de `gafira-color`.
-- *Presupuesto*: < 100 ms con 10 000 archivos (PROPUESTA).
-- *Aceptación*: (a) buscar el color de una muestra devuelve imágenes con ese color dominante con ΔE2000 < 15 (PROPUESTA); (b) combinar etiqueta y tipo reduce el resultado; (c) sin red.
+- *Presupuesto*: < 100 ms con 10 000 archivos (confirmada, D-71).
+- *Aceptación*: (a) buscar el color de una muestra devuelve imágenes con ese color dominante con ΔE2000 < 15 (confirmada, D-71); (b) combinar etiqueta y tipo reduce el resultado; (c) sin red.
 
 **FD-27 · Colecciones** (RF-18)
 - *Propósito*: agrupar archivos por proyecto, cliente o tema.
@@ -304,11 +304,11 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-28 · Detección de duplicados** (RF-18)
 - *Propósito*: evitar archivos repetidos.
-- *Comportamiento y reglas*: al importar, igual hash BLAKE3 se considera duplicado exacto y se ofrece «Usar el existente»; imágenes parecidas se detectan con un hash perceptual (dHash, PROPUESTA) y se listan para revisar sin borrar nada automáticamente.
+- *Comportamiento y reglas*: al importar, igual hash BLAKE3 se considera duplicado exacto y se ofrece «Usar el existente»; imágenes parecidas se detectan con un hash perceptual (dHash, confirmada, D-71) y se listan para revisar sin borrar nada automáticamente.
 - *UI*: Biblioteca → «Duplicados».
 - *Técnica*: `blake3`; hash perceptual en `gafira-raster` (ARQ-122).
 - *Presupuesto*: hash de 12 MP < 100 ms (02 §6.7, `bench_dhash_12mp`).
-- *Aceptación*: (a) importar dos veces el mismo archivo no crea dos recursos; (b) una versión redimensionada de una imagen aparece como parecida; (c) nada se borra sin confirmar.
+- *Aceptación*: (a) importar dos veces el mismo archivo no crea dos recursos; (b) una versión al 50 % de una imagen aparece como parecida (distancia de Hamming ≤ 10) si los dos lados de la original miden ≥ 128 px y la mitad se hace por media 2×2, o ≥ 640 px y la mitad se hace por bilineal o por vecino más cercano (ARQ-122, D-86); por debajo de esos tamaños no hay cota; (c) nada se borra sin confirmar.
 
 **FD-29 · Versiones y licencias de archivos** (RF-18)
 - *Propósito*: conservar el historial de un archivo y saber con qué licencia se puede usar.
@@ -320,10 +320,10 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-30 · Vínculos ausentes y relocalización** (RF-18, RF-55) — Relocalizar medios es de Fase 2
 - *Propósito*: no producir resultados rotos si falta un recurso.
-- *Comportamiento y reglas*: en el MVP los recursos se incrustan en el `.gafira` (`AssetStorage::Embedded`); si uno falta o está dañado, se muestra un marcador visible y la exportación advierte antes de generar (RF-33). En **Fase 2**, con **Relocalizar medios** (Archivo → Relocalizar medios), los videos grandes pueden vincularse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`, 02 §7.1): un vínculo ausente emite el evento `LinksMissing`, se muestra como marcador y «Buscar archivo» relocaliza uno o una carpeta entera, confirmando por hash. No se guardan rutas absolutas (ARQ-56).
+- *Comportamiento y reglas*: en el MVP los recursos se incrustan en el `.gaf` (`AssetStorage::Embedded`); si uno falta o está dañado, se muestra un marcador visible y la exportación advierte antes de generar (RF-33). En **Fase 2**, con **Relocalizar medios** (Archivo → Relocalizar medios), los videos grandes pueden vincularse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`, 02 §7.1): un vínculo ausente emite el evento `LinksMissing`, se muestra como marcador y «Buscar archivo» relocaliza uno o una carpeta entera, confirmando por hash. No se guardan rutas absolutas (ARQ-56).
 - *UI*: marcador sobre el elemento; diálogo de Exportar.
 - *Técnica*: `AssetTable`, `ContentStore`, `AssetService::relocate` (02 §7.1).
-- *Presupuesto*: relocalizar una carpeta de 1 000 archivos < 2 s (PROPUESTA).
+- *Presupuesto*: relocalizar una carpeta de 1 000 archivos < 2 s (confirmada, D-71).
 - *Aceptación*: (a) con un recurso ausente la exportación advierte antes de empezar; (b) tras relocalizar, el proyecto se abre completo; (c) 0 rutas absolutas en los JSON (ARQ-56).
 
 ---
@@ -334,16 +334,17 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 
 **FD-31 · Importación de imágenes** (RF-19)
 - *Propósito*: traer imágenes de uso común al diseño.
-- *Comportamiento y reglas*: se importan por arrastre, pegado, Archivo → Importar o desde Biblioteca. El perfil de color embebido (ICC) se respeta y se convierte a sRGB de trabajo; EXIF de orientación se aplica. Un TIFF de varias páginas importa la primera página (con opción de elegir). Un GIF animado se importa como imagen fija o, a elección, como clip de video. Un SVG se importa como vectores editables (scripts y referencias externas se ignoran). Imágenes mayores de 16 384 px por lado se reducen con aviso (PROPUESTA).
+- *Comportamiento y reglas*: se importan por arrastre, pegado, Archivo → Importar o desde Biblioteca. El perfil de color embebido (ICC) se respeta y se convierte a sRGB de trabajo; EXIF de orientación se aplica. Un TIFF de varias páginas importa la primera página (con opción de elegir). Un GIF animado se importa como imagen fija o, a elección, como clip de video. Un SVG se importa como vectores editables (scripts y referencias externas se ignoran). Imágenes mayores de 16 384 px por lado se reducen con aviso (confirmada, D-71).
 - *UI*: Biblioteca; Archivo → Importar; arrastrar y soltar.
 - *Técnica*: `Importer` (`FormatRegistry::resolve_import`, 02 §4.5) en `gafira-io-image` y `gafira-io-svg`; `gafira-color` (`ColorTransform`, moxcms).
-- *Formatos*: **MVP**: PNG, JPEG, WebP, GIF, TIFF, BMP, QOI, SVG. **Fase 2**: HEIC (solo lectura vía SO, feature `heic-os`, condicionada a Q-17; en Linux no se admite) y PDF (primera página o páginas elegidas; hayro, VERIFICAR). En el MVP el PRD pide JPG/PNG/WebP/SVG/HEIC/TIFF: HEIC se difiere por patentes y dependencia del SO, y su alcance depende de la pregunta abierta Q-17 (ADR-07).
-- *Presupuesto*: decodificar un JPEG de 12 MP y mostrarlo < 500 ms (PROPUESTA); sin bloquear la UI (ARQ-41).
+- *Formatos*: **MVP**: PNG, JPEG, WebP, GIF, TIFF, BMP, QOI, SVG. **Fase 2**: HEIC (solo lectura con el decodificador del SO, feature `heic-os`, D-59; en Linux solo si el sistema lo ofrece) y PDF (primera página o páginas elegidas; hayro 0.9.0, Apache-2.0 OR MIT: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)). Sin decodificador del SO, el archivo HEIC se rechaza con un mensaje que explica por qué. En el MVP el PRD pide JPG/PNG/WebP/SVG/HEIC/TIFF: HEIC se difiere por patentes y dependencia del SO; Gafira no incluye decodificador propio de HEIC (D-59, ADR-07).
+- *Presupuesto*: decodificar un JPEG de 12 MP y mostrarlo < 500 ms (confirmada, D-71); sin bloquear la UI (ARQ-41).
 - *Aceptación*: (a) cada formato del MVP importa un archivo de prueba y el golden coincide; (b) los fuzz targets de cada importador corren 10 min por PR sin fallos (ARQ-21); (c) un archivo corrupto muestra un error y no un cierre (ARQ-54).
 
 **FD-32 · Zona de edición** (RF-20)
 - *Propósito*: decidir en qué parte de la imagen actúa un ajuste.
 - *Comportamiento y reglas*: selector con seis opciones: **Todo**, **Elemento** (el objeto detectado), **Mano alzada** (se pinta el área con un pincel), **Primer plano**, **Fondo** y **Texto** (detecta regiones de texto raster). Todas generan una máscara que modula el ajuste y es editable. «Elemento», «Primer plano» y «Fondo» usan el `ClassicSegmenter` (FD-38); «Elemento» añade una pista de prioridad central (D-23). Si el resultado no es fiable (02 ARQ-131), la opción se atenúa con el motivo «No se detectó un resultado fiable en esta imagen.». Esta atenuación solo afecta a las zonas que segmentan, «Elemento», «Primer plano» y «Fondo»: «Todo» nunca se atenúa por baja fiabilidad, y `reliable` se mantiene tal como lo calcula ARQ-131. **Texto** pasa a Fase 2 (D-23): se muestra atenuada con el motivo «Disponible en una versión futura.».
+- *Precisado por D-116 (spec 085)*: se entregan Todo, Elemento (un clic sobre el objeto), Área (la Mano alzada, con pincel sumar y restar y detección automática opcional), Primer plano y Fondo (con el modelo de quitar fondo). Hasta 8 zonas por imagen, cada una con sus ajustes.
 - *UI*: Inspector → Imagen → Zona de edición.
 - *Técnica*: `Mask::Alpha` / `Painted`, `Segmenter`, `EffectInstance` con máscara.
 - *Presupuesto*: la máscara aproximada < 5 s en CPU para 4000 px (CAL-06), refinamiento en segundo plano; el efecto con máscara ya calculada < 300 ms (CAL-04).
@@ -361,7 +362,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 | **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; Invertir es un interruptor (`invert`, apagado por defecto; D-46); resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
 | **Textura** | Nitidez, Claridad, Viñeta | 0–100 (viñeta −100–100) | Nitidez con máscara de bordes; la viñeta es centrada y ajustable |
 
-**Fórmulas de FD-33** (PROPUESTA; pendientes de aprobación visual del titular, Q-34). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
+**Fórmulas de FD-33** (PROPUESTA: valores provisionales que fijan las pruebas, pendientes de la revisión visual del titular, ítem 133 de 07, D-78; esa revisión no bloquea esta spec, D-86). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
 
 Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codificado con la curva sRGB y recortado a `[0, 1]`; `k = valor / 100`; `Y = 0,2126 R + 0,7152 G + 0,0722 B`; `w(a, b, x)` es *smoothstep* de `a` a `b`.
 
@@ -396,10 +397,11 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 **FD-34 · Filtros** (RF-21)
 - *Propósito*: aplicar estilos listos con vista previa.
 - *Comportamiento y reglas*: rejilla de filtros con **vista previa sobre la propia imagen** (miniaturas del elemento actual); intensidad 0–100; los filtros son presets de parámetros (`ParamValues` guardados, no código; 02 §4.4) y pueden crearse y guardarse como propios. Los radios escalan con el tamaño de la imagen (ARQ-120), de modo que una miniatura representa el resultado final. En Fase 2 se admiten LUT `.cube` como filtros.
-  - **Primer corte** (D-40): se entrega el mecanismo y un preset de prueba que no se muestra a la persona. El catálogo real, con sus nombres y valores, llega con Q-34.
+  - **Primer corte** (D-40): se entrega el mecanismo y un preset de prueba que no se muestra a la persona. El catálogo real, con sus nombres y valores, llega con la revisión visual del ítem 133 de 07 (D-78).
   - **Preset**: id estable, nombre (`MessageKey`) y lista ordenada de pares (id de efecto, `ParamValues`). Los efectos se aplican en ese orden. Un parámetro que el preset no nombra queda en su valor por defecto. El preset se valida con el `ParamSchema` de cada efecto. El formato con que se guarda un filtro propio va con el criterio (c).
   - **Intensidad** (D-40): con `i` en 0–100, extremos incluidos, un parámetro `Float` vale `d × (1 − i/100) + p × i/100`, con `d` su valor por defecto y `p` el del preset. Un `Int` usa esa fórmula, evaluada en `f64`, y redondea al entero más cercano; medio se aleja de 0. Un `Color` se interpola en luz lineal con la regla de `Color` de 02 §3.4, con `t = i/100`. `Bool` y `Choice` valen `d` con `i = 0` y `p` con `i > 0` (D-41). Una intensidad NaN, `±∞` o fuera de rango da `Err` antes de escribir en destino (ARQ-110).
   - **Miniatura**: es el mismo filtro aplicado a una copia reducida, con `scale` igual a la razón de reducción (ARQ-120).
+  - *Precisado por D-116 (spec 085)*: catálogo de 36 filtros con nombres propios en seis grupos (Natural, Cálido, Frío, Vívido, Suave y Clásico).
 - *UI*: Inspector → Imagen → Filtros.
 - *Técnica*: `Effect` con presets en datos; `LutTransform` (Fase 2).
 - *Presupuesto*: generar la rejilla de 12 miniaturas < 300 ms (CAL-04); aplicar < 300 ms.
@@ -407,7 +409,8 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 
 **FD-35 · Sombras** (RF-21)
 - *Propósito*: dar profundidad a imágenes, formas y texto.
-- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. El desplazamiento escala con la imagen y se redondea a píxeles enteros, también según ARQ-120. El elemento se pinta sobre su sombra con el modo `Normal` de ARQ-119, con la sombra como fondo y el elemento como fuente, en luz lineal también en 8 bits (D-56). **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27). **Brillo** y **Contorno** salen del primer corte hasta que se aprueben sus fórmulas (D-42).
+- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos confirmados, D-71); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. El desplazamiento escala con la imagen y se redondea a píxeles enteros, también según ARQ-120. El elemento se pinta sobre su sombra con el modo `Normal` de ARQ-119, con la sombra como fondo y el elemento como fuente, en luz lineal también en 8 bits (D-56). **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27). **Brillo** y **Contorno** salen del primer corte hasta que se aprueben sus fórmulas (D-42).
+- *Precisado por D-116 (spec 085)*: en imágenes, Brillo, Paralela, Contorno, Curva, Página flotante, En ángulo y Suelo; sus longitudes son proporciones del lado menor. La caja de la imagen no cambia.
 - *UI*: Inspector → Imagen → Sombras; Efectos de texto.
 - *Técnica*: `Effect` de sombra en `gafira-raster` (desenfoque gaussiano separable).
 - *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p (02 §6.7, `bench_shadow_1080`).
@@ -438,12 +441,12 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *Comportamiento y reglas*: un clic sobre una imagen (Barra contextual → «Aislar sujeto») ejecuta el `ClassicSegmenter` (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC; 02 §4.7). Trabaja sobre una copia reducida a 2048 px de lado largo (una imagen menor no se amplía), usa solo color en los GMM (D-45) y escala con *guided filter* al tamaño completo. Ese filtro es el refinado de bordes, el *matting* de esta función: no hay una pasada aparte (02 §4.7, ARQ-130). Muestra progreso y una **estimación de tiempo** en CPU (requisito del PRD), que calcula `gafira-engine` a partir de la fracción de progreso (02 ARQ-112); es cancelable en ≤ 100 ms. El resultado es una **máscara no destructiva** (`Mask::Alpha`) que se muestra sobre un fondo de cuadros; el píxel original no cambia y se puede quitar la máscara con Restablecer. Si hay pistas del usuario (trazo sobre el sujeto o el fondo), se usan como semillas. Sin modelos por defecto (ARQ-76).
 - *UI*: Barra contextual y Inspector → Imagen → «Aislar sujeto»; menú contextual.
 - *Técnica*: `Segmenter` (`ClassicSegmenter`, `SegHints`, `Segmentation`, `AlphaMask`; 02 ARQ-130) en `gafira-segment`, `Mask`, pool de render (`rayon`).
-- *Presupuesto*: imagen de 4000 px **< 5 s en CPU** (CAL-06); **< 2 s con GPU** (CAL-07, VERIFICAR); la UI nunca se bloquea. Falta medir estas cifras con la copia de 2048 px (02 Q-48).
+- *Presupuesto*: imagen de 4000 px **< 5 s en CPU** (CAL-06); **< 2 s con GPU** (CAL-07, VERIFICAR); la UI nunca se bloquea. Falta medir estas cifras con la copia de 2048 px en el hardware de D-03 (ítem 134 de 07, D-78).
 - *Aceptación*: (a) las 16 escenas sintéticas del conjunto fijo de `gafira-testkit` dan IoU ≥ 0,90 por escena (prueba bloqueante, D-20, 02 ARQ-132); las 12 escenas nuevas de 02 ARQ-132 solo informan de su recuento (aviso, D-45); el IoU sobre fotos reales es solo un aviso hasta que el titular aporte un conjunto con licencia; (b) `bench_segment_4000` < 5 s en el hardware de gama media; (c) cancelar devuelve el control en ≤ 100 ms y deja el documento intacto (prueba por informes de progreso, 02 ARQ-112; la cifra se mide en `bench_cancel_segment`); (d) la imagen original se puede recuperar quitando la máscara; (e) un borde en rampa da alfa graduado, como fija el criterio de 02 ARQ-130.
 
 **FD-39 · Retocar borde (Pincel Quitar y Pincel Devolver)** (RF-22)
 - *Propósito*: corregir la máscara a mano.
-- *Comportamiento y reglas*: tras Aislar sujeto aparece la barra de retoque con **Pincel Quitar** (borra de la máscara; `B`) y **Pincel Devolver** (restaura; `Shift+B`), tamaño 1–500 px (`[` y `]`), dureza 0–100 %, vista previa del resultado y **Comparar**. Cada trazo es una entrada de historial y puede deshacerse. La máscara se guarda como tiles con copia al escribir (02 §3.2) y persiste en `masks/` del `.gafira`.
+- *Comportamiento y reglas*: tras Aislar sujeto aparece la barra de retoque con **Pincel Quitar** (borra de la máscara; `B`) y **Pincel Devolver** (restaura; `Shift+B`), tamaño 1–500 px (`[` y `]`), dureza 0–100 %, vista previa del resultado y **Comparar**. Cada trazo es una entrada de historial y puede deshacerse. La máscara se guarda como tiles con copia al escribir (02 §3.2) y persiste en `masks/` del `.gaf`.
 - *UI*: barra de retoque sobre el lienzo; herramientas B y Shift+B.
 - *Técnica*: `Tool` Pincel de máscara (02 §4.2), `Command` `PaintMask`, que cambia una `TileSetRef` por otra; la copia al escribir de los tiles `Arc<Tile>` ocurre fuera del comando (ADR 0008).
 - *Presupuesto*: latencia de trazo < 16 ms (CAL-01).
@@ -455,7 +458,8 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *UI*: Ajustes → Funciones locales opcionales.
 - *Técnica*: `Segmenter`, `Registry<dyn Segmenter>` (02 §4.7, §11.1).
 - *Presupuesto*: la misma cifra que FD-38 si se activa un segmentador por GPU.
-- *Aceptación*: (a) el instalador no contiene `.onnx` (ARQ-76); (b) sin modelo instalado, la función no aparece activa; (c) cada paquete de modelo muestra su licencia antes de activarse.
+- *Precisado por D-115 (spec 084)*: «Quitar fondo» y «Mejorar resolución» con modelos incluidos (menos de 10 MB) y descargables.
+- *Aceptación*: (a) el instalador no contiene más `.onnx` que los de D-115 (ARQ-76); (b) sin modelo instalado, la función no aparece activa; (c) cada paquete de modelo muestra su licencia antes de activarse.
 
 ---
 
@@ -477,8 +481,8 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
   - **Límite aceptado del espacio final de otro nivel**: la biblioteca de maquetación (02 §9.2) no aplica la regla L1 de UAX #9 a los tramos. El espacio en blanco al final lógico de una línea, dentro de un tramo de nivel bidi distinto al del párrafo, se queda en su posición bidi, dentro de la línea. Las reglas de salto, interletrado, desborde y alineación lo tratan como el espacio que cuelga. Tiene dos efectos visibles: a la izquierda, el contenido puede empezar a un espacio del borde; en cualquier alineación, los clústeres que no son espacio en blanco pueden pasar de la caja hasta el avance de ese espacio, sin desborde (02 ARQ-116), y esa línea no se centra ni se alinea a la derecha. Estos dos efectos son un límite documentado, no un defecto.
   - **Justificado**: reparte el sobrante entre palabras. El espacio en blanco al inicio de una línea no recibe reparto y es contenido de la línea, así que la línea, con ese espacio incluido, termina en el borde; en un párrafo de derecha a izquierda, la tinta puede terminar a un espacio del borde. La última línea de un párrafo y la línea con salto forzado no se estiran, ni la línea de una sola palabra.
   - **Mayúsculas**: conversión Unicode completa sin idioma (`ß` da `SS`; ARQ-107). Los rangos de la salida indican el texto de entrada (02 ARQ-116).
-  - **Subrayado y tachado**: posición y grosor salen de las tablas `post` y `OS/2`; con grosor 0 o ausente, 0,05 em (PROPUESTA).
-  - **Listas**: numeradas con `1.` y con viñetas `•`, `◦` y `▪` por nivel, en ciclo; hasta 4 niveles; sangría de `(nivel − 1) × 1,5 em`, con el primer nivel en el borde (PROPUESTA). Tras el marcador va un espacio y el texto cuelga: todas las líneas de un elemento empiezan en la sangría más el marcador más ancho de ese nivel en la lista más ese espacio, así que `9.` y `10.` alinean su texto. Cada nivel cuenta solo sus elementos numerados: una viñeta no suma ni reinicia la cuenta, y un nivel reinicia tras un elemento de nivel menor (PROPUESTA).
+  - **Subrayado y tachado**: posición y grosor salen de las tablas `post` y `OS/2`; con grosor 0 o ausente, 0,05 em (confirmada, D-71).
+  - **Listas**: numeradas con `1.` y con viñetas `•`, `◦` y `▪` por nivel, en ciclo; hasta 4 niveles; sangría de `(nivel − 1) × 1,5 em`, con el primer nivel en el borde (confirmada, D-71). Tras el marcador va un espacio y el texto cuelga: todas las líneas de un elemento empiezan en la sangría más el marcador más ancho de ese nivel en la lista más ese espacio, así que `9.` y `10.` alinean su texto. Cada nivel cuenta solo sus elementos numerados: una viñeta no suma ni reinicia la cuenta, y un nivel reinicia tras un elemento de nivel menor (confirmada, D-71).
   - **Límite aceptado del colgado con un DPI extremo**: el colgado se mide en `f32`. Si el avance de la línea formada por el marcador, su espacio y una letra, con su interletrado, pasa de `f32::MAX` (unos 3,4e38 px), el colgado no está garantizado: el resultado puede ser `Err` de no finito u `Ok` con un colgado menor que el debido y el texto sobre el marcador, sin `panic` ni un no finito en la salida (ARQ-110). Con Inter, `1.`, 12 pt e interletrado 0, ese avance es 1,522 em y el punto es un DPI de unos 1,34e39. A 1,7e39 da `Ok` con un colgado de 1,97e38 px contra 2,77e38 debidos, y a 2e39, 2,32e38 contra 3,25e38. Queda fuera del dominio de un documento, cuyo DPI válido es 1–10 000 (FD-03). El motor no comprueba un rango de DPI por este límite y ninguna prueba fija el resultado por encima de él. Es un límite documentado, no un defecto.
   - **Fuentes de reserva** (D-19): quien llama da una lista ordenada de fuentes en bytes, con al menos una; una lista vacía da `Err`, porque el texto se perdería sin aviso. Cada clúster usa la primera fuente que cubre todos sus puntos de código. Si ninguna lo cubre, usa la fuente que cubre más puntos de código del clúster, y en un empate la primera de la lista. Los puntos sin cobertura usan su `.notdef` y la salida lo indica; no es un error.
   - **Emoji** (D-19, D-30): en el MVP son contornos de esas fuentes de reserva; las pruebas usan un subconjunto OFL monocromo. Una fuente que solo tiene emoji en color no cubre el clúster. El emoji en color es de Fase 2.
@@ -499,6 +503,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 **FD-43 · Efectos de texto** (RF-25)
 - *Propósito*: dar carácter gráfico al texto.
 - *Comportamiento y reglas*: **Contorno** (grosor, color, posición exterior/interior), **Sombra** (FD-35), brillo, eco, fondo (cuadro de color con relleno y radio), «sin relleno» (solo contorno), desalineado y neón (presets). Se combinan con degradado. Los efectos son estilos con datos y no destruyen el texto: el texto sigue siendo editable y seleccionable.
+- *Precisado por D-120 (spec 089)*: Paralela, Brillo, Eco, Contorno, Fondo, Desalineado, Sin relleno, Neón y Distorsión, con sus parámetros como proporción del tamaño de la letra, hasta cuatro a la vez, y doce estilos listos.
 - *UI*: Panel lateral → Texto → Efectos de texto; Inspector → Texto.
 - *Técnica*: `gafira-text` (contornos), `gafira-pathops` (trazo), `Effect`.
 - *Presupuesto*: aplicar < 100 ms (CAL-05).
@@ -506,10 +511,10 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 
 **FD-44 · Curvar** (RF-25)
 - *Propósito*: texto sobre arco o curva.
-- *Comportamiento y reglas*: slider **Curvar** de −100 a 100 (0 = recto) para arcos; en Fase 2, texto sobre una forma vectorial elegida y texto vertical (PROPUESTA). El texto sigue editable; la curva afecta a la geometría de pintado, no al contenido.
-  - **Escala** (D-26): `θ = valor × 1,8°`, de modo que ±100 son ±180° de arco. Un valor positivo da un arco abierto hacia abajo (∩) y uno negativo, abierto hacia arriba (∪) (PROPUESTA).
+- *Comportamiento y reglas*: slider **Curvar** de −100 a 100 (0 = recto) para arcos; en Fase 2, texto sobre una forma vectorial elegida y texto vertical (confirmada, D-80). El texto sigue editable; la curva afecta a la geometría de pintado, no al contenido.
+  - **Escala** (D-26): `θ = valor × 1,8°`, de modo que ±100 son ±180° de arco. Un valor positivo da un arco abierto hacia abajo (∩) y uno negativo, abierto hacia arriba (∪) (confirmada, D-71).
   - **Geometría**: `L` es el avance de la línea sin el espacio que cuelga, y `s` es la posición en ese contenido: cuenta desde su inicio y no incluye el avance de ese espacio. Vale también para el espacio final de otro nivel, aunque quede dentro de la línea (FD-41). Ese espacio no tiene lugar en el arco. Una sola línea tiene un arco de longitud `L`, así que `radio = L / |θ|` con `θ` en radianes. El arco se centra en el ancho de la caja. Cada glifo se coloca por el centro de su avance y gira según la tangente. Una línea con `L = 0` no cambia.
-  - **Varias líneas** (PROPUESTA): usan arcos concéntricos, con un solo centro y el mismo `θ`. Sean `σ` el signo de `θ` y, para las líneas con `L_i > 0`, `L_i` su avance y `b_i` su línea base, con y hacia abajo; `b_ref` es la línea base de una de ellas, y el resultado no depende de cuál. El radio de referencia es `R_ref = máx_i(L_i / |θ| + σ(b_i − b_ref))`, y cada línea tiene `R_i = R_ref − σ(b_i − b_ref)`. El centro está en `y = b_ref + σ R_ref`. Así, `R_i × |θ| ≥ L_i`: ninguna línea queda por debajo de su propio avance y todo radio es positivo. La línea que da el máximo fija el radio y tiene `R_i = L_i / |θ|`; una sola línea queda como arriba. Cada línea cubre todo `θ`, con su propio `s / L_i`. Un arco de muchas líneas puede pasar del ancho de la caja.
+  - **Varias líneas** (confirmada, D-71): usan arcos concéntricos, con un solo centro y el mismo `θ`. Sean `σ` el signo de `θ` y, para las líneas con `L_i > 0`, `L_i` su avance y `b_i` su línea base, con y hacia abajo; `b_ref` es la línea base de una de ellas, y el resultado no depende de cuál. El radio de referencia es `R_ref = máx_i(L_i / |θ| + σ(b_i − b_ref))`, y cada línea tiene `R_i = R_ref − σ(b_i − b_ref)`. El centro está en `y = b_ref + σ R_ref`. Así, `R_i × |θ| ≥ L_i`: ninguna línea queda por debajo de su propio avance y todo radio es positivo. La línea que da el máximo fija el radio y tiene `R_i = L_i / |θ|`; una sola línea queda como arriba. Cada línea cubre todo `θ`, con su propio `s / L_i`. Un arco de muchas líneas puede pasar del ancho de la caja.
 - *UI*: Inspector → Texto → Curvar.
 - *Técnica*: `gafira-text` (texto en curva y conversión a contornos), `gafira-pathops`.
 - *Presupuesto*: actualizar el slider < 16 ms por evento con 100 caracteres (02 §6.7, `bench_text_curve_100`).
@@ -548,8 +553,8 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 
 **FD-48 · Fuentes: detección, sustitución y licencias** (RF-27)
 - *Propósito*: abrir proyectos sin romper el diseño cuando falta una fuente.
-- *Comportamiento y reglas*: Gafira detecta las fuentes del sistema en segundo plano (nunca en el arranque; 02 §6.7). Si falta una fuente al abrir, propone **sustitutos compatibles** (misma clase y métricas similares), conserva el layout y **recuerda la fuente original** para volver a usarla si se instala. «Sustitución masiva» cambia una fuente por otra en todo el proyecto. Fuentes del usuario: advertencia de licencia y compatibilidad al usarlas («Esta fuente no está incluida. Comprueba que su licencia permite tu uso.»); empaquetar fuentes en el `.gafira` solo si la licencia lo permite (Q-10, PROPUESTA).
-- *UI*: Texto → Fuentes; diálogo al abrir; Archivo → Empaquetar fuentes (PROPUESTA).
+- *Comportamiento y reglas*: Gafira detecta las fuentes del sistema en segundo plano (nunca en el arranque; 02 §6.7). Si falta una fuente al abrir, propone **sustitutos compatibles** (misma clase y métricas similares), conserva el layout y **recuerda la fuente original** para volver a usarla si se instala. «Sustitución masiva» cambia una fuente por otra en todo el proyecto. Fuentes del usuario: advertencia de licencia y compatibilidad al usarlas («Esta fuente no está incluida. Comprueba que su licencia permite tu uso.»); una fuente del usuario se incrusta en el proyecto según su licencia (bits `fsType` de OpenType) y según el perfil del `.gaf` (D-67); si la licencia no lo permite, se vincula por nombre y, al abrir el proyecto en un equipo que no la tiene, se avisa de la fuente que falta (D-60). Qué hace cada perfil del `.gaf` con una fuente incrustable se fija con la §17 de la spec 008.
+- *UI*: Texto → Fuentes; diálogo al abrir; Archivo → Empaquetar fuentes (confirmada, D-80).
 - *Técnica*: `gafira-platform` (enumeración), `gafira-text` (métricas y clase de la fuente), `gafira-engine` (elige el sustituto), `FontCollector` (Visitor, 02 §4.1).
 - *Presupuesto*: la detección completa no bloquea el arranque (CAL-08).
 - *Aceptación*: (a) abrir un proyecto con una fuente ausente propone sustituto y no desplaza más de 2 % las cajas de texto; (b) al instalar la fuente original, se restaura sin edición; (c) las fuentes de egui por defecto no se incluyen (ARQ-62).
@@ -626,7 +631,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 
 - *UI*: Barra superior → Tamaño; Archivo → Nuevo; Panel Cambiar tamaño.
 - *Técnica*: `gafira-layout` (reflujo, `ResizeDesign`), `gafira-render` para la vista previa; lista de Destinos como datos (`assets/sizes.toml`).
-- *Presupuesto*: la vista previa de 5 destinos < 500 ms (PROPUESTA); aplicar < 300 ms.
+- *Presupuesto*: la vista previa de 5 destinos < 500 ms (confirmada, D-71); aplicar < 300 ms.
 - *Aceptación*: (a) cada tamaño de la tabla se crea con las dimensiones exactas; (b) la vista previa coincide con el resultado final en ≤ 1/255; (c) el tamaño personalizado respeta unidades y proporción.
 
 **FD-54 · Duplicar y adaptar / Adaptar este diseño** (RF-30)
@@ -634,7 +639,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 - *Comportamiento y reglas*: **Duplicar y adaptar** crea una página nueva por cada destino elegido y conserva el original; **Adaptar este diseño** cambia el tamaño de la página actual (Deshacer lo revierte). El reflujo: escala uniforme de la composición al área útil, reposiciona los elementos por anclajes (esquinas, centro, bordes) y proporciones, mantiene el orden de lectura, respeta Márgenes y Zona de seguridad, reajusta cuadros de texto (con Ajustar al cuadro) y no toca tipografías fijadas. Tras adaptar, el ajuste manual es posible. Criterio del PRD: pasar de 1080×1920 a 1080×1080 conserva textos, imágenes principales y jerarquía.
 - *UI*: Cambiar tamaño (los dos botones).
 - *Técnica*: `Command` `ResizeDesign` (composite), que recibe el resultado de `gafira-layout::reflow`. `reflow` recibe una función de medida inyectada, porque `gafira-layout` no depende de `gafira-text` (ADR 0007).
-- *Presupuesto*: adaptar un diseño de 50 elementos a 5 destinos < 1 s (PROPUESTA).
+- *Presupuesto*: adaptar un diseño de 50 elementos a 5 destinos < 1 s (confirmada, D-71).
 - *Aceptación*: (a) en el conjunto de prueba (20 plantillas), ningún texto queda fuera de la Zona de seguridad tras adaptar 1080×1920 → 1080×1080; (b) el orden de lectura se conserva; (c) Duplicar y adaptar no modifica el original (hash idéntico); (d) un solo Deshacer revierte la adaptación.
 
 ---
@@ -651,25 +656,25 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 | Formato | Opciones | Reglas |
 |---|---|---|
-| **PNG** | **Escala** (0,5×, 1×, 2×, 3×, 4× o tamaño en px; muestra la resolución resultante); **Calidad**: Comprimir (rápido), Alta o «Limitar tamaño» (objetivo en MB); **Fondo transparente** | Perfil sRGB incrustado; con fondo transparente se conserva el canal alfa; límite de 16 384 px por lado (PROPUESTA), exportación por tiles |
+| **PNG** | **Escala** (0,5×, 1×, 2×, 3×, 4× o tamaño en px; muestra la resolución resultante); **Calidad**: Comprimir (rápido), Alta o «Limitar tamaño» (objetivo en MB); **Fondo transparente** | Perfil sRGB incrustado; con fondo transparente se conserva el canal alfa; límite de 16 384 px por lado (confirmada, D-71), exportación por tiles |
 | **JPEG** | Calidad 1–100 (por defecto 90), submuestreo (4:4:4 o 4:2:0), progresivo | Sin transparencia: se compone sobre el color de fondo de la página (blanco por defecto) |
 | **WebP** | Con pérdida (calidad 1–100) o sin pérdida; transparencia | Misma escala que PNG |
 | **GIF animado** | Fotogramas por segundo (1–30), bucle (infinito o n), paleta (hasta 256 colores) y tramado | Cada página con `duration` es un cuadro; o el rango de una secuencia (05). Aviso de peso por encima de 15 MB |
 | **SVG** | Texto como contornos (por defecto) o como texto; imágenes incrustadas | Los efectos no representables se rasterizan con aviso; sin referencias externas |
 
 - *UI*: Exportar → Formato.
-- *Técnica*: `Exporter` en `gafira-io-image` (PNG, JPEG, WebP, GIF) y `gafira-io-svg`; render en `RenderQuality::Export` (f32 en luz lineal, CPU por defecto; 02 §6.2) con tiles paralelos.
+- *Técnica*: `Exporter` en `gafira-io-image` (PNG, JPEG, WebP, GIF) y `gafira-io-svg`; render en `RenderQuality::Export` (f32 en luz lineal, CPU por defecto; 02 §6.2), con el bucle de frame secuencial de hoy y el paralelismo por tiles del lado de `gafira-render` (02 §6.7).
 - *Formatos*: PNG, JPEG, WebP, GIF animado y SVG en el MVP.
-- *Presupuesto*: **PNG de 1080p < 2 s** (CAL-11); JPEG y WebP de 1080p < 3 s (PROPUESTA); exportación en segundo plano sin bloquear la UI.
+- *Presupuesto*: **PNG de 1080p < 2 s** (CAL-11); JPEG y WebP de 1080p < 3 s (confirmada, D-71); exportación en segundo plano sin bloquear la UI.
 - *Aceptación*: (a) `bench_export_png_1080` < 2 s; (b) un PNG con fondo transparente tiene alfa 0 donde no hay contenido (comparación de píxeles); (c) la vista previa y la exportación difieren ≤ 1/255 en el 99,9 % de los píxeles (ARQ-42, CAL-34); (d) cancelar devuelve el control en ≤ 100 ms sin dejar archivo parcial (ARQ-43, ARQ-50).
 
 **FD-56 · Exportar PDF (RGB y CMYK)** (RF-32)
 - *Propósito*: entregar documentos para pantalla o impresión.
 - *Comportamiento y reglas*: preajustes **Digital** (imágenes a 150 ppp efectivos como máximo, compresión JPEG de calidad 85) e **Impresión** (imágenes a 300 ppp, **Sangrado** y **marcas de corte** activados). Opciones: **perfil de color RGB** (MVP) o **CMYK** (Fase 2, con perfil ICC y conversión `RGB → CMYK`); **Sangrado y marcas de corte** (FD-05); **Aplanar** (rasteriza transparencias y efectos no representables); **Incluir notas** (FD-23); **orden de lectura accesible** (PDF etiquetado, texto alternativo por imagen y orden de Capas como orden de lectura); **Proteger con contraseña** (contraseña de apertura y de permisos, cifrado AES-256; VERIFICAR soporte en la biblioteca elegida o crate permisivo). El texto se exporta como **texto seleccionable** con subconjuntos de fuente incrustados cuando la licencia de la fuente lo permite (bit de incrustación `fsType`); si no, se convierte a contornos con aviso. Varias páginas en un solo PDF. PDF/X queda en VERIFICAR (C-17 de 01).
 - *UI*: Exportar → PDF → Avanzado.
-- *Técnica*: `gafira-io-pdf` (krilla, VERIFICAR licencia; alternativa `pdf-writer`), `ColorTransform` con `IccTransform` (moxcms) para CMYK.
+- *Técnica*: `gafira-io-pdf` (krilla 0.8.2, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); alternativa `pdf-writer`, MIT OR Apache-2.0), `ColorTransform` con `IccTransform` (moxcms) para CMYK.
 - *Formatos*: PDF RGB en MVP; PDF CMYK en Fase 2.
-- *Presupuesto*: PDF de 20 páginas < 5 s (PROPUESTA); progreso por página.
+- *Presupuesto*: PDF de 20 páginas < 5 s (confirmada, D-71); progreso por página.
 - *Aceptación*: (a) con Sangrado de 3 mm el PDF contiene `TrimBox` y `BleedBox` correctos y marcas de corte fuera del sangrado (validación estructural); (b) el texto del PDF es seleccionable (extracción devuelve el contenido); (c) el PDF con contraseña no abre sin ella (prueba con lector de referencia, VERIFICAR); (d) el golden de estructura no cambia sin aprobación.
 
 **FD-57 · Alcance de la exportación: página, selección o rango** (RF-31)
@@ -690,7 +695,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 **FD-59 · Historial: Deshacer y Rehacer** (RF-04)
 - *Propósito*: probar sin miedo.
-- *Comportamiento y reglas*: Deshacer y Rehacer (`Ctrl+Z`, `Ctrl+Shift+Z`) con botones visibles y tooltip «Deshacer {acción}». El historial es híbrido (instantánea `Arc<Document>` + `Command`, ADR-03) con presupuesto de 512 MB (PROPUESTA) y compactación de entradas antiguas. Los gestos continuos se fusionan (ARQ-33). Una lista **Historial** (Edición → Historial) permite saltar a cualquier estado (PROPUESTA). El historial no se guarda en el archivo y se pierde al cerrar (las Versiones sí persisten, FD-60).
+- *Comportamiento y reglas*: Deshacer y Rehacer (`Ctrl+Z`, `Ctrl+Shift+Z`) con botones visibles y tooltip «Deshacer {acción}». El historial es híbrido (instantánea `Arc<Document>` + `Command`, ADR-03) con presupuesto de 512 MB (confirmada, D-71) y compactación de entradas antiguas. Los gestos continuos se fusionan (ARQ-33). Una lista **Historial** (Edición → Historial) permite saltar a cualquier estado (confirmada, D-80). El historial no se guarda en el archivo y se pierde al cerrar (las Versiones sí persisten, FD-60).
 - *UI*: Barra superior (↶ ↷); Edición → Historial.
 - *Técnica*: `History`, `Transaction` (`gafira-edit`), ADR-03.
 - *Presupuesto*: Deshacer/Rehacer < 16 ms p99 en 100 capas (CAL-28).
@@ -698,11 +703,11 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 **FD-60 · Versiones nombradas** (RF-04)
 - *Propósito*: guardar hitos del trabajo y volver a ellos.
-- *Comportamiento y reglas*: Archivo → Versiones (o botón **Versiones** de la Barra superior) lista las versiones. La persona guarda **versiones nombradas** («Guardar versión…»); además Gafira crea **una versión automática** al guardar si la última automática tiene más de 30 min, y conserva las **20 más recientes** (cifras PROPUESTA en 02 §7.1). Las versiones **nombradas nunca se borran solas**; solo las borra el usuario. **Restaurar** aplica el `Command` `RestoreVersion` (deshacible); antes de restaurar se guarda una versión automática del estado actual para no perder nada. Cada versión guarda los JSON de ese momento (`document.json`, `pages/*.json`, `sequences/*.json`) y comparte los recursos por hash con `assets/` y `masks/`, por lo que ocupa poco; el recolector de recursos no borra uno que use alguna versión. Se pueden renombrar y borrar. Son distintas de los journals de autoguardado (FD-61).
+- *Comportamiento y reglas*: Archivo → Versiones (o botón **Versiones** de la Barra superior) lista las versiones. La persona guarda **versiones nombradas** («Guardar versión…»); además Gafira crea **una versión automática** al guardar si la última automática tiene más de 30 min, y conserva las **20 más recientes** (cifras confirmadas en 02 §7.1, D-71). Las versiones **nombradas nunca se borran solas**; solo las borra el usuario. **Restaurar** aplica el `Command` `RestoreVersion` (deshacible); antes de restaurar se guarda una versión automática del estado actual para no perder nada. Cada versión guarda los JSON de ese momento (`document.json`, `pages/*.json`, `sequences/*.json`) y comparte los recursos por hash BLAKE3 con `assets/` y `masks/` (D-68), por lo que ocupa poco; el recolector de recursos no borra uno que use alguna versión. Se pueden renombrar y borrar. Son distintas de los journals de autoguardado (FD-61).
 - *UI*: Barra superior → Versiones; Archivo → Versiones.
-- *Técnica*: `ProjectRepository` (`gafira-format`); almacenamiento en `versions/index.json` (`[{ id, name, kind: "named"|"auto", created, app, schema }]`) y `versions/<version_id>/` dentro del `.gafira` (02 §7.1); `Command` `RestoreVersion`.
+- *Técnica*: `ProjectRepository` (`gafira-format`); almacenamiento en `versions/index.json` (`[{ id, name, kind: "named"|"auto", created, app, schema }]`) y `versions/<version_id>/` dentro del `.gaf` (02 §7.1); `Command` `RestoreVersion`.
 - *Presupuesto*: guardar una versión < 200 ms con 20 páginas; abrir la lista < 100 ms.
-- *Aceptación*: (a) restaurar una versión y deshacer vuelve al estado previo (hash del documento); (b) 20 versiones de un proyecto de 20 páginas añaden menos de 10 MB (PROPUESTA); (c) las versiones sobreviven a abrir con una versión futura de la app (round-trip, ARQ-11).
+- *Aceptación*: (a) restaurar una versión y deshacer vuelve al estado previo (hash del documento); (b) 20 versiones de un proyecto de 20 páginas añaden menos de 10 MB (confirmada, D-71); (c) las versiones sobreviven a abrir con una versión futura de la app (round-trip, ARQ-11).
 
 **FD-61 · Autoguardado y Recuperación tras fallo** (RF-03)
 - *Propósito*: no perder nunca trabajo.
@@ -714,20 +719,20 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 **FD-62 · Exportar PPTX** (RF-62) — Fase 2
 - *Propósito*: entregar una presentación que se abre en programas de presentaciones comunes con la fidelidad visual exacta del diseño.
-- *Comportamiento y reglas*: cada página se convierte en **una diapositiva con una sola imagen de alta resolución** del tamaño del proyecto (D-07). **No hay objetos editables**: ni cuadros de texto, ni formas, ni imágenes sueltas. Las páginas ocultas se omiten (FD-02), y las **Notas** de la página no se exportan por defecto (ARQ-15); si el exportador ofrece incluirlas como notas del orador, lo declara en su `ExportCaps` y la opción está desactivada. La resolución de la imagen se elige en Exportar (por defecto 2× del tamaño de la página, con límite de 16 384 px por lado, PROPUESTA). Sin fuentes que incrustar. Escritor propio de ZIP + XML (OOXML) con imágenes PNG o JPEG, sin dependencias externas.
+- *Comportamiento y reglas*: cada página se convierte en **una diapositiva con una sola imagen de alta resolución** del tamaño del proyecto (D-07). **No hay objetos editables**: ni cuadros de texto, ni formas, ni imágenes sueltas. Las páginas ocultas se omiten (FD-02), y las **Notas** de la página no se exportan por defecto (ARQ-15); si el exportador ofrece incluirlas como notas del orador, lo declara en su `ExportCaps` y la opción está desactivada. La resolución de la imagen se elige en Exportar (por defecto 2× del tamaño de la página, con límite de 16 384 px por lado, confirmada, D-71). Sin fuentes que incrustar. Escritor propio de ZIP + XML (OOXML) con imágenes PNG o JPEG, sin dependencias externas.
 - *UI*: Exportar → PPTX.
 - *Técnica*: `Exporter` en el crate `gafira-io-pptx` (Fase 2, feature opcional; 02 §11.2); reutiliza el render de exportación (`RenderQuality::Export`).
-- *Presupuesto*: 20 diapositivas < 5 s (PROPUESTA).
+- *Presupuesto*: 20 diapositivas < 5 s (confirmada, D-71).
 - *Aceptación*: (a) el archivo abre sin error de reparación en al menos tres programas de presentaciones de uso común (VERIFICAR conjunto); (b) cada diapositiva contiene exactamente una imagen y ningún otro objeto; (c) la imagen coincide con la exportación PNG de la misma página en ≤ 1/255 (ARQ-42); (d) notas y cuadrícula no aparecen (ARQ-15).
 
 **FD-63 · Guardar, abrir y proyecto portable** (RF-01, RF-02, RF-35)
 - *Propósito*: abrir, guardar y mover proyectos sin pérdida.
-- *Comportamiento y reglas*: Guardar (`Ctrl+S`), Guardar como y **Guardar copia** escriben `.gafira` de forma atómica (archivo temporal, `fsync`, renombrado; `.bak` de una generación; 02 §7.2). **Exportar proyecto editable con recursos**: genera un `.gafira` con todos los recursos incrustados y sin vínculos externos para migrar a otro equipo; opcionalmente incluye fuentes OFL (Q-10). Es un guardado, no una exportación: escribe solo el `.gafira` del usuario y sus recursos, y como Guardar, Guardar como y «Guardar copia» está disponible sin licencia y no depende de `can_export` (D-55, 02 ARQ-95). Abrir valida el esquema, ejecuta migraciones por paso y abre en solo lectura un esquema futuro. Al abrir se muestra la primera página en cuanto está lista (carga perezosa por página). Proyectos: crear, abrir, **duplicar, renombrar, archivar y eliminar** desde Inicio → Proyectos (archivar mueve a una carpeta de archivados; eliminar pide confirmación y ofrece enviar a la papelera del SO).
+- *Comportamiento y reglas*: Guardar (`Ctrl+S`), Guardar como y **Guardar copia** escriben `.gaf` de forma atómica (archivo temporal, `fsync`, renombrado; `.bak` de una generación; 02 §7.2). Cada proyecto lleva un UUID que se genera al crearlo y se guarda en el `.gaf`; la recuperación lo usa, así que sobrevive a renombrar o mover el archivo. «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto (D-63, 02 §7.1). **Exportar proyecto editable con recursos**: genera un `.gaf` con el perfil `portable-full` (D-67, spec 008 §3), con todos los recursos incrustados y sin vínculos externos para migrar a otro equipo; incluye las fuentes del usuario que su licencia permite incrustar (D-60). Es un guardado, no una exportación: escribe solo el `.gaf` del usuario y sus recursos, y como Guardar, Guardar como y «Guardar copia» está disponible sin licencia y no depende de `can_export` (D-55, 02 ARQ-95). Abrir valida el esquema, ejecuta migraciones por paso y abre en solo lectura un esquema futuro. Al abrir se muestra la primera página en cuanto está lista (carga perezosa por página). Proyectos: crear, abrir, **duplicar, renombrar, archivar y eliminar** desde Inicio → Proyectos (archivar mueve a una carpeta de archivados; eliminar pide confirmación y ofrece enviar a la papelera del SO).
 - *UI*: Archivo; Inicio → Proyectos; Barra superior.
-- *Técnica*: `ProjectService` (`new`, `open`, `save`, `save_as`, `recover`, `close`), `ProjectRepository`, migraciones `migrate_n_to_n1` (ARQ-53).
-- *Formatos*: `.gafira` (ZIP, `manifest.json` con `format: "gafira.project"` y `schema`; ADR-04).
-- *Presupuesto*: abrir 20 páginas < 3 s (CAL-09); abrir 100 capas < 500 ms (CAL-10); guardar un proyecto de 20 páginas < 2 s (PROPUESTA).
-- *Aceptación*: (a) la serialización es determinista (ARQ-10); (b) un proyecto copiado a otro equipo se abre idéntico sin recursos ausentes; (c) un esquema futuro abre en solo lectura con «Guardar» deshabilitado (ARQ-55); (d) un fallo a mitad de guardado deja el archivo anterior o el nuevo íntegros (ARQ-50); (e) con la licencia en `Unlicensed`, `Expired` o `Invalid`, Guardar, Guardar como, «Guardar copia» y «Exportar proyecto editable con recursos» escriben su `.gafira` sin aviso de licencia, y el archivo reabierto contiene la última edición (D-55, 02 ARQ-95).
+- *Técnica*: `ProjectService` (`new_document`, `open`, `save`, `save_as`, `recover`, `close`; 02 §5.4), `ProjectRepository`, migraciones `migrate_n_to_n1` (ARQ-53).
+- *Formatos*: `.gaf` (ZIP, `manifest.json` con `format: "gafira-project"`, `formatVersion`, `schemaVersion`, `profile`, `features` y `packageCompleteness`, en camelCase; `document.json` más un JSON por página y por secuencia; recursos `assets/<blake3>.<ext>`; ADR-04, D-68).
+- *Presupuesto*: abrir 20 páginas < 3 s (CAL-09); abrir 100 capas < 500 ms (CAL-10); guardar un proyecto de 20 páginas < 2 s (confirmada, D-71).
+- *Aceptación*: (a) la serialización es determinista (ARQ-10); (b) un proyecto copiado a otro equipo se abre idéntico sin recursos ausentes; (c) un esquema o un contenedor futuro, o una capacidad requerida desconocida (D-68), abre en solo lectura: el documento se edita en memoria, «Guardar» se rechaza con error de solo lectura antes de tocar el archivo y los cambios solo se conservan con «Guardar como» (ARQ-55, D-76); (d) un fallo a mitad de guardado deja el archivo anterior o el nuevo íntegros (ARQ-50); (e) con la licencia en `Unlicensed`, `Expired` o `Invalid`, Guardar, Guardar como, «Guardar copia» y «Exportar proyecto editable con recursos» escriben su `.gaf` sin aviso de licencia, y el archivo reabierto contiene la última edición (D-55, 02 ARQ-95).
 
 ---
 
@@ -751,9 +756,10 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 |---|---|---|
 | `Page.grid` y `Page.notes` | FD-02, FD-07 | Incorporados: `Page { grid: GridSettings, notes: String, … }` (§3.1) |
 | `TextNode` | FD-45, FD-46, FD-47 | Incorporados: `columns: TextColumns`, `autofit: Autofit`, `type_lock: TypeLock` (§3.2) |
-| `manifest.json` | FD-16 | Campo opcional `template` (etiquetas, formato, estilo, color): PROPUESTA de esta spec, aún no recogida en 02 §7.1 |
+| `manifest.json` | FD-16 | Incorporado: objeto opcional `template { tags, pageFormat, style, color }` (D-81, §7.1); un lector que no lo conoce lo ignora |
 | Almacén de Versiones | FD-60 | Incorporado: `versions/index.json` y `versions/<version_id>/` (§7.1) |
-| QR y Gráficos | FD-20, FD-22 | `NodeExtension` internos `gafira.qr` y `gafira.chart` registrados en el binario (ADR-02) |
+| QR | FD-20 | `NodeKind::Qr` (D-113, spec 080) |
+| Gráficos | FD-22 | `NodeKind::Chart` (D-114, spec 083) |
 | `TextAssistant` | FD-64 | Incorporado: trait en `gafira-ports` (§4.15, Fase 3) |
 | Exportador PPTX | FD-62 | Incorporado: crate `gafira-io-pptx` (Fase 2, §11.2) |
 | Medios vinculados | FD-30 | Incorporados: `manifest.assets[...].linked` y evento `LinksMissing` (§7.1) |
@@ -787,11 +793,11 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 
 | Dirección | Formato | Fase | Crate | Clase legal |
 |---|---|---|---|---|
-| Importar | PNG, JPEG, WebP, GIF, TIFF, BMP, QOI | MVP | `gafira-io-image` | Libre de regalías (VERIFICAR licencias de crates) |
+| Importar | PNG, JPEG, WebP, GIF, TIFF, BMP, QOI | MVP | `gafira-io-image` | Libre de regalías; crates MIT OR Apache-2.0 (`image` 0.25.10 con `png`, `zune-jpeg`, `image-webp`, `gif`, `tiff`, `qoi`): verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio) |
 | Importar | SVG | MVP | `gafira-io-svg` | Libre |
-| Importar | HEIC (solo lectura, vía SO; condicionada a Q-17; sin soporte en Linux) | Fase 2 | feature `heic-os` | Licenciado por el SO |
-| Importar | PDF | Fase 2 | `gafira-io-pdf` o hayro (VERIFICAR) | Libre (VERIFICAR) |
-| Importar y exportar | `.gafira` | MVP | `gafira-format` | Propio |
+| Importar | HEIC (solo lectura, solo con el decodificador del SO; D-59; en Linux solo si el sistema lo ofrece) | Fase 2 | feature `heic-os` | Licenciado por el SO |
+| Importar | PDF | Fase 2 | `gafira-io-pdf` o hayro (hayro 0.9.0, Apache-2.0 OR MIT: verificado (2026-11-16, crates.io)) | Libre (VERIFICAR) |
+| Importar y exportar | `.gaf` | MVP | `gafira-format` | Propio |
 | Exportar | PNG, JPEG, WebP, GIF animado | MVP | `gafira-io-image` | Libre |
 | Exportar | SVG | MVP | `gafira-io-svg` | Libre |
 | Exportar | PDF RGB | MVP | `gafira-io-pdf` | Libre |
@@ -803,13 +809,13 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | ID | Tema | Estado |
 |---|---|---|
 | Q-08 | Alcance y fase de PPTX | Cerrada: D-07 (Fase 2, una imagen por diapositiva; FD-62) |
-| Q-10 | Empaquetar fuentes del usuario en `.gafira` | Abierta (FD-48, FD-63) |
+| Q-10 | Empaquetar fuentes del usuario en `.gaf` | Cerrada: D-60 (según su licencia, bits `fsType`, y según el perfil del `.gaf`; FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
-| Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
-| Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |
+| Q-17 | Importar HEIC (y HEVC) vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; FD-31) |
+| Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Cerrada como pregunta: D-78 (pasa a tarea, la revisión visual del ítem 133 de 07) |
 | Q-35, Q-36, Q-39, Q-40, Q-41, Q-42 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33, D-34, D-41 y D-42 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
-| R-B | Licencia de krilla, hayro y qrcode | VERIFICAR con `cargo-deny` (02 §9.2) |
+| R-B | Licencia de krilla, hayro y qrcode | Cerrada: krilla 0.8.2, hayro 0.9.0 y qrcode 0.14.1 son MIT OR Apache-2.0 (verificado el 2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio; 02 §9.2) |
 | R-C | Medidas de Destinos por plataforma | VERIFICAR al publicar cada versión (FD-53) |
 | R-D | Calidad del reflujo al Adaptar con diseños atípicos | Mitigar con el conjunto de 20 plantillas y ajuste manual (FD-54) |

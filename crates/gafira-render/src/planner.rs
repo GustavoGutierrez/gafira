@@ -17,6 +17,7 @@ use gafira_geom::IRect;
 use gafira_ports::render::{ContentKey, Priority, RenderOp, RenderQuality, TileKey};
 
 use crate::graph::RenderGraph;
+use crate::key::composite_key;
 
 /// The size of a tile, in pixels (FIJADA, 02 §6.1 and ARQ-121).
 pub const TILE_SIZE: u32 = 256;
@@ -123,6 +124,7 @@ impl RenderPlan {
                 .map(|tile| gafira_ports::render::TileTask {
                     key: tile.key,
                     priority: tile.priority,
+                    region: tile.region,
                     ops: tile.ops,
                 })
                 .collect(),
@@ -257,13 +259,25 @@ impl Planner {
         let level = grid.level_for(viewport.zoom);
         let focus = viewport.focus.unwrap_or_else(|| centre(viewport.rect));
 
-        // The roots of the graph, with the operations of their subtree: a
-        // task holds the operations of the root it draws.
+        // The roots of the graph, with the operations of their subtree, in
+        // paint order.
         let roots: Vec<(ContentKey, &[RenderOp])> = graph
             .roots()
             .iter()
             .zip(graph.root_ops())
             .filter_map(|(id, ops)| graph.node(*id).map(|node| (node.key(), ops)))
+            .collect();
+
+        // O12: a region is one task. The roots of the page are composed in
+        // paint order, because the backend writes a task's tile over the
+        // surface as the whole content of its region (`Surface::write`), so a
+        // task per root would erase the roots painted before it.
+        let root_keys: Vec<ContentKey> = roots.iter().map(|(key, _)| *key).collect();
+        let content = composite_key(&root_keys);
+        let merged: Vec<RenderOp> = roots
+            .iter()
+            .flat_map(|(_, ops)| ops.iter())
+            .map(copy_op)
             .collect();
 
         // The tiles of the viewport, clipped to it.
@@ -283,7 +297,7 @@ impl Planner {
             }
         }
 
-        let planned = regions.len() * roots.len() + 1;
+        let planned = regions.len() + 1;
         let mut tiles: Vec<PlannedTile> = Vec::with_capacity(planned);
         let mut done = 0usize;
         for (column, row, region) in regions {
@@ -292,26 +306,23 @@ impl Planner {
             } else {
                 Priority::Visible
             };
-            for (key, ops) in &roots {
-                tiles.push(PlannedTile {
-                    key: TileKey {
-                        content: *key,
-                        level,
-                        column,
-                        row,
-                    },
-                    priority,
-                    region,
-                    ops: ops.iter().map(copy_op).collect(),
-                });
-                done += 1;
-                checkpoint(cancel, progress, done as f32 / planned as f32)?;
-            }
+            tiles.push(PlannedTile {
+                key: TileKey {
+                    content,
+                    level,
+                    column,
+                    row,
+                },
+                priority,
+                region,
+                ops: merged.iter().map(copy_op).collect(),
+            });
+            done += 1;
+            checkpoint(cancel, progress, done as f32 / planned as f32)?;
         }
         checkpoint(cancel, progress, 1.0)?;
 
-        // The priority order of 02 §6.3: the most urgent tile first. The
-        // sort is stable, so the roots of a tile keep the paint order.
+        // The priority order of 02 §6.3: the most urgent tile first.
         tiles.sort_by_key(|tile| (tile.priority, tile.key.row, tile.key.column));
         Ok(RenderPlan {
             quality: graph.params().quality,
@@ -342,7 +353,7 @@ fn centre(rect: IRect) -> (i32, i32) {
 /// `RenderOp` is not `Clone` (the port is closed on purpose), so the copy is
 /// built field by field. A new variant of the port breaks this function, and
 /// that is the point.
-fn copy_op(op: &RenderOp) -> RenderOp {
+pub(crate) fn copy_op(op: &RenderOp) -> RenderOp {
     match op {
         RenderOp::PushLayer => RenderOp::PushLayer,
         RenderOp::PopLayer { blend, opacity } => RenderOp::PopLayer {
@@ -358,8 +369,34 @@ fn copy_op(op: &RenderOp) -> RenderOp {
             color: *color,
             transform: *transform,
         },
+        RenderOp::Text {
+            path,
+            color,
+            transform,
+            runs,
+        } => RenderOp::Text {
+            path: Arc::clone(path),
+            color: *color,
+            transform: *transform,
+            runs: Arc::clone(runs),
+        },
+        RenderOp::FillGradient {
+            path,
+            gradient,
+            size,
+            transform,
+        } => RenderOp::FillGradient {
+            path: Arc::clone(path),
+            gradient: Arc::clone(gradient),
+            size: *size,
+            transform: *transform,
+        },
         RenderOp::DrawImage { image, transform } => RenderOp::DrawImage {
             image: Arc::clone(image),
+            transform: *transform,
+        },
+        RenderOp::ClipPath { path, transform } => RenderOp::ClipPath {
+            path: Arc::clone(path),
             transform: *transform,
         },
         RenderOp::ApplyMask { mask } => RenderOp::ApplyMask {
@@ -397,7 +434,7 @@ mod tests {
         ElementBase, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry,
         ShapeNode,
     };
-    use gafira_geom::{Length, Unit};
+    use gafira_geom::{Affine, Length, Unit};
     use gafira_ports::render::Priority;
     use gafira_testkit::progress::check_progress_contract;
     use gafira_time::Flicks;
@@ -420,11 +457,85 @@ mod tests {
         let kind = NodeKind::Shape(ShapeNode {
             geometry: ShapeGeometry::Rect,
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
+            stroke: None,
+            corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
         page.roots = vec![NodeId::new(1)];
         page
+    }
+
+    /// A top-level shape of `page`, 10 × 10 at `(x, y)`, filled with `fill`.
+    fn add_root(page: &mut Page, id: u64, x: f64, y: f64, fill: Color) {
+        let base = ElementBase::new(NodeId::new(id), Placement::new(x, y, 10.0, 10.0));
+        let kind = NodeKind::Shape(ShapeNode {
+            geometry: ShapeGeometry::Rect,
+            fill: Some(fill),
+            stroke: None,
+            corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
+        });
+        page.nodes
+            .insert(NodeId::new(id), Arc::new(Node::new(base, kind)));
+    }
+
+    /// A page with two top-level shapes, so the graph has two roots.
+    fn two_root_page() -> Page {
+        let mut page = Page::new(
+            PageId::new(1),
+            "P".to_string(),
+            PageSize {
+                width: Length::new(100.0, Unit::Px),
+                height: Length::new(100.0, Unit::Px),
+            },
+        );
+        add_root(&mut page, 1, 0.0, 0.0, red());
+        add_root(&mut page, 2, 20.0, 0.0, blue());
+        page.roots = vec![NodeId::new(1), NodeId::new(2)];
+        page
+    }
+
+    fn red() -> Color {
+        Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0))
+    }
+
+    fn blue() -> Color {
+        Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0))
+    }
+
+    /// The plan of the whole page at 100 %, one tile of the grid.
+    fn merged_plan(page: &Page) -> RenderPlan {
+        plan(
+            &build(page),
+            PageExtent {
+                width: 100,
+                height: 100,
+            },
+            &Viewport {
+                rect: IRect::new(0, 0, 100, 100),
+                zoom: 1.0,
+                focus: None,
+            },
+        )
+    }
+
+    /// The fill colors of a tile, in paint order.
+    fn fill_colors(tile: &PlannedTile) -> Vec<Color> {
+        tile.ops
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::FillPath { color, .. } => Some(*color),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The parameters of a graph of the given quality.
@@ -464,13 +575,42 @@ mod tests {
             .collect()
     }
 
+    /// The regions of the port plan, by tile position.
+    fn port_regions(plan: RenderPlan) -> Vec<((u32, u32), IRect)> {
+        let mut tasks: Vec<((u32, u32), IRect)> = plan
+            .into_ports_plan()
+            .tasks
+            .into_iter()
+            .map(|task| ((task.key.row, task.key.column), task.region))
+            .collect();
+        tasks.sort_by_key(|(position, _)| *position);
+        tasks
+    }
+
+    /// The transform of every fill of the port plan, in plan order.
+    fn fill_transforms(plan: RenderPlan) -> Vec<Affine> {
+        plan.into_ports_plan()
+            .tasks
+            .iter()
+            .flat_map(|task| task.ops.iter())
+            .filter_map(|op| match op {
+                RenderOp::FillPath { transform, .. } => Some(*transform),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// What an operation does, without its payload.
     fn op_kind(op: &RenderOp) -> &'static str {
         match op {
             RenderOp::PushLayer => "push",
             RenderOp::PopLayer { .. } => "pop",
             RenderOp::FillPath { .. } => "fill",
+            // Text draws as its outline (spec 073).
+            RenderOp::Text { .. } => "fill",
+            RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
+            RenderOp::ClipPath { .. } => "clip",
             RenderOp::ApplyMask { .. } => "mask",
             RenderOp::ApplyEffect { .. } => "effect",
             RenderOp::ApplyTransition { .. } => "transition",
@@ -697,6 +837,153 @@ mod tests {
         assert_eq!(first.region, IRect::new(100, 100, 256, 256));
     }
 
+    // ARQ-149: the plan carries the place of every tile, in page pixels
+    // clipped to the viewport, and no backend re-derives it from the key.
+    #[test]
+    fn arq_149_the_plan_carries_the_clipped_region_of_every_tile() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        // The viewport starts and ends in the middle of a tile, so every tile
+        // of the plan is clipped.
+        let viewport = Viewport {
+            rect: IRect::new(100, 100, 356, 356),
+            zoom: 1.0,
+            focus: None,
+        };
+        assert_eq!(
+            port_regions(plan(&graph, extent, &viewport)),
+            vec![
+                ((0, 0), IRect::new(100, 100, 256, 256)),
+                ((0, 1), IRect::new(256, 100, 356, 256)),
+                ((1, 0), IRect::new(100, 256, 256, 356)),
+                ((1, 1), IRect::new(256, 256, 356, 356)),
+            ]
+        );
+    }
+
+    // ARQ-149: a viewport smaller than a tile clips its only tile.
+    #[test]
+    fn arq_149_a_viewport_smaller_than_a_tile_clips_its_only_tile() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        let viewport = Viewport {
+            rect: IRect::new(0, 0, 100, 100),
+            zoom: 1.0,
+            focus: None,
+        };
+        assert_eq!(
+            port_regions(plan(&graph, extent, &viewport)),
+            vec![((0, 0), IRect::new(0, 0, 100, 100))]
+        );
+    }
+
+    // ARQ-149: the level of a tile does not change the unit of its region: a
+    // full tile of level one covers 512 page pixels per side, not 256.
+    #[test]
+    fn arq_149_a_full_tile_of_level_one_covers_512_page_pixels() {
+        let page = new_page(1024, 1024);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1024,
+            height: 1024,
+        };
+        let viewport = Viewport {
+            rect: IRect::new(0, 0, 1024, 1024),
+            zoom: 2.0,
+            focus: None,
+        };
+        let planned = plan(&graph, extent, &viewport);
+        assert_eq!(planned.level(), 1);
+        let regions = port_regions(planned);
+        assert_eq!(regions.len(), 4);
+        assert_eq!(regions[0], ((0, 0), IRect::new(0, 0, 512, 512)));
+    }
+
+    // ARQ-149: the operations stay in page coordinates; the plan does not
+    // translate them to the surface of the request.
+    #[test]
+    fn arq_149_the_plan_does_not_translate_the_operations() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        let at_origin = Viewport {
+            rect: IRect::new(0, 0, 356, 356),
+            zoom: 1.0,
+            focus: None,
+        };
+        let offset = Viewport {
+            rect: IRect::new(100, 100, 456, 456),
+            zoom: 1.0,
+            focus: None,
+        };
+        let first = fill_transforms(plan(&graph, extent, &at_origin));
+        let second = fill_transforms(plan(&graph, extent, &offset));
+        assert!(!first.is_empty(), "the graph emits a fill");
+        assert_eq!(first, second, "the plan translates no operation");
+        // The two plans really are different plans of the same page.
+        assert_ne!(
+            port_regions(plan(&graph, extent, &at_origin)),
+            port_regions(plan(&graph, extent, &offset))
+        );
+    }
+
+    // ARQ-149: no task of the plan has an empty region, and a region never
+    // leaves the page or the viewport.
+    #[test]
+    fn arq_149_no_task_of_the_plan_has_an_empty_region() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        let page_rect = IRect::new(0, 0, 1000, 1000);
+        for rect in [
+            page_rect,
+            IRect::new(0, 0, 100, 100),
+            IRect::new(900, 900, 1600, 1600),
+            IRect::new(1000, 1000, 1200, 1200),
+            IRect::new(2000, 2000, 2100, 2100),
+        ] {
+            let viewport = Viewport {
+                rect,
+                zoom: 1.0,
+                focus: None,
+            };
+            let regions = port_regions(plan(&graph, extent, &viewport));
+            assert!(
+                regions.iter().all(|(_, region)| !region.is_empty()),
+                "{rect:?} plans an empty region"
+            );
+            for (_, region) in &regions {
+                assert_eq!(
+                    *region,
+                    region.intersect(rect),
+                    "{rect:?} plans {region:?}, outside the viewport"
+                );
+                assert_eq!(
+                    *region,
+                    region.intersect(page_rect),
+                    "{rect:?} plans {region:?}, outside the page"
+                );
+            }
+            if rect.intersect(page_rect).is_empty() {
+                assert!(regions.is_empty(), "{rect:?} plans {regions:?}");
+            }
+        }
+    }
+
     // ARQ-140: the same graph gives the same plan.
     #[test]
     fn arq_140_the_same_graph_gives_the_same_plan() {
@@ -737,5 +1024,58 @@ mod tests {
             }
         });
         assert_eq!(result, Ok(Ok(())));
+    }
+
+    // ARQ-42, O12: a region is one task, and the task carries the operations of
+    // every root in paint order; the second root no longer gets a task of its
+    // own that would erase the first.
+    #[test]
+    fn arq_42_a_region_is_one_task_with_the_ops_of_every_root_in_paint_order() {
+        let page = two_root_page();
+        let graph = build(&page);
+        assert_eq!(graph.roots().len(), 2, "the page has two top-level shapes");
+        let plan = merged_plan(&page);
+
+        assert_eq!(plan.tiles().len(), 1, "one region, one task");
+        let tile = &plan.tiles()[0];
+        assert_eq!(
+            tile.region,
+            IRect::new(0, 0, 100, 100),
+            "the task keeps the region of its tile"
+        );
+        assert_eq!(
+            fill_colors(tile),
+            vec![red(), blue()],
+            "both roots, in the order the page paints them"
+        );
+    }
+
+    // ARQ-42, O12: the one content key of the region changes when either root
+    // changes, so a stale tile can never be served for a changed root, and the
+    // order of the roots is part of the key.
+    #[test]
+    fn arq_42_the_merged_key_changes_when_either_root_changes() {
+        let base = merged_plan(&two_root_page()).tiles()[0].key.content;
+
+        let mut first_changed = two_root_page();
+        add_root(&mut first_changed, 1, 0.0, 0.0, blue());
+        let changed_first = merged_plan(&first_changed).tiles()[0].key.content;
+        assert_ne!(base, changed_first, "the first root is in the key");
+
+        let mut second_changed = two_root_page();
+        add_root(&mut second_changed, 2, 20.0, 0.0, red());
+        let changed_second = merged_plan(&second_changed).tiles()[0].key.content;
+        assert_ne!(base, changed_second, "the second root is in the key");
+        assert_ne!(
+            changed_first, changed_second,
+            "each root keeps its own contribution"
+        );
+
+        // Paint order is content: the same two shapes back to front are another
+        // image, so they cannot share a key.
+        let mut swapped = two_root_page();
+        swapped.roots = vec![NodeId::new(2), NodeId::new(1)];
+        let swapped_key = merged_plan(&swapped).tiles()[0].key.content;
+        assert_ne!(base, swapped_key, "the order of the roots is in the key");
     }
 }

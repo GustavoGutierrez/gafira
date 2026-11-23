@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 03 de 05 |
+| Documento | Especificación 03 |
 | Estado | Borrador para revisión |
 | Alcance | Sistema de diseño (tokens, contraste, modo oscuro), uso del logo en la app, navegación y pantallas (incluidas la activación y los estados de licencia, y la **Pantalla de arranque**, §7.10, D-09), componentes, interacción, accesibilidad, movimiento, microcopy, iconografía, **glosario de interfaz** en español e inglés e **idioma** (§16, D-08) |
 | Depende de | `00-decisiones.md` (D-01 a D-09, prevalecen), `02-arquitectura-software.md` (ADR-06, §8: `gafira-theme`, `gafira-ui`, ARQ-60..64; §8.4: Pantalla de arranque, ARQ-65..69, ADR-10; §4.14 y §13: licencia, ARQ-90..96; §4.16 y §14: idioma, `gafira-i18n`, ADR-09, ARQ-97..107) |
@@ -43,7 +43,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Editor de video | Pantalla | Editor con timeline |
 | Exportar | Diálogo y pantalla | Exportación |
 | Cambiar tamaño | Panel | Redimensionar lienzo |
-| Identidad visual | Pantalla/pestaña | Guía de estilo de marca |
+| Marca (antes Identidad visual, D-97) | Pantalla/pestaña | Guía de estilo de marca |
 | Ajustes | Pantalla | Preferencias |
 | Recuperación tras fallo | Diálogo al arrancar | Restaurar sesión |
 | Paleta de comandos | Superposición (Ctrl/Cmd+K) | Búsqueda de acciones |
@@ -77,9 +77,9 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Nombre en Gafira | Pantalla | Qué contiene | Equivalente genérico |
 |---|---|---|---|
 | Plantillas | Diseño y Video | Búsqueda, plantillas empaquetadas y propias | Templates |
-| Piezas | Diseño y Video | Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements / shapes library |
+| Elementos (antes Formas y Piezas, D-94, D-102) | Diseño y Video | Categorías: Formas, Foto collage (D-106), Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements library |
 | Texto | Diseño y Video | Estilos de texto, combinaciones, Efectos de texto | Text |
-| Identidad | Diseño y Video | Colores, Tipografías, Logos y Estilos de la Identidad visual activa | Brand panel |
+| Marca (antes Identidad, D-97) | Diseño y Video | Colores, Tipografías, Logos y Estilos de la Marca activa | Brand panel |
 | Biblioteca | Diseño y Video | Archivos propios: imágenes, video, audio, diseños, Colecciones | Uploads / media library |
 | Dibujo | Diseño | Lápiz, Marcador, Resaltador, Borrador, color y grosor | Draw |
 | Proyectos | Diseño y Video | Proyectos recientes y Colecciones de proyectos | Projects |
@@ -177,6 +177,8 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 
 ### 2.8 Versión inglesa del glosario (PROPUESTA, D-08)
 
+> **Nota (D-77)**: el titular aprobó estos nombres ingleses y el microcopy inglés de §12 tal como están, a reserva de la búsqueda de marca de los nombres ingleses propios (R-17 de 02). Q-25 queda cerrada; las marcas PROPUESTA se quedan mientras esta spec siga en backlog.
+
 Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalente genérico» de esas tablas sigue siendo la referencia para localizar el concepto y no es texto de interfaz. Los atajos de §2.5 no cambian con el idioma (DIS-77).
 
 #### 2.8.1 Pantallas y estructura (§2.1)
@@ -189,7 +191,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Editor de video | Video editor |
 | Exportar | Export |
 | Cambiar tamaño | Resize |
-| Identidad visual | Visual identity |
+| Marca (D-97) | Brand |
 | Ajustes | Settings |
 | Recuperación tras fallo | Crash recovery |
 | Paleta de comandos | Command palette |
@@ -223,9 +225,9 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Nombre en Gafira (es, aprobado) | Nombre en inglés (PROPUESTA) | Contenido en inglés (PROPUESTA) |
 |---|---|---|
 | Plantillas | Templates | Search, bundled and own templates |
-| Piezas | Pieces | Shapes, Lines, Frames, Icons, QR codes, Tables, Charts, Illustrations |
+| Elementos (D-94, D-102) | Elements | Categories: Shapes, Photo collage (D-106), Frames, Icons, QR codes, Tables, Charts, Illustrations |
 | Texto | Text | Text styles, pairings, Text effects |
-| Identidad | Identity | Colors, Fonts, Logos and Styles of the active Visual identity |
+| Marca (D-97) | Brand | Colors, Fonts, Logos and Styles of the active Brand |
 | Biblioteca | Library | Own files: images, video, audio, designs, Collections |
 | Dibujo | Drawing | Pencil, Marker, Highlighter, Eraser, color and thickness |
 | Proyectos | Projects | Recent projects and project Collections |
@@ -318,6 +320,8 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 ## 3. Tokens de diseño
 
 `gafira-theme` carga y valida `assets/theme/gafira.tokens.json` (02, §8.2). Los valores de marca (grafito, coral, blanco cálido, verde agua, gris azulado, radios, escala tipográfica y unidad de 4 px) provienen del manual. Los estados, el modo oscuro, los colores semánticos, las sombras y la escala de movimiento son **PROPUESTA** derivada de la paleta y validada con el cálculo del §4.
+
+*Nota (D-82)*: el titular aprobó el modo oscuro derivado (cierra 01 C-06 y la parte de modo oscuro de PD-01); la marca PROPUESTA se queda mientras esta spec siga en backlog.
 
 ```json
 {
@@ -490,7 +494,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
     "control": { "sm": 28, "md": 32, "lg": 40 },
     "icon": { "sm": 16, "md": 20, "lg": 24 },
     "target.min": 24,
-    "panel.left": 320, "panel.right": 296, "rail": 64, "topbar": 48, "bottombar": 40, "timeline.min": 220
+    "panel.left": 320, "panel.right": 296, "rail": 68, "topbar": 48, "bottombar": 40, "timeline.min": 220
   },
   "border": { "width": 1, "focus": 2, "focus.offset": 2 },
   "shadow": {
@@ -665,7 +669,7 @@ Se respetan las reglas del manual: isotipo de tres piezas (base grafito, panel c
 | Barra superior (botón Inicio) | Símbolo `gafira-logo-symbol.svg` sobre pastilla `canvas` | 32×32 px (mínimo 24×24) | La barra superior es grafito: el símbolo va sobre una pastilla `#FAFAF7` de 40×40 px con radio `sm`, para no poner grafito sobre oscuro. |
 | Inicio | Horizontal `gafira-logo-primary.svg`; en modo oscuro `gafira-logo-dark-background.svg` | ≥ 160 px de ancho (recomendado 192) | Claro: `bg`. Oscuro: `bg` oscuro. |
 | Acerca de | Apilado `gafira-logo-stacked.svg` | ≥ 120 px de ancho (recomendado 160) | `surface`. Muestra versión, licencias de terceros y OFL de las fuentes. |
-| Instalador MSI (WiX) | Horizontal sobre `canvas`; banner de 493×58 px y fondo de diálogo de 493×312 px | Logo ≥ 160 px | `#FAFAF7`, sin degradados. |
+| Instalador MSI | Horizontal sobre `canvas`; banner de 493×58 px y fondo de diálogo de 493×312 px | Logo ≥ 160 px | `#FAFAF7`, sin degradados. |
 | Imagen de DMG | Apilado ≥ 120 px sobre `canvas` | Ventana 660×400 pt | `#FAFAF7`. |
 | Pantalla de arranque (D-09, §7.10) | Horizontal `gafira-logo-primary.svg` (isotipo y texto «Gafira»), siempre sobre el panel, **nunca sobre la imagen de fondo**; barra de carga real, sin progreso falso | 200 px de ancho visible del arte (mínimo 160) | Panel `splash.panel` (`bg` del modo claro, `#FAFAF7`) en cualquier modo, sobre la ilustración `assets/splash_screen.jpg`. |
 | Exportaciones | **Nunca** se inserta el logo de Gafira ni marca de agua | — | — |
@@ -683,7 +687,7 @@ Composición: baldosa de esquinas redondeadas `#FAFAF7` con el símbolo centrado
 | Windows | `gafira.ico` (multi-resolución) | 16, 24, 32, 48, 64, 128, 256 px | `xtask gen-icons` rasteriza el SVG por tamaño; los de 16–32 px usan una versión con trazos simplificados (más grueso) si el símbolo pierde legibilidad (PROPUESTA) |
 | macOS | `gafira.icns` | 16, 32, 64, 128, 256, 512, 1024 px (con variantes @2x) | Cuerpo de 824×824 px dentro del lienzo de 1024 px (plantilla de iconos de macOS; VERIFICAR contra la guía vigente) |
 | Linux | PNG en `hicolor` | 16, 24, 32, 48, 64, 128, 256, 512 px | + `gafira.svg` en `scalable/apps` |
-| Asociación `.gafira` | `gafira-doc.ico` / `.icns` / PNG | Los mismos | Símbolo sobre una hoja con esquina doblada; el texto «.gafira» no se rotula en el icono |
+| Asociación `.gaf` | `gafira-doc.ico` / `.icns` / PNG | Los mismos | Símbolo sobre una hoja con esquina doblada; el texto «.gaf» no se rotula en el icono |
 
 - **DIS-13**: ningún icono de aplicación se genera con herramientas externas manuales; todos salen de `xtask gen-icons` a partir de los SVG de la marca. *Aceptación*: reconstruir iconos desde cero produce archivos idénticos (hash estable) y los tamaños de la tabla existen.
 - **DIS-14**: el símbolo en la interfaz nunca mide menos de 24×24 px ni más de 48×48 px en el editor. *Aceptación*: prueba de capturas golden de la barra superior.
@@ -702,7 +706,7 @@ Composición: baldosa de esquinas redondeadas `#FAFAF7` con el símbolo centrado
         └──────────────►  INICIO  ─────────────────────────────┐
                            │  │  │                              │
         Empezar a diseñar  │  │  └─ Proyectos recientes ────────┤
-        Explorar plantillas│  └──── Abrir archivo .gafira       │
+        Explorar plantillas│  └──── Abrir archivo .gaf       │
                            ▼                                    ▼
                  ┌───────────────────┐   Nueva escena   ┌───────────────────┐
                  │ EDITOR DE DISEÑO  │◄────────────────►│  EDITOR DE VIDEO  │
@@ -1069,7 +1073,7 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 | **Tooltip** | `text` sobre `surface` invertido, 500 ms de retardo, 12 px | — | Aparece al enfocar con teclado | — | — | Incluye el atajo («Dividir · S») |
 | **Lista con arrastre** (Capas, pistas, páginas) | Fila 32 px con asa ⋮⋮, visibilidad, bloqueo | `secondary.bg` | Anillo en la fila; `Alt+↑/↓` reordena | Línea de inserción coral de 2 px al arrastrar | Fila bloqueada atenuada | — |
 | **Chip** | Radio `pill`, 24 px, `secondary.bg` | `secondary.bg.hover` | Anillo | `secondary.bg.pressed` | Atenuado | Seleccionado: borde `text` 1 px + icono de visto (no solo color) |
-| **Pestaña del riel** | Icono 24 px + etiqueta, `topbar.fg.muted` | `topbar.hover` | Anillo | — | — | Activo: `topbar.fg` + indicador coral |
+| **Pestaña del riel** | Icono 24 px + etiqueta (un punto menor que `caption`, con 6 px a cada lado en un riel de 68 px), `topbar.fg.muted` | `topbar.hover` | Anillo | — | — | Activo: `topbar.fg` + indicador coral |
 | **Miniatura (plantilla, medio)** | Radio `md`, borde `border` | Sombra 1 + acciones | Anillo | — | — | Etiqueta accesible con tipo, formato, estilo y color |
 | **Barra de progreso** | Pista `secondary.bg`, relleno `accent` + texto con porcentaje | — | — | — | — | Error: relleno `error.fg` + mensaje |
 
@@ -1087,8 +1091,8 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 ### 9.1 Selección y manipulación directa
 
 - **Seleccionar**: clic; `Shift+clic` suma; arrastrar en vacío traza un marco de selección; `Ctrl/Cmd+A` selecciona todo; doble clic entra en un grupo o en un texto; `Esc` sale. La selección responde en < 16 ms (cifra de la spec técnica).
-- **Mover**: arrastre a 60 fps con 100 capas (cifra de la spec técnica); `Imán` atrae a guías, bordes de página, centros, márgenes y cuadrícula (umbral 6 px de pantalla, PROPUESTA) y muestra la distancia a los vecinos; `Alt` desactiva el Imán durante el arrastre.
-- **Redimensionar y girar**: 8 asas y asa de giro; `Shift` conserva la proporción, `Alt` redimensiona desde el centro, `Shift` al girar ajusta a 15°. La caja de selección indica cuánto sobresale de la página (02, §3.2, `layout::overflow`).
+- **Mover**: arrastre a 60 fps con 100 capas (cifra de la spec técnica); `Imán` atrae a guías, bordes de página, centros, márgenes y cuadrícula (umbral 6 px de pantalla, PROPUESTA) y muestra la distancia a los vecinos; `Ctrl/Cmd` desactiva el Imán al mover o redimensionar (D-90). Las flechas mueven 1 px (10 con `Shift`), y las pulsaciones a menos de 500 ms unas de otras son un solo paso de deshacer (02 §4.3; spec 044).
+- **Redimensionar y girar**: 8 asas y asa de giro; las esquinas conservan la proporción y `Shift` la libera; los lados cambian una dimensión (D-89); `Alt` redimensiona desde el centro, con el centro fijo y los lados opuestos simétricos, y se combina con la proporción (`Alt+Shift`, libre desde el centro; D-90, spec 047); `Shift` al girar ajusta a 15°. Cada asa muestra su cursor de doble flecha (diagonal en las esquinas, horizontal o vertical en los lados, según su dirección en pantalla) y, mientras se redimensiona, una etiqueta junto al puntero da el ancho × alto en px y su cambio (spec 045). La caja de selección indica cuánto sobresale de la página (02, §3.2, `layout::overflow`).
 - **Recortar**: doble clic sobre una imagen o tecla `C` entra en el modo de recorte con asas visibles.
 - **Duplicar**: `Alt+arrastrar` o `Ctrl/Cmd+D`.
 - **Todo es deshacer/rehacer**: botones ↶ y ↷ en la Barra superior con tooltip «Deshacer {acción}» (etiqueta `Command::label`, 02 §4.3); deshacer tarda < 16 ms (ARQ-32).
@@ -1104,10 +1108,11 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 | Edición | Deshacer · Rehacer | Ctrl+Z · Ctrl+Shift+Z (Windows/Linux también Ctrl+Y) |
 | Edición | Cortar · Copiar · Pegar · Pegar sin formato | Ctrl+X · Ctrl+C · Ctrl+V · Ctrl+Shift+V |
 | Edición | Duplicar · Eliminar · Seleccionar todo · Buscar y reemplazar | Ctrl+D · Supr/Retroceso · Ctrl+A · Ctrl+F |
-| Edición | Mover 1 px · 10 px · Girar 15° | Flechas · Shift+flechas · Shift+giro |
+| Edición | Mover 1 px · 10 px · Girar 15° · Redimensionar sin proporción (D-89) · Redimensionar desde el centro · Soltar el Imán al arrastrar (D-90) | Flechas · Shift+flechas · Shift+giro · Shift+esquina · Alt+asa · Ctrl/Cmd mantenido |
 | Capas | Agrupar · Desagrupar | Ctrl+G · Ctrl+Shift+G |
 | Capas | Traer adelante · Enviar atrás · Al frente · Al fondo | Ctrl+] · Ctrl+[ · Ctrl+Shift+] · Ctrl+Shift+[ |
-| Capas | Bloquear · Ocultar · Alinear a la izquierda / centro / derecha | Ctrl+Shift+L · Ctrl+Shift+H · Ctrl+Alt+L / C / R |
+| Capas | Bloquear · Ocultar | Ctrl+Shift+L · Ctrl+Shift+H |
+| Capas | Alinear a la izquierda / centro / derecha · arriba / medio / abajo (D-88) | Alt+A / H / D · Alt+W / V / S |
 | Ver | Acercar · Alejar · Ajustar a la ventana · 100 % | Ctrl+= · Ctrl+- · Ctrl+0 · Ctrl+1 |
 | Ver | Reglas · Guías · Cuadrícula · Imán | Ctrl+Shift+R · Ctrl+; · Ctrl+' · Ctrl+Shift+' |
 | Ver | Modo claro/oscuro · Panel lateral · Inspector | Ctrl+Shift+D · Ctrl+\ · Ctrl+Shift+\ |
@@ -1143,7 +1148,7 @@ Clic derecho o tecla de menú sobre un objeto: Copiar, Pegar, Duplicar, Eliminar
 
 | Origen | Destino | Resultado |
 |---|---|---|
-| Archivo del sistema (imagen, SVG, video, audio, `.gafira`) | Lienzo, Línea de tiempo o Biblioteca | Importa y coloca; un `.gafira` se abre en Inicio |
+| Archivo del sistema (imagen, SVG, video, audio, `.gaf`) | Lienzo, Línea de tiempo o Biblioteca | Importa y coloca; un `.gaf` se abre en Inicio |
 | Imagen | Marco | Recorta por la forma del Marco y conserva su forma al reemplazar |
 | Color de la Identidad | Elemento | Aplica la muestra enlazada (cambia con la identidad) |
 | Plantilla | Lienzo | Añade una página nueva con sus elementos editables |
@@ -1164,6 +1169,8 @@ Clic derecho o tecla de menú sobre un objeto: Copiar, Pegar, Duplicar, Eliminar
 | DIS-33 | **El color nunca es la única señal**: errores con icono y texto, estados activos con forma (subrayado, relleno, marca), selección con borde + etiqueta. | Revisión por captura en escala de grises: todo estado sigue siendo distinguible. |
 | DIS-34 | **Contraste AA** de texto y componentes (DIS-10, DIS-11). | Prueba de `gafira-theme`. |
 | DIS-35 | **Tamaño de interfaz** 100–200 % sin pérdida de funciones; texto mínimo de 12 px a 100 %. | Capturas a 100, 150 y 200 %: 0 truncados sin tooltip. |
+| DIS-88 | **Margen interior de los campos de texto** (regla del titular, 2026-11-21): todo campo de una línea (búsquedas, nombres, valores) deja al menos 10 px a izquierda y derecha y 8 px arriba y abajo entre el texto, o su texto de ayuda, y el borde; se construye con el componente común (`widgets::field`). | Ningún campo de texto muestra el texto ni la ayuda pegados al borde; todos usan el componente común. |
+| DIS-89 | **Redimensionar una caja de texto** (D-109): tiradores en las cuatro esquinas y en el centro de los lados, no en el centro de arriba ni de abajo; una esquina escala la caja y la letra en proporción (mínimo 6 px de letra); un lado cambia solo el ancho, con un mínimo de 1,2 veces la letra más grande. | Seis tiradores en un texto; la letra crece con la caja en un paso de deshacer; un lado no deja la caja más estrecha que una letra. |
 | DIS-36 | **Reducción de movimiento** (§11) y alternativa estática de cualquier animación de interfaz. | ARQ-64. |
 | DIS-37 | **Orden de lectura accesible** al exportar PDF (spec 04) y texto alternativo editable por imagen. | Un PDF exportado pasa la validación de etiquetas (VERIFICAR herramienta). |
 | DIS-78 | **Idioma del texto accesible**: el nodo raíz del árbol de AccessKit declara el idioma activo (`es` o `en`) y cambia con él; las opciones «Español» y «English» del selector de idioma declaran el suyo propio; los nombres accesibles salen del mismo catálogo que el texto visible (02 ARQ-97). El texto de la persona en el Lienzo no recibe etiqueta de idioma salvo que se añada una propiedad de idioma al documento (PROPUESTA, PD-13). | Prueba con inspector de accesibilidad en los dos idiomas: idioma del nodo raíz correcto, 0 nombres en el otro idioma y 0 claves visibles. Que egui transmita la propiedad de idioma a AccessKit es VERIFICAR (02 §8.3). |
@@ -1240,7 +1247,7 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 ## 13. Iconografía
 
 - **Estilo**: trazo simple de grosor uniforme sobre rejilla de 24 px (trazo de 1,75 px a 24 px; 1,5 px a 16 px y 20 px, PROPUESTA), terminaciones y uniones redondeadas, esquinas moderadas, relleno solo para estados activos. Solo `text`/`topbar.fg` (los iconos no llevan color propio salvo estados semánticos). Si el significado es ambiguo, el icono lleva etiqueta o tooltip.
-- **Origen**: propio (dibujado en la rejilla) o, si se parte de una colección, **Lucide (ISC)** o **Feather (MIT)** con su aviso en `THIRD_PARTY_NOTICES.md` (VERIFICAR la licencia vigente de cada versión antes de adoptarla). Cada icono se registra en `assets/LICENSES.toml` (ARQ-75). Los SVG se convierten en geometría de trazo en tiempo de compilación; no se usan fuentes de iconos.
+- **Origen** (D-87): **Phosphor (MIT)**, peso «Regular» y «Fill» para los estados activos; los que falten se dibujan propios en la misma rejilla. Su aviso va en `THIRD_PARTY_NOTICES.md` (comprobar la licencia de la versión adoptada al importarla). Cada icono se registra en `assets/LICENSES.toml` (ARQ-75). Los SVG se convierten en geometría de trazo en tiempo de compilación; no se usan fuentes de iconos.
 - **Lista de iconos necesarios** (≈ 110):
 
 | Grupo | Iconos |
@@ -1289,7 +1296,7 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 | PD-04 | Icono de aplicación con baldosa `#FAFAF7` y símbolo al 62 % | PROPUESTA |
 | PD-05 | Ventana mínima 1280×720 y breakpoints de paneles | PROPUESTA |
 | PD-06 | Nombres del glosario (§2) | **Aprobados** (00-decisiones, D-04); queda la búsqueda de «Gafira» y «Gefira» en USPTO, TMview y WIPO, a cargo del titular (spec 05, Parte C) |
-| PD-07 | Colección de iconos (propia, Lucide ISC o Feather MIT) | VERIFICAR licencia y decidir |
+| PD-07 | Colección de iconos | Decidido: Phosphor MIT (D-87) |
 | PD-08 | Atajos fuera de los universales (Ctrl+Alt+N, Ctrl+T, etc.) | VERIFICAR contra conflictos del SO |
 | PD-09 | Variantes monocromas del logo (`mono-navy`, `mono-white`, `symbol-dark`) | Por crear; no existen en el repositorio |
 | PD-10 | Pantallas y estados de la licencia (activación, prueba, solo lectura) | Diferido: se diseñan en la spec 06 (pendiente, se redacta al final); propuesta previa de 02: Q-19 y Q-20 |
@@ -1342,7 +1349,7 @@ Gafira se publica en **español e inglés**. El idioma por defecto sale del sist
 1. Sin ajustes guardados, la preferencia es `Sistema` y se resuelve con la regla de D-08 antes de pintar el primer frame (la resolución no añade tiempo medible al arranque de 02 §6.6).
 2. **No se pregunta el idioma**: Inicio aparece directamente en el idioma resuelto (principio P2: un camino claro, sin pasos previos).
 3. Si el idioma del SO no es español ni inglés, Inicio aparece en inglés y no se muestra ningún aviso; Ajustes → General indica «System · now: English».
-4. Los proyectos no guardan el idioma de la interfaz: el mismo `.gafira` se abre igual con cualquier idioma, y los nombres ya creados («Página 1») no se traducen (02 §14.2).
+4. Los proyectos no guardan el idioma de la interfaz: el mismo `.gaf` se abre igual con cualquier idioma, y los nombres ya creados («Página 1») no se traducen (02 §14.2).
 
 - **DIS-74** (primer arranque): el primer arranque nunca muestra una pregunta de idioma ni texto en un idioma distinto del resuelto. *Aceptación*: prueba E2E con perfil de ajustes vacío y SO en `es-ES`, `en-US` y `de-DE`: la primera captura de Inicio está entera en español, inglés e inglés respectivamente y no hay diálogos.
 
@@ -1353,7 +1360,7 @@ Gafira se publica en **español e inglés**. El idioma por defecto sale del sist
 | Todo el texto de la interfaz, menús, tooltips, mensajes, nombres accesibles y la Paleta de comandos | El contenido de la persona: textos, nombres de proyectos, capas, páginas, archivos y fuentes |
 | Formato de números, fechas, horas, tiempos relativos y unidades («1,2 MB» / «1.2 MB», «hace 2 h» / «2 h ago», «100 %» / «100%»; 02 §14.5) | Los atajos de teclado (DIS-77) y los códigos de tiempo (`00:12:04`) |
 | Los nombres de teclas mostrados («Supr» / «Delete») | Los nombres de formatos (PNG, MP4, AV1) y la marca «Gafira» |
-| El filtro por defecto de Plantillas (idioma de la interfaz más plantillas neutras; 01 §7.3) | El archivo `.gafira` y sus claves |
+| El filtro por defecto de Plantillas (idioma de la interfaz más plantillas neutras; 01 §7.3) | El archivo `.gaf` y sus claves |
 
 Los campos numéricos escriben y leen el separador decimal del idioma activo (coma en español, punto en inglés) y aceptan además el punto (PROPUESTA, 02 §14.5).
 

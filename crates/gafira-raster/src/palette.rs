@@ -500,6 +500,41 @@ mod tests {
         assert!(c.r == 1.0 && c.g == 0.0 && c.b > 0.0 && c.b < 1.0, "{c:?}");
     }
 
+    // S13-16, ARQ-122: a bin is 5 bits of red, then green, then blue, from the top bits of
+    // each byte.
+    #[test]
+    fn arq_122_the_bin_of_a_colour_is_its_top_5_bits_per_channel() {
+        assert_eq!(bin_of([0, 0, 0]), 0);
+        assert_eq!(bin_of([255, 0, 0]), 31 << 10);
+        assert_eq!(bin_of([0, 255, 0]), 31 << 5);
+        assert_eq!(bin_of([0, 0, 255]), 31);
+        assert_eq!(bin_of([8, 16, 24]), (1 << 10) | (2 << 5) | 3);
+        assert_eq!(bin_of([15, 23, 31]), (1 << 10) | (2 << 5) | 3);
+        assert_eq!(bin_of([255, 255, 255]), BINS - 1);
+    }
+
+    // S13-17, FD-26: a bin joins the cluster it is nearer to than `MERGE_DELTA_E` as it is read,
+    // fullest first, so the mean moves before the next bin is read. Greys 104 (200 px) and
+    // 128 (40 px) are 9.5 apart and join; 152 (40 px) is then 16.3 from their mean and stays a
+    // colour of its own. Read without that merge, 128 and 152 (8.4 apart) would join first
+    // and their mean would be 14.4 from 104, close enough to take all three.
+    #[test]
+    fn fd_26_a_bin_joins_its_cluster_as_it_is_read_and_moves_its_mean() {
+        let grey = |v: u8| op([v, v, v]);
+        let (bytes, w) = runs(&[
+            (grey(104), 200),
+            (grey(128), 40),
+            (grey(152), 40),
+            (op(RED), 10),
+            (op(GREEN), 10),
+            (op(BLUE), 10),
+        ]);
+        let p = pal(&bytes, w);
+        let areas: Vec<u64> = p.iter().map(|e| e.pixels).collect();
+        assert_eq!(areas, [240, 40, 10, 10, 10]);
+        assert!(de(p[1].color, [152, 152, 152]) < 1.0, "{:?}", p[1].color);
+    }
+
     // ARQ-122: colours that differ only in blue are two colours.
     #[test]
     fn arq_122_colours_that_differ_in_one_channel_are_apart() {

@@ -180,6 +180,56 @@ pub fn layout_box(
     layout_with(&mut stack, text, style, size_px, &[], bounds.width())
 }
 
+/// `layout_box` in the face `(bold, italic)` of the family of the first font
+/// (spec 062): the stack holds the faces of the family and the layout picks
+/// the one that matches.
+pub fn layout_box_face(
+    text: &str,
+    fonts: &[&[u8]],
+    style: &TextStyle,
+    face: (bool, bool),
+    dpi: f64,
+    bounds: Size,
+) -> Result<TextLayout, TextError> {
+    let size_px = check_input(style, dpi, bounds)?;
+    if fonts.is_empty() {
+        return Err(TextError::NoFont);
+    }
+    let mut stack = Stack::new(fonts)?;
+    stack.face = face;
+    layout_with(&mut stack, text, style, size_px, &[], bounds.width())
+}
+
+/// Fonts ready to lay many texts out (spec 081): registering them is the
+/// costly part of [`layout_box`], and it is done once. The result is the
+/// same.
+pub struct FontStack(Stack);
+
+impl FontStack {
+    /// Registers the fonts, in order; `InvalidFont` names the first that
+    /// cannot be read.
+    pub fn new(fonts: &[&[u8]]) -> Result<Self, TextError> {
+        if fonts.is_empty() {
+            return Err(TextError::NoFont);
+        }
+        Stack::new(fonts).map(Self)
+    }
+
+    /// [`layout_box_face`] with these fonts.
+    pub fn layout_box_face(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        face: (bool, bool),
+        dpi: f64,
+        bounds: Size,
+    ) -> Result<TextLayout, TextError> {
+        let size_px = check_input(style, dpi, bounds)?;
+        self.0.face = face;
+        layout_with(&mut self.0, text, style, size_px, &[], bounds.width())
+    }
+}
+
 /// The font stack of a call: registered once, so a search that lays the same text out many
 /// times does not register the fonts again.
 pub(crate) struct Stack {
@@ -187,6 +237,8 @@ pub(crate) struct Stack {
     lcx: LayoutContext<()>,
     names: Vec<FontFamilyName<'static>>,
     blob_ids: Vec<u64>,
+    /// The face asked for, bold then italic (spec 062).
+    face: (bool, bool),
 }
 
 impl Stack {
@@ -214,6 +266,7 @@ impl Stack {
             lcx: LayoutContext::new(),
             names,
             blob_ids,
+            face: (false, false),
         })
     }
 }
@@ -242,7 +295,9 @@ pub(crate) fn layout_with(
         lcx,
         names,
         blob_ids,
+        face,
     } = stack;
+    let (bold, italic) = *face;
     let input = text;
     let converted;
     let mut source_map = None;
@@ -291,6 +346,14 @@ pub(crate) fn layout_with(
             names.as_slice(),
         ))));
         builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
+        // The face of the family: the stack holds its faces and the
+        // layout takes the one with this weight and style (spec 062).
+        if bold {
+            builder.push_default(StyleProperty::FontWeight(parley::FontWeight::BOLD));
+        }
+        if italic {
+            builder.push_default(StyleProperty::FontStyle(parley::FontStyle::Italic));
+        }
         builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
             style.line_height as f32,
         )));
@@ -836,5 +899,135 @@ pub(crate) fn to_px(size_pt: f64, dpi: f64) -> Result<f32, TextError> {
         Ok(size_px)
     } else {
         Err(TextError::NonFinite { field: "size_px" })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decorated() -> TextLayout {
+        let decoration = Some(Decoration {
+            offset: -1.0,
+            thickness: 1.0,
+        });
+        TextLayout {
+            height: 10.0,
+            lines: vec![Line {
+                baseline: 8.0,
+                advance: 5.0,
+                height: 10.0,
+                clusters: vec![Cluster {
+                    range: 0..1,
+                    x: 0.0,
+                    advance: 5.0,
+                    underline: decoration,
+                    strikethrough: decoration,
+                    ..Cluster::default()
+                }],
+            }],
+            overflow: false,
+        }
+    }
+
+    /// A named change to one field of a layout.
+    type Edit = (&'static str, fn(&mut TextLayout));
+
+    // S13-13, ARQ-110: every number of the output is checked on its own: one non-finite
+    // field at a time, the others finite, is an error.
+    #[test]
+    fn arq_110_check_output_rejects_each_non_finite_field_alone() {
+        assert_eq!(check_output(&decorated()), Ok(()));
+        let edits: [Edit; 8] = [
+            ("line.baseline", |l| l.lines[0].baseline = f32::NAN),
+            ("line.advance", |l| l.lines[0].advance = f32::INFINITY),
+            ("cluster.x", |l| l.lines[0].clusters[0].x = f32::NAN),
+            ("cluster.advance", |l| {
+                l.lines[0].clusters[0].advance = f32::NAN;
+            }),
+            ("underline.offset", |l| {
+                if let Some(d) = &mut l.lines[0].clusters[0].underline {
+                    d.offset = f32::NAN;
+                }
+            }),
+            ("underline.thickness", |l| {
+                if let Some(d) = &mut l.lines[0].clusters[0].underline {
+                    d.thickness = f32::NAN;
+                }
+            }),
+            ("strikethrough.offset", |l| {
+                if let Some(d) = &mut l.lines[0].clusters[0].strikethrough {
+                    d.offset = f32::NEG_INFINITY;
+                }
+            }),
+            ("strikethrough.thickness", |l| {
+                if let Some(d) = &mut l.lines[0].clusters[0].strikethrough {
+                    d.thickness = f32::NAN;
+                }
+            }),
+        ];
+        for (name, edit) in edits {
+            let mut layout = decorated();
+            edit(&mut layout);
+            assert_eq!(
+                check_output(&layout),
+                Err(TextError::NonFinite { field: "output" }),
+                "{name}"
+            );
+        }
+    }
+
+    /// A table directory at `start` with the given tags.
+    fn directory(start: usize, tags: &[&[u8; 4]]) -> Vec<u8> {
+        let mut out = vec![0_u8; start];
+        out.extend_from_slice(&[0, 1, 0, 0]);
+        out.extend_from_slice(&u16::try_from(tags.len()).expect("few").to_be_bytes());
+        out.extend_from_slice(&[0; 6]);
+        for tag in tags {
+            out.extend_from_slice(*tag);
+            out.extend_from_slice(&[0; 12]);
+        }
+        out
+    }
+
+    /// A collection header for `offsets`, padded to `len`.
+    fn collection(offsets: &[u32], len: usize) -> Vec<u8> {
+        let mut out = b"ttcf".to_vec();
+        // Version 2.0: a number no offset below uses.
+        out.extend_from_slice(&[0, 2, 0, 0]);
+        out.extend_from_slice(&u32::try_from(offsets.len()).expect("few").to_be_bytes());
+        for offset in offsets {
+            out.extend_from_slice(&offset.to_be_bytes());
+        }
+        out.resize(len, 0);
+        out
+    }
+
+    // S13-12: the table directory of a single font and of each font of a collection is read
+    // at its own offset.
+    #[test]
+    fn has_table_reads_the_directory_of_a_font_and_of_each_font_of_a_collection() {
+        let single = directory(0, &[b"OS/2", b"post"]);
+        assert!(has_table(&single, 0, b"post"));
+        assert!(!has_table(&single, 0, b"glyf"));
+
+        // The smallest collection of one font: 16 bytes of header and a directory of one
+        // table, 44 bytes in all.
+        let mut small = collection(&[16], 16);
+        small.extend_from_slice(&directory(0, &[b"post"]));
+        assert_eq!(small.len(), 44);
+        assert!(has_table(&small, 0, b"post"));
+
+        // Two fonts: the first has `post`, the second `OS/2`.
+        let mut two = collection(&[20, 48], 20);
+        two.extend_from_slice(&directory(0, &[b"post"]));
+        two.extend_from_slice(&directory(0, &[b"OS/2"]));
+        assert!(has_table(&two, 0, b"post"));
+        assert!(!has_table(&two, 0, b"OS/2"));
+        assert!(has_table(&two, 1, b"OS/2"));
+        assert!(!has_table(&two, 1, b"post"));
+        // A font the header does not list, and a directory cut short.
+        assert!(!has_table(&two, 2, b"post"));
+        assert!(!has_table(&two[..24], 0, b"post"));
     }
 }

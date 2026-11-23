@@ -1,0 +1,844 @@
+## Slice card
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the CPU backend opens with the surface, the tile loop and the fill path, the pieces every later delivery draws through; O10 carries the rigor of O8 to this change
+Product IDs: ARQ-111, ARQ-117, ARQ-119, ARQ-139, ARQ-143, ARQ-44 (partial) (source: specs/02-arquitectura-software.md §4.6, §6.2)
+Scope: `CB1` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, `CpuBackend` with `caps`, `begin_frame`, `execute`, `read_back`, `memory_usage` and `trim`; the page-sized surface in both formats; the tile loop that reads from and writes to the `TileCache`; the cancellation and progress of ARQ-139; the operation cull; the coverage module that turns a kurbo path into a tiny-skia mask; and `FillPath` in `Rgba8` and `RgbaF32`.      Non-goals: layers and the sixteen blend modes (`CB2`), the ARQ-42 comparison (`CB3`), images (`CB4`), masks, effects and transitions (`CB5`), the benches (`CB6`), the parallel bands (`CB7`), and any change to `gafira-ports` or `gafira-render` (`PC1` did those).
+Acceptance:
+  AC1 Given a plan with a single `FillPath` and a surface, When `execute` runs, Then the tile it is handed carries the coverage of that path, in the format the target asks for, at the region `PC1` put on the task (ARQ-119, ARQ-117) [unit]
+  AC2 Given the two formats, When the same fill is drawn to an `Rgba8` target and to an `RgbaF32` target, Then each obeys the premultiplication rule of ARQ-117: 8 bits with `(c × a + 127) / 255` on integer division, `f32` in linear light, and both premultiplied [unit]
+  AC3 Given a tile the cache already holds, When the loop reaches it, Then the cached tile is reused and the path is not covered again; given one it does not hold, Then the result is written back at the key of the plan (ARQ-44 partial, 02 §6.1) [unit]
+  AC4 Given an operation whose bounds miss the tile, When the loop runs, Then it is skipped and its absence changes no pixel (02 §6.2, the cull as corrected by the XP round) [unit]
+  AC5 Given a cancelled token, When the loop reaches the next tile, Then it stops with the cancellation the port fixes and no partial surface is returned (ARQ-139) [unit]
+  AC6 Given a long run, When it executes, Then the progress fraction is non-decreasing in `[0, 1]`, follows tiles done over tiles planned, and only reaches `1.0` on a normal end (ARQ-139) [unit]
+  AC7 Given the same plan and the same surface, When the backend runs twice, Then the bytes are identical, and they do not change with the number of workers the pool reports (ARQ-111) [property]
+  AC8 Given the memory the backend holds, When `memory_usage` is asked and `trim` is called, Then the surface plus the cache answer the size and drop to the budget given, without leaking a buffer (ARQ-44 partial, ARQ-143) [unit]
+  AC9 Given the crate, When the CI policy steps run, Then `gafira-render-cpu` still has `#![forbid(unsafe_code)]`, its V5 row passes and the crate reads no clock and opens no file [command]
+Plan: the delivery fills `crates/gafira-render-cpu/src/`, created by `SC1`. It implements `ports::RenderBackend` and consumes the place of a tile that `PC1` added to the plan; without it the backend cannot know where a tile goes and the design refused to decode it from the key. Coverage comes from `tiny-skia` behind one private module and the pixels from `gafira-raster`, used and never redefined (ARQ-119). The critical code is the tile loop, the cache key and its write-back, the premultiplication in both formats and the cull (design, "Critical code"), so those carry the hand mutants. The layer stack arrives with `CB2`, so a `PushLayer` in a plan of this delivery is a `blocked`, not a silent pass.
+Owner decisions touched: O10 of 2026-11-05 (the rigor of O8 carries over: hand mutants, gates per commit, one V1 round per group, no T4 at close); O6 (tiny-skia for coverage).
+
+# Apply progress: gafira-render-cpu
+
+## CB1 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `24ec501 feat(gafira-render-cpu): render a fill into the f32 surface in both formats` — the surface, the coverage module, `CpuBackend` with `caps`/`begin_frame`/`execute`/`read_back`/`memory_usage`/`trim`, and the `FillPath` path: 6 tests (AC1, AC2, AC7, the target bound of AC8).
+- `d610b0a feat(gafira-render-cpu): reuse a cached tile and write a miss back at its key` — the cache read, the `D5` format check and the write-back: 8 tests.
+- `5f7537a feat(gafira-render-cpu): cull the ops that miss the tile` — the transformed control-point box and the cull: 10 tests.
+- `4e94ed4 feat(gafira-render-cpu): stop on the cancel token and report the progress per tile` — the per-tile check, the abandonment of a cancelled frame and the `ARQ-139` fraction: 13 tests.
+- `0c04440 feat(gafira-render-cpu): account for the surface and the cache, and trim to the budget` — `memory_usage` over surface + cache and `trim`: 14 tests.
+- `532e0bd feat(gafira-render-cpu): place the surface at the target origin and report the ops it cannot render` — the origin offset, the clipping of the placement rect and the reported layer op: 16 tests.
+- `b24fcbf test(gafira-render-cpu): pin the placement transform and the coverage as source alpha` — the two tests the hand mutants H2 and H3 needed: 18 tests.
+- `docs(gafira-render-cpu): record the CB1 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`, `cargo test -p gafira-render-cpu --locked`, `cargo deny check`, and the CI policy steps (Format, CLI/UI, `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` step), each `run:` extracted literally from `.github/workflows/ci.yml` and run under `bash -euo pipefail` from the worktree root. The full workspace suite runs once at the delivery HEAD (`AGENTS.md`, ADR 0017).
+
+Measured size: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **8 files changed, 1794 insertions(+), 2 deletions(-)**, of which `src/` is 757 lines (`backend.rs` 312, `surface.rs` 320, `coverage.rs` 108, `lib.rs` 17), `tests.rs` 982, the manifest plus the lock 2, and this record 53. The design forecast 460 (644 at x1.4), so the delivery is 2.7× the forecast; the coordinator decides (see "Choices and deviations").
+
+### RED evidence
+
+Every criterion has a test that names the requirement it proves. Each RED was taken on the green code by breaking the behaviour the criterion names and running that test; the assertion below is the one that failed. The mutations of H1 to H8 are the hand-mutant table that follows; `AC7` and `AC8` needed one of their own. None of them is committed, and `git status` is clean at every step.
+
+- **AC1** — `tests::arq_119_the_fill_is_drawn_at_the_region_of_the_task_in_both_formats` (H1, the tile drawn at the origin): `Rgba8: inside the fill`, and `tests::arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target` with `page (160, 260) is inside the fill`; (H2, the coefficients transposed) `page (15, 25) is inside 20 × 30`; (H3, the coverage multiplying the whole pixel) `left: 0.5019608`, `right: 1.0` on the backdrop's alpha.
+- **AC2** — `tests::arq_117_both_formats_premultiply_the_same_fill` (H4, the 8-bit rounding skipped): `left: [25, 51, 76, 128]`, `right: [26, 51, 77, 128]`; (H4 second direction, premultiplied in one path and not the other): `left: [51, 102, 153, 128]`, `right: [26, 51, 77, 128]`.
+- **AC3** — `tests::arq_44_a_cached_tile_is_reused_and_a_miss_is_written_back_at_the_key_of_the_plan` (H5, the cache read but never written): `assertion \`left == right\` failed` on `one write per plan key`; (H5 second direction, the key of the next tile): the same assertion, and `tests::arq_44_a_cached_tile_of_the_other_format_is_a_miss` fails on `the miss is written in the frame's format`.
+- **AC4** — `tests::spec_02_6_2_the_cull_keeps_a_fill_that_partly_overlaps_the_tile` (H6, the cull on the tile's origin only): `IRect { x0: 128, y0: 128, x1: 192, y1: 192 }: the fill at (140, 140)-(300, 300) overlaps and must be drawn`, and `tests::spec_02_6_2_the_cull_skips_an_op_that_misses_the_tile` fails with it on `the fill inside the tile is drawn`.
+- **AC5** — `tests::arq_139_a_token_cancelled_before_the_first_tile_stops_at_once` (H7, the token checked after the last tile of the frame): `nothing was covered`. With H7 the per-tile report still catches a cancel that arrives mid-plan, because `checkpoint` checks before it reports; the first tile is what proves the check is *before* the work.
+- **AC6** — `tests::arq_139_the_progress_is_tiles_done_over_tiles_planned` (H8, `1.0` on every report): `left: [1.0, 1.0, 1.0, 1.0]`, `right: [0.25, 0.5, 0.75, 1.0]`; (H8 second direction, the fraction decreasing): `left: [0.75, 0.5, 0.25, 0.0]`, `right: [0.25, 0.5, 0.75, 1.0]`.
+- **AC7** — `tests::arq_111_the_same_plan_and_surface_give_the_same_bytes`, with a per-call counter folded into the fill's alpha: `assertion \`left == right\` failed: Rgba8` (and the AC2 test fails with it, because the counter moves the premultiplied values).
+- **AC8** — `tests::arq_143_memory_usage_is_the_surface_plus_the_cache_and_trim_drops_to_the_budget`, with `memory_usage` accounting for the surface only: `left: Bytes(4096)`, `right: Bytes(8192)`; with `trim` holding on to the surface: `left: Bytes(8192)`, `right: Bytes(0)`.
+- **AC9** — a command, not a test: `crates/gafira-render-cpu/src/lib.rs` opens with `#![forbid(unsafe_code)]`; the `forbid(unsafe_code)`, V5, V12 and ARQ-107 steps pass on every commit; and `git grep -nE 'std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env' -- 'crates/gafira-render-cpu/src/*'` finds nothing (exit 1).
+
+### Negative controls
+
+The eight hand mutants of the Slice card were applied on the green code, the test that names each one was run, and the change was reverted. None of them is committed. H2 and H3 **survived their first run**: the fixture of AC1 placed every fill under `Affine::IDENTITY` (so a transposed pair of coefficients is invisible) and painted it over a transparent backdrop (so multiplying the whole composited pixel and multiplying the source alpha agree). `b24fcbf` added the two tests that close the gap — a non-uniform scale for the transform, half a covered pixel over an opaque backdrop for the alpha — and both mutants died on the re-run.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| H1 | the tile is drawn at the origin, ignoring `TileTask.region` | `arq_119_the_fill_is_drawn_at_the_region_of_the_task_in_both_formats` (also the surface, cache and cull tests) | `Rgba8: inside the fill`; `page (160, 260) is inside the fill` |
+| H2 | `sx`/`sy` transposed in the kurbo → `tiny_skia` coefficients | `arq_119_the_placement_transform_reaches_the_coverage` | `page (15, 25) is inside 20 × 30` |
+| H3 | the coverage multiplies the whole composited pixel | `arq_119_the_coverage_is_the_source_alpha_of_the_fill` | `left: 0.5019608`, `right: 1.0` (the backdrop's alpha) |
+| H4 | the `(c × a + 127) / 255` rounding of ARQ-117 skipped (integer truncation) | `arq_117_both_formats_premultiply_the_same_fill` | `left: [25, 51, 76, 128]`, `right: [26, 51, 77, 128]` |
+| H4b | premultiplied in one path and not in the other | `arq_117_both_formats_premultiply_the_same_fill` | `left: [51, 102, 153, 128]`, `right: [26, 51, 77, 128]` |
+| H5 | the cache is read but never written | `arq_44_a_cached_tile_is_reused_and_a_miss_is_written_back_at_the_key_of_the_plan` | `left == right` on `one write per plan key` |
+| H5b | the tile is written back under the key of the next tile | `arq_44_a_cached_tile_is_reused_and_a_miss_is_written_back_at_the_key_of_the_plan` | `left == right` on `one write per plan key` |
+| H6 | the cull tests the tile's origin only, so a partly overlapping tile loses its fill | `spec_02_6_2_the_cull_keeps_a_fill_that_partly_overlaps_the_tile` | `the fill at (140, 140)-(300, 300) overlaps and must be drawn` |
+| H7 | the token is checked after the last tile of the frame | `arq_139_a_token_cancelled_before_the_first_tile_stops_at_once` | `nothing was covered` |
+| H8 | the progress reports `1.0` whatever it did | `arq_139_the_progress_is_tiles_done_over_tiles_planned` | `left: [1.0, 1.0, 1.0, 1.0]`, `right: [0.25, 0.5, 0.75, 1.0]` |
+| H8b | the fraction decreases from tile to tile | `arq_139_the_progress_is_tiles_done_over_tiles_planned` | `left: [0.75, 0.5, 0.25, 0.0]`, `right: [0.25, 0.5, 0.75, 1.0]` |
+
+### Choices and deviations
+
+- **`kurbo` is a direct dependency of the crate, and `Cargo.lock` gains one line.** The manifest of `SC1` did not name `kurbo`, and no crate of the allowed five re-exports `BezPath`/`PathEl` (`gafira-geom` re-exports `Affine`, `Point`, `Rect` and `Vec2` only; `gafira-pathops` re-exports the path but is not in the V5 row and `D2` keeps it out). Without it `CB1` cannot name the `FillPath` path at all, which is the delivery. It is not a new external crate: `kurbo 0.13.1` is already in `[workspace.dependencies]` and already in this crate's normal tree through `gafira-ports`; the V5 step checks `gafira-*` names only and passes, and the lock diff is the single line `"kurbo",` in `gafira-render-cpu`'s dependency list. **The coordinator should confirm this or fold the line into `SC1`'s manifest**; it is the one change outside `src/`.
+- **One accumulation path, as `O11` decides.** The surface is `Vec<f32>` for both qualities, premultiplied and linear; `TargetDesc::format` decides only what `read_back` and the cache answer. `blend_f32` is the only blend this delivery calls, because a preview that accumulated in 8 bits is exactly what `O11` supersedes; `blend_u8` is not redefined and not called, and ARQ-119's rule (used, never redefined) holds through `blend_f32` and `premultiply_u8`/`unpremultiply_u8`. A cached `Rgba8` tile is decoded back into the `f32` surface on a hit: that is the tile cache's storage format, not a second accumulation path. The price is stated: the preview's surface is 33.2 MB at 1080p in `f32` instead of the 8.3 MB an `Rgba8` one would take, which is 2.3 % of the `D-03` cap (XP4's arithmetic).
+- **A tile is the full content of its region**, so the loop writes it over the surface at `region` instead of compositing it over what was there. `FrameLoop` re-renders a whole tile per call (`D12`), and the tile buffer already holds the composite of every op clipped to the tile (D6's "the mask is the clip"). A caller that submitted incremental ops for a tile already drawn would lose the earlier ones; nothing in the port does that.
+- **The cancellation abandons the frame.** On `RenderError::Cancelled` the surface is dropped, so `read_back` answers `DeviceLost` and no partial surface can be observed (AC5). The `checkpoint` of `gafira-doc::contract` is what checks the token and reports the fraction, so the "check before report" rule of ARQ-112 has one implementation.
+- **The progress sink is bound to the backend.** `RenderBackend::execute` takes no `Progress` and `PC1` froze the port, so `CpuBackend::with_progress(Arc<dyn Progress>)` is how AC6 is observable; `NoProgress` is the default. The fraction is per `execute` call (the tiles of the plan done over the tiles of the plan), which is the granularity the port hands the backend; `FrameLoop` keeps its own frame-level fraction.
+- **The deadline is not consulted.** The backend reads no clock (ARQ-02, `D8`) and `FrameLoop` checks the deadline before every tile with its injected clock, so `RenderReport::left` is always 0 on `Ok` and a cancelled frame is an `Err`. The "left on a mid-tile deadline" item of the design's critical table therefore has no behaviour in this delivery.
+- **An op this delivery does not render is reported as `RenderError::DriverBlocked`,** never dropped: `PushLayer`/`PopLayer` are `CB2`, `DrawImage` is `CB4`, and the mask, the effect and the transition are `CB5`. The port's `RenderError` has no `Unsupported` variant (the same gap `D7` records), and a silently flattened group would be a wrong page reported as done. The test `a_layer_op_is_reported_and_not_silently_flattened` pins it.
+- **The surface is bounded at 8 192 px and 1.5 GB.** FD-55's 16 384 px side is 4 GiB in `RgbaF32`, 2.9× the `D-03` cap (XP4), so `begin_frame` answers `OutOfMemory` for it and the limit is stated in `lib.rs`. FD-55 already names the tiled export; this delivery does not build it.
+- **`Alpha8` is refused as a target** with `RenderError::Effect(EffectError::UnsupportedFormat)`: `TargetDesc` says `Rgba8` or `RgbaF32` only, and that is the vocabulary the port already has for a rejected format.
+- **The worker count of AC7 has no subject yet.** No thread is created (D8) and no pool exists until `CB7`, so the determinism test compares runs, not worker counts.
+- **Scopes.** The delivery is a leaf crate, so every commit ran the leaf scope of ADR 0017. The first commit also touched `Cargo.lock` (the `kurbo` line) and the manifest, which under ADR 0017 is a `--workspace` scope: the full workspace suite ran once at the delivery HEAD instead of on that commit, and it covers exactly that risk. `crates/gafira-raster/`, `crates/gafira-doc/`, `gafira-edit`, the testkit and `ci.yml` are untouched.
+
+## CB2
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: owner | reason: the golden's scene needs groups, and a group is a layer; the blend modes are what compositing is
+Product IDs: ARQ-119, ARQ-117 (source: specs/02-arquitectura-software.md §6.1, §6.2)
+Scope: `CB2` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, the layer stack behind `PushLayer` and `PopLayer`, the layer opacity, the sixteen blend modes called through `gafira-raster`, nesting, tile-local layer buffers and their reuse.      Non-goals: the ARQ-42 comparison (`CB3`), images (`CB4`), masks, effects and transitions (`CB5`), the benches (`CB6`), the parallel bands (`CB7`), and any change to the crate's dependencies or its V5 row.
+Acceptance:
+  AC1 Given a `PushLayer` and the `PopLayer` that closes it, the pop carrying a blend and an opacity, When the ops inside the layer are drawn, Then they land in a buffer of their own and the buffer is composited onto its parent with **the pop's** blend and opacity when the `PopLayer` arrives, not with `Normal` (ARQ-119) [unit]
+  AC2 Given a layer whose opacity is 0,5, When it holds two opaque shapes, Then the opacity is applied **once**, to the composite, and not to each child; the result differs from drawing both children at half alpha, and a test states both numbers (ARQ-119) [unit]
+  AC3 Given a `PushLayer`, When the buffer is taken from the pool, Then it is cleared to transparent first, so nothing from a previous layer remains (ARQ-117) [unit]
+  AC4 Given nested layers, When they are popped, Then the pops happen in the reverse order of the pushes and an unbalanced plan is refused with `RenderError::DriverBlocked`, the only error the port has for a plan it cannot execute (ARQ-119) [unit]
+  AC5 Given the sixteen modes of `BlendMode::ALL`, When each is used as the blend of a layer, Then the backend calls `gafira-raster`'s formula with the layer's buffer as source and the parent's as backdrop — it *calls* them, it does not reimplement them (ARQ-119) [unit]
+  AC6 Given a buffer returned to the pool, When it is taken again, Then no residue of the earlier layer can be observed (ARQ-117) [unit]
+  AC7 Given a plan with layers, When the backend runs twice, Then the bytes are identical, and the number of buffers the pool holds does not change the result (determinism, ARQ-111) [property]
+  AC8 Given the crate, When the CI policy steps run, Then `gafira-render-cpu` still has `#![forbid(unsafe_code)]`, its V5 row passes and the crate still names no clock and no file (ARQ-02) [command]
+Plan: the delivery fills `crates/gafira-render-cpu/src/` on top of `CB1`'s surface and tile loop. The layer buffers are `f32` linear premultiplied like the surface (`O11`), so a group costs memory per nesting level and nothing in conversion. `gafira-raster` owns the sixteen formulas; the adapter's job is to call them with the right operands, and the test proves the call and the operands, not the arithmetic, which ARQ-119 already proves in that crate. The critical code is the whole push/pop bookkeeping (design, "Critical code"): depth and buffer index, the pop's blend and opacity, the opacity applied once, the clear at push, the nested order and the reuse without residue — those carry the hand mutants. The buffer pool's growth policy is not critical and is stated as a choice.
+Owner decisions touched: O11 (the f32 accumulation, which is what makes a layer buffer and the surface the same type), Q3 of the timeline design does not apply here, and the rigor of O4/O8/O10.
+
+## CB2 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `bc14331 feat(gafira-render-cpu): composite a layer with its own blend and opacity` — the layer module: a tile-sized premultiplied `f32` buffer, the pop's blend and its opacity applied once to the composite, and the sixteen modes called through `gafira-raster` with the layer as source: 4 tests (AC1 twice, AC2, AC5), and the op this delivery still does not render reported under its new name.
+- `3f5b273 feat(gafira-render-cpu): nest layers and refuse an unbalanced plan` — the stack: one buffer per depth, the pops in the reverse order of the pushes with their own parameters, and `DriverBlocked` for a pop with no layer open and for a layer left open at the end of the tile: 2 tests (AC4 twice).
+- `79ebcc9 feat(gafira-render-cpu): reuse layer buffers from a pool that trim drops` — the pool on the backend, the clear at push, `memory_usage` over surface + cache + pool and `trim` dropping the pool: 4 tests (AC3, AC6, AC7, the pool's bytes).
+- `docs(gafira-render-cpu): record the CB2 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`, `cargo test -p gafira-render-cpu --locked`, `cargo deny check`, and the nine CI policy steps of the `policy` job (Format, CLI/UI, `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` step), each `run:` extracted literally from `.github/workflows/ci.yml` and run with `bash -euo pipefail` from the worktree root. The full workspace suite runs once at the delivery HEAD (`AGENTS.md`, ADR 0017). The eight hand mutants below were applied on the green HEAD after the three feature commits, each was reverted, and `git status` is clean.
+
+Measured size: `git diff --shortstat develop` → **5 files changed, 742 insertions(+), 52 deletions(-)**, of which `src/` is 697 lines (`layer.rs` 148 new, `backend.rs` 47/19, `tests.rs` 501/31 — 18 tests of `CB1` plus 10 of `CB2`, 1452 lines in all — and `lib.rs` 1) and this record 45/2. The design forecast 340 (475 at x1.4), so the delivery is 1.6× the forecast and above the ~700-line signal; the tests are the bulk of it, as the forecast's own x1.4 rule predicts. The coordinator decides (see "Choices and deviations").
+
+### RED evidence
+
+Every criterion has a test that names the requirement it proves. The first RED of each is the failing run before the code that answers it; where a criterion forbids a behaviour that only exists once the feature does, the RED is that behaviour applied on the code that landed, which is the same wrong behaviour as the hand mutant. None of those is committed.
+
+- **AC1** — `tests::arq_119_a_layer_composites_with_its_own_blend_and_opacity`: before `bc14331`, `the plan runs: DriverBlocked` (a layer op was reported, not drawn). With H1, `Multiply at half opacity, the layer as source`: `left: [0.13245861, 0.60702056, 0.21404114, 1.0]`, `right: [0.11246536, 0.21404114, 0.12992738, 1.0]` (the `Normal` answer). The identity of `arq_119_a_normal_layer_at_full_opacity_changes_no_pixel` is RED the same way.
+- **AC2** — `tests::arq_119_the_opacity_applies_once_to_the_composite`: before `bc14331`, `the plan runs: DriverBlocked`; with H2 (the layer composited once per drawn child), `one fill at half opacity`: `left: [0.75, 0.0, 0.0, 0.75]`, `right: [0.5, 0.0, 0.0, 0.5]`. The test states the per-child number too: `[0.25, 0.0, 0.5, 0.75]`.
+- **AC3** — `tests::arq_117_a_pushed_layer_is_cleared_to_transparent`: RED on the pooled code before the clear (the pool landed first and the test drove the clear), `the second layer is transparent on the left: the first one's white cannot come back`: `left: [1.0, 1.0, 1.0, 1.0]`, `right: [0.5, 0.5, 0.5, 0.5]`. H3 gives the same failure.
+- **AC4** — nesting, `tests::arq_119_nested_layers_pop_in_the_reverse_order_of_their_pushes`: before `3f5b273` (one buffer for every push), `outside the inner layer the parent's red survives`: `left: [0.0, 0.0, 0.0, 0.0]`, `right: [1.0, 0.0, 0.0, 1.0]`; with H8 (the inner layer overwrites its parent) the same assertion fails. Unbalanced, `tests::arq_119_an_unbalanced_plan_is_refused`: before `3f5b273`, `a pop with no push: RenderReport { done: 1, left: 0 }` (the pop was accepted); with H4 the same.
+- **AC5** — `tests::arq_119_all_sixteen_modes_composite_the_layer_as_source`: before `bc14331`, `the plan runs: DriverBlocked`; with H5 (the operands swapped), `Normal: the layer is the source`: `left: [0.07323896, 0.3185468, 0.033104766, 1.0]`, `right: [0.7874122, 0.010022826, 0.4479884, 1.0]`.
+- **AC6** — `tests::arq_117_a_reused_layer_buffer_leaves_no_residue`: RED once the pool moved to the backend and before the clear, `the second tile's layer is empty: the pooled buffer carries no residue`: `left: [1.0, 1.0, 1.0, 1.0]`, `right: [0.0, 0.0, 0.0, 0.0]`. H6a gives the same failure.
+- **AC7** — `tests::arq_111_a_layered_plan_is_deterministic_and_the_pool_does_not_reach_the_pixels`: a property, so its RED is the wrong behaviour applied on the green code: with H7 (the pool's length folded into the opacity), `the buffers the pool holds do not change the result` fails (`left == right` on the whole surface). The determinism half is green from `79ebcc9` and is RED with the CB1 counter mutant it already carries.
+- **AC8** — a command, not a test: `crates/gafira-render-cpu/src/lib.rs` still opens with `#![forbid(unsafe_code)]`; the `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and testkit `ports` steps pass on every commit; and `git grep -nE 'std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env' -- 'crates/gafira-render-cpu/src/*'` finds nothing (exit 1), as does `git grep -n 'Locale' -- crates/gafira-render-cpu`.
+
+### Negative controls
+
+The eight hand mutants of the Slice card were applied on the green HEAD, the test that names each one was run, and the change was reverted. None of them is committed, and `git status` is clean at every step. Two items were applied in both of their stated directions, and H2 needed the shape the port allows: the pop carries the opacity, so "per child" is the layer composited once per child drawn.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| H1 | the pop composites with `Normal` instead of the pop's blend | `arq_119_a_layer_composites_with_its_own_blend_and_opacity` | `left: [0.13245861, 0.60702056, 0.21404114, 1.0]`, `right: [0.11246536, 0.21404114, 0.12992738, 1.0]` |
+| H2 | the opacity is applied to each child as it is drawn (a composite per child) | `arq_119_the_opacity_applies_once_to_the_composite` | `left: [0.75, 0.0, 0.0, 0.75]` on `one fill at half opacity`, `right: [0.5, 0.0, 0.0, 0.5]` |
+| H3 | the clear at push is skipped, so the previous layer shows through | `arq_117_a_pushed_layer_is_cleared_to_transparent` | `left: [1.0, 1.0, 1.0, 1.0]`, `right: [0.5, 0.5, 0.5, 0.5]` |
+| H4 | a `PopLayer` with no `PushLayer` is accepted | `arq_119_an_unbalanced_plan_is_refused` | `a pop with no push: RenderReport { done: 1, left: 0 }` |
+| H5 | the layer's buffer is the backdrop and the parent's pixels the source | `arq_119_all_sixteen_modes_composite_the_layer_as_source` | `Normal: the layer is the source`, `left: [0.07323896, 0.3185468, 0.033104766, 1.0]` |
+| H6a | the buffer is reused without clearing | `arq_117_a_reused_layer_buffer_leaves_no_residue` | `left: [1.0, 1.0, 1.0, 1.0]`, `right: [0.0, 0.0, 0.0, 0.0]` |
+| H6b | the pool is ignored and every push allocates | `arq_143_the_layer_pool_is_accounted_and_trim_drops_it` | `left: Bytes(32768)`, `right: Bytes(40960)` |
+| H7 | the number of pooled buffers leaks into the output (folded into the opacity) | `arq_111_a_layered_plan_is_deterministic_and_the_pool_does_not_reach_the_pixels` | `the buffers the pool holds do not change the result` (`left == right`) |
+| H8 | the inner layer overwrites its parent instead of compositing into it | `arq_119_nested_layers_pop_in_the_reverse_order_of_their_pushes` | `left: [0.0, 0.0, 0.0, 0.0]`, `right: [1.0, 0.0, 0.0, 1.0]` on `outside the inner layer the parent's red survives` |
+| H8b | one buffer for every depth, so a nested push rebinds the parent's buffer | `arq_119_nested_layers_pop_in_the_reverse_order_of_their_pushes` | `the plan runs: DriverBlocked` (the second pop has no layer left) |
+
+### Choices and deviations
+
+- **The blend and the opacity arrive on `PopLayer`, not on `PushLayer`.** AC1 says "a `PushLayer` with a blend and an opacity"; the port and 02 §6.1 put both on `PopLayer { blend, opacity }`, and `PushLayer` carries nothing. The delivery composites with the pop's pair, and the tests name the pop when they build the layer.
+- **An unbalanced plan is refused with `RenderError::DriverBlocked`.** AC4 says "the error the port fixes", and the port has no plan-validation variant: `RenderError` is `DeviceLost`, `OutOfMemory`, `AdapterMissing`, `DriverBlocked`, `Effect`, `Buffer` and `Cancelled`. `DriverBlocked` is already this adapter's answer for a plan it cannot execute (the ops of later deliveries), so it carries both refusals: a pop with no layer open and a layer left open at the end of a tile.
+- **The pool's growth policy (not critical code, chosen and recorded):** the pool keeps **every** buffer a pop returns, so its size converges to the deepest stack the tile set has drawn and never shrinks on its own; a take resizes the buffer to the current tile and clears it. The pool lives on the backend, so it survives into the following tiles and frames; `trim` is the only thing that drops it (ARQ-44's governor is what calls it). Cost, stated: a frame pays `depth × tile bytes`, which is `depth × 1 MiB` at 256 px tiles in `f32` — the line O11 already carries (`depth × 1 MiB` instead of the superseded `depth × 256 KiB`).
+- **`memory_usage` now counts the layer pool, and `trim` drops it.** The card has no memory criterion, but the pool is memory the backend holds, and counting it is what makes the reuse observable at the contract level, which is what kills H6b: the old accounting cannot tell a pooled frame from one that allocates per layer. `CB1`'s AC8 test is unaffected because a plan without layers leaves the pool empty; `trim` releases the pool with the surface and the accounting of the cache.
+- **The opacity is clamped to `[0, 1]` before it multiplies the layer.** The graph already refuses an out-of-range opacity (`check_opacity`), and the clamp keeps `blend_f32`'s inputs finite for a caller that builds a plan by hand; a non-finite opacity still reaches `blend_f32` and is reported as `RenderError::Buffer(BufferError::NonFinite)`.
+- **The layer's bounds are the tile's, not the group's box.** `PushLayer` carries no rectangle, so a layer is a full tile buffer (02 §6.1, ARQ-149): nothing finer clips it, and a group costs a buffer per nesting level rather than per drawn area. `CB3`'s golden is what exercises that with a real scene.
+- **AC5 proves the operands and the mode that arrives, not that the call is literally inside.** The test's expectation is `blend_f32(mode, parent, layer)` from `gafira-raster`, plus the swapped call as an explicit `assert_ne!` where the two differ, so a reimplemented formula that agrees would pass; that is the limit the design states for this delivery ("it *calls* them, it does not reimplement them").
+- **`CB1`'s layer-op test is rewritten, not deleted.** `a_layer_op_is_reported_and_not_silently_flattened` becomes `an_op_of_a_later_delivery_is_reported_and_not_silently_flattened` over an `ApplyMask`, so the rule "an op this backend cannot render is reported, never flattened" stays pinned for `CB4`/`CB5` while the layer ops move to the rendered side.
+- **Coordinator decision on the size (`W3` of the V2 round, 2026-11-05): accepted at 742 insertions.** The coordinator accepts the overshoot on the owner's standing delegation of reversible decisions. 501 of the 742 are tests (18 from `CB1` plus 10 new, 1452 lines in all), 196 are `src/`, 45 are this record; the forecast of 340 lines was made before `CB1` tripled its own (1794 against 460), so the forecast is the part that was wrong, not the delivery. The cost: the crate's `tests.rs` is now 1 452 lines, and the next delivery that adds tests to it should split it before it is the largest file in the crate.
+- **Scopes.** Every commit ran the leaf scope of ADR 0017. The delivery touches `crates/gafira-render-cpu/src/` only (`layer.rs` is new), plus this record; `crates/gafira-raster/`, `crates/gafira-doc/`, `gafira-edit`, the testkit, `ci.yml`, the manifest and the V5 row are untouched.
+
+## CB3
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: the tolerance ARQ-42 exists for is provable only now that two qualities render the same scene; a comparator that agrees with itself is the easiest thing to fake, so the round owes independent probes
+Product IDs: ARQ-42, ARQ-113; FD-55 (b), (c) (source: specs/02-arquitectura-software.md §10, ARQ-42, ARQ-113; specs/04-funcionalidad-diseno-imagen-exportacion.md FD-55, §13)
+Scope: `CB3` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`'s tests, the ARQ-42 comparison of the two qualities at 100 %, the sRGB8 comparator with ARQ-117's rounding, the transparency case of FD-55 (b), and one stored golden of the mechanism of ARQ-113.      Non-goals: images (`CB4`), masks, effects and transitions (`CB5`), the benches and the cancellation gap (`CB6`), the parallel bands (`CB7`), any change outside `crates/gafira-render-cpu/`'s tests and its test helpers, and any change to the crate's dependencies or its V5 row.
+Acceptance:
+  AC1 Given a scene of fills and layers, When a `GraphPageRenderer` at `Preview` and one at `Export` render the same region at scale 1.0, Then the two sRGB8 images differ by more than 1/255 in no more than 0,1 % of the pixels (ARQ-42) [unit]
+  AC2 Given an `RgbaF32` pixel of the export, When the comparator converts it, Then it unpremultiplies in linear light, encodes with the sRGB curve and premultiplies with ARQ-117's rounding, and a hand-computed pixel matches byte for byte (ARQ-117, SP6) [unit]
+  AC3 Given a pixel whose alpha is 0, When the comparator converts it, Then it answers four zeroes and never divides by the alpha (FD-55 (b)) [unit]
+  AC4 Given the stored golden, When the comparison runs against a reference with one byte altered, Then it fails on this platform (ARQ-113) [unit]
+  AC5 Given the crate's suite, When it runs, Then no test writes the golden: the reference is only regenerated by an explicit action (ARQ-113) [command]
+  AC6 Given a scene with up to three nested semi-transparent layers, When both qualities render it, Then the 99,9 % budget of AC1 still holds and the failure report names the worst channel and how many pixels differ by 2/255 or more (ARQ-42) [unit]
+  AC7 Given the crate, When the CI policy steps run, Then `forbid(unsafe_code)` still holds, the V5 row is unchanged and the crate still names no clock and no file (ARQ-02) [command]
+Plan: the delivery lives in `crates/gafira-render-cpu/tests/`, as an integration test that uses `gafira-render` and `gafira-doc` as dev-dependencies (`O2`), with the scene built through `gafira-doc`'s public API the way `crates/gafira-render/tests/page_renderer.rs` builds its documents. The preview reads back `Rgba8` and the export reads back `RgbaF32`; the comparator applies `D9`'s conversion to the export — unpremultiply in linear light, sRGB curve, ARQ-117's rounding, premultiply — and counts, per channel, the pixels whose difference is 2/255 or more. The golden is the raw sRGB8 bytes of one fixed region, committed under `crates/gafira-render-cpu/tests/golden/` (lossless and without a new dependency), with its size fixed by the test's constants and generated on `x86_64-unknown-linux-gnu` (ARQ-113). The critical code is the comparator: the order of the conversion, ARQ-117's rounding, the region and the zoom being the same on both renderers, the 99,9 % budget and the alpha-0 case — those carry the hand mutants. Nothing under `src/` changes unless a test helper genuinely cannot live in the test file, and that decision is recorded if it happens.
+Owner decisions touched: O11 (the preview quantises once at the end, which is what makes the comparison a comparison of rasterisers and not of two quantisations), O2 (the dev-dependency), O10 (the rigor).
+
+## CB3 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `15bb5b4 test(gafira-render-cpu): encode the export in sRGB8 and compare within ARQ-42's budget` — the comparator of `D9`: unpremultiply in linear light, the sRGB curve, ARQ-117's rounding, premultiply; the alpha-0 branch; the one-in-a-thousand budget; the report with its worst channel; `gafira-render` as a **dev**-dependency (`O2`): 6 tests (AC2, AC3, ARQ-113's budget table, the report of AC6).
+- `d38832c test(gafira-render-cpu): compare the preview and the export over one scene` — the scene through `gafira-doc`, two `GraphPageRenderer`s on their own `CpuBackend`, the `Rgba8` read-back against the encoded `RgbaF32` surface, and FD-55 (b) on the transparent render: 8 tests.
+- `d291434 test(gafira-render-cpu): store the ARQ-113 golden and compare three nested layers` — AC6's deepest scene of XP2, the stored golden with its exact comparison on this platform, and the altered-byte test: 11 tests.
+- `docs(gafira-render-cpu): record the CB3 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`, `cargo test -p gafira-render-cpu --locked`, `cargo deny check`, and the nine `policy` steps of `.github/workflows/ci.yml` (Format, CLI/UI, `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` step), each `run:` extracted literally from the file by `/tmp/gafira-policy-run.py` and run under `bash -euo pipefail` from the worktree root. The commit that touches `Cargo.toml` ran the **workspace** clippy scope of ADR 0017 as well. The full workspace suite ran once at the delivery HEAD: `cargo test --workspace --locked` → **196 test binaries, 2 479 passed, 0 failed, 0 ignored**, exit 0.
+
+Measured size: the work is **4 files changed, 750 insertions(+)**, of which `tests/arq_42_comparison.rs` is 744 lines, the manifest plus the lock 6, and the golden is a binary of 16 384 bytes (64 × 64 × 4); this record adds its own 55 lines (`git diff --shortstat $(git merge-base develop HEAD)..HEAD` → 5 files, 805 insertions). The design forecast 300 (420 at x1.4), so the delivery is 1.8× the forecast and above the ~700-line signal; the coordinator decides (see "Choices and deviations").
+
+### RED evidence
+
+Every criterion has a test that names the requirement it proves. AC2, AC3 and AC4 have a RED before the code that answers them; AC1 and AC6 forbid a behaviour that only exists once the comparison runs, so their RED is the wrong behaviour applied on the green code, which is the same wrong behaviour as the hand mutant. None of that is committed; `git status` is clean at every step.
+
+- **AC1** — `arq_42_the_preview_and_the_export_agree_on_the_scene`, 4 096 pixels, `report.differing == 0` on both sides: with M3 (the export rendered over a region shifted by one column) `ARQ-42, the scene at 100 %: 64 of 4096 pixels differ by 2/255 or more (allowed 4); worst channel Red at 255/255`. **M4 (the preview at scale 2.0) survived**; see the mutant table and "Choices and deviations" 7.
+- **AC2** — `arq_117_the_export_pixel_is_encoded_in_the_order_of_the_comparison_space`. First RED, the stub quantised the premultiplied linear values without the round trip: `opaque: linear premultiplied [0.5, 0.25, 0.1, 1.0] as premultiplied sRGB8: left: [128, 64, 26, 255], right: [188, 137, 89, 255]`. With M1 (encode before unpremultiply) `left: [128, 89, 63, 128], right: [94, 62, 45, 128]`; with M2 (truncation instead of ARQ-117's rounding) `left: [94, 62, 44, 128], right: [94, 62, 45, 128]`.
+- **AC3** — `arq_117_a_zero_alpha_pixel_answers_four_zeroes`: the same first RED, `a colour under zero alpha is not divided by it: left: [128, 64, 255, 0], right: [0, 0, 0, 0]`; with M6 (the zero-alpha branch keeps the colour) the same failure. FD-55 (b) on a real render is `fd_55_a_transparent_render_is_zero_where_nothing_is_drawn`: page pixel (0, 0) is `[0, 0, 0, 0]` on both sides and the region does draw content.
+- **AC4** — `arq_113_one_altered_byte_fails_on_this_platform`: first RED with the golden present but empty, `the golden has the size the test fixes: left: 0, right: 16384` (and the altered-byte test indexed an empty buffer); with M5b (a stored golden tolerating its own one-in-a-thousand budget) `a stored golden is exact on the platform that generated it`.
+- **AC5** — a command, not a test: `git grep -nE "fs::(write|File::create|OpenOptions)" -- crates/gafira-render-cpu/tests/` finds nothing (exit 1); the golden appears in the suite only as `include_bytes!`, and its size is the 16 384 bytes the test's constants fix. It was generated once by an explicit, uncommitted one-off that rendered `scene()` at `Preview` with `transparent: true`.
+- **AC6** — `arq_42_three_nested_semi_transparent_layers_agree`: the budget holds with `differing == 0` on three groups at 0,5 (XP2's worst case, O11's 12,866 % under the old path), and with the deep fixture not nesting (all three groups at 1.0) `assertion \`left != right\` failed: three semi-transparent groups change the composite` (M8). The report that names the worst channel and the count is `arq_42_the_report_names_the_worst_channel_and_the_count` (`worst == Blue`, `differing == 2` of 4 pixels, `max_delta == 3`) and `arq_42_the_failure_report_quotes_the_worst_channel` (`worst channel Blue at 3/255` in the panic).
+- **AC7** — a command, not a test: `crates/gafira-render-cpu/src/lib.rs` still opens with `#![forbid(unsafe_code)]`; the `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and testkit `ports` steps pass on every commit; `git grep -nE 'std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env' -- 'crates/gafira-render-cpu/src/*'` finds nothing, and the new test reads no environment either (`current_mode` is built from `cfg!`).
+
+### Negative controls
+
+The eight hand mutants below were applied on the green HEAD, the test that names each one was run, and the change was reverted. None of them is committed, and `git status` is clean at every step. M4 **survived**, and the reason is stated rather than papered over.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| M1 | the export pixel is encoded before it is unpremultiplied | `arq_117_the_export_pixel_is_encoded_in_the_order_of_the_comparison_space` | `left: [128, 89, 63, 128]`, `right: [94, 62, 45, 128]` |
+| M2 | `(c × a) / 255` instead of `(c × a + 127) / 255` | `arq_117_the_export_pixel_is_encoded_in_the_order_of_the_comparison_space` | `left: [94, 62, 44, 128]`, `right: [94, 62, 45, 128]` |
+| M3 | the export is rendered over a different region (one column to the right) | `arq_42_the_preview_and_the_export_agree_on_the_scene` | `64 of 4096 pixels differ by 2/255 or more (allowed 4); worst channel Red at 255/255` |
+| M4 | the preview is rendered at scale 2.0 while the export stays at 1.0 | **survives**: the level of detail does not reach a pixel in this cut (choices, 7) | — |
+| M5 | the budget allows every pixel (`allowed = pixels`) | `arq_113_the_budget_is_one_pixel_in_a_thousand` | `one in a thousand: left: 1000`, `right: 1` |
+| M5b | a stored golden tolerates the one-in-a-thousand budget on its own platform | `arq_113_one_altered_byte_fails_on_this_platform` | `a stored golden is exact on the platform that generated it` |
+| M6 | a pixel with `a = 0` answers its colour instead of four zeroes | `arq_117_a_zero_alpha_pixel_answers_four_zeroes` | `left: [128, 64, 255, 0]`, `right: [0, 0, 0, 0]` |
+| M7 | any difference counts as over the tolerance (`delta != 0`) | `arq_113_the_budget_is_one_pixel_in_a_thousand` | `every pixel at 1/255 stays inside: left: 1`, `right: 0` |
+| M8 | the AC6 fixture ignores the three group opacities | `arq_42_three_nested_semi_transparent_layers_agree` | `three semi-transparent groups change the composite` |
+
+### Choices and deviations
+
+- **The comparator is the test's own, not `gafira-testkit::golden::compare`.** `D9` names the testkit's comparator, and AC6 asks the failure report to name the worst channel and the count of pixels at 2/255 or more, which `Mismatch::Pixels { differing, allowed }` does not carry. The rule of §10 is therefore implemented once, here, and `arq_113_the_budget_is_one_pixel_in_a_thousand` pins it on 1 000 pixels exactly as ARQ-113 states (1 pixel at 2/255 passes, 2 fail, every pixel at 1/255 passes). Cost: the tolerance has a second implementation in the repo; the testkit's is untouched and unconsumed by this crate, which is what keeps the delivery to one new dependency.
+- **The comparator carries its own `premultiply8` and `quantise8`.** Calling `gafira_raster::premultiply_u8` would make the two sides one code path, which is the fake this delivery exists to prevent; ARQ-119's "used, never redefined" is about the adapter's formulas, and this is the test's oracle. The sRGB *curve* is shared on purpose: `LinearRgba::to_srgb`, the function `D9` names.
+- **The golden is raw premultiplied sRGB8 (`.rgba8`), not PNG.** It needs no decoder, so the delivery adds no dependency beyond `gafira-render` (the card's non-goal); raw bytes are the pixels with no encoder between, which is the lossless form ARQ-113 asks for; and the size is the 64 × 64 × 4 the test's constants fix. Regenerating it is an explicit one-off (render `scene()` at `Preview` with `transparent: true`, copy the bytes in); no test in the suite has a write path (AC5).
+- **A page with more than one root loses every root but the last, and `CB3` does not fix it.** The planner emits one task per tile **and root** (`planner.rs:296`), each task holding that root's subtree, and `CpuBackend` writes a task's tile over the surface as "the full content of its region" (CB1's choice). Measured: two disjoint opaque rects at the top level, only the second survives. That is a defect of the `CB1`/`PC1` boundary, outside this card's tests-only scope, so the scene is a **single root group** and the defect is reported here for `verify` and a follow-up. It is exactly the family the golden was meant to catch.
+- **The comparison region is the page origin, and that hides a second defect.** `GraphPageRenderer::render` asks `read_back` for `target_region(request.region)` = `(0, 0, w, h)` while `CpuBackend::read_back` reads `region` in **page** coordinates (`Surface::read` subtracts the surface origin). With a region whose origin is not `(0, 0)` both qualities come back missing a band of `x0` columns and `y0` rows — measured on an opaque page at region `(4, 6, 68, 70)`: 616 of 4 096 pixels were `(0, 0, 0, 0)`. Both sides lose the same band, so AC1 would have passed on a wrong page; the "every pixel is opaque" assertion caught it. The coordinate space of `read_back` is a `gafira-ports`/`CB1` decision, not this card's, so the delivery compares `(0, 0, 64, 64)` and reports it.
+- **The zoom is not pixel-observable in this cut (M4).** The level of detail changes the plan's content keys and the tile grid, and the surface and the coverage are page-sized, so a preview at 200 % renders the same bytes as at 100 % — a page of 512 px with real mips behaves the same. Both requests are built by one `request()` with one `SCALE`, so the two sides cannot disagree by construction; the divergence the criterion names becomes observable with `CB4`'s image sampling. Recorded as a residual risk rather than a closed mutant.
+- **The alpha-0 branch's division is not byte-observable.** Dividing by 0 and then premultiplying by 0 zeroes every channel anyway, so what `arq_117_a_zero_alpha_pixel_answers_four_zeroes` pins is the rule's output — four zeroes, never a colour under zero alpha (M6) — and the guard stays as ARQ-117 states, matching the preview's own read-back. The third row (`a = 0.001`) pins ARQ-117's order: the alpha is quantised first, so an alpha that rounds to zero takes the same branch.
+- **The preview and the export meet exactly on every scene.** `differing == 0` on 4 096 pixels of both the AC1 scene and the three-nested-layer scene: O11's claim ("the preview's surface *is* the export's `D9` conversion") measured, not argued. The tolerance of ARQ-42 is what a GPU backend will need; the CPU adapter does not spend it.
+- **`Cargo.lock` gains one line** (`"gafira-render"` under `gafira-render-cpu`), as `O2` allows. The V5 row is unchanged and that was verified, not assumed: `cargo tree -p gafira-render-cpu -e normal,build --target all` names `gafira-render` zero times, and the V5 policy step passes.
+- **`gafira-doc` and `gafira-time` stay normal dependencies.** The card's plan names `gafira-doc` as a dev-dependency, but it is already a normal one (the crate hands `gafira-doc`'s contract types); `Flicks` is not named at all (the request takes `time: Default::default()`), so no dependency was added for it. The only manifest change is the `gafira-render` dev edge.
+- **Scopes.** The first commit touched `Cargo.toml`, so it ran the `--workspace` clippy scope of ADR 0017; the rest ran the leaf scope. `crates/gafira-render-cpu/src/` is untouched: the whole delivery is `tests/`, the manifest and the lock. Nothing outside `crates/gafira-render-cpu/` changed.
+
+Coordinator decisions on the CB3 round (2026-11-06): the card cited FD-55 in `05`, and FD-55 is
+`04`'s row (§13, `04-funcionalidad-diseno-imagen-exportacion.md:648`); the citation is corrected
+above. The size is accepted at **750 lines of work** (805 with this record) against the card's 300:
+744 of the 750 are tests, the golden is a 16 KiB binary git does not count, and the manifest and
+lock add six. The 840 first reported did not reproduce — it measured against a `develop` that had
+already moved — and the V2 round caught that, which is the reason the figure is stated with the
+base it was measured from.
+
+## CB3b
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: two defects found by CB3's probes block any real page — a second root erases the first, and read_back answers a region in a space the surface does not use; both are fixed in code that is already merged, so the round owes independent probes
+Product IDs: ARQ-42, ARQ-149, ARQ-121; ARQ-02 (source: specs/02-arquitectura-software.md §4.6, §6.1, §6.2; decisions `O12` and `O13` of the change)
+Scope: `CB3b` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render`, the plan composes every root of a region into one task in paint order under one content key (`O12`); in `gafira-render-cpu`, `Surface::read` and `Surface::write` agree that a rectangle is page space, so `read_back` answers the window it was asked for (`O13`); and the tests that pin both.      Non-goals: the compositor option of `O12` (a task per root composited over the surface), which stays rejected until the background leaves the per-root tasks; images (`CB4`), masks and effects (`CB5`), the benches (`CB6`), the parallel bands (`CB7`), the single quantisation (`CB8`), and any change to a V5 row or to a dependency.
+Acceptance:
+  AC1 Given a page whose roots are two top-level shapes, When the plan of one region is built, Then that region carries exactly **one** task whose ops are both roots' ops in paint order, and one content key that changes when **either** root changes (O12) [unit]
+  AC2 Given two disjoint opaque rectangles on one page, When the backend renders the page and the surface is read back, Then **both** rectangles are present — the second root no longer erases the first (ARQ-42) [integration]
+  AC3 Given an opaque page and a region offset from the page origin, When `read_back` answers that region, Then no pixel is transparent and the bytes equal the same window of a full-page read (O13, ARQ-42) [unit]
+  AC4 Given that offset region, When the preview and the export are compared there, Then they agree within ARQ-42's budget of 1/255 on 99,9 % of the pixels (ARQ-42) [integration]
+  AC5 Given the merged plan, When the same frame renders twice, Then the bytes are identical and the region's cached tile is reused rather than re-rendered (ARQ-111) [unit]
+  AC6 Given the two crates, When the CI policy steps run, Then `forbid(unsafe_code)` holds, no V5 row changed, and neither crate names a clock or a file (ARQ-02) [command]
+Plan: `AC1` lands in `crates/gafira-render/src/planner.rs`, where `roots: Vec<(ContentKey, &[RenderOp])>` is walked inside the region loop (`planner.rs:296`): the loop keeps the roots in order and the concatenation is what the task carries. The combined content key must invalidate the region when **any** root changes, so it is derived from the roots' keys in order (`key.rs` already hashes to `ContentKey(u128)` with blake3, which `gafira-render` already depends on). `AC2` is the end-to-end proof in `gafira-render-cpu`'s tests, and it is the one that would have caught this. `AC3` is in `crates/gafira-render-cpu/src/surface.rs`: `read` and `write` are the pair that must agree, and the caller already passes the page-space rectangle. The critical code is the order of the merge and the key combination, and the mapping in `read` — those carry the hand mutants. CB3's tests stay as they are (they pinned the region to `(0,0,·,·)` because of `O13`'s defect); this delivery adds the offset case rather than rewriting them, and if the multi-root fix lets the golden's scene carry two roots, say so instead of silently changing the golden.
+Owner decisions touched: `O12`, `O13`, `O11` (the golden's comparison space is what `AC4` reuses) and `O10` (the rigor).
+
+## CB3b (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `4590c2b fix(gafira-render): answer read_back in the page space of the region` — `read_back` is asked for the request's page-space region, `Surface::write` and `Surface::read` share one page-space mapping and state it, and the offset region is pinned at the unit level (`gafira-render`) and end to end (`gafira-render-cpu`): AC3, AC4.
+- `5dd0691 fix(gafira-render): compose every root of a region into one task` — `composite_key` over the roots' keys in paint order, one task per region carrying every root's operations, the planned capacity and the progress counted over regions: AC1, AC2, AC5.
+- `docs(gafira-render-cpu): record the CB3b delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy -p gafira-render -p gafira-render-cpu --all-targets --locked -- -D warnings`, `cargo test -p gafira-render -p gafira-render-cpu --locked`, `cargo deny check`, and the nine `policy` steps of `.github/workflows/ci.yml` (Format, CLI/UI, `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` step), extracted literally and run under `bash -euo pipefail` from the worktree root. The extractor (`/tmp/gafira-policy-run.py`) was re-checked against the file: the `policy` job holds nine `run:` steps after the toolchain install, which is the only step the extractor skips (it reads no other job). `4590c2b` was verified in isolation with the planner changes stashed, so its 69 `gafira-render` unit tests and 29 `gafira-render-cpu` unit tests are its own. The full workspace suite runs once at the delivery HEAD.
+
+Measured size at `5dd0691`: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **7 files changed, 522 insertions(+), 73 deletions(-)**, of which 444 are tests (`tests.rs` 109, `arq_42_comparison.rs` 177, `page_renderer.rs` 18, and 140 in the two unit-test modules) and 78 are `src/` (`key.rs` 28 new, `surface.rs` 16/12 the shared mapping, `planner.rs` 30, `page.rs` 4). The design forecast 180 (250 at x1.4), so the delivery is 2.9× the forecast and under the ~700-line signal; the overrun is the eight new tests and the two test helpers each suite needed. The coordinator decides.
+
+### RED evidence
+
+Every criterion has a test that names the requirement it proves. Each RED was a failing assertion on the merged code before the code that answers it; none of them is committed and `git status` is clean at every step.
+
+- **AC1** — `planner::tests::arq_42_a_region_is_one_task_with_the_ops_of_every_root_in_paint_order`: before `5dd0691`, `one region, one task: left: 2, right: 1` (the loop pushed one task per region and root). `planner::tests::arq_42_the_merged_key_changes_when_either_root_changes`: `the second root is in the key: left: ContentKey(182778982950694474001743032048409048649), right: the same key` — the region carried the key of the last root, so changing it changed nothing.
+- **AC2** — `arq_42_two_roots_of_a_page_both_survive_the_read_back`: `the first root is drawn: left: [0, 0, 0, 0], right: [255, 0, 0, 255]` on the red rectangle; the blue one was there, which is the measured defect (red `0` pixels, blue `256`).
+- **AC3** — `page::tests::arq_42_read_back_is_asked_for_the_page_space_region_of_the_request`: `left: [IRect { x0: 0, y0: 0, x1: 64, y1: 64 }], right: [IRect { x0: 4, y0: 6, x1: 68, y1: 70 }]`; and `page::tests::arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks` failed on its old expectation, which pinned the defect (`reads == [(0, 0, 256, 256)]` against `[(100, 100, 356, 356)]`). End to end, before `4590c2b` and on a 96-px opaque page, `arq_42_an_offset_region_is_the_window_of_a_full_page_read` fails `an opaque page answers no transparent pixel in an offset region`; the probe measured **616 of 4 096** pixels `(0, 0, 0, 0)` at region `(4, 6, 68, 70)`, the top `6` rows and left `4` columns — the window clipped against its own offset.
+- **AC4** — `arq_42_the_preview_and_the_export_agree_on_an_offset_region` fails the same way before `4590c2b` (`the region carries the whole page, so the comparison is not of a band`), because both qualities lose the same band and the agreement alone would have passed on the wrong page. With the band restored the two sides agree exactly on that region (`differing == 0` of 4 096).
+- **AC5** — `tests::arq_111_a_second_frame_reuses_the_merged_tile`: the merged tile is written once, the second frame writes nothing and the bytes are identical. It is a property of the plan plus the cache, so its RED is M11 (the backend never consults the cache: `the cached tile is reused, not rendered again: left: 2, right: 1`); the "same bytes" half is the determinism rule `CB1` already pins.
+- **AC6** — a command, not a test: both crates still open with `#![forbid(unsafe_code)]` (`gafira-render/src/lib.rs:11`, `gafira-render-cpu/src/lib.rs:25`); the `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and testkit `ports` steps pass on every commit; `git grep -nE 'std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env' -- 'crates/gafira-render/src/*' 'crates/gafira-render-cpu/src/*'` finds nothing (exit 1); and `git diff 8e1a468..HEAD -- Cargo.toml Cargo.lock` is empty, so no dependency and no V5 row moved.
+
+### Negative controls
+
+Eleven hand mutants on the critical code of `O10` were applied on the green HEAD, the test that names each one was run, and the change was reverted. None is committed, and `git status` is clean at every step.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| M1 | the roots are composed in reverse paint order | `arq_42_a_region_is_one_task_with_the_ops_of_every_root_in_paint_order` | `both roots, in the order the page paints them: left: [blue, red], right: [red, blue]` |
+| M2 | the task carries only the last root's operations | `arq_42_a_region_is_one_task_with_the_ops_of_every_root_in_paint_order` | `left: [blue]`, `right: [red, blue]` |
+| M3 | the task carries only the first root's operations | `arq_42_two_roots_of_a_page_both_survive_the_read_back` | `the second root is drawn too: left: [0, 0, 0, 0], right: [0, 0, 255, 255]` |
+| M4 | the composite key hashes the first root only | `arq_42_the_merged_key_changes_when_either_root_changes` | `the second root is in the key: left == right, ContentKey(78829128926504081387489070372405370887)` |
+| M5 | the composite key sorts the roots before hashing | `arq_42_the_merged_key_changes_when_either_root_changes` | `the order of the roots is in the key: left == right, ContentKey(39777558449494923482572564144093467567)` |
+| M6 | the composite key hashes none of the roots | `arq_42_the_merged_key_changes_when_either_root_changes` | `the first root is in the key: left == right, ContentKey(175289666060232691954789616806466760228)` |
+| M7 | the composite key hashes the last root only | `arq_42_the_merged_key_changes_when_either_root_changes` | `the first root is in the key: left == right, ContentKey(78956238150751868312981727035365370660)` |
+| M8 | the read places the pixel one column left of its region position | `arq_42_an_offset_region_reads_back_the_window_the_page_holds` | `the offset read is the window of the page, not its own offset` (byte mismatch from the first row) |
+| M9 | the storage mapping ignores the surface origin (`x` instead of `x - origin.0`) | `arq_42_an_offset_region_reads_back_the_window_the_page_holds` | the same assertion: the read answers the wrong columns and rows |
+| M10 | the renderer translates the region to the surface origin (the defect itself) | `page::tests::arq_42_read_back_is_asked_for_the_page_space_region_of_the_request` | `left: [IRect { x0: 0, y0: 0, x1: 64, y1: 64 }], right: [IRect { x0: 4, y0: 6, x1: 68, y1: 70 }]`; both offset integration tests fail too |
+| M11 | the backend never consults the cache | `arq_111_a_second_frame_reuses_the_merged_tile` | `the cached tile is reused, not rendered again: left: 2, right: 1` |
+
+The one rule of the combiner that these mutants leave unpinned is the root **count** in `composite_key`'s description: with fixed 16-byte keys the count cannot be removed observably without a hash collision, so no test can kill that mutant. It stays as framing, stated rather than claimed.
+
+### Choices and deviations
+
+- **The read-back fix had to touch the caller, against the card's plan.** `O13` and the card's plan say the caller already passes the page-space rectangle and the fix lands in `Surface::read`/`write`. In the code it did not: `GraphPageRenderer::render` handed `read_back` `target_region(request.region)` = `(0, 0, w, h)`, a surface-local rectangle, while `Surface::read` and `Surface::write` already subtracted `TargetDesc.origin` (page space) — that pair is what `arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target` already pinned. The minimal change is therefore `render` passing `request.region`; `target_region` and `whole` are gone. The surface keeps its behaviour and gains one mapping: `write` now maps its target through `source_index`, the same function `read` uses, so "both agree" is structural and not only documented. The alternative the `O13` prose implies — read in surface-local space and leave the caller — was refused because it makes the read disagree with `write` and breaks the pinned `arq_149` read.
+- **`page_renderer`'s key assertion changed with `O12`.** `arq_42_the_rendered_plans_differ_only_in_the_content_keys` asserted the task's key equals root 0's; the page has two roots, so the task now carries the composition. The assertion now requires the task's key to differ from **both** roots' keys. The composition itself is pinned by the planner tests, not here.
+- **`page::tests::arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks` pinned the defect.** Its `reads` expectation was `[(0, 0, w, h)]`; it is now `[region]`, the rule `O13` states. That test is `CB1`/`PC1`'s, not `CB3`'s, so no `CB3` test was rewritten.
+- **A page with no roots now plans one task per region.** With the composition the region always emits a task, whose operations are only the page background once `page.rs` inserts it; before, zero roots meant zero tasks and an unpainted surface. No test pinned the old behaviour, and the new one is what a blank page needs. Stated for `verify`.
+- **The golden's scene is left single-root on purpose.** The defect that forced `group(10, 1.0, &[2, 3, 4, 9])` around `scene()` is gone, so the golden could now carry two roots; it does not, because changing the scene changes the stored reference and `ARQ-113` allows no test to regenerate it. The multi-root coverage is `arq_42_two_roots_of_a_page_both_survive_the_read_back`, with its own bytes. Re-generating the golden on a multi-root scene is a follow-up for the coordinator, not a silent change here.
+- **The offset tests' scene uses an opaque background root.** Both qualities would otherwise "agree" on the same missing band (the reason `CB3` recorded the defect); the tests assert every pixel is opaque before comparing, so a band cannot pass as content. On the pre-fix code the 616 transparent pixels are what fails, not the comparison.
+- **AC5's RED is a mutation, not an initial failure.** The cache and the plan were already deterministic; what `O12` adds is that one merged tile is what is cached. M11 is the wrong behaviour that the test exists to catch.
+- **Scopes.** `4590c2b` touches `gafira-render` and the tests of `gafira-render-cpu`; `5dd0691` touches `gafira-render` and the tests of `gafira-render-cpu`. Neither touches a manifest, `Cargo.lock`, a V5 row or `ci.yml`; no dependency was added, so the leaf scope of ADR 0017 is the one that ran, with both crates in every gate because the delivery names both.
+
+## CB4
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: `DrawImage` is the last op a real page needs before the backend can show a composition, and the colour conversion it demands is exactly where an adapter silently draws the wrong page
+Product IDs: ARQ-121, ARQ-117; ARQ-149, ARQ-42 (source: specs/02-arquitectura-software.md §6.1, §6.2, ARQ-121, ARQ-117, ARQ-149; §10 for the comparison space)
+Scope: `CB4` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, `RenderOp::DrawImage` — the affine resampling of an `ImageBuf` into the tile-local premultiplied `f32` buffer, the bilinear filter, both source formats, the cull of an image that misses the tile, and the composition of the result over the tile's backdrop.      Non-goals: mipmaps and the levels of ARQ-121 (`TileKey` carries the `level`, not the op; this delivery samples level zero — say so instead of deriving the grid), the GPU backend, effects and masks (`CB5`), benches (`CB6`), and any change to `gafira-ports`, `gafira-raster` or the crate's dependencies.
+Acceptance:
+  AC1 Given an `Rgba8` image and a transform that lands it on the texel grid, When the op renders, Then each target pixel is the source texel converted **once** in ARQ-117's order — unpremultiply, sRGB to linear, premultiply — and composited over the backdrop, never composed from a premultiplied value that was converted before the unpremultiply (ARQ-117) [unit]
+  AC2 Given an `RgbaF32` image, When the op renders, Then the texels are taken as linear premultiplied and no colour conversion runs on them (ARQ-117) [unit]
+  AC3 Given a 1×1 image scaled over a whole tile, When it renders, Then every target pixel is that colour: the analytic case, with no filter artefact (ARQ-121) [unit]
+  AC4 Given an integer scale of 2×, When it renders, Then the bilinear weights are taken at **texel centres**: the edge texels reproduce exactly, no weight is taken at a corner, and the two-tap blend at a texel boundary is the quarter / three-quarter pair rather than the nearest texel. A block of constant colour is not asserted — bilinear does not reproduce one at 2×, and demanding it would be nearest-neighbour in bilinear's name (ARQ-121) [unit]
+  AC5 Given a rotation of a checkerboard by 90 degrees, When it renders, Then the output equals the rotated checkerboard within ARQ-42's tolerance (ARQ-42) [unit]
+  AC6 Given an image whose page bounds miss a tile, When the plan runs, Then the op is culled before any sampling, and an image that only partly covers the tile samples only what the tile needs (ARQ-149) [unit]
+  AC7 Given the crate, When the CI policy steps run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged and the crate still names no clock and no file (ARQ-02) [command]
+Plan: the sampling is bilinear and happens in **premultiplied linear light**, so an edge against transparency does not bleed towards black; the source is converted into that space exactly once per texel touched, in ARQ-117's order (`Rgba8`: unpremultiply → `Rgba::to_linear` → premultiply; `RgbaF32`: as it stands). The inverse of `transform` maps a target pixel centre (offset by the tile's origin, `PC1`) into image space, where texel centres sit at `+0.5` and the coordinates are clamped to the edge. The result is composited over the tile's buffer with the same `blend_f32` the fills use (Normal), so a layer's backdrop and an image agree on the arithmetic. The cull reuses `coverage`'s approach with the image's four transformed corners instead of a path's control box. The critical code is the conversion order, the sampling coordinates, the clamp at edges, and the cull — those carry the hand mutants. `ImageBuf` says nothing about its own colour space beyond the format, so a wrong reading of ARQ-117 is silent; AC1's hand-computed texel is what pins it.
+Owner decisions touched: `O11` (the tile buffer is `f32` linear premultiplied, which is what makes the conversion the image's problem and not the compositor's), `O10` (the rigor), `O2` (no new dependency: `gafira-raster` already provides `ImageBuf`).
+
+Coordinator amend on the CB4 round (2026-11-06): two clauses of this card were wrong and the
+implementer was right to deliver the parenthetical instead. `AC4` demanded that at 2× each source
+texel cover exactly its block — bilinear does not do that; the nearest-neighbour reading was mine,
+not the specification's, and the clause now asks for the weights at texel centres and the
+quarter/three-quarter blend, with the constant block explicitly excluded. And the non-goal said
+"the plan carries a `level`": it does not, `TileKey` does, and the op is `{ image, transform }`.
+Both are corrected above; the delivery's stated deviation stands as the correct reading.
+
+## CB4 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `f0d3136 feat(gafira-render-cpu): draw an image with a bilinear filter` — `src/image.rs` samples `RenderOp::DrawImage`: the inverse transform with the tile's origin, texel centres at `+0.5`, bilinear weights in linear premultiplied light, the edge clamp, the per-pixel destination clip and the cull; `coverage::transformed_bounds` is the four-corner box the cull of both ops now shares; the op arm is wired in `backend.rs`. Tests: AC1–AC6 and the `Alpha8` source.
+- `docs(gafira-render-cpu): record the CB4 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`; `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`; `cargo test -p gafira-render-cpu --locked`; `cargo deny check` (`advisories ok, bans ok, licenses ok, sources ok`); and the nine `policy` steps of `.github/workflows/ci.yml` (Format, CLI/UI, `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14, testkit `ports`). The extractor (`/tmp/gafira-policy-run.py`) was re-checked against the file: the `policy` job holds twelve steps, of which ten carry a `run:` and the toolchain install is the only one skipped, which leaves the nine. Every step ran from the worktree root under `bash -euo pipefail`. The full workspace suite runs once at the delivery HEAD.
+
+Measured size at `f0d3136`: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **7 files changed, 693 insertions(+), 13 deletions(-)**, of which **450 are tests** (`tests/image.rs` 445 new, `tests.rs` 5) and **243 are `src/`** (`image.rs` 206 new, `backend.rs` 21/7, `coverage.rs` 14/5, `surface.rs` 1/1, `lib.rs` 1). The design forecast 360 (500 at ×1.4), so the delivery is 1.9× the forecast and within the 700-line signal; the overrun is the eight image tests with their hand-computed constants. The coordinator decides.
+
+### RED evidence
+
+Every criterion has a test that names the requirement it proves. Each RED below was a failing assertion on the code as it stood, none is committed, and `git status` is clean at every step.
+
+- **AC1** — `tests::image::arq_117_an_rgba8_texel_is_converted_once_in_the_order_arq_117_fixes`: before the commit, `the plan runs` → `DriverBlocked` (the op was reported, not drawn). Its four expected texels are computed by hand from ARQ-117's formulas and the sRGB curve of §10 (`[128,64,32,128]` → unpremultiply `(255,128,64)` → decode `(1.0, 0.21586053, 0.05126945)` → premultiply by `128/255` → `(0.50196081, 0.10835353, 0.02573526, 0.50196081)`), together with one texel composited over an opaque `Srgb(0.2,0.4,0.6,1)` backdrop (`s + b × (1 − a)` = `(0.51844829, 0.17452715, 0.18438405, 1)`). The values are compared in the `f64` the formula lives in, with a `1e-6` bound; a wrong reading of ARQ-117 moves a channel by half its value (M1, M2).
+- **AC2** — `arq_117_an_rgba_f32_texel_is_taken_as_linear_premultiplied`: same RED (`DriverBlocked`); four texels of `0.25`/`0.5`-scale premultiplied values are asserted bit for bit as they stand.
+- **AC3** — `arq_121_a_one_texel_image_scaled_over_the_tile_is_that_colour`: same RED; a 1×1 texel under `scale(8)` over an 8×8 tile, asserted exactly on all 64 pixels.
+- **AC4** — `arq_121_an_integer_scale_takes_its_weights_at_texel_centres`: same RED; the eight hand-computed quarters `[0, 0.0625, 0.1875, 0.3125, 0.4375, 0.625, 0.875, 1]`, each also asserted *not* to be the corner reading of the same sample.
+- **AC5** — `arq_42_a_checkerboard_rotated_by_ninety_degrees_is_the_rotated_checkerboard`: same RED; the expectation is the permutation the geometry gives, `page(x, y) = source(y, 3 − x)` for `rotate_about(π/2, (2, 2))` on a 4×4 image, asserted exactly on all 16 pixels.
+- **AC6** — `arq_149_the_cull_skips_an_image_that_misses_the_tile` and `arq_149_an_image_that_partly_covers_the_tile_draws_only_its_own_window`: same RED. Their GREEN is not evidence of the cull: both halves of the criterion are answered by two mechanisms at once (see the survivor below), so these two tests first fail against *wrong* code, which is M8, M9 and M10.
+- **AC7** — a command, not a test: `#![forbid(unsafe_code)]` still opens `gafira-render-cpu/src/lib.rs`; the `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and testkit `ports` steps pass on the commit; `git grep -nE 'std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env' -- 'crates/gafira-render-cpu/src/*'` finds nothing (exit 1); and `git diff 2b949be..HEAD -- Cargo.toml Cargo.lock crates/gafira-render-cpu/Cargo.toml` is empty, so no dependency arrived (`O2`) and no V5 row moved.
+
+### Negative controls
+
+Eleven hand mutants on the critical code of `O10` were applied on the green tree, the test that names each one was run alone, and the change was reverted. None is committed, and `git status` is clean at every step.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| M1 | the 8-bit texel is decoded without unpremultiplying or premultiplying (the premultiplied number converted as if straight) | `arq_117_an_rgba8_texel_is_converted_once_in_the_order_arq_117_fixes` | `texel (0, 0): channel 0 is [0.21586053, 0.051269464, 0.014443845, 0.5019608], expected [0.501960813999176, …]` |
+| M2 | the converted texel is not premultiplied again | the same test | `… channel 0 is [1.0, 0.21586053, 0.051269464, 0.5019608], expected [0.501960813999176, …]` |
+| M3 | the `RgbaF32` texels are run through the sRGB curve | `arq_117_an_rgba_f32_texel_is_taken_as_linear_premultiplied` | `page (0, 0) is the texel as it stands` |
+| M4 | the sample is mapped with the transform instead of its inverse | `arq_121_an_integer_scale_takes_its_weights_at_texel_centres` | `page (0, 0) of the 2× scale` |
+| M5 | the texel centres are taken at the corners (no `−0.5` in the sample position) | the same test | `page (0, 0) of the 2× scale` — the first pixel answers `0.0625`, not `0` |
+| M6 | a tap outside the grid wraps to the other edge instead of repeating the edge texel | the same test | `page (0, 0) of the 2× scale: left: [0.25, 0.25, 0.25, 1.0], right: [0.0, 0.0, 0.0, 1.0]` |
+| M7 | the cull is removed entirely | — | **survives**, and no pixel can kill it: see below |
+| M8 | the cull's box is the transformed first corner only (not the four) | `arq_149_an_image_that_partly_covers_the_tile_draws_only_its_own_window` | `page (0, 0) is the image's texel (1, 1): channel 0 is [0.0, …], expected [0.577580452, …]` |
+| M9 | the cull compares the image's own rectangle at `(0, 0)` and ignores the transform | the same test | `the tile's top-left is the image's (0, 0): channel 0 is [0.0, …], expected [0.501960813999176, …]` |
+| M10 | the destination clip is removed (every pixel samples, clamped) | the same test | `page (1, 0) is outside the image and stays transparent` |
+| M11 | the bilinear weights are transposed (`across` and `down` swapped) | `arq_121_an_integer_scale_takes_its_weights_at_texel_centres` | `page (1, 0) of the 2× scale` |
+
+**M7 is a stated survivor, not a claim.** An image whose page bounds miss the tile draws nothing whether the cull runs or not, because the destination clip already rejects every sample point of the tile (the sample lands outside `[0, width) × [0, height)`); the cull saves the sampling and cannot change a pixel. Two mutants pin what the cull *is* instead: M8 (all four corners, not one) and M9 (the transform, not the image's own rectangle), each killed by the test AC6 names. `CB1` has the same structure for the fill's cull. The coordinator may prefer to reword AC6's first clause to the observable form ("the tile keeps what it had"), or to keep the cull as the optimisation it is; either way the code does not change. The test recorded in the next subsection pins the cull's one observable trace, so removing it no longer leaves the suite green.
+
+### Mutants the verify round left alive (C1, C2, W10)
+
+The V2 round of `CB4` ran three mutants this delivery's suite could not kill — `HM1` (filter the premultiplied sRGB value and convert the mix once) and `HM2` (filter straight alpha and premultiply at the end), both `C1`, and `HM3` (clip to the page-space bounding box and clamp the sample), `C2` — and reported `M7` above, the cull's survival, as `W10`. Three tests close them, one commit each: `cc53364 test(gafira-render-cpu): pin the 8-bit filtering space at a 1.5x scale`, `7724ad5 test(gafira-render-cpu): pin the per-pixel clip with a rotated image` and `07908ba test(gafira-render-cpu): pin the cull through an off-tile Alpha8 image`. Each was written first and passed on the unmutated code, then the mutant was applied on the green tree, the new test failed, and the mutant was reverted; none is committed and `git status` is clean at every step. **The sampler did not change**: my own derivation of `ARQ-117` for the 1.5× case agrees with it to `1e-6`, so the round's verdict on the arithmetic stands and only the protection moved.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| HM1 | filter the `Rgba8` source in its own space: mix the premultiplied sRGB values, convert the mix once | `arq_117_a_scaled_rgba8_image_is_filtered_after_each_texel_is_converted` | two forms of the same wrong reading, both killed. **Float convert-once:** `page (1, 1) of the 1.5× scale: channel 0 is [0.49064726, …]` vs the expected `[0.52189588375, …]`, and it also breaks **two pre-existing `Rgba8` tests** (38 passed, 3 failed) because a float unpremultiply answers `0.5` where ARQ-117's integer path rounds `127.5` up to `128`. **Byte-space mix:** the new test fails at `0.48697385`, 40 others green. No single mutant produces both cells — the round-1 closure recorded one value with the other form's count, and this row states both |
+| HM2 | filter with straight alpha: unpremultiply each tap, mix, premultiply once at the end | the same test | `page (1, 1) of the 1.5× scale: channel 0 is [0.436853, 0.12878996, 0.10891713, 0.6647059], expected [0.52189588375, …]`; the other **38 were green** |
+| HM3 | clip to the image's page-space bounding box and clamp the sample | `arq_149_a_rotated_image_paints_its_quad_not_the_corners_of_its_box` | `page (0, 0) is inside the image's box and outside its quad`; the other **39 were green** |
+| M7 | the `DrawImage` cull is removed entirely | `arq_149_an_off_tile_alpha8_image_is_culled_before_the_format_is_refused` | `a culled image is not sampled, so its format is not refused: Effect(UnsupportedFormat { format: Alpha8 })`; the other **40 were green** |
+
+The constants are derived, not read: `ARQ-117` gives each texel's conversion (unpremultiply `u8`, sRGB-decode with the §10 curve, premultiply), the 1.5× scale gives the sample positions and the weights, and the scratch derivation (`/tmp/cb4_expect.py`, outside the repo) reproduces the delivered texels of `AC1` before computing the mixes, so the two fixtures share one derivation. The 45° fixture's gap pixels and the `Alpha8` order were derived from the transforms, not from the sampler.
+
+- **`C1` — the filtering space.** A 1.5× scale of the `AC1` source puts the destination centres at `(0.333, 0.333)` to `(1.667, 1.667)` in image space, so the middle row and column weigh two texels `0.5/0.5` and the centre weighs all four a quarter each; the outer row and column clamp to one texel and stay exact. The nine expected values are asserted in the `f64` the other `AC1` constants use. It is the only test that weighs an `Rgba8` texel, and it kills both wrong readings by 0.03 and 0.09 on the red channel — the 1:1 translate of `AC1` is blind to both.
+- **`C2` — the clip's shape.** A 4×4 white image turned 45° about `(2, 2)` has its box at `(−0.828, −0.828)-(4.828, 4.828)` and its quad outside that box's corners: page `(0, 0)`, `(3, 0)` and `(4, 4)` map to image `(−0.121, 2)`, `(2, −0.121)` and `(5.536, 2)`. They must stay transparent, and keep the backdrop they were drawn over, while page `(2, 2)` — image `(2.707, 2)` — is painted. `HM3` paints all three with the edge colour.
+- **`W10` — the cull's trace.** The behaviour was measured first: an off-tile `Alpha8` image is skipped and `execute` answers `Ok`, while the same image `scale(4.0)` over the tile is refused with `Effect(UnsupportedFormat { format: Alpha8 })`. Both halves are asserted in one test, so the skip cannot be read as a swallowed error, and removing the cull fails on the skip. The test is the observable form of `AC6`'s first clause; if the coordinator rewords the clause instead, this test is its sentence.
+
+Gates per commit of this round, each run alone, exit 0: `cargo fmt --check`; `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`; `cargo test -p gafira-render-cpu --locked`; `cargo deny check`; and the nine `policy` steps of `.github/workflows/ci.yml` under `/tmp/gafira-policy-run.py`, re-checked against the file (the `policy` job has ten `run:` steps, the toolchain install is the one skipped). The crate suite went 38 → 39 → 40 → 41 unit tests, and the two `gafira-render-cpu` binaries were green at every step. The full workspace suite runs once at the delivery HEAD.
+
+Measured size of this round at `07908ba`, before this record: `git diff --shortstat 13f5195..07908ba` → **1 file changed, 200 insertions(+), 1 deletion(-)**, all of it `src/tests/image.rs`; the record adds its own 22 lines and no source. The delivery as a whole at the same commit, `git diff --shortstat 2b949be..07908ba` → **9 files changed, 1207 insertions(+), 15 deletions(-)**, of which 649 are tests (`src/tests/image.rs` 644 and `src/tests.rs` 5); with this record, HEAD holds 1228 insertions over the same nine files. This round adds no `src/` line.
+
+### Choices and deviations
+
+- **AC4's second clause cannot hold for a bilinear filter, and is delivered in the form it can hold.** At an integer 2× scale the destination pixel centres fall a quarter texel either side of every texel boundary, so bilinear answers `0.75·A + 0.25·B` on the inside of a block and `0.25·A + 0.75·B` on the other side; "each source texel covers exactly its 2×2 block and no value bleeds across a texel boundary" is nearest-neighbour, which contradicts the filter the same criterion, the scope and the plan all fix as bilinear. The test therefore pins what the criterion's own parenthetical says — the weights are taken at **texel centres**, and the edge texels are reproduced exactly (`0` and `1` at the two ends) — with the corner reading asserted as a difference at every pixel but the last. Deviation stated for `verify`; the criterion's wording is the coordinator's to settle.
+- **The destination clip is per pixel, and it is why the cull is unobservable.** A pixel is drawn when its sample point falls inside `[0, width) × [0, height)`; clipping to the image's page-space *box* instead would paint the corners of a rotated image with its clamped edge colour, and clipping to the tile alone would flood the tile with it (M10). The consequence is M7: the box the cull tests is exactly the union of the pixels the per-pixel clip accepts, so "misses the tile" is guaranteed twice and only the rounder of the two shows.
+- **The card says "the plan carries a `level`"; the op carries none.** `RenderOp::DrawImage` is `{ image, transform }` (`crates/gafira-ports/src/render.rs:75`); `level` is a field of `TileKey`, the *tile's* mip level, not the image's. So the image is sampled at level zero, its own grid, and no mip grid is derived — which is what the card asks to say. ARQ-121's levels stay a later delivery, together with the flag that would select them.
+- **An `Alpha8` image is refused, and the cull runs before the refusal.** `PixelBuf::Alpha8` has no colour, so `Source::of` answers `EffectError::UnsupportedFormat` through `surface::not_rgba`, the vocabulary the crate already uses for a buffer that is not an RGBA target, rather than drawing a guessed colour. Because the cull precedes the conversion, an `Alpha8` image whose bounds miss the tile is skipped without the report; that is `D6`'s rule for any culled op (it contributes nothing, so nothing is sampled), stated so `verify` does not read it as a swallowed error.
+- **`decode_srgb8` is reused rather than re-written.** The cached-tile path already converts a stored 8-bit tile into the `f32` surface in ARQ-117's order; the image path calls the same function, so there is one implementation of the order and the tests of both paths pin it. It is now `pub(crate)`, and so is `not_rgba`.
+- **No converted copy of the image is held.** Each tap converts its own texel, so an 8-bit source pays the sRGB curve up to four times per output pixel and the crate adds no image-sized buffer (the cap of `D-03` is why). No document produces this op yet (ARQ-134), and `CB6` measures frames; if the preview ever draws a large `Rgba8` image, the conversion is the first thing to cache per tile.
+- **A transform with no area draws nothing, by a guard that no test can see.** `draw` returns early when the inverse is not finite, and the destination clip would reject every pixel of such a transform anyway. It is kept as the explicit statement of the rule, and it is not claimed as tested.
+- **The four-corner box moved to `coverage::transformed_bounds`.** `page_bounds` (the fill's control-point box) now calls it, so "the box of a transformed rectangle" exists once for both ops; the fill's cull is unchanged and its tests pass untouched. `page_bounds` keeps its name and its meaning for a path.
+- **The CB4 tests are a child module, the split `CB2`'s record asked for.** `src/tests/image.rs` is `mod image;` inside `tests` and reuses the scene, frame and cache helpers through `super::*`; `tests.rs` grows by five lines and the new tests do not push it past 1 600 lines.
+- **AC5's direction is not distinguished by a symmetric checkerboard.** A quarter turn in either direction inverts a `(column + row) mod 2` pattern identically, so a sign error in the inverse would survive AC5; what pins the mapping is M4 (forward instead of inverse, killed by AC4's 2× scale) and the rotated expectation itself. An asymmetric rotation case would pin the direction and the card does not ask for one; stated for `verify`.
+
+## CB5
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: the three remaining ops are where the layer stack, the mask and the effects meet, and §4.6 now settles them (SP2, closed 2026-11-05) — a wrong reading here stays invisible until a document emits them
+Product IDs: ARQ-118, ARQ-119, ARQ-120, ARQ-112; ARQ-110 (source: specs/02-arquitectura-software.md §4.6 — the `ApplyMask` and `ApplyTransition` readings SP2 closed —, §4.17, ARQ-110, ARQ-112, ARQ-118, ARQ-119, ARQ-120)
+Scope: `CB5` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, `ApplyMask` (the coverage applied to the open layer, four premultiplied channels, anchored at the layer's top-left with no rescale), `ApplyEffect` (the tile grown by the effect's `roi`, the effect run once, the result cropped back), and `ApplyTransition` (`to` = the layer's content, `from` = the layer's background, both at the destination's region and format).      Non-goals: new ops or a new `Transition` variant (the known limit of §4.6 — a transition between two independent clips is not expressible — is recorded, not solved), mipmaps, the GPU backend, benches (`CB6`), the single quantisation (`CB8`), and any change to `gafira-ports`, `gafira-raster` or the crate's dependencies.
+Acceptance:
+  AC1 Given an open layer and an `ApplyMask` whose mask is the size of the layer, When the op runs, Then the four premultiplied channels are multiplied by the mask's coverage and the result stays premultiplied — not unpremultiplied, and not only the alpha (ARQ-119, §4.6) [unit]
+  AC2 Given a mask smaller than the layer, When the op runs, Then only the mask's own rectangle changes and every pixel outside it keeps the value it had (§4.6) [unit]
+  AC3 Given an `ApplyMask` outside a `PushLayer`/`PopLayer` pair, When the tile runs, Then it is refused rather than given a behaviour: §4.6 calls that plan out of the domain and leaves the result unspecified (ARQ-110) [unit]
+  AC4 Given an `ApplyEffect` whose effect answers an `roi` larger than the tile, When the tile runs, Then the tile's ops are rendered over the grown rectangle, the effect runs **once** over it, and the tile keeps the crop — no pixel of the crop is left as it would have been without the effect (ARQ-119, ARQ-120) [unit]
+  AC5 Given an effect that honours cancellation, When the token fires during it, Then the tile answers `Cancelled` and the layer keeps what it had before the op (ARQ-112) [unit]
+  AC6 Given an open layer over a background, When `ApplyTransition` runs with `progress` 0 and with 1, Then the layer's content equals its background (`from`, the pixels `PopLayer` will composite onto) and the content drawn since the `PushLayer` (`to`) respectively, exactly (§4.6, ARQ-118) [unit]
+  AC7 Given a finite `progress` outside `[0, 1]`, When it runs, Then it is clipped to the range, and a NaN or infinite one answers `Err` (ARQ-118) [unit]
+  AC8 Given the crate, When the CI policy steps run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged and the crate still names no clock and no file (ARQ-02) [command]
+Plan: §4.6 settles the three readings, so this delivery implements them rather than choosing them; quote the paragraph in the record for each op. `ApplyMask` multiplies the open layer's buffer by the mask sampled at the same index — the layer's bounds are the task's region (§4.6), so the mask's `(0,0)` is the tile's `(0,0)` and a smaller mask stops where it stops. `ApplyTransition` needs no snapshot of the background: while a layer is open nothing writes to its parent, so the parent's buffer **at the op** is the background **at the push**; the op replaces the open layer's buffer with the result. `ApplyEffect` is the one that changes the shape of the work: the effect's `roi(cx, p, out)` decides how far outside the tile it must read, the ops are rendered over that grown rectangle (clipped to the page), the effect runs once on it, and the tile keeps its own crop — so the grown rectangle must be computed **before** the tile is rendered, and the cost of the growth lands on this delivery's arithmetic. The critical code is the mask's indexing, the background reading, the ROI growth and its crop, and the cancellation checkpoint — those carry the hand mutants. Nothing emits these ops yet (ARQ-134), so this is proven on synthetic plans, and the record says so.
+Owner decisions touched: `O11` (the layer buffers are `f32` linear premultiplied, which is what makes the mask a multiplication and the transition a mix of two buffers of the same size), `O10` (the rigor), `O2` (no new dependency).
+
+## CB5 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `2a7f72f feat(gafira-render-cpu): mask the open layer with its coverage` — `Layers::apply_mask` scales the open layer's four premultiplied channels by the 8-bit coverage, clipped to the overlap of the mask and the layer, and refuses an `ApplyMask` with no layer open: 3 tests (AC1, AC2 with the spec's own 128 × 128 over 256 × 256 case, AC3).
+- `2279fe8 feat(gafira-render-cpu): grow the tile by the effect ROI and run the effect once` — `src/effect.rs` computes the grown rectangle before anything is drawn, `render_tile` renders the plan's ops over it, the effect runs once over that buffer and the tile keeps its own crop: 3 tests (AC4 twice, AC5).
+- `6dbaa02 feat(gafira-render-cpu): blend the open layer with its background through a transition` — `Layers::apply_transition` runs the op with `to` = the layer and `from` = the pixels the `PopLayer` composites onto, clips the progress and refuses a non-finite one, and replaces the layer's content with the result: 2 tests for AC6 (the second one nested), 3 for AC7.
+- `e71a8fe fix(gafira-render-cpu): anchor the mask at the task's corner inside the grown tile` — the anchor the card states, pinned by a test: 1 test. When the same task carries an effect the buffer is grown, and the mask still starts at the tile's `(0, 0)`; the first cut started at the grown buffer's origin and the new test is its RED.
+- `docs(gafira-render-cpu): record the CB5 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`; `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`; `cargo test -p gafira-render-cpu --locked`; `cargo deny check` (`advisories ok, bans ok, licenses ok, sources ok`); and the nine `policy` steps of `.github/workflows/ci.yml` (Format, CLI/UI, `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14, testkit `ports`) under `/tmp/gafira-policy-run.py`, re-checked against the file: the `policy` job holds twelve steps, ten of them with a `run:`, and only the toolchain install is skipped, which leaves the nine. Every step ran from the worktree root under `bash -euo pipefail`. The full workspace suite runs once at the delivery HEAD.
+
+Measured size: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **7 files changed, 1172 insertions(+), 42 deletions(-)**, of which **357 are `src/`** (`layer.rs` 130/1, `backend.rs` 117/41, `effect.rs` 109, `lib.rs` 1) and **815 are tests** (`src/tests/ops.rs` 566, `src/tests/effects.rs` 247, `src/tests.rs` 2). The design forecast 420 (590 at ×1.4), so the delivery is 2.8× the forecast, above the 700-line signal, and the overrun is again the tests: the twelve behaviour tests carry hand-derived constants (the premultiplied channel by derived coverage, the page clip's window, the nested layer's two composites, the probe transition's progress). No dependency changed (`O2`): `git diff 90603a6..HEAD -- Cargo.toml Cargo.lock crates/gafira-render-cpu/Cargo.toml` is empty. With this record the diff is **8 files changed, 1244 insertions(+), 42 deletions(-)**: the seven above plus this section, which is why the record cannot name its own commit. The coordinator decides.
+
+### The reading, quoted from where it is settled
+
+`02-arquitectura-software.md` §4.6 settles the three ops (SP2, closed 2026-11-05), so this delivery implements them and does not choose them. Per op:
+
+- **`ApplyMask`** — "aplica la cobertura de su `AlphaMask` —8 bits, un solo canal— a los píxeles premultiplicados de la capa abierta, **los cuatro canales**, de modo que el resultado sigue premultiplicado (ARQ-117). La máscara se ancla en la **esquina superior izquierda de la capa, sin reescalado**: un píxel de máscara por píxel de la capa […] Donde la máscara no llega, la capa queda como estaba; una máscara menor que la capa enmascara solo su propio rectángulo. Un `ApplyMask` fuera de una pareja `PushLayer`/`PopLayer` **no está en el dominio del plan y su resultado no está especificado**." The card adds the anchor: the layer's bounds are the task's, "so the mask's `(0, 0)` is the tile's `(0, 0)`".
+- **`ApplyTransition`** — "«Hacia» es el contenido de la capa: lo dibujado desde el `PushLayer` de esa capa hasta el op. «Desde» es el fondo de la capa: **lo que la superficie tenía al abrirse esa capa**, es decir los píxeles sobre los que `PopLayer` la compondrá. Las dos entradas tienen la región y el formato del destino, como exige ARQ-118. Al ejecutarse, **el op reemplaza el contenido de la capa por el resultado**". No snapshot is needed: while a layer is open nothing writes to its parent, so the parent at the op is the background at the push. ARQ-118 adds: `progress` finite outside `[0, 1]` is clipped, NaN and `±∞` are `Err`, and 0 gives `from` and 1 gives `to` exactly.
+- **`ApplyEffect`** — ARQ-120: "`roi` devuelve la **región de entrada necesaria** con la `scale` del `cx` que recibe. Un tile pasa su ventana en `cx.tile`: `x` e `y` son el origen de la `roi` después de intersecarla con la imagen, no el de `out`". With the design's consequence that the layer region is "the tile's region (grown by the effect ROI in `CB5`)", the grown rectangle must exist **before** the tile is drawn; the effect runs once over it and the tile keeps its crop.
+
+Nothing emits these three ops yet (ARQ-134), so every test below runs on a synthetic plan and no document is exercised: that is the stated limit of this delivery.
+
+### RED evidence
+
+Every criterion has a test that names the requirement it proves. Each RED is the failing assertion observed on the code as it stood; the mutation rows of the next subsection are where a behaviour that only exists once the feature lands gets its RED. None of the mutations is committed, and `git status` is clean at every step.
+
+- **AC1** — `tests::ops::arq_119_a_mask_scales_all_four_premultiplied_channels`: before `2a7f72f`, `the plan runs: DriverBlocked` (the op was reported, not applied). The fixture's layer is `(0.10702057, …, 0.5)` premultiplied, so the colour and the alpha are distinct numbers and one mask row carries four different coverages. With M1: `ARQ-119 column 1 channel 0 with coverage 64: the mask multiplies the premultiplied channel, got 0.10702057 expected 0.026860066` — the alpha-only reading. Coverage 0 and 255 are asserted exactly.
+- **AC2** — `tests::ops::spec_02_4_6_a_mask_smaller_than_the_layer_masks_only_its_rectangle`: the spec's own acceptance case, a 128 × 128 mask over a 256 × 256 layer, every one of the 65 536 pixels asserted — transparent under the mask's 0, byte-identical outside it — plus the same mask at 255 leaving the layer byte-identical. RED as `DriverBlocked`; with M2 it fails on an out-of-bounds mask index and with M4 on `(0, 0) under a 255 mask is unchanged, byte for byte`.
+- **AC3** — `tests::ops::spec_02_4_6_a_mask_outside_a_layer_is_refused`. This test passes before the implementation too, because *every* op was refused then, so its RED is M3: the refusal replaced by silence gives `a mask with no open layer is out of the plan's domain: Ok(RenderReport { done: 1, left: 0 })`.
+- **AC4** — `tests::ops::arq_120_the_effect_reads_past_the_tile_edge_and_runs_once` and `arq_120_the_grown_rectangle_is_clipped_to_the_page`: before `2279fe8`, `DriverBlocked`. The first is the criterion's hard half: a fill that ends exactly at the tile's top-left, an effect that shifts its input by 4 px, so the pixel the crop shows can only come from **outside** the tile; the same scene without the effect is transparent there, the effect is called once, and the buffer it was handed is 12 × 12. The second pins the page clip: a 100 px pad asks for a 208 × 208 region and the effect is handed the 16 × 16 page.
+- **AC5** — `tests::ops::arq_112_a_cancelled_effect_aborts_the_tile_before_it_is_committed`: the effect cancels the token inside `run_cpu` and the tile answers `Cancelled` **and never reaches the cache**; the control (a live token, the same scene) commits one tile. The cache is the observation because a cancelled frame drops its surface, so "the layer keeps what it had" cannot be read back — what can be read is that the commit never happened.
+- **AC6** — `tests::ops::spec_02_4_6_a_transition_takes_from_the_background_and_to_the_layer` and `spec_02_4_6_a_nested_transition_takes_from_the_layer_it_composites_onto`: before `6dbaa02`, `DriverBlocked`. The first compares whole surfaces byte for byte: at 0 the page equals the background-only render, at 1 the render of the same ops with no transition, and the fixture asserts those two differ (a translucent layer over an opaque background). The second is what tells the parent from the page: at 0 a nested layer holds the **enclosing layer's** premultiplied content, so the page's pixels would leave a different number — both are computed through `blend_f32` and asserted to differ.
+- **AC7** — `arq_118_a_finite_progress_outside_the_range_is_clipped` (−0.5 equals 0, 1.5 equals 1, byte for byte), `arq_110_a_non_finite_progress_is_refused` (NaN and both infinities give an `Err` that names `progress` and write no tile) and `arq_118_the_backend_clips_the_progress_it_hands_a_transition` (a probe transition records what it was handed: 0.0 and 1.0 for the two ends, and it is never called for a non-finite one). The third is needed because `gafira-raster`'s transitions check and clip the same value themselves, so the two `Dissolve` tests cannot see the op's own clip (M11 below).
+- **AC8** — a command, not a test: `crates/gafira-render-cpu/src/lib.rs` still opens with `#![forbid(unsafe_code)]`; the `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and testkit `ports` steps pass on every commit; `git grep -nE 'std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env' -- 'crates/gafira-render-cpu/src/*'` finds nothing (exit 1); and no manifest or lock line moved (`O2`).
+
+### Negative controls
+
+Thirteen hand mutants on the critical code of `O10` were applied on the green tree, the test that names each one was run alone, and the change was reverted. None is committed, and `git status` is clean at every step. The five mask rows were re-applied after `e71a8fe` changed the anchor's signature and still kill.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| M1 | the mask multiplies only the alpha, not all four channels | `arq_119_a_mask_scales_all_four_premultiplied_channels` | `ARQ-119 column 1 channel 0 with coverage 64: … got 0.10702057 expected 0.026860066` |
+| M2 | the mask's rows are indexed with the layer's stride instead of the mask's | `spec_02_4_6_a_mask_smaller_than_the_layer_masks_only_its_rectangle` | `index out of bounds: the len is 16384 but the index is 16384` |
+| M3 | an `ApplyMask` with no open layer is ignored instead of refused | `spec_02_4_6_a_mask_outside_a_layer_is_refused` | `a mask with no open layer is out of the plan's domain: Ok(RenderReport { done: 1, left: 0 })` |
+| M4 | the 8-bit coverage is divided by 256 instead of 255 | `…a_mask_smaller…` (and AC1) | `(0, 0) under a 255 mask is unchanged, byte for byte` |
+| M5 | the mask is anchored at the grown buffer's origin instead of the task's corner | `spec_02_4_6_the_mask_anchors_at_the_tile_when_the_task_grows` | `(0, 0) channel 0: the mask starts at the tile's corner, got 0.07058824 expected 0` |
+| M6 | the tile is never grown: `roi` is not asked | `arq_120_the_effect_reads_past_the_tile_edge_and_runs_once` and `…clipped_to_the_page` | `the grown rectangle: left: [(8, 8)], right: [(12, 12)]` and `an asked-for 100 px pad is clipped to the page: left: [(8, 8)], right: [(16, 16)]` |
+| M7 | the grown rectangle is not clipped to the page | `arq_120_the_grown_rectangle_is_clipped_to_the_page` | `an asked-for 100 px pad is clipped to the page: left: [(208, 208)]` |
+| M8 | the crop reads at the buffer's origin instead of the tile's offset in it | `arq_120_the_effect_reads_past_the_tile_edge_and_runs_once` | `the crop starts at the tile's offset in the grown buffer` |
+| M9 | the effect's result is committed with no checkpoint after the run | `arq_112_a_cancelled_effect_aborts_the_tile_before_it_is_committed` | `a cancelled tile never reaches the cache` |
+| M10 | `from` and `to` are swapped | the two AC6 tests | `progress 0 is the layer's background, byte for byte` |
+| M11 | the op hands the transition the raw `progress` (no clip of its own) | `arq_118_the_backend_clips_the_progress_it_hands_a_transition` | `-0.5 reaches the op as 0: left: [-0.5]` — the seven other transition tests stay green, which is why the probe exists |
+| M12 | the op does not refuse a non-finite `progress` | `arq_110_a_non_finite_progress_is_refused` and `…clips_the_progress…` | `NaN is refused: Ok(RenderReport { done: 1, left: 0 })` |
+| M13 | `from` is the page's pixels even for a nested layer | `spec_02_4_6_a_nested_transition_takes_from_the_layer_it_composites_onto` | `at 0 the nested layer holds the layer it composites onto: left: [0.21404114, 0.05087609, 0.21404114, 1.0]` |
+
+**The grown cull is a pixel rule on a grown tile, and the fix round pins it.** Moving the fill's and the image's cull from the grown rectangle back to `task.region` is **not** an equivalent mutant: `coverage::meets` is inclusive, so an op that merely *touches* the tile survives either reading, but an op whose box lies strictly inside the margin — outside the tile and inside what the effect reads — is dropped by the task-region cull, and the effect pulls transparent black into the tile. The `CB5` round measured it as `(0.4, 0.3, 0.2, 0.5)` → `0` on the crop. The rule the code keeps is the grown one, because the buffer exists to feed the effect: `arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect` pins it, and M-C2 of the fix round is its kill. This supersedes the sentence above that read the survival as `CB4`'s M7: for the case the growth serves, the cull is a pixel rule, not only skipped work.
+
+### Choices and deviations
+
+- **The mask's anchor when the same task also grows the tile.** The card says the layer's bounds are the task's, "so the mask's `(0, 0)` is the tile's `(0, 0)`"; the design's `D4` consequence says the layer region is "the tile's region (grown by the effect ROI in `CB5`)". Taken together they disagree for a task that carries both an `ApplyMask` and an `ApplyEffect`: anchored at the grown corner the mask would start `grown.x0 − region.x0` pixels away from the task's own geometry, and §4.6 sizes the mask as the layer, which a document cannot know once the growth depends on an effect's private `roi`. The card's sentence wins: the mask starts at the tile's corner inside the buffer (`mask_origin`), so it masks exactly the task's rectangle and never reaches into the growth. `spec_02_4_6_the_mask_anchors_at_the_tile_when_the_task_grows` pins it and M5 is its RED.
+- **The effect's destination is the whole grown buffer, not the crop.** `Effect::run_cpu` writes a full `dst`, so the op is handed the grown rectangle and the tile's crop is taken when the tile is written to the surface (`backend::crop`). A later op therefore sees the effect's output over the whole grown buffer; only the crop reaches the page, and `D6` already fixes that a tile is the full content of its region. The destination itself is **the backend's one scratch**, not a per-op allocation: it is recounted by `memory_usage`, dropped by `trim`, and its peak is refused against `SURFACE_BUDGET` before it grows (`O17`, fix round below; `arq_143_the_effect_scratch_is_accounted_and_trim_drops_it`).
+- **`ApplyEffect`'s `cx.tile` for the run and for the `roi`.** The growth composes, in plan order: each effect's `roi` is asked with the buffer the previous ops produced as its `out` (and as the window it sits in), so a second effect measures its input over what the first one grew. `run_cpu` gets the **grown** window, which is what ARQ-120's rule describes ("`x` e `y` son el origen de la `roi` después de intersecarla con la imagen"). An effect that depends on position or size and checks its window before writing therefore sees a true window at run time. `image_width`/`image_height` are the **surface's** page rectangle, which is the only page extent this backend is given; for a tile that is the whole surface the window is `(0, 0)` with its own size, which ARQ-120 says is bit-identical to `None`. The composition is the fix round's `C1`; the tile-only reading is what it replaced.
+- **The transition's two inputs are `f32` in both qualities, and that is not a deviation from `ARQ-118`.** The clause — "«Desde», «hacia» y destino tienen las mismas dimensiones y el mismo formato, `Rgba8` o `RgbaF32`" — is about the **op's three buffers**, and all three are `RgbaF32` and the same size, which is the destination's format: `O11` and 02 §4.6 fix the destination as `f32` ("la vista previa acumula en `f32` y cuantiza una sola vez, al entregar la superficie"). `TargetDesc::format` decides only what `read_back` answers, so an `Rgba8` target hands the op `RgbaF32` buffers and quantises once at the end; a second accumulation path is what `O11` supersedes. Recorded as the reading, not as a deviation (`S1`).
+- **`ApplyTransition` with no open layer is refused** with `RenderError::DriverBlocked`. The card states the refusal only for `ApplyMask`, but `from` is defined as "los píxeles sobre los que `PopLayer` la compondrá" and without a `PopLayer` there is no such pixels, so the plan is outside what the op can define. Nothing in the port carries a plan-validation error, and this is the one the crate already uses for a plan it cannot execute.
+- **The op clips and refuses `progress` itself.** `gafira-raster`'s transitions check the same value and clip it again (`transitions::guard`), so for `Dissolve` the op's own clip is unobservable — but a transition is a plugin, ARQ-118 puts the errors "antes de escribir", and the design's "Critical code" names the clip as the adapter's. The probe-transition test is what pins it; M11 and M12 are its RED, and the two `Dissolve` tests cannot see either.
+- **The effect takes no token, so the checkpoint is between the run and the commit.** `Effect::run_cpu` receives no `CancelToken` (02 §4.6), so a cancelled effect is detected when it returns, before its output reaches the layer, the cache or the surface. Detecting it one step later (at the tile boundary) would still answer `Cancelled`, but it would have committed the tile first — M9 is exactly that, and the cache's `puts` is what tells the two apart.
+- **The refusal path is gone.** Every variant of the port's closed `RenderOp` is now rendered, so `not_in_this_delivery` and its `DriverBlocked` are removed. The enum has no `#[non_exhaustive]` (02 §4.6), so a new variant still stops this backend from compiling until it handles it.
+- **The cache still stores the tile's crop.** A grown task encodes `task.region`'s pixels in the frame's format and writes them back at the plan's key, so a cached tile is the same size and the same key space as in `CB1`–`CB4`; the growth is invisible to the cache and to `memory_usage`, whose surface + cache + pool accounting is unchanged.
+- **AC1's "byte for byte" holds at 255 only, and the other coverages are compared at 1e-6.** Multiplying by `255/255 = 1.0` is exact and the test asserts it exactly; the other columns derive their expectation as `base × coverage`, the same expression the code evaluates, but the base comes from a read-back surface, so the comparison uses the `f32` tolerance of 02 §4.17 («Identidades, diferencia 0; fórmulas `f32`, 1e-5; 8 bits, 1/255») rather than claiming a bit-exactness the derivation does not prove.
+
+### The fix round (`C1`, `W1`/`W2`, `O17`, 2026-11-06)
+
+The V2 round of `CB5` failed on one CRITICAL and six warnings. The rulings `O15`–`O18` settled the design half (`2e59d68`, the architect's commit); this round is the code half: the composed growth (`C1`), the cull's rule pinned (`W1`, `W2`) and the effect's destination accounted (`O17`). `O15` corrected `D4` and `O16` ruled mask-then-effect out of tile equivalence in that commit; `W4`/`SP7` and `W6`/`CB5b` are the specifier's and are not in this round.
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `6370d3c fix(gafira-render-cpu): compose the growth for a chain of effects` — `effect::grown_rect` asks each effect's `roi` against the buffer the previous ops produced, so a chain grows by what its last effect needs of what the first produced: 1 test.
+- `8f42904 test(gafira-render-cpu): pin the grown cull with a fill inside the margin` — the pixel rule the cull carries on a grown tile: 1 test, its kill verified against M-C2 before the commit.
+- `a517c3e feat(gafira-render-cpu): own the effect scratch and refuse its peak before allocating` — `O17`: one backend-owned scratch, counted in `memory_usage`, dropped by `trim`, and refused against `SURFACE_BUDGET` before it grows: 2 tests.
+- `docs(gafira-render-cpu): record the CB5 fix round` — this section, which cannot name its own commit.
+
+#### The RED this round owed
+
+- **`C1` — two effects in one task** — `tests::effects::arq_120_two_effects_grow_by_the_buffer_the_first_produced`. Before `6370d3c`: `assertion left == right failed: the buffer the first effect produced`, `left: [(14, 14)]`, `right: [(16, 16)]`. The scene is a 32 × 32 page, the tile (8, 8)-(16, 16), a `Pad(2)` and then a `Shift(4)`: the first effect's `roi` over the tile is (6, 6)-(18, 18), so the buffer is 12 × 12; measured against the tile the second asks (4, 4)-(12, 12) and the union is 14 × 14, measured against the buffer the first produced it asks (2, 2)-(14, 14) and the union is 16 × 16. The round's own number (12 × 12 where 16 × 16 is needed) is the same defect on the verifier's scene. The suite never had the case: one effect cannot see it, and a chain of pure pads unions to the same rectangle from the tile either way — which is why the round's probe P5 passed at HEAD and only its `break`-after-the-first mutant died.
+- **`O17` — the destination is a buffer the accounting can see** — `tests::effects::arq_143_the_effect_scratch_is_accounted_and_trim_drops_it`. Before `a517c3e`: `left: Bytes(17408)`, `right: Bytes(21504)` — the surface and the cache, without the 16 × 16 destination the two effects share. The same test pins the other two halves of the ruling: the one buffer is served to both effects (a per-op buffer would be twice the term) and `trim` drops it (`left: Bytes(4096)`, `right: Bytes(0)` under M-C3b).
+- **The refusal** has no test that can fail before the API exists, so its RED is the wrong behaviour on the landed code: M-C4 makes the cap exclusive and M-C5 checks after the allocation, and both die on `arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated`.
+
+#### Hand mutants of the fix round
+
+Six mutations on the three fixes, applied on the green tree after `a517c3e`, the named test run alone, the file restored from a copy and the suite re-run green. None is committed.
+
+| # | Mutation | Test that kills it | Failing assertion |
+|---|---|---|---|
+| M-C1 | `grown_rect` asks every `roi` against the tile, not the buffer the previous ops produced | `arq_120_two_effects_grow_by_the_buffer_the_first_produced` | `the buffer the first effect produced: left: [(14, 14)], right: [(16, 16)]` |
+| M-C2 | the fill's and the image's cull meet `task.region` instead of the grown rectangle | `arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect` | `the fill inside the margin reaches the tile through the effect` |
+| M-C3 | `memory_usage` leaves the scratch out of `host` | `arq_143_the_effect_scratch_is_accounted_and_trim_drops_it` | `left: Bytes(17408)`, `right: Bytes(21504)` |
+| M-C3b | `trim` drops the surface and the pool but keeps the scratch | the same test | `trim drops the scratch with the surface and the pool: left: Bytes(4096), right: Bytes(0)` |
+| M-C4 | the peak is compared with `<` instead of `≤`, so the cap is exclusive | `arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated` | `the cap is inclusive: OutOfMemory` |
+| M-C5 | the scratch is resized before the peak is checked | the same test | `the refusal precedes the allocation` |
+
+#### What the fix decided
+
+- **The cull is the grown rectangle, because on a grown tile it is a pixel rule.** `coverage::meets` is inclusive, so an op that only touches the tile is drawn under either rectangle and a test cannot tell them apart; an op strictly inside the margin is what tells them apart, and culling it loses a pixel the growth exists to fetch (`W1`, `W2`). `arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect` is that case, with the control that the same pixel is clear when the fill is outside the growth.
+- **The growth composes one pass, in plan order.** An effect replaces the buffer it filters, so what it must produce at that op is the buffer as it stands there; asking `roi` over that buffer (and its window) is the only reading under which a second effect is asked about input the first produced. It stays one pass: the rectangle grows before anything is drawn, every effect then runs once over it. The residual is stated: an effect's own input is not re-expanded for a later effect's growth, because the later effect's `roi` is what the later op answers and a fixed-point loop would need a bound the port does not carry; nothing emits these ops yet (ARQ-134). `D7`'s sentence "`roi(cx, p, tile_rect)`" still states the tile-only reading, so `D7` is the architect's line to correct, as `O15` corrected `D4`; this round does not edit the design.
+- **The scratch is one buffer, and its peak is refused before it grows.** `effect::run` no longer allocates: `CpuBackend` owns `scratch: Vec<f32>`, grows it only through `effect::reserve_scratch`, and checks `surface + layers.bytes() + the new buffer ≤ SURFACE_BUDGET` first (`O17`). A refused tile answers `RenderError::OutOfMemory` before the allocation, which is the whole point: the 8192² page plus a page-sized destination is 2.14 GB and becomes a refused tile instead of an allocation. The check sits at the allocation point inside the tile pass, so `layers.bytes()` includes the layers open at the effect — stricter than a per-plan forecast and still one comparison.
+- **The refusal is tested at the rule's boundary, not with a 1.07 GB allocation.** The rule is `reserve_scratch(scratch, pixels, held)`, so the test drives the boundary directly: exactly at `SURFACE_BUDGET` fits (the cap is a ceiling), one byte over answers `OutOfMemory`, the scratch is still empty after a refusal, and the 8192² numbers of `O17` are refused without allocating them. The happy path goes through `execute` (`arq_143_the_effect_scratch_is_accounted_and_trim_drops_it`), so the wiring is covered and the refusal branch is not a dead limb.
+- **The scratch is cleared at every op.** The old code allocated a zeroed destination per op, so clearing the reused slice keeps the per-op destination semantics and ARQ-111's determinism; nothing of a previous effect or tile can reach the next one.
+- **The size is the coordinator's.** `git diff --numstat 2e59d68..HEAD` → 342 insertions(+), 35 deletions(-): 177 lines of tests (`src/tests/effects.rs`) and 165 of production (`effect.rs` 100, `backend.rs` 65). With the delivery's already-recorded 1244 insertions that section carries, this is stated for the coordinator to weigh; the fix round does not chase the card's forecast, and no source line was added for the forecasts' sake.
+
+## CB5b
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: the effect's window is page space and the port does not carry the page, so every effect on a scrolled preview centres and clamps at the viewport's edge — and the same page exported at (0,0) would differ; the round also left two behaviours of `CB5` with no test at all
+Product IDs: ARQ-120, ARQ-149; ARQ-44, ARQ-111; ARQ-119 (source: specs/02-arquitectura-software.md §4.4 (`TileWindow`), §4.6, §6.2; rulings `O18` of the change)
+Scope: `CB5b` of `specs/changes/gafira-render-cpu/design.md`: `gafira-ports`'s `TargetDesc` gains `page: (u32, u32)`, the page's extent in page pixels, beside `origin`; `gafira-render`'s caller fills it where it fills `origin`; and `gafira-render-cpu`'s effect window reads it, so `image_width`/`image_height` are the page's and `x`/`y` are the page coordinates of `src`'s first pixel. Plus the two gaps `CB5`'s round 2 left: the accounting's `execute` wiring (`W8`) and the scratch's clearing (`W9`).      Non-goals: the mask's page-space rectangle (`SP7`, the specifier's), the fixed-point expansion of a chain of `roi`s (`W11`, a latent defect no op reaches), the accounting of `render_tile`'s own drawn buffer (`W10`, a delivery of its own), the benches (`CB6`), the single quantisation (`CB8`), and any change to `TargetDesc`'s existing fields or to the tile grid (`D1` rejects a second source of truth for it).
+Acceptance:
+  AC1 Given a surface that is **not** the page — a sub-region request at an origin — When an effect is asked for its window, Then `image_width`/`image_height` are the **page's** extent and `x`/`y` are the page pixel coordinates of `src`'s first pixel, not the surface's (`O18`, ARQ-120) [unit]
+  AC2 Given a full-page surface at origin `(0, 0)`, When the same effect runs, Then its window is byte-identical to what `CB5` produced — the export path does not move, and `CB3`'s stored golden still compares (`ARQ-120`, ARQ-42) [unit]
+  AC3 Given every place a `TargetDesc` is built — the renderer, the testkit's doubles and the crate's tests — When the struct is constructed, Then `page` and `origin` are filled from the same request and a surface smaller than the page still names the page (ARQ-149) [unit]
+  AC4 Given a frame whose surface plus open layers leave no room for the effect's scratch, When **`execute`** runs the task, Then it answers `OutOfMemory` — the refusal is proven through the backend's own path, not only by calling the reservation in isolation (`W8`, ARQ-44) [unit]
+  AC5 Given one scratch reused by two effect ops in the same tile, When the second runs, Then no byte the first wrote is read: the destination starts cleared, and removing the clearing fails this test (`W9`, ARQ-111) [unit]
+  AC6 Given the two crates and the port, When the CI policy steps run, Then `forbid(unsafe_code)` holds, no V5 row changes, the `clippy.toml` copies stay identical and neither crate names a clock or a file (ARQ-02) [command]
+Plan: the port change is one field and the work is in the places that must now tell the truth. `TargetDesc.page` is filled where `origin` is filled (`crates/gafira-render/src/page.rs`), so a sub-region request carries the page it came from; `effect::run` stops deriving the extent from `Surface::page_rect()` and reads the descriptor, which is the whole point of `O18` — a backend that computed `origin + width × height` would invent a second source of truth for an extent the caller already knows. `AC2` is the guard that the change is a widening and not a rewrite: the full-page path must produce the same window as before, which is why `CB3`'s golden is the regression to run. `AC4` needs a test that reaches `execute` near the cap — a `#[cfg(test)]` seam or a small budget, whichever keeps the production path honest — because the round proved both `held` terms can be deleted with the suite green. `AC5` is a test that fails when the scratch's `fill(0.0)` goes, which is the only thing standing between two ops and stale bytes. The critical code is the window's arithmetic, the descriptor's fill sites, the refusal's position and the scratch's clearing — those carry the hand mutants.
+Owner decisions touched: `O18` (the ruling this delivery implements), `O17` (the accounting it completes), `O11` (the layer buffers whose size enters `AC4`'s comparison), `O10` (the rigor).
+
+## CB5b (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `beb6d84 feat(gafira-ports): carry the page extent so an effect's window is page space` — `TargetDesc.page`, the page's extent in page pixels, beside `origin`; `crates/gafira-render/src/page.rs` fills it from the `PageExtent` it already resolves for the planner; the backend hands it to the effect and `effect::cx` loses its page subtraction, because the ops are already page space (ARQ-149, D4). The growth keeps clipping to the **surface** (now `Surface::surface_rect`, formerly the misleadingly named `page_rect`), which is the only rectangle whose pixels exist. 1 new test (the window at a sub-region and at the page origin, AC1 + AC2) and the `ARQ-149` renderer assertion extended to name the page (AC3).
+- `beaeae3 test(gafira-render-cpu): pin the reuse of the effect's destination` — `W9`/AC5: a `Shape::Dot` probe writes one pixel of its destination and leaves the rest, so the reuse of the scratch is observable; deleting `dst.fill(0.0)` paints the tile with the first op's output.
+- `6c33dc9 test(gafira-render-cpu): refuse the effect's peak through execute` — `W8`/AC4: `CpuBackend` carries the cap its effect peak is refused against (production value `SURFACE_BUDGET`), the test lowers it to one a 16 × 16 frame reaches with real buffers, and `execute` answers `OutOfMemory` one byte over.
+- `docs(gafira-render-cpu): record the CB5b delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone from the worktree root with `CARGO_TARGET_DIR=/tmp/gafira-cb5b-target CARGO_INCREMENTAL=0`, exit 0:
+
+- `cargo fmt --check` (0), `cargo clippy -p gafira-ports -p gafira-render -p gafira-render-cpu -p gafira-testkit --all-targets --locked -- -D warnings` (0), `cargo test` on the same four crates (0: 373 tests after `beaeae3`, 374 at HEAD), `cargo deny check` (0, `advisories ok, bans ok, licenses ok, sources ok`).
+- The nine `policy` steps of `.github/workflows/ci.yml` under `/tmp/gafira-policy-run.py`, re-checked against the file: the job holds eleven steps, nine with a `run:`, and the toolchain step is skipped — Format, CLI/UI (ARQ-07), `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` build all exit 0 on every commit. `.github/` is untouched, so no V5 row moved; `clippy.toml` is untouched.
+- The full workspace suite ran once at HEAD: `cargo test --workspace --locked` → exit 0, **2541 passed, 0 failed** across 200 `test result` blocks.
+
+Measured size: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **10 files changed, 324 insertions(+), 46 deletions(-)**. Of those, **137 insertions / 41 deletions are production `src/`** (`backend.rs` 51/11, `effect.rs` 36/25, `surface.rs` 19/3, `render.rs` 7/0, `page.rs` 8/1, `frame.rs` 1/0) and **184/6 are the behaviour tests** (`tests/effects.rs`), plus the test helpers (`tests.rs` 15) and two construction sites in `tests/`. The design forecast 120 (170 at ×1.4): 2.7× / 1.9×, below the ~700 signal. No manifest or lock line moved (`git diff -- Cargo.toml Cargo.lock crates/*/Cargo.toml` is empty); with this record the diff is **11 files changed, 378 insertions(+), 46 deletions(-)**, which is why the record cannot name its own commit.
+
+### RED evidence
+
+- **AC1** — `tests::effects::arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region`. RED on the code as it stood (field present, adapter still deriving from the surface): `left: [TileWindow { image_width: 16, image_height: 16, x: 0, y: 0 }]`, `right: [TileWindow { image_width: 32, image_height: 32, x: 8, y: 8 }]` — a 16 × 16 viewport at `(8, 8)` was naming the surface's extent and subtracting its origin on both axes. After the fix the effect is handed `{32, 32, 8, 8}`.
+- **AC2** — the same test's second case, a 16 × 16 full-page surface at `(0, 0)`, asserts `{16, 16, 0, 0}`: there the surface *is* the page, so the window is the one `CB5` produced and the arithmetic is pinned at the value it had. The pixel half is `CB3`'s stored golden: `crates/gafira-render-cpu/tests/golden/arq_113_scene.rgba8` still compares in `arq_113_the_stored_golden_is_the_scene_on_its_platform`, and `--test arq_42_comparison` is 14/14 at HEAD, including the offset-region agreements. The golden's scene carries no effect, so the golden could not move it — the window test is what pins the window itself. **The golden held.**
+- **AC3** — `page::tests::arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks` now asserts `page: (1000, 1000)` for a 256 × 256 region at both `(100, 100)` and `(0, 0)` on a 1000 × 1000 page, so the surface names the page it was cut from; the 200 × 150 case asserts `page: (200, 150)`, where the two extents coincide. Every construction site had to change and the compiler named them: `page.rs:203` (the renderer), `frame.rs:413`, `tests/ports_doubles.rs:62,109`, `tests/render.rs:164` (ports), `tests.rs:34` (the crate's helper). The testkit's doubles build no `TargetDesc` — `FakeRenderBackend::begin_frame` only consumes one — so that site is a reader, not a writer, and needed no change.
+- **AC4** — `tests::effects::arq_44_execute_refuses_the_effect_peak_near_the_cap`: a `(0, 0)-(8, 16)` tile with a layer opened over it and the effect inside it, peak `(16 × 16 + 8 × 16 + 8 × 16) px × 16 B = 8192 B`. At `8192` the plan runs and the effect is called once (the cap is inclusive); at `8191` `execute` answers `Err(OutOfMemory)` and `probe.calls() == 0`, so the refusal precedes the effect and not only the allocation.
+- **AC5** — `tests::effects::arq_111_a_reused_destination_starts_cleared_for_the_next_op`: two effects in one tile, the first writing all of its destination and the second only its first pixel. The tile shows white at `(8, 8)` and transparent at `(9, 9)` and `(15, 15)`.
+- **AC6** — the nine policy steps above, plus `#![forbid(unsafe_code)]` still the first line of both `lib.rs`; `git grep -nE 'std::fs|SystemTime::now|Instant::now|std::net|std::thread::spawn' -- 'crates/gafira-render-cpu/src/*' 'crates/gafira-ports/src/*'` finds nothing (exit 1, 0 lines); `git diff -- .github/` is empty.
+
+### The two deleted-line proofs, now pinned
+
+Both were applied to the delivered code, observed, and reverted; none is committed and `git status` is clean after each.
+
+- **`W9`** — `dst.fill(0.0)` deleted from `effect::run`: `arq_111_a_reused_destination_starts_cleared_for_the_next_op` **FAILED**, `the pixel the second op left holds no byte of the first`. Restored, green.
+- **`W8`** — the surface term: `bytes: self.surface.as_ref().map_or(0, Surface::bytes)` → `bytes: 0`: `arq_44_execute_refuses_the_effect_peak_near_the_cap` **FAILED**, `the backend answers the refusal: Ok(RenderReport { done: 1, left: 0 })`. The layers term: `held.bytes.saturating_add(layers.bytes())` → `held.bytes`: same test, same failure. Each is `CB5`'s P-B and P-C, which left 57/57 green; both are now lethal.
+
+### Hand mutants
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| HM1 | the window's `x`/`y` drop the page coordinate (`x: 0, y: 0`) | `arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region` | killed |
+| HM2 | the window's extent comes from the surface (`region.width()`, `region.height()`) | the same test | killed |
+| HM3 | the descriptor is filled from the surface (`page: (region.width(), region.height())`) | `page::tests::arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks` | killed |
+| HM4 | the refusal moves after `scratch.resize` | `arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated` (`the refusal precedes the allocation`) | killed |
+| HM5 | the cap's boundary is exclusive (`<=` → `<`) | `arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated` and `arq_44_execute_refuses_the_effect_peak_near_the_cap` (`the cap is inclusive`) | killed |
+| HM6 | the scratch's clearing is removed (`W9`) | `arq_111_a_reused_destination_starts_cleared_for_the_next_op` | killed |
+
+No T4.
+
+### Choices and deviations
+
+- **The growth still clips to the surface, not the page.** `O18`'s second limit is explicit: an effect's input can only be what the surface holds, so growth past it would ask for pixels no buffer has, and the caller's growth (`PageRenderer`) is a later `gafira-render` change (`XP5`). The old comment said "clipped to the page" while the value handed in was the surface's rectangle — the delivery corrects the words and renames `Surface::page_rect` to `surface_rect`, which is what the bug was made of. No behaviour changes here.
+- **`x`/`y` need no surface at all once the extent is the page's.** `effect::cx` lost its `|low, origin| low - origin` closure: the ops are page space (ARQ-149) and one surface pixel is one page pixel (D4), so a region's corner *is* the page pixel. This is `O18`'s "the adapter's `cx` losing its page subtraction". `Pass` therefore carries `page: (u32, u32)` and no surface rectangle; `grown_rect` still takes both, because clipping needs the window.
+- **The cap is a backend field, and only the constant is substituted.** `AC4` allowed "a `#[cfg(test)]` seam or a small budget, whichever keeps the production path honest". The seam is `#[cfg(test)] CpuBackend::with_budget`: `fits`, its position before `resize`, and both terms of `held` stay the production ones, and the production value is `surface::SURFACE_BUDGET`. Nothing exposes a setter that skips the comparison, and no test allocates a gibibyte.
+- **`Held { bytes, budget }`** groups "what the frame holds" with "the cap it must stay inside": `render_tile` would otherwise carry eight arguments (clippy's limit is seven), and the two values are one `O17` concept.
+- **The test helper keeps its meaning.** `tests.rs::target(w, h, origin, format)` still builds a surface that *is* the page (`page: (w, h)`), so the sixty existing scenes keep their reading; `target_in_page` is the sub-region form the new tests use.
+
+## CB8
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: an `Rgba8` frame pays the sRGB curve twice — 135 ms encoding tiles into the cache plus 121 ms quantising the page again on read-back — and the spike measured it; it is the last code delivery of the change
+Product IDs: ARQ-117, ARQ-143, ARQ-44; ARQ-42, ARQ-113 (source: specs/02-arquitectura-software.md §4.6, §6.2, ARQ-44, ARQ-117; ruling `O14` of the change; `spike-frame-cost.md`)
+Scope: `CB8` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, an `Rgba8` target gets an `Rgba8` surface, so the tile the cache already encoded is **copied** into it instead of being written as `f32` and quantised again on read-back. Plus two follow-ups of `CB5b` that live in the same files: `W12` (the tests' `target()` helper fixes `page: (w, h)` while four call sites pass a non-zero origin, so those descriptors name a page smaller than the surface) and `W13` (`effect.rs`'s header and a test's name still say the growth clips to the page).      Non-goals: the `f32` target's path (it stays exactly as it is), the cache's format (`O14` rejected putting the cache in `f32` because it multiplies the caller's budget by four), the effect's growth and scratch (`CB5`/`O17`), the benches (`CB6`), and the sRGB curve's own speed — this delivery removes a pass, it does not make the pass faster.
+Acceptance:
+  AC1 Given an `Rgba8` target, When a tile is written, Then the bytes the surface holds are **the tile the cache encoded**, byte for byte — the curve runs there and not again (ARQ-117, `O14`) [unit]
+  AC2 Given an `Rgba8` target, When the page is read back, Then the result equals, byte for byte, what the `f32` path produced and quantised once: the change removes work and moves no pixel (ARQ-117, ARQ-42) [unit]
+  AC3 Given an `RgbaF32` target, When the frame runs, Then the surface is `f32`, the write is a copy and `read_back` is a copy — the export path is untouched (ARQ-117) [unit]
+  AC4 Given an `Rgba8` surface, When the backend reports `memory_usage`, Then it counts **one byte per channel — four per `Rgba8` pixel**, `ancho × alto × canales` as ARQ-117 fixes it — and the budget comparison and the effect's scratch reservation use that figure rather than the `f32` one (ARQ-44, `O17`) [unit]
+  AC5 Given `CB3`'s stored golden, When the suite runs, Then it still compares and no byte moved — the widening is not a rewrite (ARQ-113) [unit]
+  AC6 Given the crate, When the CI policy steps run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged and the crate still names no clock and no file (ARQ-02) [command]
+Plan: the surface becomes format-dependent in **storage**, not in meaning: an `Rgba8` target keeps premultiplied sRGB bytes, an `RgbaF32` target keeps linear premultiplied floats, and both answer `read_back` with the format they claim. The write copies the cache's encoded tile — `encode_tile` already produces exactly those bytes — so the curve runs once, where it already ran, and `Surface::read` loses its per-pixel branch for the 8-bit case. `AC4` is not bookkeeping: the surface is what the effect's peak is compared against, so a surface that reports four bytes per pixel while holding one would refuse frames that fit. `AC2` is the guard that this is free: the same page through both paths must be byte-identical, which is also what `AC5`'s golden checks on the export. The critical code is the write's copy, the read's two branches, the accounting's figure and the budget comparison — those carry the hand mutants. `W12` and `W13` are folded in because they are the same files and a lie in a helper is cheaper to fix now than to inherit.
+Owner decisions touched: `O14` (the ruling), `O17` (the accounting it must keep true), `O11` (the layer buffers, untouched here), `O10` (the rigor).
+
+Coordinator amend on the CB8 round (2026-11-06): `AC4` said "one byte per pixel" and the delivery read
+it as one byte per **channel**. The delivery is right and the card was wrong — ARQ-117 fixes an 8-bit
+buffer at `ancho × alto × canales` and ARQ-44 wants the size actually held, so the literal reading
+would under-report four times over and shrink the effect's peak by the same factor, which is the
+failure `O17` exists to prevent. Corrected above; the code stands.
+
+The round also found that the delivery's central claim — "the curve runs once" — has no test behind
+it: re-quantising the page on read, or decoding and re-encoding the cached tile on write, passes all
+87 tests, because the two paths are byte-identical by construction (0 mismatches over 32 896 valid
+premultiplied pixels). `W15` is that finding, class `claim`: the work is gone, and nothing stops it
+coming back silently. A `#[cfg(test)]` counter in `quantise_srgb8` would make it machine-checked.
+
+## CB8 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `a0c9cd5 test(gafira-render-cpu): name the page in every target descriptor` — `W12`: `target()` now takes the page it is cut from (`target(w, h, origin, page, format)`), `target_in_page` is gone, and the sixty-eight call sites say which page they are in. The full-page scenes pass their own extents; the three offset surfaces name their pages — `(164, 264)` for the 64 × 64 surface at `(100, 200)`, `(96, 96)` for the window of the 96 × 96 page, `(96, 80)` for the surface at `(32, 16)` — and `image::drawn` names the smallest page that holds its region, since those scenes have no effect and no page of their own. No behaviour changes; the suite is 60/60 + 14/14 before and after.
+- `d5d9271 docs(gafira-render-cpu): the growth clips to the surface, not the page` — `W13`: the module header, the test comment, the test's name (`arq_120_the_grown_rectangle_is_clipped_to_the_surface`) and its assertion message now say surface, which is `O18`'s second limit and what `grown_rect` was already handed.
+- `50988a0 feat(gafira-render-cpu): keep an Rgba8 surface in the bytes the cache encoded` — the delivery: `Surface` stores `Pixels::Srgb8(Vec<u8>)` for an `Rgba8` target and `Pixels::Linear(Vec<f32>)` for `RgbaF32`, so the write copies the tile `encode_tile` produced and the read copies the surface; `backend::run` writes the encoded tile on a miss **and** on a hit, and `decode_tile` went with the decode it existed for. `Surface::bytes` is the storage's own figure and `Surface::new` compares it against the budget, which `with_budget` now lowers; `format()` is derived from the storage. Six new tests: AC1 (the two-tile surface and a window read), AC2 (the `Rgba8` page against the `RgbaF32` page quantised independently, cold and warm), AC3 (the export surface is the linear bytes it was handed), and AC4 (the memory figure, the budget boundary, the effect's peak).
+- `docs(gafira-render-cpu): record the CB8 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone from the worktree root with `CARGO_TARGET_DIR=/tmp/gafira-cb8-target CARGO_INCREMENTAL=0`, exit 0:
+
+- `cargo fmt --check` (0), `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings` (0), `cargo test -p gafira-render-cpu --locked` (0: 60 + 14 tests on `a0c9cd5` and `d5d9271`, 66 + 14 at `50988a0`), `cargo deny check` (0, `advisories ok, bans ok, licenses ok, sources ok`).
+- The `policy` job of `.github/workflows/ci.yml` under `/tmp/gafira-policy-run.py`, re-checked against the file: the job holds ten `run:` steps and the runner skips the toolchain install, so the nine it executes — Format, CLI/UI (ARQ-07), `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` build — all exit 0 on every commit. `.github/` is untouched.
+- The full workspace suite ran once at HEAD: `cargo test --workspace --locked` → exit 0, **2547 passed, 0 failed, 0 ignored** across 200 `test result` blocks (2541 at the `CB5b` record plus the six tests here).
+- No manifest or lock line moved (`git diff -- Cargo.toml Cargo.lock crates/*/Cargo.toml` is empty), and `git grep -nE 'std::fs|SystemTime::now|Instant::now|std::net|std::thread::spawn' -- crates/gafira-render-cpu/src` finds nothing (ARQ-02).
+
+Measured size: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **8 files changed, 544 insertions(+), 226 deletions(-)**. Production `src/` is `surface.rs` 300 (the storage enum and the two copy helpers replace the `f32`-only surface), `backend.rs` 29, `lib.rs` 7 and `effect.rs` 6; the rest is the behaviour tests (`tests.rs` 330, `tests/effects.rs` 68) plus the `target` call sites of `W12` (`tests/image.rs` 12, `tests/ops.rs` 18). The design forecast 160 (225 at ×1.4); the overrun is `W12`, which is sixty-eight mechanical call sites, and the `surface.rs` rewrite whose diff counts the replaced block as well as the additions. Every commit is at or under 300 changed lines except the delivery's, at 599.
+
+### RED evidence
+
+- **AC4** — three real assertion REDs on the code as it stood, `Surface::new` still counting `f32`:
+  - `arq_44_an_rgba8_surface_counts_one_byte_per_channel`: `left: Bytes(2048)`, `right: Bytes(512)` for a 16 × 8 `Rgba8` page.
+  - `arq_44_the_budget_counts_the_bytes_the_rgba8_surface_stores`: `one byte over does not fit` — the old backend ignored `with_budget` and answered `Ok` at `bytes - 1`.
+  - `effects::arq_44_the_effect_peak_counts_the_rgba8_surface_it_stores`: `the cap is inclusive: Err(OutOfMemory)` — the f32 figure doubled the peak.
+- **AC1, AC2, AC3, AC5 are invariance criteria, and their RED is a wrong behaviour on the landed code, as `CB5b`'s refusal was.** The old double pass and the new copy answer the same bytes: a temporary, uncommitted probe ran every *valid* premultiplied 8-bit pixel (`a > 0`, each channel `≤ a`) through `quantise_srgb8(decode_srgb8(..))` and found **0 mismatches** across 32 640 cases (the mismatches only appear at `a = 0` or with channel `> alpha`, which this pipeline never encodes). So no test can fail before the change without asserting an invalid tile, and `AC1`'s bytes, `AC2`'s equality and the golden hold on both codes. The guard against a wrong *new* implementation is HM1–HM3 and HM6 below; they are the RED that matters here. `AC2`'s expected bytes are computed by the test's own `quantise_premultiplied_srgb` (unpremultiply, sRGB, round, `(c × a + 127) / 255`) and not by `surface::quantise_srgb8`, so the two paths do not grade each other; it passes cold and with a shared warm cache.
+- **AC5** — `arq_113_the_stored_golden_is_the_scene_on_its_platform` and the rest of `--test arq_42_comparison` are 14/14 at every commit, `crates/gafira-render-cpu/tests/golden/arq_113_scene.rgba8` unchanged. **The golden held.**
+- **AC6** — the nine policy steps above and the clock/file grep, both green.
+
+### Hand mutants
+
+Each was applied to the delivered code, observed, and reverted; none is committed and `git status` is clean after each.
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| HM1 | the write ignores the tile's row stride (`source_start = source_column * 4`) | `arq_117_an_rgba8_surface_holds_the_tile_the_cache_encoded` (`row 8 at the tile's place`: red where the cache holds transparent) | killed |
+| HM2 | the `Rgba8` read stops at the clip's first row (`clip.y1 = clip.y0 + 1`) | the same test (`row 1 at the tile's place`: zero where the cache holds the tile) | killed |
+| HM3 | the `RgbaF32` read indexes from the page origin, not the surface's (`(0, 0)`) | `arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target` (`page (160, 260) is inside the fill`) | killed |
+| HM4 | `Surface::bytes` reports the `f32` figure for the 8-bit storage (`len × 4`) | `arq_44_an_rgba8_surface_counts_one_byte_per_channel` (`2048` vs `512`) and `effects::arq_44_the_effect_peak_counts_the_rgba8_surface_it_stores` (`the cap is inclusive: Err(OutOfMemory)`) | killed |
+| HM5 | the budget comparison ignores the budget and names `SURFACE_BUDGET` | `arq_44_the_budget_counts_the_bytes_the_rgba8_surface_stores` (`one byte over does not fit`) | killed |
+| HM6 | the `RgbaF32` read rounds each value to 8-bit (`(v × 255).round() / 255`) | `arq_117_an_rgba_f32_surface_is_the_linear_bytes_it_was_handed` (`left: [0.12156863, …]`, `right: [0.12345679, …]`) | killed |
+
+No T4.
+
+### Choices and deviations
+
+- **`W12` is one helper with a page, not a second helper.** The card asks that the call sites say which page they are in; `target` now takes it. `target_in_page` therefore said nothing the new `target` did not, so it is deleted and its one caller uses `target`. Rustfmt reflowed the sixty-eight sites, which is why a one-argument change counts 161 lines.
+- **`decode_tile` is deleted; `decode_srgb8` is not touched.** Nothing reads a cached tile as `f32` any more — a hit is written into the surface as it stands — so `decode_tile` was dead and clippy would say so. `decode_srgb8` stays because `image::DrawImage` still uses it (ARQ-117's curve, not this delivery's).
+- **The write takes the encoded `ImageBuf`, not a `&[f32]` plus a size.** The tile's own width is the stride, so the `size` argument (already derivable and already passed by the loop) is gone; `Surface::write(task.region, &tile)` is the same call for a hit and a miss, and a `TileKey`'s format check keeps the storage and the tile in the same vocabulary.
+- **`with_budget` now lowers the surface's cap too.** `MAX_SIDE` keeps the production budget comparison above any surface a test can build (8 192² × 16 B is under the 1.5 GB cap), so `AC4`'s comparison is only reachable through the seam; the production value is still `SURFACE_BUDGET` and the comparison, its position and both `held` terms are the production ones. This is the same seam `CB5b` introduced, with one more consumer.
+- **The format is derived from the storage.** `Pixels` is the single source of truth for `format()` and `bytes()`; a separate field could disagree with what the surface holds, which is exactly `AC4`'s failure mode.
+- **`AC4`'s "one byte per pixel" is read as one byte per channel, four per `Rgba8` pixel.** A surface pixel is RGBA, so the 8-bit storage is four bytes and the `f32` storage sixteen; the test pins `Bytes(16 × 8 × 4) = 512` against the old `2048`, which is the four-fold figure the card is about. The budget test pins the same number as the cap an `Rgba8` page fits and an `RgbaF32` one does not.
+- **`MAX_SIDE` is untouched.** At 16 384 px an `Rgba8` surface would now fit the cap (1 GiB), but the side limit is a stated limit of this delivery and lifting it is the tiled or streaming path FD-55 names; `CB8` removes a pass, it does not widen the page.
+
+## CB6
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: owner | reason: the last delivery of the change: the number CAL-11 asks for, the preview number `O14` was promised against (`W18`), and the three follow-ups of the `CB8` round that need a test rather than a reading (`W15`, `W16`, `S3`)
+Product IDs: CAL-11, ARQ-143, ARQ-40, ARQ-43, ARQ-114; ARQ-117, ARQ-44 (source: specs/01-producto-y-calidad.md §9.2 CAL-11; specs/02-arquitectura-software.md §6.2, §6.7, ARQ-40, ARQ-43, ARQ-143; FD-55 (d); rulings `O14`, `SP5`, `D10` of the change)
+Scope: `CB6` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, (1) `bench_export_png_1080` under criterion (`[[bench]]`, `harness = false`): one fixed 1080p page, `RgbaF32` export target, plan -> tiles -> surface -> `read_back` -> sRGB PNG bytes through `png` as a dev-dependency (the same encode rules as `CB3`), single-threaded, cold cache per iteration; (2) a preview bench for `W18`: the same page on an `Rgba8` target, cold and warm cache, `execute` + `read_back`, reported against ARQ-143's 8 ms visible-render budget; (3) the cancellation gap of FD-55 (d) / ARQ-43: the time from the token being cancelled to `execute` returning, on the same page; (4) a plain `#[test]` guard that asserts CAL-11's 2 s for one 1080p frame **only when the build is optimised** (`cfg!(debug_assertions)` false) and skips itself, visibly, otherwise; (5) `W15`: a `#[cfg(test)]` counter of `quantise_srgb8` applications, asserted to equal the tiles encoded and not to move in `read_back`; (6) `W16`: a test reading a region wider than the surface, so the span comes from the clip and not the region; (7) `S3`: take or leave `image::drawn`'s `unsigned_abs`, with the reason in the record.      Non-goals: `perf-budgets.toml`, the nightly job or any CI gate on these numbers (`D10`, `SP5`, ARQ-40's own change); `gafira-io-image` and the real exporter (FD-55, layer 4); parallel bands (`CB7`, cut only if CAL-11 is over 2 s); any change to `gafira-ports`, `gafira-render`, `gafira-doc` or `.github/`; making any curve faster.
+Acceptance:
+  AC1 Given the fixed 1080p scene, When `cargo bench -p gafira-render-cpu --bench export_png_1080` runs, Then criterion reports the time of one frame rendered and encoded to PNG, and the record states the number and the machine; the scene is built from constants, so two runs render byte-identical PNGs (CAL-11, ARQ-111) [command]
+  AC2 Given the same scene on an `Rgba8` target, When the preview bench runs, Then it reports the cold and warm frame time of `execute` + `read_back`, and the record compares them with ARQ-143's 8 ms; if the number cannot be compared fairly (CPU against a GPU budget, a page against a viewport), the record and a design note say why and what would measure it (ARQ-143, `O14`, `W18`) [command]
+  AC3 Given the scene and a token cancelled at a fixed point, When `execute` runs, Then the gap from cancellation to return is measured and reported against ARQ-43's 100 ms (FD-55 (d), ARQ-43) [command]
+  AC4 Given an optimised build, When the guard runs, Then one 1080p frame rendered and encoded takes < 2 s or the test fails; given a debug build, Then the guard skips itself and says so, and never fails on time (CAL-11, `D10`) [unit]
+  AC5 Given an `Rgba8` frame, When `execute` and `read_back` run, Then `quantise_srgb8` ran exactly once per encoded tile pixel and `read_back` added no application; re-quantising on read or decoding and re-encoding the cached tile on write fails the test (ARQ-117, `O14`, `W15`) [unit]
+  AC6 Given a surface smaller than the region read, When `read_rows` copies, Then the pixels outside the surface are transparent black and the copied span is the clip's; taking the span from the region fails a test (ARQ-117, `W16`) [unit]
+  AC7 Given the crate, When the gates run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged (`cargo tree -e normal,build` is identical before and after; `criterion` and `png` are dev-only), `cargo deny` passes, and `src/` still names no clock and no file — the benches may use `std::time::Instant`, `src/` may not (ARQ-02, ADR 0017) [command]
+Plan: the benches live in `benches/` and the guard in `tests/`, so the library stays clock-free. The scene is a constant document — a page background, a few groups with fills and one image, no effect — built once outside the timed loop; the timed unit is one page from a cold cache, with the encode inside it for CAL-11 and outside it for ARQ-143. The guard reuses the same scene builder (a shared test module) so the bench and the guard measure one thing. The `W15` counter is `#[cfg(test)]`, thread-local so parallel tests do not see each other, and the test reads it around `execute` and around `read_back` separately. Critical code and hand mutants: the scene's determinism (a builder that varies per run — e.g. a seed or an iteration index entering the document — must fail AC1's byte check), the guard's skip (inverting or removing the `debug_assertions` condition must be observable: a debug run fails on time or an optimised run skips), and the counter (re-quantise in `Surface::read`, decode-and-re-encode in `Surface::write`, and a counter that never increments must each fail AC5); plus the `W16` span mutant (span from the region). Touching `Cargo.toml` puts that commit in ADR 0017's `--workspace` scope. Report the numbers; do not gate them.
+Owner decisions touched: `O14` (the preview it promised to measure), `SP5` (an ungated measured number is acceptable), `D10` (no gate), `O10` (the rigor), and `CB7`'s condition (cut only if CAL-11 is over 2 s).
+
+## CB6 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `d2a2f49 test(gafira-render-cpu): a read wider than the surface copies the clip's span` — `W16`.
+- `d31909f test(gafira-render-cpu): drawn refuses a region that ends off the page` — `S3`.
+- `afc55de test(gafira-render-cpu): count the sRGB curve's applications in a frame` — `W15`.
+- `ba641df feat(gafira-render-cpu): bench_export_png_1080 and the CAL-11 guard` — AC1, AC4; the manifest commit (`--workspace`).
+- `21707d6 feat(gafira-render-cpu): preview and cancel-gap benches on the 1080p frame` — AC2, AC3.
+- `74207ab docs(gafira-render-cpu): why the cold preview does not meet ARQ-143's 8 ms fairly` — `W18`'s design note.
+- `docs(gafira-render-cpu): record the CB6 delivery` — this record.
+
+### The numbers
+
+Machine: 12th Gen Intel Core i7-12700H, `nproc` 20, Linux 6.8.0, `rustc 1.93.1`; one thread, the
+bench profile (`opt-level = 3`, thin LTO). Criterion medians from
+`target/criterion/<group>/<bench>/new/estimates.json`, 95 % interval in brackets; nothing is gated.
+
+| What | Where | Median | Against |
+|---|---|---|---|
+| **CAL-11**: one 1080p frame, `RgbaF32`, cold cache, read back, PNG-encoded | `cal_11/bench_export_png_1080` | **288.0 ms** [286.2, 293.0] | < 2 s: met by ~7×, so `CB7` is not cut |
+| CAL-11 guard, `cargo test --release -- --test-threads=1`, three runs | `cal_11_one_1080p_frame_renders_and_encodes_under_two_seconds` | 324, 302, 290 ms | < 2 s |
+| Preview, `Rgba8`, `execute` + `read_back`, cold | `arq_143/bench_preview_1080_cold` | **237.0 ms** [235.6, 237.7] | 8 ms: not a fair comparison (design note) |
+| Preview, warm (every tile a hit) | `arq_143/bench_preview_1080_warm` | **1.61 ms** [1.51, 1.68] | 8 ms: met |
+| Cancel gap, export frame, cancel in the lookup of the heaviest tile | `arq_43/bench_cancel_gap_1080` | **11.7 ms** [11.6, 12.1] | ≤ 100 ms (ARQ-43): met |
+
+In a debug build the guard prints `CAL-11 guard skipped: a debug build is not optimised …` and
+passes; the same frame takes ~3.4 s there.
+
+### RED evidence
+
+- **AC4** — `cal_11_the_guard_measures_only_an_optimised_build_and_is_strict` against a `judge` that
+  always skipped: `optimised true, 1.999s`, `left: Skipped`, `right: Within(1.999s)`.
+- **AC5 (`W15`)** — `arq_117_an_rgba8_frame_quantises_each_encoded_pixel_once` against the counter
+  without its increment: `once per encoded tile pixel`, `left: 0`, `right: 768`.
+- **AC1, AC6 (`W16`)** are invariance criteria on code already right; their RED is the wrong
+  behaviour, HM1 and HM6 below. AC2, AC3 are `[command]`: the numbers above. **AC7**: the gates below.
+- `S3` has no test: it is a test helper's conversion. `try_from(..).expect(..)` replaces
+  `unsigned_abs`, so a region ending left of or above the page panics instead of naming a page of
+  `|x1|` that does not hold it; no call site passes one, so the suite is unchanged.
+
+### Hand mutants
+
+Applied, observed, reverted; none committed; `sha256sum -c` and `git status` clean after each.
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| HM1 | the frame varies per build: a static counter darkens the background | `cal_11_the_fixed_frame_renders_byte_identical_pngs` | killed |
+| HM2 | `judge` loses its `if !optimised` | the table test (`left: Over(9s)`, `right: Skipped`); in debug also the guard | killed |
+| HM3 | the guard's condition inverted (`cfg!(debug_assertions)`) | the guard: debug `left: false right: true`; release `left: true right: false` | killed |
+| HM4 | `Surface::read` re-quantises the `Rgba8` page | `arq_117_an_rgba8_frame_quantises_each_encoded_pixel_once` (`left: 640`, `right: 0`) | killed |
+| HM5 | `Surface::write` decodes and re-encodes the tile | the same (`left: 1536`, `right: 768`) | killed |
+| HM6 | the counter never increments | the same (`left: 0`, `right: 768`) | killed |
+| HM7 | `read_rows` takes its span from `region.width()` | `arq_117_a_read_wider_than_the_surface_copies_the_clip_and_nothing_else` (`Rgba8: (8, 2) is off the surface`) | killed |
+
+HM3 first survived in release: the guard's arms asserted on the same variable the mutant inverted.
+They now compare the verdict with `cfg!(debug_assertions)` itself. No T4.
+
+### Gates
+
+`CARGO_TARGET_DIR=/tmp/gafira-cb6-target CARGO_INCREMENTAL=0`, worktree root, exit 0 on every commit:
+`cargo fmt --check`, `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`,
+`cargo test -p gafira-render-cpu --locked`; at `ba641df` the clippy and test runs are `--workspace`
+(2634 passed, 0 failed). At HEAD: `cargo test --workspace --locked` 0 (**2634 passed, 0 failed, 0
+ignored**, 202 blocks); `cargo deny check` 0; the nine executed `run:` steps of the `policy` job 0
+(the toolchain install skipped); `cargo bench -p gafira-render-cpu --bench export_png_1080` 0.
+`cargo tree -e normal,build`, for the crate and for the workspace, is byte-identical before and
+after; `Cargo.lock` gains only the two dev edges. `git grep` for
+`std::fs|SystemTime::now|Instant::now|std::net|std::thread::spawn` in the crate's `src/` finds
+nothing, and `Instant::now` appears in the crate only in `clippy.toml`'s ban.
+
+### Size
+
+`git diff --shortstat 6f0f012..HEAD` before this record: **9 files changed, 654 insertions(+),
+2 deletions(-)**, against 260 (365 at ×1.4). Production `src/` is 17 (the counter); the rest is
+the frame module (222), the bench (144), the guard (138), the `W15`/`W16` tests (93), the
+manifest and lock (10), `S3` (9) and the design note (23). With this record the delivery passes
+~700 lines.
+
+### Choices and deviations
+
+- **No target names `Instant::now`.** The card lets benches and tests use it, but the crate's
+  `clippy.toml` bans it for every target and `#[allow]` is not an option. The times come from
+  criterion's `WallTime`, as in `gafira-segment`'s benches; the guard uses it too.
+- **The frame is a `RenderPlan`, not a `Document`.** The card asks for one image and no document
+  node produces `DrawImage` (ARQ-134). The plan is the planner's 256 px grid clipped to the page,
+  one task per tile carrying the whole op list, so the cull is the backend's.
+- **The PNG is straight alpha.** PNG stores straight alpha, so the encode is CB3's order without the
+  last premultiply; with the opaque background every pixel has `a = 255` and the two coincide.
+- **The cancel point is the cache lookup of tile 25.** The lookup is the first call after the
+  loop's per-tile check, so the whole tile runs after the cancel; a scratch probe over all 40 tiles
+  (not committed) found tile 25 the longest. ARQ-43 names a 4K export; the gap is per tile, and
+  tiles are 256 px at any page size, so 1080p bounds it for this scene.
+- **`W18`'s comparison is only fair warm.** The design note says why and what would measure it: a
+  `FrameLoop` bench in `gafira-render` with a real 8 ms deadline. It also records that one heavy
+  tile (~12 ms) is longer than the 8 ms stage, so a frame can overrun by up to one tile.
+
+### Fix round 1 (`C3`, `C4`/`S13`, `W21`, `S12`)
+
+Commits, each passing fmt, clippy `-D warnings` and the crate's tests alone (exit 0):
+
+- `012b433 test(gafira-render-cpu): a tile clipped at the right edge writes every row of the corner` — `C3`.
+- `9e59f39 docs(gafira-render-cpu): name ARQ-114 on bench_export_png_1080 and the guard` — `C4`, `S13`.
+- `fa9d181 test(gafira-render-cpu): pin the fixed frame's PNG on the golden platform` — `W21`.
+- `docs(gafira-render-cpu): record the CB6 fix round` — this section.
+
+**RED.**
+
+- `C3` — `arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner` reads the whole
+  64 × 64 surface of ARQ-149's scene in both storages: white exactly on the 4 × 4 corner, clear
+  elsewhere. Green on the code; with IM3 applied (`write_rows` spans `region.width()`) it fails
+  `Rgba8: (60, 63) is filled`, and with the loop cut to `RgbaF32` alone `RgbaF32: (60, 63) is
+  filled` — the last row of the clipped tile is lost in both.
+- `C4`, `S13` — `bench_export_png_1080`'s doc names ARQ-114 (the bench with that row's name, `D10`;
+  the name is fixed, so the ID goes in the doc, as `gafira-segment`'s benches do). The guard's
+  module doc says why it is not the `cargo test` gate ARQ-114 forbids: CI's `cargo test` builds in
+  debug, where the guard skips and never fails on time; the assert runs only in a build optimised on
+  purpose, and the number is the bench's (`D10`). `git grep ARQ-114 -- crates/gafira-render-cpu`
+  finds both. No RED: documentation.
+- `W21` — `cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform` pins `(length, FNV-1a
+  64)` of the PNG on `x86_64-unknown-linux-gnu`, as ARQ-113 compares a stored golden in
+  `Mode::Exact` there, and skips visibly elsewhere. RED with the pin at `(0, 0)`: `left: (82840,
+  13330154275344879713)`, `right: (0, 0)`; the value is `0xb8fe38afef161061`, the digest verify
+  measured in two debug processes and one release process. Green in debug and in `--release`.
+
+**Hand mutants** (applied, observed, reverted; restored by `sha256sum -c`, tree clean):
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| IM3 | `write_rows` takes its span from `region.width()` | `arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner` (`Rgba8: (60, 63) is filled`; `RgbaF32` the same) | killed |
+| IM1 | the background's red is `0.96 - (pid % 50 + 1) × 0.005` | `cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform`, three processes, three failures (`left: (83281, …)`, `(83115, …)`, `(83296, …)`) | killed |
+| HM1 | a static counter darkens the background per build | the byte-identical test and the pin | killed |
+| HM2 | `judge` loses its `if !optimised` | the table test (`left: Over(9s)`, `right: Skipped`) and the guard | killed |
+| HM3 | the guard's condition inverted | the guard: debug `left: false right: true`, release `left: true right: false` | killed |
+
+A first IM1 with `pid % 7` passed one run in three: that pid was a multiple of 7, so the shift was
+zero and the frame was the constant one. The mutant above shifts in every process. HM4–HM7 are in
+`src/` code this round did not touch, and their killing tests are unchanged.
+
+**Gates at HEAD** (`CARGO_TARGET_DIR=/tmp/gafira-cb6-target CARGO_INCREMENTAL=0`, worktree root):
+`cargo fmt --check` 0; `cargo clippy --workspace --all-targets --locked -- -D warnings` 0;
+`cargo test --workspace --locked` 0 (**2636 passed, 0 failed, 0 ignored**, 202 blocks: the two new
+tests); `cargo deny check` 0; the nine `run:` steps of the `policy` job after the toolchain install
+(Format, ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14, ADR 0013) 0 each. Nothing under `src/` outside
+`tests.rs`, `Cargo.toml`, `Cargo.lock`, `crates/gafira-ports`, `crates/gafira-render`,
+`crates/gafira-doc` or `.github/` changed.
+
+**`S12`.** CAL-11 names a mid-range reference machine; the i7-12700H (14 cores, 20 threads, a
+high-end laptop part) is not one. The 288 ms above is therefore indicative: it shows the frame is
+far under 2 s here, not that it is under 2 s on CAL-11's machine. That number waits for the
+reference machine of ARQ-40's change.
+
+**Size.** `git diff --shortstat c1ff86d..HEAD` before this section: **3 files changed, 72
+insertions(+)** — the `C3` test 27, the pin 34 and the guard's doc 8 in
+`tests/cal_11_export_1080.rs` (42), the bench's doc 3. No production line.

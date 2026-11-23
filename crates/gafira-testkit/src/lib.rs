@@ -10,6 +10,7 @@ pub mod fonts;
 pub mod golden;
 mod harness;
 pub mod progress;
+pub mod qr;
 pub mod scenes;
 
 /// The port doubles of Gafira (ADR 0013, ARQ-112).
@@ -385,8 +386,14 @@ fn build_node(id: NodeId, spec: &NodeSpec) -> Node {
     let kind = match &spec.kind {
         KindSpec::Group => NodeKind::Group(GroupNode {}),
         KindSpec::Shape(geometry, fill) => NodeKind::Shape(ShapeNode {
-            geometry: *geometry,
+            geometry: geometry.clone(),
             fill: *fill,
+            stroke: None,
+            corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         }),
         KindSpec::Extension(type_id, schema_version, payload) => {
             NodeKind::Extension(ExtensionNode {
@@ -738,6 +745,12 @@ pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
                 let kind = NodeKind::Shape(ShapeNode {
                     geometry: ShapeGeometry::Rect,
                     fill: Some(fill),
+                    stroke: None,
+                    corner_radius: 0.0,
+                    text: None,
+                    gradient: None,
+                    effect: None,
+                    drawn_with: None,
                 });
                 let node = fresh(&mut edit, kind);
                 add_root(&mut edit, page, node);
@@ -983,6 +996,21 @@ mod guards {
                                 seen.insert("group with children");
                             }
                         }
+                        NodeKind::Line(_) => {
+                            seen.insert("line");
+                        }
+                        NodeKind::Frame(_) => {
+                            seen.insert("frame");
+                        }
+                        NodeKind::Qr(_) => {
+                            seen.insert("qr");
+                        }
+                        NodeKind::Table(_) => {
+                            seen.insert("table");
+                        }
+                        NodeKind::Chart(_) => {
+                            seen.insert("chart");
+                        }
                         NodeKind::Extension(e) => {
                             seen.insert("extension");
                             note_text(&mut seen, &e.type_id);
@@ -991,7 +1019,9 @@ mod guards {
                             assert!(value_depth(&e.payload) <= 3);
                             assert!(payload_in_bounds(&e.payload));
                         }
-                        NodeKind::Shape(_) => assert!(node.children.is_empty()),
+                        NodeKind::Shape(_) | NodeKind::Text(_) | NodeKind::Image(_) => {
+                            assert!(node.children.is_empty());
+                        }
                     }
                 }
             }

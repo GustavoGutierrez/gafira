@@ -4,15 +4,18 @@
 //! (ARQ-06): it asks for pixels through the [`PageRenderer`] of its
 //! [`ExportJob`].
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
+use std::sync::Arc;
 
 use gafira_doc::contract::{CancelToken, Cancelled, ParamSchema, ParamValues, Progress};
 use gafira_doc::msg;
 use gafira_doc::msg::{Message, ToMessage};
-use gafira_doc::{Document, NodeId, PageId};
+use gafira_doc::{AssetRef, Document, ImageNode, NodeId, PageId};
 use gafira_geom::IRect;
 use gafira_raster::ImageBuf;
+use gafira_raster::look::{apply_look, cropped, cropped_mask, mask_of, reduced};
 use gafira_time::Flicks;
 
 use crate::format::FormatDescriptor;
@@ -143,6 +146,91 @@ pub trait PageRenderer: Send + Sync {
         req: &PageRenderRequest,
         cancel: &CancelToken,
     ) -> Result<ImageBuf, RenderError>;
+
+    /// The drawing of `page` as its operations, in order, in page px (spec
+    /// 073): what a vector writer (PDF) keeps as vectors and text. `None`
+    /// when this renderer has no such drawing; the writer then draws pixels.
+    ///
+    /// # Errors
+    /// [`RenderError`]; [`RenderError::Cancelled`] when `cancel` fires.
+    fn vectors(
+        &self,
+        _page: gafira_doc::PageId,
+        _cancel: &CancelToken,
+    ) -> Result<Option<Vec<crate::render::RenderOp>>, RenderError> {
+        Ok(None)
+    }
+}
+
+/// The decoded pixels of the image assets an export draws, by asset
+/// (spec 032). Each buffer is 8-bit sRGB premultiplied (ARQ-117).
+pub type ImagePixels = BTreeMap<AssetRef, Arc<ImageBuf>>;
+
+/// Builds the [`PageRenderer`] of one snapshot of the document for an export
+/// (spec 030).
+///
+/// The composition root implements it over `gafira-render` and a backend, so
+/// the engine hands an [`ExportJob`] its pages without seeing either
+/// (ARQ-06).
+pub trait PageRenderers: Send + Sync {
+    /// A renderer of the pages of `document`, at export quality (02 §6.2),
+    /// that draws each image element with the pixels of its asset in
+    /// `images` (spec 032). The render reads no file: the engine resolves
+    /// and decodes the assets first.
+    fn for_document(&self, document: &Document, images: ImagePixels) -> Box<dyn PageRenderer>;
+}
+
+/// Decodes the bytes of an image asset into pixels (spec 032).
+///
+/// Decoding is file-format parsing, so it lives in an adapter
+/// (`gafira-io-image`, 02 §2.1); the engine reads the bytes from the
+/// [`ContentStore`] and hands them over.
+pub trait ImageDecoder: Send + Sync {
+    /// The pixels of the encoded image `bytes`, as 8-bit sRGB premultiplied
+    /// (ARQ-117).
+    ///
+    /// # Errors
+    /// [`MediaError::Corrupt`] when the bytes are not an image this decoder
+    /// reads.
+    fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, MediaError>;
+}
+
+/// The pixels `image` shows: those of its asset, the part of them it is
+/// cropped to (spec 088), with its look when it has one (spec 085). A look drawn to be seen small is worked out on an image
+/// no longer than `most`, which takes a share of the time.
+///
+/// # Errors
+/// [`ExportError::Store`] when the asset, or the mask of a zone, is not in
+/// the store, [`ExportError::Media`] when one does not decode and
+/// [`ExportError::Render`] when the look cannot be drawn.
+pub fn decode_image(
+    image: &ImageNode,
+    store: &dyn ContentStore,
+    images: &dyn ImageDecoder,
+    most: Option<u32>,
+) -> Result<ImageBuf, ExportError> {
+    let read = |asset: AssetRef| -> Result<ImageBuf, ExportError> {
+        let mut bytes = Vec::new();
+        io::Read::read_to_end(&mut store.open(asset.as_hash())?, &mut bytes)?;
+        Ok(images.decode(&bytes)?)
+    };
+    let pixels = read(image.asset)?;
+    let part = image.part();
+    let pixels = cropped(&pixels, &part);
+    let Some(look) = &image.look else {
+        return Ok(pixels);
+    };
+    let mut masks = BTreeMap::new();
+    for zone in &look.zones {
+        if let Some(mask) = mask_of(&read(zone.mask)?) {
+            masks.insert(zone.mask, cropped_mask(&mask, &part));
+        }
+    }
+    let (pixels, scale) = most
+        .and_then(|most| reduced(&pixels, most))
+        .unwrap_or((pixels, 1.0));
+    apply_look(look, &pixels, &|asset| masks.get(&asset).cloned(), scale)
+        .map_err(|error| ExportError::Render(error.into()))
 }
 
 /// Why an export failed.

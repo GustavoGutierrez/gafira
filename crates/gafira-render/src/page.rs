@@ -27,13 +27,17 @@ use gafira_doc::contract::{CancelToken, NoProgress};
 use gafira_doc::visit::{PageView, WalkOrder};
 use gafira_doc::{Document, Page};
 use gafira_geom::{Affine, IRect};
-use gafira_ports::export::{PageRenderRequest, PageRenderer};
-use gafira_ports::render::{Deadline, RenderError, RenderOp, RenderQuality, TargetDesc};
+use gafira_ports::common::{Bytes, UnixTime};
+use gafira_ports::export::{ImagePixels, PageRenderRequest, PageRenderer, PageRenderers};
+use gafira_ports::render::{
+    Deadline, RenderBackend, RenderError, RenderOp, RenderQuality, TargetDesc,
+};
 use gafira_ports::system::Clock;
 use gafira_raster::{BufferError, ImageBuf, PixelBuf, PixelFormat};
 use kurbo::{Rect, Shape};
 
 use crate::cache::ContentTileCache;
+use crate::fonts::FontBook;
 use crate::frame::{BackendSelector, Degradation, FrameLoop, FrameRequest};
 use crate::graph::{GraphError, GraphParams, RenderGraph, RenderGraphBuilder};
 use crate::planner::{PageExtent, PlanError, Planner, TileGrid, Viewport};
@@ -62,6 +66,8 @@ pub struct GraphPageRenderer {
     frame: Mutex<FrameLoop>,
     cache: Mutex<ContentTileCache>,
     clock: Box<dyn Clock>,
+    fonts: Arc<FontBook>,
+    images: Arc<ImagePixels>,
 }
 
 impl GraphPageRenderer {
@@ -79,7 +85,26 @@ impl GraphPageRenderer {
             frame: Mutex::new(FrameLoop::new(selector)),
             cache: Mutex::new(cache),
             clock,
+            fonts: Arc::new(FontBook::new()),
+            images: Arc::new(ImagePixels::new()),
         }
+    }
+
+    /// The renderer that lays the text of the pages out with `fonts`
+    /// (spec 030); without them a text draws nothing.
+    #[must_use]
+    pub fn with_fonts(mut self, fonts: Arc<FontBook>) -> Self {
+        self.fonts = fonts;
+        self
+    }
+
+    /// The renderer that draws each image of the pages with the pixels of
+    /// its asset in `images` (spec 032); without them an image draws
+    /// nothing.
+    #[must_use]
+    pub fn with_images(mut self, images: ImagePixels) -> Self {
+        self.images = Arc::new(images);
+        self
     }
 
     /// The quality this renderer answers (02 §6.2).
@@ -111,19 +136,33 @@ impl GraphPageRenderer {
         zoom_of(self.quality, scale)
     }
 
-    /// The size of the page in whole pixels.
+    /// The scale the page is drawn at (FD-55, spec 030): the export draws
+    /// the page `scale` times its size; the preview draws it at its size and
+    /// reads the scale as the zoom of its level (02 §6.2).
+    ///
+    /// # Errors
+    /// An export scale that is not finite or not above zero.
+    fn page_scale(&self, scale: f32) -> Result<f64, RenderError> {
+        match self.quality {
+            RenderQuality::Preview => Ok(1.0),
+            RenderQuality::Export if scale.is_finite() && scale > 0.0 => Ok(f64::from(scale)),
+            RenderQuality::Export => Err(non_finite("scale")),
+        }
+    }
+
+    /// The size of the page in whole pixels, `scale` times its size.
     ///
     /// The document validation keeps every side inside `1..=16384` px, so the
     /// failure of the unit math is not reachable for a document that was
     /// validated; it still answers an error instead of panicking.
-    fn extent(&self, page: &Page) -> Result<PageExtent, RenderError> {
+    fn extent(&self, page: &Page, scale: f64) -> Result<PageExtent, RenderError> {
         let px = page
             .size
             .to_px(self.document.dpi())
             .map_err(|_| non_finite("page.size"))?;
         Ok(PageExtent {
-            width: side_px(px.width()),
-            height: side_px(px.height()),
+            width: side_px(px.width() * scale),
+            height: side_px(px.height() * scale),
         })
     }
 
@@ -132,10 +171,19 @@ impl GraphPageRenderer {
         &self,
         page: &Page,
         params: GraphParams,
+        scale: f64,
         cancel: &CancelToken,
     ) -> Result<RenderGraph, RenderError> {
         let view = PageView::new(page);
-        RenderGraphBuilder::new(&view, params, InlinePool)
+        let mut builder = RenderGraphBuilder::new(&view, params, InlinePool)
+            .scaled(scale)
+            .with_fonts(Arc::clone(&self.fonts))
+            .with_images(Arc::clone(&self.images));
+        // «Destello de lente» spreads over the page (spec 065).
+        if let Ok(px) = page.size.to_px(self.document.dpi()) {
+            builder = builder.with_page_px(px.width(), px.height());
+        }
+        builder
             .build(WalkOrder::PreOrder, cancel, &NoProgress)
             .map_err(graph_error)
     }
@@ -153,13 +201,50 @@ impl GraphPageRenderer {
 }
 
 impl PageRenderer for GraphPageRenderer {
+    /// The page as its operations at 1×, in page px, on a white ground:
+    /// what the PDF keeps as vectors and text (spec 073).
+    fn vectors(
+        &self,
+        page: gafira_doc::PageId,
+        cancel: &CancelToken,
+    ) -> Result<Option<Vec<RenderOp>>, RenderError> {
+        let Some(page) = self.document.page(page) else {
+            return Ok(Some(Vec::new()));
+        };
+        let extent = self.extent(page, 1.0)?;
+        let level = TileGrid::new(extent).level_for(self.zoom(1.0));
+        let graph = self.graph(
+            page,
+            GraphParams {
+                quality: self.quality,
+                lod: level,
+                t: gafira_time::Flicks::default(),
+            },
+            1.0,
+            cancel,
+        )?;
+        let ground = Rect::new(0.0, 0.0, f64::from(extent.width), f64::from(extent.height))
+            .abs()
+            .to_path(0.25);
+        let mut ops = vec![RenderOp::FillPath {
+            path: Arc::new(ground),
+            color: PAGE_BACKGROUND,
+            transform: Affine::IDENTITY,
+        }];
+        ops.extend(graph.ops().iter().map(crate::planner::copy_op));
+        Ok(Some(ops))
+    }
+
     fn render(
         &self,
         request: &PageRenderRequest,
         cancel: &CancelToken,
     ) -> Result<ImageBuf, RenderError> {
         let format = self.format();
-        let region = target_region(request.region);
+        // O13: the region of the request is page space, the space of the tasks
+        // and of the surface's origin, so `read_back` answers the window the
+        // request named.
+        let region = request.region;
         // AC4: the port gives no variant for a page the document does not
         // hold. The scope mapping is what rejects it (FD-58), so `render` stays
         // total over `PageId` and answers the empty region instead of failing
@@ -168,7 +253,10 @@ impl PageRenderer for GraphPageRenderer {
             return blank(request.region, format);
         };
 
-        let extent = self.extent(page)?;
+        // S30-02: an export at `scale` reads the page `scale` times its size;
+        // the region of the request is in those pixels.
+        let scale = self.page_scale(request.scale)?;
+        let extent = self.extent(page, scale)?;
         let zoom = self.zoom(request.scale);
         // ARQ-42: the graph and the plan must resolve the same level; the level
         // is part of the content key of a node (02 §6.1).
@@ -180,6 +268,7 @@ impl PageRenderer for GraphPageRenderer {
                 lod: level,
                 t: request.time,
             },
+            scale,
             cancel,
         )?;
         let viewport = Viewport {
@@ -195,9 +284,16 @@ impl PageRenderer for GraphPageRenderer {
             paint_background(&mut plan, extent);
         }
 
+        // ARQ-149: the surface sits at the corner of the region the request
+        // asked for, in page pixels; the operations keep their page geometry.
+        // O18: the page extent travels with it, because the surface is only a
+        // window onto the page and an effect's window is measured against the
+        // page — deriving it from `region` would name the window instead.
         let target = TargetDesc {
             width: region.width(),
             height: region.height(),
+            origin: (request.region.x0, request.region.y0),
+            page: (extent.width, extent.height),
             format,
         };
         let mut frame = self.frame.lock().unwrap_or_else(PoisonError::into_inner);
@@ -223,6 +319,66 @@ impl PageRenderer for GraphPageRenderer {
     }
 }
 
+/// The tile cache budget of one export renderer: an export reads each tile
+/// once, so the cache only has to hold the tiles of one page.
+const EXPORT_CACHE: Bytes = Bytes(64 * 1024 * 1024);
+
+/// Builds the backend of one export renderer.
+pub type BackendFactory = Box<dyn Fn() -> Box<dyn RenderBackend> + Send + Sync>;
+
+/// The [`PageRenderers`] of the engine's exports (spec 030): one
+/// [`GraphPageRenderer`] at export quality per snapshot of the document, on a
+/// backend of its own and a cache of its own.
+///
+/// The backend comes from the composition root (P9, ARQ-06), as do the
+/// clock and the fonts.
+pub struct GraphPageRenderers {
+    backend: BackendFactory,
+    clock: Arc<dyn Clock>,
+    fonts: Arc<FontBook>,
+}
+
+impl GraphPageRenderers {
+    /// The renderers over the backends of `backend`, the clock and the fonts.
+    #[must_use]
+    pub fn new(backend: BackendFactory, clock: Arc<dyn Clock>, fonts: Arc<FontBook>) -> Self {
+        Self {
+            backend,
+            clock,
+            fonts,
+        }
+    }
+}
+
+impl PageRenderers for GraphPageRenderers {
+    fn for_document(&self, document: &Document, images: ImagePixels) -> Box<dyn PageRenderer> {
+        Box::new(
+            GraphPageRenderer::new(
+                document.clone(),
+                RenderQuality::Export,
+                BackendSelector::new(None, (self.backend)()),
+                ContentTileCache::new(EXPORT_CACHE),
+                Box::new(SharedClock(Arc::clone(&self.clock))),
+            )
+            .with_fonts(Arc::clone(&self.fonts))
+            .with_images(images),
+        )
+    }
+}
+
+/// A shared clock as the boxed clock a renderer owns.
+struct SharedClock(Arc<dyn Clock>);
+
+impl Clock for SharedClock {
+    fn now(&self) -> UnixTime {
+        self.0.now()
+    }
+
+    fn monotonic(&self) -> std::time::Duration {
+        self.0.monotonic()
+    }
+}
+
 /// The pixel format of each quality (02 §6.2).
 fn format_of(quality: RenderQuality) -> PixelFormat {
     match quality {
@@ -243,17 +399,6 @@ fn zoom_of(quality: RenderQuality, scale: f32) -> f64 {
 /// One side of the page in whole pixels, at least one.
 fn side_px(px: f64) -> u32 {
     (px.round() as u32).max(1)
-}
-
-/// The region of the surface to read back: the output starts at its origin,
-/// whatever the page offset of the request.
-fn target_region(region: IRect) -> IRect {
-    IRect::new(0, 0, whole(region.width()), whole(region.height()))
-}
-
-/// A pixel count of the surface as the coordinate type of [`IRect`].
-fn whole(px: u32) -> i32 {
-    i32::try_from(px).unwrap_or(i32::MAX)
 }
 
 /// An empty (fully transparent) image of the region (AC4, AC5).
@@ -364,6 +509,12 @@ mod tests {
         let kind = NodeKind::Shape(ShapeNode {
             geometry: ShapeGeometry::Rect,
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
+            stroke: None,
+            corner_radius: 0.0,
+            text: None,
+            gradient: None,
+            effect: None,
+            drawn_with: None,
         });
         page.nodes.insert(node, Arc::new(Node::new(base, kind)));
         page.roots = vec![node];
@@ -401,7 +552,9 @@ mod tests {
         PushLayer,
         PopLayer { blend: BlendMode, opacity: f32 },
         FillPath { color: Color, transform: Affine },
+        FillGradient,
         DrawImage,
+        ClipPath,
         ApplyMask,
         ApplyEffect,
         ApplyTransition,
@@ -421,7 +574,15 @@ mod tests {
                 color: *color,
                 transform: *transform,
             },
+            RenderOp::Text {
+                color, transform, ..
+            } => OpShape::FillPath {
+                color: *color,
+                transform: *transform,
+            },
             RenderOp::DrawImage { .. } => OpShape::DrawImage,
+            RenderOp::ClipPath { .. } => OpShape::ClipPath,
+            RenderOp::FillGradient { .. } => OpShape::FillGradient,
             RenderOp::ApplyMask { .. } => OpShape::ApplyMask,
             RenderOp::ApplyEffect { .. } => OpShape::ApplyEffect,
             RenderOp::ApplyTransition { .. } => OpShape::ApplyTransition,
@@ -438,6 +599,7 @@ mod tests {
     struct Ran {
         quality: RenderQuality,
         keys: Vec<TileKey>,
+        regions: Vec<IRect>,
         ops: Vec<Vec<OpShape>>,
     }
 
@@ -532,6 +694,7 @@ mod tests {
             let ran = Ran {
                 quality: plan.quality,
                 keys: plan.tasks.iter().map(|task| task.key).collect(),
+                regions: plan.tasks.iter().map(|task| task.region).collect(),
                 ops: plan.tasks.iter().map(|task| shapes(&task.ops)).collect(),
             };
             let at = {
@@ -684,6 +847,8 @@ mod tests {
             vec![TargetDesc {
                 width: 200,
                 height: 150,
+                origin: (0, 0),
+                page: (200, 150),
                 format: PixelFormat::Rgba8,
             }]
         );
@@ -695,6 +860,87 @@ mod tests {
             .expect("the page renders again");
         let (_, _, _, hits) = seen(&record);
         assert_eq!(hits, 1, "the second render reads the tile of the first");
+    }
+
+    // ARQ-149: a request whose region does not start at the page origin
+    // carries that origin in the target, and its tasks carry regions clipped to
+    // the requested region.
+    #[test]
+    fn arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks() {
+        let document = document(&[(1000, 1000)]);
+        let page = document.pages()[0].id;
+        for (region, origin) in [
+            (IRect::new(100, 100, 356, 356), (100, 100)),
+            (IRect::new(0, 0, 356, 356), (0, 0)),
+        ] {
+            let (renderer, record) = renderer(
+                document.clone(),
+                RenderQuality::Preview,
+                RecordingBackend::new(),
+            );
+            let image = renderer
+                .render(&request(page, region, 1.0, true), &CancelToken::new())
+                .expect("the page renders");
+            let (width, height) = (region.width(), region.height());
+            assert_eq!((image.width(), image.height()), (width, height));
+            let (targets, ran, reads, _) = seen(&record);
+            // The surface sits where the request asked for, not at the page
+            // origin — and the target names the 1000 x 1000 page it was cut
+            // from, not its own 256 x 256 window (O18).
+            assert_eq!(
+                targets,
+                vec![TargetDesc {
+                    width,
+                    height,
+                    origin,
+                    page: (1000, 1000),
+                    format: PixelFormat::Rgba8,
+                }]
+            );
+            // Every task carries its place in page pixels, clipped to the
+            // requested region.
+            let regions: Vec<IRect> = ran
+                .iter()
+                .flat_map(|plan| plan.regions.iter().copied())
+                .collect();
+            assert!(!regions.is_empty(), "{origin:?} plans its tiles");
+            for tile in &regions {
+                assert_eq!(
+                    *tile,
+                    tile.intersect(region),
+                    "{origin:?} plans {tile:?}, outside {region:?}"
+                );
+            }
+            // The tile of the request's corner is the first one of the page
+            // grid, clipped to the request.
+            let corner = IRect::new(origin.0, origin.1, 256, 256);
+            assert!(regions.contains(&corner), "{origin:?} plans {regions:?}");
+            assert_eq!(reads, vec![region]);
+        }
+    }
+
+    // O13, ARQ-42: `read_back` answers the page-space window the request named.
+    // A rectangle translated to the surface's own origin is read against the
+    // surface's page position and loses a band of `x0` columns and `y0` rows.
+    #[test]
+    fn arq_42_read_back_is_asked_for_the_page_space_region_of_the_request() {
+        let document = document(&[(200, 150)]);
+        let page = document.pages()[0].id;
+        let (renderer, record) =
+            renderer(document, RenderQuality::Preview, RecordingBackend::new());
+        let region = IRect::new(4, 6, 68, 70);
+        let image = renderer
+            .render(&request(page, region, 1.0, false), &CancelToken::new())
+            .expect("the page renders");
+        assert_eq!((image.width(), image.height()), (64, 64));
+
+        let (targets, _, reads, _) = seen(&record);
+        assert_eq!(targets[0].origin, (4, 6), "the surface sits at the region");
+        assert_eq!(
+            reads,
+            vec![region],
+            "the rectangle is page space, the same space as the tasks (O13)"
+        );
     }
 
     // ARQ-42, AC3: the preview is 8-bit sRGB premultiplied at the zoom, the
@@ -847,5 +1093,88 @@ mod tests {
                 "transparent={transparent} paints the background: {painted}"
             );
         }
+    }
+
+    // S30-02: an export at 2× reads a page of 100×50 as 200×100: the surface,
+    // the page extent and the background double, and the shapes are scaled.
+    #[test]
+    fn s30_02_an_export_at_twice_the_scale_doubles_the_page() {
+        let document = document(&[(100, 50)]);
+        let page = document.pages()[0].id;
+        let (renderer, record) = renderer(document, RenderQuality::Export, RecordingBackend::new());
+        let image = renderer
+            .render(
+                &request(page, IRect::new(0, 0, 200, 100), 2.0, false),
+                &CancelToken::new(),
+            )
+            .expect("the scaled render");
+        assert_eq!((image.width(), image.height()), (200, 100));
+        let (targets, ran, _, _) = seen(&record);
+        assert_eq!((targets[0].width, targets[0].height), (200, 100));
+        assert_eq!(targets[0].page, (200, 100));
+        let fills: Vec<Affine> = ran[0].ops[0]
+            .iter()
+            .filter_map(|op| match op {
+                OpShape::FillPath { transform, .. } => Some(*transform),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            fills,
+            [
+                Affine::IDENTITY,
+                Affine::scale(2.0) * Placement::new(0.0, 0.0, 10.0, 10.0).to_transform()
+            ],
+            "the background, then the shape at twice its size"
+        );
+    }
+
+    // S30-02: a scale that is not finite or not above zero is an error.
+    #[test]
+    fn s30_02_a_scale_that_is_not_finite_or_positive_is_an_error() {
+        let document = document(&[(100, 50)]);
+        let page = document.pages()[0].id;
+        let (renderer, _) = renderer(document, RenderQuality::Export, RecordingBackend::new());
+        for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let result = renderer.render(
+                &request(page, IRect::new(0, 0, 10, 10), scale, false),
+                &CancelToken::new(),
+            );
+            assert!(result.is_err(), "scale {scale} is refused");
+        }
+    }
+
+    // S30-05: the export renderers build an export-quality renderer over the
+    // snapshot they are given, on a backend of their own.
+    #[test]
+    fn s30_05_the_export_renderers_render_the_snapshot_at_export_quality() {
+        let document = document(&[(40, 30)]);
+        let page = document.pages()[0].id;
+        let backend = RecordingBackend::new();
+        let record = backend.record();
+        let slot = Mutex::new(Some(backend));
+        let renderers = GraphPageRenderers::new(
+            Box::new(move || {
+                let backend = slot
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take()
+                    .unwrap_or_else(RecordingBackend::new);
+                Box::new(backend) as Box<dyn RenderBackend>
+            }),
+            Arc::new(FixedClock),
+            Arc::new(FontBook::new()),
+        );
+        let pages = renderers.for_document(&document, ImagePixels::new());
+        let image = pages
+            .render(
+                &request(page, IRect::new(0, 0, 40, 30), 1.0, false),
+                &CancelToken::new(),
+            )
+            .expect("the page renders");
+        assert_eq!((image.width(), image.height()), (40, 30));
+        let (targets, ran, _, _) = seen(&record);
+        assert_eq!(targets[0].format, PixelFormat::RgbaF32);
+        assert_eq!(ran[0].quality, RenderQuality::Export);
     }
 }

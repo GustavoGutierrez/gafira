@@ -824,6 +824,29 @@ mod tests {
         assert_empty_images_are_ok(&tex());
     }
 
+    // S13-20, "Imagen de tamaño 0": one side at 0 is Ok with every slider on, too.
+    #[test]
+    fn texture_an_image_with_one_side_0_is_ok_with_every_slider_on() {
+        let p = params_of([1.0, 1.0, -1.0]);
+        for size in [(0u32, 3u32), (3, 0)] {
+            assert_eq!(run8(&tex(), &cx(1.0), &p, &[], size), Ok(Vec::new()));
+            assert_eq!(runf(&tex(), &cx(1.0), &p, &[], size), Ok(Vec::new()));
+        }
+    }
+
+    // S13-21, "División por alfa 0": a pixel whose blurred alpha underflows to 0 (the smallest
+    // f32 alpha, alone) has no blurred colour or luminance to read, so Nitidez and Claridad
+    // leave it as it was instead of dividing by 0.
+    #[test]
+    fn fd_33_a_blurred_alpha_of_0_leaves_the_pixel_alone() {
+        let tiny = f32::from_bits(1);
+        let src = [0.0, 0.0, 0.0, tiny];
+        for p in [params_of([1.0, 0.0, 0.0]), params_of([0.0, 1.0, 0.0])] {
+            let out = runf(&tex(), &cx(1.0), &p, &src, (1, 1)).expect("valid input");
+            assert_eq!(bits(&out), bits(&src));
+        }
+    }
+
     // ARQ-111
     #[test]
     fn arq_111_texture_is_deterministic() {

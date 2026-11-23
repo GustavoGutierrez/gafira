@@ -1,0 +1,33 @@
+[package]
+name = "gafira-io-pptx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-color.workspace = true
+gafira-raster.workspace = true
+# Spec 080: a QR code goes as its shapes.
+gafira-qr.workspace = true
+# Spec 081: a table goes as a table.
+gafira-table.workspace = true
+# Spec 083: charts.
+gafira-chart.workspace = true
+# Decoding an image that is neither PNG nor JPEG (WebP) to re-encode it.
+gafira-io-image.workspace = true
+image.workspace = true
+# The OPC package is a ZIP (already in the tree for .gaf).
+zip.workspace = true
+# The backend of `zip`; not used directly.
+flate2.workspace = true
+
+[dev-dependencies]
+gafira-geom.workspace = true
+roxmltree.workspace = true
+
+[lints]
+workspace = true

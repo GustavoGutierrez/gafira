@@ -1,0 +1,36 @@
+%% Title page of the technical manual. Rendered by manual.py, which replaces
+%% every {{...}} placeholder; the fonts, colours and asset path are set in the preamble.
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[gafiraink] (current page.south west) rectangle (current page.north east);
+  \fill[gafiracoral] (current page.north west) rectangle ([xshift=3mm]current page.south west);
+  \fill[gafiramint] ([xshift=-58mm,yshift=-19mm]current page.north east)
+    rectangle ([yshift=-19.5mm]current page.north east);
+\end{tikzpicture}
+\sffamily
+\vspace*{-2mm}
+{\raggedleft\GafiraDisplay\fontsize{9}{12}\selectfont\color{gafiramist}%
+  \addfontfeature{LetterSpace=16}{{EDITION}}\par}
+\vspace{14mm}
+{\raggedright\includegraphics[width=68mm]{gafira-logo-dark-background}\par}
+\vfill
+{\GafiraDisplay\fontsize{10}{12}\selectfont\bfseries\color{gafiramint}%
+  \addfontfeature{LetterSpace=18}{{KICKER}}\par}
+\vspace{6mm}
+{\GafiraHeavy\fontsize{31}{36}\selectfont\color{gafiracanvas} {{TITLE}}\par}
+\vspace{8mm}
+{\color{gafiracoral}\rule{44mm}{1.4mm}}\par
+\vspace{8mm}
+{\GafiraDisplay\fontsize{11.5}{17}\selectfont\color{gafiramist} {{BLURB}}\par}
+\vspace{9mm}
+{\GafiraDisplay\fontsize{9.5}{13}\selectfont\color{gafiramist}%
+  {{VERSION}} \quad\textbullet\quad {{DATE}}\par}
+\vfill
+{\color{gafiramist}\rule{\linewidth}{0.25mm}}\par
+\vspace{4mm}
+{\GafiraDisplay\fontsize{11.5}{14}\selectfont\bfseries\color{gafiracanvas} {{AUTHOR}}\par}
+\vspace{1mm}
+{\GafiraDisplay\fontsize{9.5}{13}\selectfont\color{gafiramist} {{AUTHOR_ROLE}}\par}
+\vspace*{2mm}
+\end{titlepage}

@@ -35,6 +35,12 @@ LANGS = {
         "title": "Gafira Technical Manual",
         "version": "Version",
         "toc": "Contents",
+        "kicker": "TECHNICAL MANUAL",
+        "blurb": "How Gafira is built: layers, crates and ports, the document format, the quality gates and the development method.",
+        "author": "Ing. Gustavo Gutiérrez",
+        "author_role": "Colombia",
+        "edition": "English edition",
+        "legal": "Gafira is proprietary software. This manual documents what the repository implements today and marks as Planned what the specifications name and the code does not have yet. The product intent lives in specs/; when the two disagree, the specification and the owner decisions win.",
         "template": "# {title}\n\n## Purpose\n\nState what this chapter covers and who needs it.\n\n## Content\n\n"
         "Describe what exists in the repository today. Mark anything specified but not\nimplemented as **Planned**.\n",
     },
@@ -45,6 +51,12 @@ LANGS = {
         "title": "Manual técnico de Gafira",
         "version": "Versión",
         "toc": "Contenido",
+        "kicker": "MANUAL TÉCNICO",
+        "blurb": "Cómo está construido Gafira: capas, crates y puertos, el formato de documento, las puertas de calidad y el método de desarrollo.",
+        "author": "Ing. Gustavo Gutiérrez",
+        "author_role": "Colombia",
+        "edition": "Edición en español",
+        "legal": "Gafira es software propietario. Este manual documenta lo que el repositorio implementa hoy y marca como Planificado lo que las especificaciones nombran y el código todavía no tiene. La intención de producto vive en specs/; cuando ambas cosas discrepan, ganan la especificación y las decisiones del titular.",
         "template": "# {title}\n\n<!-- TRANSLATE: replace this stub with the Spanish translation of the English chapter -->\n\n"
         "## Propósito\n\nIndique qué cubre este capítulo y quién lo necesita.\n\n## Contenido\n\n"
         "Describa lo que existe hoy en el repositorio. Marque como **Planificado** lo que está\nespecificado pero no implementado.\n",
@@ -89,6 +101,28 @@ end
 
 LATEX_HEADER = r"""\usepackage{fvextra}
 \usepackage{etoolbox}
+\usepackage{sectsty}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usetikzlibrary{calc}
+\definecolor{gafiraink}{HTML}{18243B}
+\definecolor{gafiracoral}{HTML}{FF6B57}
+\definecolor{gafiracanvas}{HTML}{FAFAF7}
+\definecolor{gafiramint}{HTML}{3FBFA9}
+\definecolor{gafiramist}{HTML}{E7EAF2}
+\newfontfamily\GafiraDisplay{Inter}[UprightFont={[TESTFONTDIR/Inter-test.ttf]},
+  BoldFont={[MANUALFONTDIR/Inter-SemiBold.ttf]}]
+\newfontfamily\GafiraHeavy{Manrope}[UprightFont={[MANUALFONTDIR/Manrope-ExtraBold.ttf]}]
+\setmainfont{Inter}[UprightFont={[TESTFONTDIR/Inter-test.ttf]},
+  BoldFont={[MANUALFONTDIR/Inter-SemiBold.ttf]}]
+\newfontfamily\GafiraHeading{Manrope}[UprightFont={[MANUALFONTDIR/Manrope-ExtraBold.ttf]}]
+\allsectionsfont{\GafiraHeading}
+% Inter's figures are wider than Latin Modern's: the class's default number box in the
+% table of contents is too narrow for a four-character number such as 10.12.
+\makeatletter
+\renewcommand{\l@subsection}{\@dottedtocline{2}{1.5em}{2.9em}}
+\makeatother
+\renewcommand{\maketitle}{}
 \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\footnotesize}
 \setlength{\emergencystretch}{4em}
 \sloppy
@@ -113,6 +147,11 @@ def repo_root() -> Path:
         if (parent / "Cargo.toml").is_file():
             return parent
     return HERE
+
+
+def edition(lang: str | None) -> str:
+    """The edition a command works on: the one asked for, or English."""
+    return lang or "en"
 
 
 def read_index(lang: str) -> tuple[list[str], list[tuple[str, str]]]:
@@ -149,7 +188,7 @@ def chapter_title(path: Path) -> str | None:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    _, entries = read_index(args.lang)
+    _, entries = read_index(edition(args.lang))
     for title, file in entries:
         print(f"{file[:2]}  {title}  ({file})")
     return 0
@@ -283,7 +322,7 @@ def check_mirror(errors: list[str]) -> None:
 
 def cmd_check(args: argparse.Namespace) -> int:
     errors: list[str] = []
-    check_structure(args.lang, errors)
+    check_structure(edition(args.lang), errors)
     for lang in LANGS:
         scan_files(lang, errors)
     check_mirror(errors)
@@ -305,8 +344,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("\n".join(errors), file=sys.stderr)
         print(f"check failed: {len(errors)} problem(s)", file=sys.stderr)
         return 1
-    _, entries = read_index(args.lang)
-    print(f"check ok [{args.lang}]: {len(entries)} chapters, English and Spanish mirror each other, "
+    _, entries = read_index(edition(args.lang))
+    print(f"check ok [{edition(args.lang)}]: {len(entries)} chapters, English and Spanish mirror each other, "
           "no absolute paths, links resolve")
     return 0
 
@@ -325,33 +364,69 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def render_template(name: str, values: dict[str, str]) -> str:
+    """Fill a tracked .tex template; every placeholder must be provided."""
+    text = (HERE / name).read_text(encoding="utf-8")
+    for key, value in values.items():
+        text = text.replace("{{" + key + "}}", value)
+    missing = sorted(set(re.findall(r"\{\{([A-Z_]+)\}\}", text)))
+    if missing:
+        sys.exit(f"error: {name} has unfilled placeholders: {', '.join(missing)}")
+    return text
+
+
 def cmd_build(args: argparse.Namespace) -> int:
     if cmd_check(args) != 0:
         return 1
     if not shutil.which("pandoc"):
         print("error: pandoc is required", file=sys.stderr)
         return 1
-    cfg = LANGS[args.lang]
-    _, entries = read_index(args.lang)
+    langs = [args.lang] if args.lang else sorted(LANGS)
+    failed = False
+    for lang in langs:
+        failed = build_edition(lang, args) or failed
+    return 1 if failed else 0
+
+
+def build_edition(lang: str, args: argparse.Namespace) -> bool:
+    """Render one edition; answers True when its PDF could not be produced."""
+    cfg = LANGS[lang]
+    _, entries = read_index(lang)
     BUILD.mkdir(exist_ok=True)
-    stem = "manual" if args.lang == "en" else "manual-es"
+    stem = "manual" if lang == "en" else "manual-es"
     md = BUILD / f"{stem}.md"
     md.write_text("\n\n".join((cfg["chapters"] / f).read_text(encoding="utf-8").rstrip() + "\n"
                                          for _, f in entries), encoding="utf-8")
     (BUILD / "code-break.lua").write_text(LUA_FILTER, encoding="utf-8")
-    (BUILD / "header.tex").write_text(LATEX_HEADER, encoding="utf-8")
+    assets = (HERE.parent / "marca" / "assets").resolve()
+    (BUILD / "header.tex").write_text(
+        LATEX_HEADER.replace("TESTFONTDIR", str((repo_root() / "assets" / "fonts" / "test").resolve()))
+        .replace("MANUALFONTDIR", str((repo_root() / "assets" / "fonts" / "manual").resolve()))
+        + f"\\graphicspath{{{{{assets}/}}}}\n", encoding="utf-8")
+    today = datetime.date.today().isoformat()
+    values = {
+        "TITLE": cfg["title"], "KICKER": cfg["kicker"], "BLURB": cfg["blurb"],
+        "VERSION": f"{cfg['version']} {workspace_version()}", "AUTHOR": cfg["author"],
+        "AUTHOR_ROLE": cfg["author_role"], "LEGAL": cfg["legal"],
+        "EDITION": cfg["edition"], "DATE": today,
+    }
+    (BUILD / "cover.tex").write_text(render_template("cover.tex", values), encoding="utf-8")
+    (BUILD / "backcover.tex").write_text(render_template("backcover.tex", values), encoding="utf-8")
     css = BUILD / "manual.css"
     css.write_text(CSS, encoding="utf-8")
     pdf = BUILD / cfg["pdf"]
     pdf.unlink(missing_ok=True)
     meta = ["-M", f"title={cfg['title']}", "-M", f"subtitle={cfg['version']} {workspace_version()}",
-            "-M", f"date={datetime.date.today().isoformat()}", "-M", f"lang={args.lang}", "-M", f"toc-title={cfg['toc']}"]
+            "-M", f"author={cfg['author']}",
+            "-M", f"date={datetime.date.today().isoformat()}", "-M", f"lang={lang}", "-M", f"toc-title={cfg['toc']}"]
     base = ["--from", "markdown+pipe_tables", "--toc", "--toc-depth=2", "--number-sections"]
     engine, errors = args.engine, []
     if engine in ("auto", "xelatex") and shutil.which("xelatex"):
         try:
             run(["pandoc", str(md), "-o", str(pdf), *base, "--pdf-engine=xelatex", "--syntax-highlighting=none",
                  "--lua-filter", str(BUILD / "code-break.lua"), "-H", str(BUILD / "header.tex"),
+                 "--include-before-body", str(BUILD / "cover.tex"),
+                 "--include-after-body", str(BUILD / "backcover.tex"),
                  "-V", "papersize=a4", "-V", "geometry:margin=2.2cm", "-V", "fontsize=10pt", "-V", "colorlinks=true", *meta])
         except subprocess.CalledProcessError as e:
             errors.append(f"xelatex failed: {e}")
@@ -375,10 +450,10 @@ def cmd_build(args: argparse.Namespace) -> int:
             except subprocess.CalledProcessError as e:
                 errors.append(f"wkhtmltopdf failed: {e}")
     if not pdf.exists() or pdf.stat().st_size == 0:
-        print("error: no PDF produced. " + "; ".join(errors), file=sys.stderr)
-        return 1
+        print(f"error: no PDF produced for {lang}. " + "; ".join(errors), file=sys.stderr)
+        return True
     print(f"built {pdf.relative_to(repo_root())} ({pdf.stat().st_size} bytes)")
-    return 0
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -387,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
 
     def add(name: str, help: str, func) -> argparse.ArgumentParser:
         p = sub.add_parser(name, help=help)
-        p.add_argument("--lang", choices=sorted(LANGS), default="en", help="language edition (default en)")
+        p.add_argument("--lang", choices=sorted(LANGS), default=None,
+                       help="language edition (default: every edition for build, English otherwise)")
         p.set_defaults(func=func)
         return p
 

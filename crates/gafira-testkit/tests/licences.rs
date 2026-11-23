@@ -58,7 +58,9 @@ fn font_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
         let path = item.path();
         let name = item.file_name();
         if path.is_dir() {
-            if name != "target" && name != ".git" {
+            // A folder with its own `.git` is another checkout (a worktree under
+            // `.claude/worktrees/`, a nested clone), not this repository.
+            if name != "target" && name != ".git" && !path.join(".git").exists() {
                 font_files(root, &path, out);
             }
         } else if path
@@ -90,6 +92,16 @@ fn found_fonts() -> Vec<String> {
     found
 }
 
+/// The test fonts on disk: the files of the test-font directory, which is the set the
+/// registry `fonts::ALL` is meant to expose.
+fn found_test_fonts() -> Vec<String> {
+    let root = repo_root();
+    let mut found = Vec::new();
+    font_files(&root, &root.join("assets/fonts/test"), &mut found);
+    found.sort();
+    found
+}
+
 #[test]
 fn arq_115_every_font_file_in_the_repository_has_a_licence_entry() {
     let found = found_fonts();
@@ -113,7 +125,7 @@ fn arq_115_the_check_names_a_font_that_has_no_entry() {
 
 #[test]
 fn arq_115_embedded_fonts_are_the_files_on_disk() {
-    let found = found_fonts();
+    let found = found_test_fonts();
     for font in fonts::ALL {
         assert!(
             found.iter().any(|f| f == font.path),

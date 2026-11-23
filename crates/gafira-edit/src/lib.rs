@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod budget;
 mod command;
 mod dirty;
@@ -17,17 +18,20 @@ mod pages;
 mod remove_nodes;
 mod reorder;
 mod reparent;
+mod restore;
 mod set_property;
 mod transaction;
 
+pub use assets::InsertAsset;
 pub use command::{Applied, Command, GestureId, MergeKey};
 pub use dirty::DirtySet;
 pub use error::CommandError;
 pub use history::{DEFAULT_BUDGET, History};
 pub use insert_nodes::{InsertNodes, NodeSpec};
-pub use pages::{InsertPage, RemovePage};
+pub use pages::{DuplicatePage, InsertPage, RemovePage, ReorderPage};
 pub use remove_nodes::RemoveNodes;
 pub use reorder::Reorder;
 pub use reparent::Reparent;
+pub use restore::RestoreVersion;
 pub use set_property::{Property, SetProperty};
 pub use transaction::Transaction;

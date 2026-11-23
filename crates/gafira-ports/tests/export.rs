@@ -329,7 +329,7 @@ fn p8_duplicate_exporter_id_is_rejected_and_changes_nothing() {
     );
 }
 
-// P8: `.gafira` is both an importer and an exporter.
+// P8: `.gaf` is both an importer and an exporter.
 #[test]
 fn p8_same_id_as_importer_and_exporter_is_valid() {
     let mut reg = FormatRegistry::new();
@@ -513,4 +513,46 @@ fn p4_sink_writer_can_seek_back() {
     out.seek(SeekFrom::Start(1)).unwrap();
     out.write_all(b"Z").unwrap();
     assert_eq!(out.stream_position().unwrap(), 2);
+}
+
+// ---- PageRenderers builds the pages of a document snapshot (spec 030) ----
+
+struct Factory {
+    built: Mutex<usize>,
+}
+
+impl gafira_ports::export::PageRenderers for Factory {
+    fn for_document(
+        &self,
+        _document: &Document,
+        _images: gafira_ports::export::ImagePixels,
+    ) -> Box<dyn PageRenderer> {
+        *self.built.lock().unwrap() += 1;
+        Box::new(Pages {
+            asked: Mutex::default(),
+        })
+    }
+}
+
+// S30-05: the engine reaches a renderer through a `dyn PageRenderers`, one per
+// snapshot of the document.
+#[test]
+fn s30_05_page_renderers_builds_one_renderer_per_snapshot() {
+    let factory = Factory {
+        built: Mutex::new(0),
+    };
+    let renderers: &dyn gafira_ports::export::PageRenderers = &factory;
+    let pages = renderers.for_document(&Document::default(), Default::default());
+    let request = PageRenderRequest {
+        page: PageId::new(1),
+        time: Flicks::default(),
+        scale: 1.0,
+        region: IRect::new(0, 0, 1, 1),
+        transparent: false,
+    };
+    let image = pages
+        .render(&request, &CancelToken::new())
+        .expect("the renderer answers");
+    assert_eq!((image.width(), image.height()), (1, 1));
+    assert_eq!(*factory.built.lock().unwrap(), 1);
 }

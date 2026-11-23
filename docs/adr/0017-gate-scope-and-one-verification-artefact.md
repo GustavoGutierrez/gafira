@@ -1,6 +1,6 @@
 # 0017. Gates scoped to the crate, and no second verification artefact
 
-- Status: accepted
+- Status: accepted, amended by 0018
 - Date: 2026-11-05
 - Related: `AGENTS.md` (Strict TDD), ADR 0001 (superseded in part: the `verification.json` artefact and the per-commit `--workspace` gate), ADR 0002, ADR 0003, ADR 0004, change `layer-3b`
 

@@ -16,10 +16,38 @@ use gafira_ports::render::{ContentKey, RenderQuality};
 /// The domain byte of the render graph (02 §6.1).
 pub const DOMAIN: u8 = b'R';
 
+/// The domain byte of the composition of the roots of a region (O12).
+///
+/// It is distinct from [`DOMAIN`], so a composed key never collides with the
+/// key of a node of the graph.
+pub const COMPOSITE_DOMAIN: u8 = b'T';
+
+/// The key of the tile that composes every root of a region (O12).
+///
+/// The roots arrive in paint order, and the key is the BLAKE3 hash of the
+/// domain byte, their number and their keys in that order, truncated and read
+/// as a [`content_key`] is. It changes when any root changes and when the
+/// order changes, which is what a region's tile needs: the backend writes the
+/// tile over the surface as the whole content of the region, so a stale tile
+/// would serve an image of a page that no longer exists.
+#[must_use]
+pub fn composite_key(root_keys: &[ContentKey]) -> ContentKey {
+    let mut description = Vec::with_capacity(5 + 16 * root_keys.len());
+    description.push(COMPOSITE_DOMAIN);
+    description.extend_from_slice(&(root_keys.len() as u32).to_be_bytes());
+    for key in root_keys {
+        description.extend_from_slice(&key.0.to_be_bytes());
+    }
+    let hash = blake3::hash(&description);
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&hash.as_bytes()[..16]);
+    ContentKey(u128::from_be_bytes(bytes))
+}
+
 /// The type of a node in the canonical description (02 §6.1).
 ///
-/// The numbers are fixed: `1` is a group, `2` a shape and `3` an extension. A
-/// kind added later takes the next free number and reuses none.
+/// The numbers are fixed: `1` is a group, `2` a shape, `3` an extension and
+/// `4` a text. A kind added later takes the next free number and reuses none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeType {
     /// A group: it arranges its children.
@@ -29,6 +57,10 @@ pub enum NodeType {
     /// An extension. The byte is reserved by §6.1; the extension itself joins
     /// the graph when the handler seam of ARQ-137 lands.
     Extension = 3,
+    /// A text element: it fills the outlines of its glyphs (spec 030).
+    Text = 4,
+    /// An image element: it draws the pixels of its asset (spec 032).
+    Image = 5,
 }
 
 /// One parameter of a node, sampled at the instant of the graph (02 §6.1).
@@ -51,6 +83,17 @@ pub enum KeyParam {
     Opacity(f32),
     /// The blend mode of the node.
     Blend(BlendMode),
+    /// What a text draws: its family, size, alignment and words, in one
+    /// canonical string (spec 030).
+    Text(String),
+    /// The content hash of the asset an image draws (spec 032).
+    Asset([u8; 32]),
+    /// The outline of a shape that draws one: its colour and width
+    /// (spec 038).
+    Stroke(Color, f64),
+    /// The corner radius a rectangle is drawn with, after the limit of
+    /// FD-36 (a) (spec 038).
+    CornerRadius(f64),
 }
 
 /// The canonical description of a node (02 §6.1).
@@ -116,7 +159,17 @@ impl KeyParam {
             Self::Transform(_) => 4,
             Self::Opacity(_) => 5,
             Self::Blend(_) => 6,
+            Self::Text(_) => 7,
+            Self::Asset(_) => 8,
+            Self::Stroke(..) => 9,
+            Self::CornerRadius(_) => 10,
         }
+    }
+
+    /// The bytes [`Self::write`] gives, for the tests of other modules.
+    #[cfg(test)]
+    pub(crate) fn write_for_test(&self, out: &mut Vec<u8>) {
+        self.write(out);
     }
 
     /// The bytes of the value of this parameter: its tag and its payload.
@@ -127,10 +180,29 @@ impl KeyParam {
                 RenderQuality::Preview => 0,
                 RenderQuality::Export => 1,
             }),
-            Self::Geometry(geometry) => out.push(match geometry {
-                ShapeGeometry::Rect => 0,
-                ShapeGeometry::Ellipse => 1,
-            }),
+            Self::Geometry(geometry) => match geometry {
+                ShapeGeometry::Rect => out.push(0),
+                ShapeGeometry::Ellipse => out.push(1),
+                // A path writes each order's tag and its points; the tag
+                // fixes how many points follow (spec 054).
+                ShapeGeometry::Path(path) => {
+                    out.push(2);
+                    for command in &path.commands {
+                        let tag = match command {
+                            gafira_doc::PathCommand::MoveTo(_) => 0,
+                            gafira_doc::PathCommand::LineTo(_) => 1,
+                            gafira_doc::PathCommand::QuadTo(..) => 2,
+                            gafira_doc::PathCommand::CubicTo(..) => 3,
+                            gafira_doc::PathCommand::Close => 4,
+                        };
+                        out.push(tag);
+                        for [x, y] in command.points() {
+                            out.extend_from_slice(&f64_bytes(x));
+                            out.extend_from_slice(&f64_bytes(y));
+                        }
+                    }
+                }
+            },
             Self::Fill(color) => match color {
                 None => out.push(0),
                 Some(color) => {
@@ -148,6 +220,16 @@ impl KeyParam {
             }
             Self::Opacity(opacity) => out.extend_from_slice(&f32_bytes(*opacity)),
             Self::Blend(blend) => out.push(blend_byte(*blend)),
+            Self::Text(text) => out.extend_from_slice(text.as_bytes()),
+            Self::Asset(hash) => out.extend_from_slice(hash),
+            Self::Stroke(color, width) => {
+                out.push(space_byte(color.space()));
+                for channel in channels(*color) {
+                    out.extend_from_slice(&f32_bytes(channel));
+                }
+                out.extend_from_slice(&f64_bytes(*width));
+            }
+            Self::CornerRadius(radius) => out.extend_from_slice(&f64_bytes(*radius)),
         }
     }
 }
@@ -258,6 +340,12 @@ mod tests {
             KeyParam::Transform([0.0; 6]),
             KeyParam::Opacity(0.0),
             KeyParam::Blend(BlendMode::Normal),
+            // Spec 038: two kinds whose value can be all zero bytes.
+            KeyParam::CornerRadius(0.0),
+            KeyParam::Stroke(
+                Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 0.0)),
+                0.0,
+            ),
         ];
         let keys: Vec<ContentKey> = parameters
             .iter()

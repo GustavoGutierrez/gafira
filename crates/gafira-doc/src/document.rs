@@ -2,28 +2,65 @@
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use crate::json::DocumentWire;
-use crate::{Dpi, IdSpaceExhausted, Page, PageId};
+use crate::timeline::{AssetEntry, AssetRef, AssetTable, Sequence};
+use crate::{Dpi, IdSpaceExhausted, Page, PageId, ProjectId};
 
-/// A whole document: a version, one id counter, a DPI and ordered pages.
+/// A whole document: a version, one id counter, a DPI, ordered pages, the
+/// timelines and the asset table their clips name (02 §3.1).
 ///
 /// Fields are private; pages are shared by `Arc` so cloning copies no page
 /// or node. Reading never hands out `&mut` access; mutation needs an
 /// `EditToken` and goes through `Document::edit`. Replacing a whole value
 /// (`*doc = other`) is possible for whoever owns the document and is owned by
 /// `EditService` in C3; it is documented, not prevented.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DocumentWire")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Document {
     pub(crate) schema_version: u32,
     pub(crate) next_id: u64,
+    /// The project's identity (D-63); nil until the engine assigns one.
+    pub(crate) project_id: ProjectId,
     pub(crate) dpi: Dpi,
     pub(crate) pages: Vec<Arc<Page>>,
+    /// The timelines of the document, in creation order (02 §3.1).
+    pub(crate) sequences: Vec<Arc<Sequence>>,
+    /// The asset table the clips need (P9), keyed by the content hash.
+    pub(crate) assets: AssetTable,
 }
 
 impl Document {
+    /// The sequences of the document, in the order they were created.
+    ///
+    /// Timeline data sits on the document root until the composition root
+    /// (`Project`, 02 §3.1) exists, and the wire form carries it beside the
+    /// pages.
+    #[must_use]
+    pub fn sequences(&self) -> &[Arc<Sequence>] {
+        &self.sequences
+    }
+
+    /// The sequence with this id.
+    #[must_use]
+    pub fn sequence(&self, id: crate::SequenceId) -> Option<&Sequence> {
+        self.sequences
+            .iter()
+            .find(|s| s.id == id)
+            .map(|sequence| sequence.as_ref())
+    }
+
+    /// The asset table the clips name their media with (P9).
+    #[must_use]
+    pub fn assets(&self) -> &AssetTable {
+        &self.assets
+    }
+
+    /// The entry of the asset table the reference names.
+    #[must_use]
+    pub fn asset(&self, reference: &AssetRef) -> Option<&AssetEntry> {
+        self.assets.get(reference)
+    }
+
     /// The schema version this build writes and reads.
     pub const SCHEMA_VERSION: u32 = 1;
 
@@ -32,7 +69,8 @@ impl Document {
         self.schema_version
     }
 
-    /// The next id the shared counter will hand out (nodes and pages).
+    /// The next id the shared counter will hand out (pages, nodes and the
+    /// timeline's sequences, tracks, clips and markers).
     pub fn next_id(&self) -> u64 {
         self.next_id
     }
@@ -40,6 +78,21 @@ impl Document {
     /// The document resolution.
     pub fn dpi(&self) -> Dpi {
         self.dpi
+    }
+
+    /// The project's identity (D-63); [`ProjectId::NIL`] until one is set.
+    #[must_use]
+    pub fn project_id(&self) -> ProjectId {
+        self.project_id
+    }
+
+    /// The same document under the identity `id` (D-63): the engine sets it
+    /// on a new project, on a file written before the field, and on the
+    /// document «Guardar copia» writes. No edit changes it.
+    #[must_use]
+    pub fn with_project_id(mut self, id: ProjectId) -> Self {
+        self.project_id = id;
+        self
     }
 
     /// The pages, in page order.
@@ -61,8 +114,33 @@ impl Document {
         let doc = Self {
             schema_version: Self::SCHEMA_VERSION,
             next_id,
+            project_id: ProjectId::NIL,
             dpi,
             pages,
+            sequences: Vec::new(),
+            assets: BTreeMap::new(),
+        };
+        doc.validate()?;
+        Ok(doc)
+    }
+
+    /// [`Document::from_parts`] with an asset table, validated with it: a
+    /// command checks new image elements against the table they will live
+    /// with (spec 029).
+    pub fn from_parts_with_assets(
+        next_id: u64,
+        dpi: Dpi,
+        pages: Vec<Arc<Page>>,
+        assets: AssetTable,
+    ) -> Result<Self, crate::ValidationError> {
+        let doc = Self {
+            schema_version: Self::SCHEMA_VERSION,
+            next_id,
+            project_id: ProjectId::NIL,
+            dpi,
+            pages,
+            sequences: Vec::new(),
+            assets,
         };
         doc.validate()?;
         Ok(doc)
@@ -82,8 +160,11 @@ impl Default for Document {
         Self {
             schema_version: Self::SCHEMA_VERSION,
             next_id: 1,
+            project_id: ProjectId::NIL,
             dpi: Dpi::default(),
             pages: Vec::new(),
+            sequences: Vec::new(),
+            assets: BTreeMap::new(),
         }
     }
 }
@@ -94,8 +175,11 @@ pub(crate) fn test_document(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Do
     Document {
         schema_version: Document::SCHEMA_VERSION,
         next_id,
+        project_id: ProjectId::NIL,
         dpi,
         pages,
+        sequences: Vec::new(),
+        assets: BTreeMap::new(),
     }
 }
 

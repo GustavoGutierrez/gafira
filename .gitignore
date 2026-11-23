@@ -43,3 +43,6 @@ assets/musics/*
 
 # Technical manual build output (generated PDF is not committed)
 docs/manuals/tecnico/build/
+
+# Agent worktrees (local, never tracked)
+.claude/worktrees/

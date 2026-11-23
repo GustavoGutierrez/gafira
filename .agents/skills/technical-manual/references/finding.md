@@ -29,7 +29,7 @@ Output is `NN  Title  (NN-slug.md)`. The index files (`docs/manuals/tecnico/inde
 | A crate with no row (new crate) | Add a chapter or a section, and update `02-architecture.md` and the state table in `01-overview.md` |
 | Product intent in `specs/` (00 decisions, 02 architecture, backlog 01 and 03 to 06) | Intent is not documented; only the built part appears in the matching chapter, the rest as **Planned** |
 
-Spec names are folders in `specs/capabilities/`; open changes are folders in `specs/changes/`. Refresh the picture with `ls crates specs/capabilities specs/changes`.
+Active specs are `specs/NNN-*.md` (index: `specs/README.md`); the earlier capability specs and changes are folders in `specs/done/legacy/capabilities/` and `specs/done/legacy/changes/`. Refresh the picture with `ls crates specs specs/done/legacy/capabilities specs/done/legacy/changes`.
 
 ## Grep recipes
 

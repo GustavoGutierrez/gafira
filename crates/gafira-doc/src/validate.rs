@@ -6,6 +6,7 @@ use gafira_color::Color;
 use serde_json::Value;
 
 use crate::node::MAX_EXTENSION_DEPTH;
+use crate::timeline::ClipSource;
 use crate::{Document, Node, NodeField, NodeId, NodeKind, Page, ValidationError};
 
 impl Document {
@@ -21,7 +22,10 @@ impl Document {
         self.check_pages()?;
         self.check_nodes()?;
         self.check_parents()?;
-        self.check_reachability()
+        self.check_reachability()?;
+        self.check_clip_sources()?;
+        self.check_image_sources()?;
+        self.check_timeline()
     }
 
     /// P1: schema version, then DPI.
@@ -40,12 +44,27 @@ impl Document {
     }
 
     /// P2: distinct ids, arena keys, then the `next_id` bound.
+    ///
+    /// The counter is one for the document, so the ids of the pages, the nodes
+    /// and the timeline share it and are distinct among themselves and below
+    /// `next_id` (ARQ-10).
     fn check_ids(&self) -> Result<(), ValidationError> {
         let ids = || {
-            self.pages.iter().flat_map(|p| {
+            let pages = self.pages.iter().flat_map(|p| {
                 let nodes = p.nodes.values().map(|n| n.base.id.get());
                 std::iter::once(p.id.get()).chain(nodes)
-            })
+            });
+            let timeline = self.sequences.iter().flat_map(|sequence| {
+                let lanes = sequence.tracks().iter().flat_map(|track| {
+                    let clips = track.clips().iter().map(|clip| clip.id().get());
+                    std::iter::once(track.id().get()).chain(clips)
+                });
+                let markers = sequence.markers().iter().map(|marker| marker.id().get());
+                std::iter::once(sequence.id().get())
+                    .chain(lanes)
+                    .chain(markers)
+            });
+            pages.chain(timeline)
         };
         let mut seen = BTreeSet::new();
         if let Some(id) = ids().find(|&id| !seen.insert(id)) {
@@ -68,6 +87,15 @@ impl Document {
 
     /// P3: page sizes, then page layout data, then roots that do not exist, then repeated roots.
     fn check_pages(&self) -> Result<(), ValidationError> {
+        // The background draws, and its image is in the table (spec 069).
+        for page in &self.pages {
+            if let Some(background) = &page.background
+                && (!background.is_valid()
+                    || background.asset().is_some_and(|a| self.asset(&a).is_none()))
+            {
+                return Err(ValidationError::InvalidBackground { page: page.id });
+            }
+        }
         for page in &self.pages {
             let size = page.size.check(self.dpi);
             size.map_err(|error| ValidationError::PageSize {
@@ -163,6 +191,91 @@ impl Document {
         }
         Ok(())
     }
+
+    /// P7: the asset each image element shows is in the asset table (spec
+    /// 029). An image is never left pointing at nothing.
+    fn check_image_sources(&self) -> Result<(), ValidationError> {
+        for page in &self.pages {
+            for (id, node) in &page.nodes {
+                // What it can go back to is there too (spec 084).
+                if let NodeKind::Image(image) = &node.kind
+                    && image.assets().any(|asset| self.asset(&asset).is_none())
+                {
+                    return Err(ValidationError::DanglingImage { node: *id });
+                }
+                // The logo of a QR code is one too (spec 080).
+                if let NodeKind::Qr(qr) = &node.kind
+                    && let Some(logo) = qr.logo
+                    && self.asset(&logo.asset).is_none()
+                {
+                    return Err(ValidationError::InvalidQr { node: *id });
+                }
+                // A frame's photo is an asset of the table too (spec 066).
+                if let NodeKind::Frame(frame) = &node.kind
+                    && let Some(content) = frame.content
+                    && self.asset(&content.asset).is_none()
+                {
+                    return Err(ValidationError::InvalidFrame { node: *id });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// P7: the source each clip of the timeline names — a `Scene` clip names a
+    /// page of the document, and a `Media` or `Audio` clip names an entry of
+    /// the asset table (P9 of the timeline design).
+    ///
+    /// A page a clip shows is never removed while the clip exists: deleting
+    /// both is a command (`RemovePage` alone leaves a document that does not
+    /// validate, the safe half-state), FV-05 (c).
+    fn check_clip_sources(&self) -> Result<(), ValidationError> {
+        for sequence in &self.sequences {
+            for track in sequence.tracks() {
+                for clip in track.clips() {
+                    let error = match clip.source() {
+                        ClipSource::Scene(page) if self.page(*page).is_none() => {
+                            Some(ValidationError::DanglingScene {
+                                clip: clip.id(),
+                                page: *page,
+                            })
+                        }
+                        ClipSource::Media(reference) | ClipSource::Audio(reference)
+                            if self.asset(reference).is_none() =>
+                        {
+                            Some(ValidationError::DanglingAsset { clip: clip.id() })
+                        }
+                        _ => None,
+                    };
+                    if let Some(error) = error {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// P8: the laws of the timeline model, sequence by sequence — the cut on
+    /// the grid, the span of at least one frame, the clip inside its sequence
+    /// and inside its source, the speed that divides, the one strip per lane
+    /// at any instant and the cap of the audio tracks (FV-01, FV-03, P11).
+    ///
+    /// The model upholds these laws as the sequence is built ([`Track::insert`],
+    /// [`Sequence::add_track`]); a value that comes from bytes went through no
+    /// insertion, so a document that breaks one fails to load instead of
+    /// reaching the editor (ARQ-13).
+    fn check_timeline(&self) -> Result<(), ValidationError> {
+        for sequence in &self.sequences {
+            sequence
+                .check_laws()
+                .map_err(|error| ValidationError::TimelineLaw {
+                    sequence: sequence.id(),
+                    error,
+                })?;
+        }
+        Ok(())
+    }
 }
 
 /// How many `children` lists of the page name each node.
@@ -192,6 +305,46 @@ fn unit_interval(v: f64) -> bool {
     (0.0..=1.0).contains(&v)
 }
 
+fn stroke_width(v: f64) -> bool {
+    (0.0..=crate::ShapeStroke::MAX_WIDTH).contains(&v)
+}
+
+fn path_coordinate(v: f64) -> bool {
+    (crate::ShapePath::MIN_COORDINATE..=crate::ShapePath::MAX_COORDINATE).contains(&v)
+}
+
+/// What is wrong with the orders of a shape path, if anything (spec 054).
+fn path_problem(path: &crate::ShapePath) -> Option<crate::PathProblem> {
+    use crate::{PathCommand, PathProblem};
+    match path.commands.first() {
+        None => Some(PathProblem::Empty),
+        Some(PathCommand::MoveTo(_)) if path.commands.len() > crate::ShapePath::MAX_COMMANDS => {
+            Some(PathProblem::TooLong {
+                len: path.commands.len(),
+            })
+        }
+        Some(PathCommand::MoveTo(_)) => None,
+        Some(_) => Some(PathProblem::NoStart),
+    }
+}
+
+fn text_curve(v: f64) -> bool {
+    (-crate::TextNode::MAX_CURVE..=crate::TextNode::MAX_CURVE).contains(&v)
+}
+
+fn font_size(v: f64) -> bool {
+    v > 0.0 && v <= crate::TextNode::MAX_SIZE
+}
+
+/// The four channels of a colour.
+fn channels(color: Color) -> [f32; 4] {
+    match color {
+        Color::Srgb(c) => [c.r, c.g, c.b, c.a],
+        Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
+        Color::DisplayP3(c) => [c.r, c.g, c.b, c.a],
+    }
+}
+
 /// The numeric fields of a node, in reporting order, with their range rule.
 fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
     let p = &node.base.placement;
@@ -211,15 +364,70 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
     if let NodeKind::Shape(shape) = &node.kind
         && let Some(fill) = shape.fill
     {
-        let [r, g, b, a] = match fill {
-            Color::Srgb(c) => [c.r, c.g, c.b, c.a],
-            Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
-            Color::DisplayP3(c) => [c.r, c.g, c.b, c.a],
-        };
+        let [r, g, b, a] = channels(fill);
         for channel in [r, g, b] {
             out.push((NodeField::FillChannel, f64::from(channel), any));
         }
         out.push((NodeField::FillAlpha, f64::from(a), unit_interval));
+    }
+    if let NodeKind::Shape(shape) = &node.kind {
+        if let Some(stroke) = shape.stroke {
+            let [r, g, b, a] = channels(stroke.color);
+            for channel in [r, g, b] {
+                out.push((NodeField::StrokeChannel, f64::from(channel), any));
+            }
+            out.push((NodeField::StrokeAlpha, f64::from(a), unit_interval));
+            out.push((NodeField::StrokeWidth, stroke.width, stroke_width));
+        }
+        out.push((NodeField::CornerRadius, shape.corner_radius, non_negative));
+        if let crate::ShapeGeometry::Path(path) = &shape.geometry {
+            for v in path.coordinates() {
+                out.push((NodeField::PathCoordinate, v, path_coordinate));
+            }
+        }
+    }
+    // A line: its colour, its width and its points in the box (spec 058).
+    if let NodeKind::Line(line) = &node.kind {
+        let [r, g, b, a] = channels(line.color);
+        for channel in [r, g, b] {
+            out.push((NodeField::StrokeChannel, f64::from(channel), any));
+        }
+        out.push((NodeField::StrokeAlpha, f64::from(a), unit_interval));
+        out.push((NodeField::StrokeWidth, line.width, stroke_width));
+        let attached = [line.start.attached, line.end.attached]
+            .into_iter()
+            .flatten()
+            .flat_map(|a| a.at);
+        for v in line.start.at.into_iter().chain(line.end.at).chain(attached) {
+            out.push((NodeField::PathCoordinate, v, path_coordinate));
+        }
+    }
+    // The words of a text element or of a shape's text (spec 055).
+    let content = match &node.kind {
+        NodeKind::Text(text) => Some(&text.content),
+        NodeKind::Shape(shape) => shape.text.as_ref().map(|text| &text.content),
+        _ => None,
+    };
+    if let NodeKind::Text(text) = &node.kind {
+        out.push((NodeField::TextCurve, text.curve, text_curve));
+        out.push((NodeField::LetterSpacing, text.letter_spacing, |v| {
+            crate::TextNode::LETTER_SPACING.contains(&v)
+        }));
+        if let Some(height) = text.line_height {
+            out.push((NodeField::LineHeight, height, |v| {
+                crate::TextNode::LINE_HEIGHT.contains(&v)
+            }));
+        }
+    }
+    if let Some(content) = content {
+        for span in content.spans() {
+            out.push((NodeField::FontSize, span.style.size, font_size));
+            let [r, g, b, a] = channels(span.style.color);
+            for channel in [r, g, b] {
+                out.push((NodeField::TextColorChannel, f64::from(channel), any));
+            }
+            out.push((NodeField::TextColorAlpha, f64::from(a), unit_interval));
+        }
     }
     out
 }
@@ -237,6 +445,64 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
             field,
             value,
         });
+    }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let crate::ShapeGeometry::Path(path) = &shape.geometry
+        && let Some(problem) = path_problem(path)
+    {
+        return Err(ValidationError::InvalidPath { node: id, problem });
+    }
+    let gradient = match &node.kind {
+        NodeKind::Shape(shape) => shape.gradient.as_ref(),
+        NodeKind::Text(text) => text.gradient.as_ref(),
+        _ => None,
+    };
+    if let Some(problem) = gradient.and_then(crate::Gradient::problem) {
+        return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
+    if let NodeKind::Qr(qr) = &node.kind
+        && !qr.is_valid()
+    {
+        return Err(ValidationError::InvalidQr { node: id });
+    }
+    if let NodeKind::Text(text) = &node.kind
+        && (text.effects.len() > crate::TextEffect::MAX
+            || !text.effects.iter().all(crate::TextEffect::is_valid))
+    {
+        return Err(ValidationError::InvalidText { node: id });
+    }
+    if let NodeKind::Image(image) = &node.kind
+        && (image.look.as_ref().is_some_and(|look| !look.is_valid())
+            || image.crop.as_ref().is_some_and(|crop| !crop.is_valid()))
+    {
+        return Err(ValidationError::InvalidImage { node: id });
+    }
+    if let NodeKind::Table(table) = &node.kind
+        && !table.is_valid()
+    {
+        return Err(ValidationError::InvalidTable { node: id });
+    }
+    if let NodeKind::Chart(chart) = &node.kind
+        && !chart.is_valid()
+    {
+        return Err(ValidationError::InvalidChart { node: id });
+    }
+    if let NodeKind::Frame(frame) = &node.kind
+        && !frame.is_valid()
+    {
+        return Err(ValidationError::InvalidFrame { node: id });
+    }
+    // The outline of a frame follows the rules of a shape path (spec 066).
+    if let NodeKind::Frame(frame) = &node.kind
+        && let crate::ShapeGeometry::Path(path) = &frame.clip_shape
+        && let Some(problem) = path_problem(path)
+    {
+        return Err(ValidationError::InvalidPath { node: id, problem });
+    }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let Some(problem) = shape.effect.as_ref().and_then(crate::ShapeEffect::problem)
+    {
+        return Err(ValidationError::InvalidEffect { node: id, problem });
     }
     if let NodeKind::Extension(ext) = &node.kind {
         if ext.type_id.is_empty() {
@@ -285,7 +551,7 @@ mod tests {
     use crate::document::test_document;
     use crate::{
         Axis, Document, Dpi, ElementBase, ExtensionNode, GroupNode, Node, NodeId, NodeKind, Page,
-        PageId, PageSize, PageSizeError, Placement, ShapeGeometry, ShapeNode,
+        PageId, PageSize, PageSizeError, Placement, ShapeGeometry, ShapeNode, ShapeStroke,
     };
 
     type Edit = fn(&mut Document);
@@ -754,6 +1020,112 @@ mod tests {
         }
     }
 
+    fn stroked(color: Color, width: f64, radius: f64) -> NodeKind {
+        let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+        shape.stroke = Some(ShapeStroke::new(color, width));
+        shape.corner_radius = radius;
+        NodeKind::Shape(shape)
+    }
+
+    // S38-02: the outline and the corner radius are validated like the fill.
+    #[test]
+    fn s38_02_outline_and_corner_radius_rows() {
+        type Set = fn(&mut Node, f64);
+        let black = |a: f32| Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a));
+        let rows: Vec<(Set, f64, String)> = vec![
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                0.0,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                ShapeStroke::MAX_WIDTH,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                ShapeStroke::MAX_WIDTH + 0.5,
+                range(2, "StrokeWidth", ShapeStroke::MAX_WIDTH + 0.5),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                -0.5,
+                range(2, "StrokeWidth", -0.5),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                f64::NAN,
+                non_finite(2, "StrokeWidth"),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(v as f32, 0.0, 0.0, 1.0)), 1.0, 0.0),
+                f64::NAN,
+                non_finite(2, "StrokeChannel"),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(v as f32, 0.0, 0.0, 1.0)), 1.0, 0.0),
+                -0.5,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, v as f32)), 1.0, 0.0),
+                1.5,
+                range(2, "StrokeAlpha", 1.5),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, v as f32)), 1.0, 0.0),
+                f64::INFINITY,
+                non_finite(2, "StrokeAlpha"),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                0.0,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                1e9,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                -1e-9,
+                range(2, "CornerRadius", -1e-9),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                f64::INFINITY,
+                non_finite(2, "CornerRadius"),
+            ),
+        ];
+        for (i, (set, value, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            node_mut(&mut d, 2, |n| set(n, *value));
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+        // A radius with no outline is checked too.
+        let mut d = base();
+        node_mut(&mut d, 2, |n| {
+            let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+            shape.corner_radius = -1.0;
+            n.kind = NodeKind::Shape(shape);
+        });
+        assert_eq!(
+            format!("{:?}", d.validate()),
+            range(2, "CornerRadius", -1.0)
+        );
+        // The fill is reported before the outline.
+        let mut d = base();
+        node_mut(&mut d, 2, |n| {
+            let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+            shape.fill = Some(black(2.0));
+            shape.stroke = Some(ShapeStroke::new(black(3.0), 1.0));
+            n.kind = NodeKind::Shape(shape);
+        });
+        assert_eq!(format!("{:?}", d.validate()), range(2, "FillAlpha", 2.0));
+    }
+
     #[test]
     fn validation_does_not_clamp() {
         let mut d = base();
@@ -1070,5 +1442,77 @@ mod tests {
         d.pages[0] = Arc::new(p);
         d.next_id = 2 + DEPTH;
         assert_eq!(d.validate(), Ok(()));
+    }
+
+    // Spec 027, S27-02: a span's size must be in (0, MAX_SIZE] and its colour
+    // finite with alpha in [0, 1].
+    #[test]
+    fn s27_02_text_spans_are_validated() {
+        use crate::{NodeField, SpanStyle, TextNode};
+        use gafira_color::Rgba;
+        let style = |size: f64, a: f32| SpanStyle {
+            font: "Inter".to_owned(),
+            size,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a)),
+            bold: false,
+            italic: false,
+        };
+        let check = |size: f64, a: f32| {
+            let mut page = page(1, &[]);
+            let n = node(2, NodeKind::Text(TextNode::plain("Hola", &style(size, a))));
+            page.nodes.insert(NodeId::new(2), n);
+            page.roots.push(NodeId::new(2));
+            crate::document::test_document(3, crate::Dpi::default(), vec![Arc::new(page)])
+                .validate()
+        };
+        assert_eq!(check(32.0, 1.0), Ok(()));
+        assert_eq!(check(TextNode::MAX_SIZE, 1.0), Ok(()));
+        for (size, a, field) in [
+            (0.0, 1.0, NodeField::FontSize),
+            (TextNode::MAX_SIZE + 1.0, 1.0, NodeField::FontSize),
+            (32.0, 1.5, NodeField::TextColorAlpha),
+        ] {
+            assert!(
+                matches!(check(size, a), Err(ValidationError::OutOfRange { field: f, .. }) if f == field),
+                "{size} {a}"
+            );
+        }
+        assert!(matches!(
+            check(f64::NAN, 1.0),
+            Err(ValidationError::NonFinite {
+                field: NodeField::FontSize,
+                ..
+            })
+        ));
+    }
+
+    // Spec 029, S29-04: an image must show an asset of the table.
+    #[test]
+    fn s29_04_an_image_without_its_asset_does_not_validate() {
+        use crate::timeline::{AssetEntry, AssetRef, AssetStorage};
+        use crate::{ContentHash, ImageNode};
+        let asset = AssetRef::new(ContentHash([7; 32]));
+        let mut page = page(1, &[]);
+        page.nodes.insert(
+            NodeId::new(2),
+            node(2, NodeKind::Image(ImageNode::new(asset))),
+        );
+        page.roots.push(NodeId::new(2));
+        let mut doc =
+            crate::document::test_document(3, crate::Dpi::default(), vec![Arc::new(page)]);
+        assert_eq!(
+            doc.validate(),
+            Err(ValidationError::DanglingImage {
+                node: NodeId::new(2)
+            })
+        );
+        doc.assets.insert(
+            asset,
+            AssetEntry {
+                name: "dot.png".to_owned(),
+                storage: AssetStorage::Embedded,
+            },
+        );
+        assert_eq!(doc.validate(), Ok(()));
     }
 }

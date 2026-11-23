@@ -230,6 +230,22 @@ mod tests {
         assert_eq!(bits(&px), before);
     }
 
+    // S13-18, ARQ-110: the error names the element that became non-finite, `4 i + k` for
+    // channel `k` of pixel `i`: here channel 2 (blue) of the second pixel.
+    #[test]
+    fn arq_110_overflowing_result_names_its_element() {
+        let nan_at = |r: Result<(), BufferError>| match r {
+            Err(BufferError::NonFinite { field, index }) => (field, index),
+            other => panic!("expected NonFinite, got {other:?}"),
+        };
+        let mut px = [0.5f32, 0.5, 0.5, 0.5, 0.0, 0.0, f32::MAX, 2.0];
+        let mut v = ImageViewMut::new(2, 1, PixelDataMut::RgbaF32(&mut px)).unwrap();
+        assert_eq!(nan_at(premultiply(&mut v)), ("pixels", 6));
+        let mut px = [0.5f32, 0.5, 0.5, 0.5, 0.0, 0.0, f32::MAX, 1e-30];
+        let mut v = ImageViewMut::new(2, 1, PixelDataMut::RgbaF32(&mut px)).unwrap();
+        assert_eq!(nan_at(unpremultiply(&mut v)), ("pixels", 6));
+    }
+
     // ARQ-111: the same input gives the same bytes.
     #[test]
     fn arq_111_premultiply_is_deterministic() {

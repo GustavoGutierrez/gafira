@@ -72,8 +72,32 @@ pub enum RenderOp {
         color: Color,
         transform: Affine,
     },
+    /// A path filled with a gradient laid in a box of `size` (w, h), the
+    /// local box `transform` maps to the page (spec 063).
+    FillGradient {
+        path: Arc<BezPath>,
+        gradient: Arc<gafira_doc::Gradient>,
+        size: (f64, f64),
+        transform: Affine,
+    },
     DrawImage {
         image: Arc<ImageBuf>,
+        transform: Affine,
+    },
+    /// Text (spec 073): its outline, which a raster backend fills like a
+    /// path, and its glyphs with the fonts they come from and their words,
+    /// which a vector writer (PDF) keeps as real text.
+    Text {
+        path: Arc<BezPath>,
+        color: Color,
+        transform: Affine,
+        runs: Arc<Vec<GlyphRun>>,
+    },
+    /// Cuts the open layer to `path`, which `transform` lays on the page:
+    /// each pixel keeps its share covered by the path, nothing outside it
+    /// (spec 066: the photo of a frame cut out by its shape).
+    ClipPath {
+        path: Arc<BezPath>,
         transform: Affine,
     },
     ApplyMask {
@@ -91,10 +115,37 @@ pub enum RenderOp {
     },
 }
 
+/// Glyphs of one font on one line (spec 073), in the text's own box: the
+/// font's bytes and face index, its size in px, the glyphs and the words
+/// they draw.
+#[derive(Clone, Debug)]
+pub struct GlyphRun {
+    pub font: Arc<[u8]>,
+    pub index: u32,
+    pub size: f32,
+    /// Every glyph: its id, where its origin is (x right, y down on the
+    /// baseline) and the bytes of `text` it draws.
+    pub glyphs: Vec<RunGlyph>,
+    pub text: Arc<str>,
+}
+
+/// One glyph of a [`GlyphRun`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunGlyph {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub text: std::ops::Range<usize>,
+}
+
 /// The work for one tile.
 pub struct TileTask {
     pub key: TileKey,
     pub priority: Priority,
+    /// The part of the page the task covers, in page pixels at full resolution
+    /// (ARQ-149). Half-open, clipped to the viewport of the request and inside
+    /// the page; the level of the tile does not change the unit.
+    pub region: IRect,
     pub ops: Vec<RenderOp>,
 }
 
@@ -146,10 +197,23 @@ pub struct BackendCaps {
 }
 
 /// The surface of one frame. `format` is `Rgba8` or `RgbaF32`; `Alpha8` is not a render target.
+///
+/// The surface covers the page rectangle that starts at `origin` and measures
+/// `width × height` pixels (ARQ-149). The operations of a task stay in page
+/// coordinates: the plan never translates them to the surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TargetDesc {
     pub width: u32,
     pub height: u32,
+    /// The top-left corner of the surface, in page pixels at full resolution.
+    pub origin: (i32, i32),
+    /// The page's extent, in page pixels at full resolution.
+    ///
+    /// The surface is a window onto the page, so this is **not** `width ×
+    /// height` and not `origin + width × height`: the caller knows the page it
+    /// cut the window out of, and an effect measures its `TileWindow` against
+    /// the image, not against the window (ARQ-120, ARQ-149, 02 §4.4).
+    pub page: (u32, u32),
     pub format: PixelFormat,
 }
 

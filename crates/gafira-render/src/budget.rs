@@ -118,6 +118,7 @@ mod tests {
     use std::sync::{Mutex, PoisonError};
 
     use gafira_ports::common::UnixTime;
+    use proptest::prelude::*;
 
     use super::*;
 
@@ -162,6 +163,15 @@ mod tests {
     /// The budget of a frame that starts at `start`.
     fn budget_at(start: Duration) -> FrameBudget {
         FrameBudget::begin(&ScriptClock::new(vec![start]))
+    }
+
+    /// The budget of a frame that starts at `start`, with a clock that
+    /// answers `later` when the frame asks again.
+    fn budget_of(start: u64, later: u64) -> FrameBudget {
+        FrameBudget::begin(&ScriptClock::new(vec![
+            Duration::from_nanos(start),
+            Duration::from_nanos(later),
+        ]))
     }
 
     /// Milliseconds, as a duration.
@@ -232,5 +242,39 @@ mod tests {
             assert_eq!(first.deadline(stage), second.deadline(stage));
         }
         assert_eq!(first.margin(), second.margin());
+    }
+
+    // ARQ-02, 02 §6.2: the determinism of AC7 as a property: with any input,
+    // the budget takes the same decisions twice and the deadlines are the
+    // cumulative offsets of the frame, so no hidden state moves them.
+    proptest! {
+        #[test]
+        fn arq_02_the_budget_takes_the_same_decisions_with_any_input(
+            start in 0_u64..1_000_000,
+            later in 0_u64..1_000_000,
+        ) {
+            let first = budget_of(start, later);
+            let second = budget_of(start, later);
+
+            prop_assert_eq!(first.start(), second.start());
+            prop_assert_eq!(first.end(), second.end());
+            prop_assert_eq!(first.margin(), second.margin());
+            for stage in [Stage::Graph, Stage::Visible] {
+                prop_assert_eq!(first.deadline(stage), second.deadline(stage));
+                // The deadline of a stage is its cumulative offset from the
+                // start of the frame (02 §6.2), whatever the clock answers
+                // later.
+                prop_assert_eq!(
+                    first.deadline(stage),
+                    Deadline::At(first.start().saturating_add(stage.offset()))
+                );
+            }
+            // The margin is the span no stage may spend.
+            prop_assert_eq!(
+                first.margin().start,
+                first.start().saturating_add(VISIBLE_DONE)
+            );
+            prop_assert_eq!(first.margin().end, first.end());
+        }
     }
 }

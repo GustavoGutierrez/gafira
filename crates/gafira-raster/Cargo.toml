@@ -10,11 +10,17 @@ publish.workspace = true
 gafira-geom.workspace = true
 gafira-color.workspace = true
 gafira-doc.workspace = true
+# Spec 069: the vector shapes of background patterns.
+kurbo.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 criterion.workspace = true
 gafira-testkit.workspace = true
+
+[[bench]]
+name = "blend"
+harness = false
 
 [[bench]]
 name = "transitions"

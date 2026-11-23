@@ -46,7 +46,7 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
     - «Gefira» sin registro: empresas de TI en Suiza y EE. UU.
     - El titular registró gafira.com el 2026-10-24 (Cloudflare) para alojar la página de presentación del producto cuando exista la interfaz; gafira.app, .io, .co y .dev parecían libres (el titular puede reservarlos más adelante).
     - Connotación: en árabe, غافرة significa «la que perdona» (connotación religiosa).
-  - **Siguiente paso**: elegir el primer país de registro y encargar a un abogado una búsqueda de disponibilidad que incluya AFIRA, afira y GAIRA.
+  - **Siguiente paso**: ~~elegir el primer país de registro y~~ encargar a un abogado una búsqueda de disponibilidad que incluya AFIRA, afira y GAIRA. La elección del primer país de registro se aplaza (D-84).
 
 ## D-05 Linux (Q-04, Q-05)
 
@@ -145,7 +145,7 @@ Fecha: 24 de octubre de 2026.
   - No existen duración, límites ni estado de «prueba». Los estados de licencia son, como mínimo, sin licencia y con licencia activada.
   - El modo sin licencia no exige conexión: la app sigue trabajando sin red (D-01). La conexión sigue siendo solo para activar, validar o desactivar.
   - La interfaz debe indicar qué funciones están bloqueadas y cómo activar la licencia.
-- Aplicado a 01, 03 y 06 (ver «Efecto sobre las especificaciones») cuando se promuevan.
+- Aplicado a 01, 03 y 06 (ver «Efecto sobre las especificaciones») cuando se promuevan. Aplicado a 02 (§4.14, §13, Q-19 cerrada) y 05 (Q-19 cerrada).
 
 ## D-13 `gafira-cli validate` pasa a `gafira-format`
 
@@ -352,7 +352,7 @@ Fecha: 30 de octubre de 2026.
 
 Fecha: 1 de noviembre de 2026.
 
-- **Decisión**: el primer corte entrega el mecanismo de filtros de FD-34 y un solo preset de prueba (opción a de la pregunta O3 de `specs/history/2026-11-02-layer-2/design.md`). El catálogo real llega más adelante, con Q-34.
+- **Decisión**: el primer corte entrega el mecanismo de filtros de FD-34 y un solo preset de prueba (opción a de la pregunta O3 de `specs/done/legacy/history/2026-11-02-layer-2/design.md`). El catálogo real llega más adelante, con Q-34.
 - **Intensidad**: es una mezcla lineal de cada parámetro desde su valor por defecto hasta el valor del preset.
 - Aplicado a 02 (§12.3) y 04 (FD-34).
 
@@ -521,9 +521,526 @@ Fecha: 2 de noviembre de 2026.
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y fijar el precio final (tentativo 99 USD, PROPUESTA).
 2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
 3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
-4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y, opcionalmente, reservar gafira.app, .io, .co y .dev (gafira.com ya está registrado por el titular para la página de presentación).
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento y, opcionalmente, reservar gafira.app, .io, .co y .dev (gafira.com ya está registrado por el titular para la página de presentación). La elección del primer país de registro queda **aplazada** (D-84).
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: pasan 72 de 76; `zip`, `ureq`, `directories` y `ort` se corrigen con features o cambiando de crate, ver 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. ~~Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09)~~ (**resuelto** el 24 de octubre de 2026: generada con ChatGPT Plus; los Términos de uso de OpenAI ceden al titular los derechos sobre el *Output* y permiten el uso comercial sin atribución ni regalías; se muestra como «generada con IA (OpenAI)» en Acerca de / créditos; sin garantía de unicidad ni de no infracción y probablemente sin derechos de autor exclusivos; ver D-09). D-10 cubre solo el audio de `assets/musics/`. Quedan como VERIFICAR para el titular: (a) búsqueda inversa de imagen (Google Lens, TinEye) y revisión visual de logos, textos o firmas; (b) conservar fuera del repositorio la descarga original con C2PA como prueba de procedencia; (c) ~~anotar la fecha de generación~~ (**resuelto**: la noche del 23 de octubre de 2026); (d) crear la entrada en `assets/LICENSES.toml` al introducir ese archivo (ARQ-75).
 7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
 8. D-10: ~~revisar las 9 pistas con voz detectada y volver a comprobar `underscore-05`, `-06` y `-10`~~ (**hecho**: las 9 regeneradas y comprobadas, 40/40 sin voz); queda al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.
 9. D-20: aportar un conjunto de fotos reales con licencia y máscaras de referencia para `gafira-segment` antes de publicar. Hasta entonces, el IoU sobre fotos reales es solo un aviso.
+
+## D-58 Licencia opcional por build
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): el licenciamiento se puede **habilitar o deshabilitar** sin cambiar el engine ni la UI, porque es posible que Gafira se publique sin licencia. El composition root elige qué `LicenseVerifier` inyecta: el adaptador de `gafira-license` (licencia habilitada) o `NoLicensing` de `gafira-ports` (licencia deshabilitada).
+- **Licencia deshabilitada**: el estado es `LicenseStatus::NotRequired`; `can_export` es verdadero, no hay pantalla de activación ni conexión de red, y activar, validar o desactivar devuelven `LicenseError::Disabled`.
+- **Licencia habilitada**: sigue rigiendo D-12 y D-55 sin cambios.
+- Amplía D-12. Aplicado en la spec 010, en 02 (§4.14, §13.1, §13.3) y en 01 (§11.1).
+
+## D-59 Importar HEVC y HEIC por la API del sistema (Q-17)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): Gafira **importa** HEVC y HEIC solo a través del decodificador del sistema operativo (macOS y Windows; en Linux, cuando el sistema lo ofrezca). El binario no incluye un decodificador propio de HEVC ni HEIC y **nunca exporta** HEVC.
+- **Consecuencia**: precisa D-02, que prohíbe HEVC en la salida y en el código propio, no la importación por el SO. Si el SO no tiene decodificador, el archivo se rechaza con un mensaje que explica por qué.
+- Cierra Q-17. Aplicar a 01 (RF-19, RF-37), 04 (FD-31) y 05.
+
+## D-60 Fuentes del usuario dentro del proyecto (Q-10)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): una fuente del usuario se **incrusta según su licencia** (bits `fsType` de OpenType) y **según el formato de archivo**, tanto en `.gafira` como en `.gaf` (spec 008). Si la licencia no permite incrustarla, el proyecto la vincula por nombre y, al abrirlo en un equipo que no la tiene, avisa de la fuente que falta.
+- **Pendiente**: qué hace cada formato con una fuente incrustable (por ejemplo, si `.gafira` la vincula y `.gaf` la empaqueta) se fija con las decisiones de la §17 de la spec 008.
+- Cierra Q-10 en lo que toca a la regla de licencia. Aplicar a 01 (RF-27), 04 (FD-48, FD-63) y 02 §7.1.
+
+## D-61 Idioma de la CLI, el instalador y los paquetes (Q-26)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): `gafira-cli` escribe en inglés por defecto y solo cambia con `--lang` (ARQ-104), para que su salida sea estable en scripts. El instalador, los paquetes y el `.desktop` de Linux se ofrecen en **español e inglés**, según el idioma del sistema (D-08).
+- Cierra Q-26. Aplicar a 01 (RF-56, RF-64) y 05 (FV-30, que ya no dice «solo español» pero debe fijar los dos idiomas).
+
+## D-62 Primera versión sin licencia (D-12, D-58)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la primera versión se publica **sin licencia**: el composition root inyecta `NoLicensing` (D-58), todo está habilitado y no hay conexión de red.
+- **Consecuencia**: `gafira-license`, la lista de funciones bloqueadas y el precio de D-12 quedan **aplazados** hasta que el titular decida cobrar; no bloquean el lanzamiento. ARQ-90 a ARQ-96 se aplican solo a un build con licencia habilitada.
+- Precisa D-12 y D-58.
+
+## D-63 Identidad del proyecto para la recuperación (SP5)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): cada proyecto lleva un **UUID** que se genera al crearlo y se guarda en el `.gafira` (campo nuevo de `schema` 1, que D-36 mantiene abierto). `recovery/<project_id>/` y la carpeta de versiones usan ese UUID, así que la recuperación sobrevive a renombrar o mover el archivo. (Precisado por D-67: el archivo es un `.gaf` y las versiones viven dentro de él, no en una carpeta aparte.)
+- **Copias**: «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto.
+- Cierra SP5 (02 §5.6) y desbloquea E4. Sustituye la clave provisional de P13.
+
+## D-64 Formato de números y fechas por región (Q-24)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los números y las fechas siguen la **región del sistema cuando su idioma coincide con el de la interfaz** (es-MX → `1,234.5`; es-ES → `1234,5`); si no coincide, se usa el formato CLDR del idioma de la interfaz. Confirma la propuesta de 02 §14.4.
+- Cierra Q-24.
+
+## D-65 El tiempo vive en el documento (Q-54, Q-55)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): se confirma la opción (a): `gafira-doc` depende de `gafira-time` y los tipos de tiempo del documento viven ahí, como ya hace el código.
+- Cierra Q-54 y Q-55.
+
+## D-66 Mutantes críticos de `gafira-text` y `gafira-raster` en paralelo (07, ítems 74 y 75)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los 98 mutantes críticos vivos se atacan **ahora, en paralelo** al engine, en una spec propia que solo añade tests (sin cambiar la API pública).
+
+## D-67 Extensión `.gaf` y un solo formato nativo
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la extensión del archivo de proyecto es **`.gaf`**, como la define la spec 008 (ZIP con manifiesto y JSON, tipo MIME `application/vnd.gafira.project+zip`). El nombre `.gafira` para el archivo de proyecto se retira en todas partes.
+- **Nombres derivados**: `nombre.gaf.bak` (1 generación), `nombre.gaf.lock` y las ranuras del journal de recuperación `slot-{0,1,2}.gaf-journal`.
+- **Versiones**: viven **dentro del `.gaf`** (`versions/` del contenedor, como ya dispone 02 §7.1), no en una carpeta externa. La carpeta de recuperación `datos_app/recovery/<project_id>/` sigue fuera del archivo y se nombra con el UUID.
+- **Un solo formato nativo**: «Guardar», «Guardar como» y «Guardar copia» escriben un `.gaf`; «Exportar proyecto editable con recursos» escribe un `.gaf` con el perfil `portable-full` (spec 008 §3). Donde un texto distinga un formato que vincula de otro que empaqueta, se lee como perfiles del mismo `.gaf`.
+- Precisa D-63 (las versiones no van en una carpeta aparte). Donde D-13, D-36, D-55, D-60 y D-63 dicen `.gafira`, léase `.gaf`; en D-60, «según el formato de archivo» se lee «según el perfil del `.gaf`».
+- Aplicado a 01, 02 (ADR-04, §7.1, §7.2), 04, 05 (FV-31), 03, la spec 008 (§4, §5, §17), la spec 012 (nota), el ADR 0006 (nota) y el manual técnico.
+
+## D-68 Disposición híbrida del `.gaf`
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): el contenedor conserva la base de 02 §7.1 y le suma los campos de manifiesto de la spec 008:
+  - **De 02 §7.1**: hashes de contenido BLAKE3 (ya en el código: `ContentHash`); `document.json` más un JSON por página (`pages/<id>.json`) y por secuencia (`sequences/<id>.json`), para la carga perezosa y el guardado incremental; recursos planos como `assets/<blake3>.<ext>`; versiones dentro, en `versions/`.
+  - **De 008 §5**: `profile` (`portable-full` | `linked-light` | `hybrid`), `formatVersion` (versión semántica del contenedor, empieza en `1.0.0`), `schemaVersion`, `features` (`required` y `optional`) y `packageCompleteness`.
+- **Grafía**: las claves de `manifest.json` van en **camelCase**, como en 008 (`projectId`, `formatVersion`, `schemaVersion`, `features`, `profile`, `packageCompleteness`, `generator`), y `format` vale `"gafira-project"`. El JSON del documento (`document.json`, `pages/*.json`, `sequences/*.json`) conserva el **snake_case** de `gafira-doc` (`project_id`, etc.): el código manda.
+- **Integridad**: donde 008 dice SHA-256, se lee BLAKE3.
+- **Carpetas**: `thumbs/` de 02 y `previews/pages/` de 008 son lo mismo (miniatura por página); se queda el nombre `thumbs/`, porque el código y las specs lo citan. Los **proxies nunca van en el archivo** (regla de 02): se retira la carpeta opcional `proxies/` de 008 y su opción «incluir proxies para rendimiento».
+- **Queda para la spec del formato** (`gafira-format`): la forma de la tabla de recursos (`assets` por hash de 02 frente a `resources[]` con `storage` de 008), el campo `originalPathHint` de 008 §5.1 frente a ARQ-56, dónde van la portada y las miniaturas de secuencia de 008 (`previews/cover.webp`, `previews/video/`), `masks/` y `extensions/` (solo en 02) y `metadata/provenance.json` (solo en 008).
+- Precisa D-67. Aplicado a 02 (ADR-04, §7.1, anexo A), 04 (FD-60, FD-63), 05 (FV-25) y la spec 008 (§2, §4, §5, §7.4, §8, §11).
+
+## D-69 El tiempo en disco son flicks
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los tiempos se guardan como **enteros de flicks**, igual que en memoria (`gafira-time`, D-65). Un flick es 1/705 600 000 s y divide exactamente los fotogramas de 30000/1001 y 24000/1001 fps, así que se cumple el criterio de 008 de no acumular deriva (§15, criterio 11).
+- **Consecuencia**: se sustituyen los *ticks* y la `timebase` de 008 (GAF-ADR-08, §7) por flicks más la cadencia racional de la secuencia (`fps` = `num`/`den`). Los flicks se escriben como enteros JSON, como hace `Flicks` con serde; 2^53 flicks son unos 147 días, dentro del rango entero seguro de JSON.
+- Amplía D-65. Aplicado a la spec 008 (§2, §5, §7, §8, §12, §15).
+
+## D-70 Qué bloquea la primera versión gratuita (D-62)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la primera versión es una **descarga gratuita**. Las licencias de terceros, las patentes, la marca y los avisos de terceros bloquean **cualquier** versión, gratuita o de pago. La activación, el EULA de venta, el precio y el identificador de dispositivo de `PRIVACY.md` esperan a que haya venta.
+- **Consecuencia**: Q-20 (qué bloquea el modo sin licencia) queda **aplazada** con la licencia (D-62). El modelo de precios de D-01 y D-12 no cambia; solo se aplaza.
+- Precisa D-62. Aplicado a 01 (§3, §5.1, §11, Q-20), 02 (Q-20) y 05 (C11, Q-20).
+
+## D-71 Cifras PROPUESTA confirmadas en bloque
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): toda cifra marcada PROPUESTA en 01, 02, 04 y 05 queda **confirmada** como valor provisional que una medición puede cambiar, como en D-34.
+- **Quedan fuera** y siguen abiertas: el aspecto de FD-33 y FD-34 (Q-34), el glosario y el microcopy en inglés (Q-25) y el modo oscuro derivado (C-06). No se tocan las cifras de 03 (en backlog) ni las de la spec 008.
+- **Marcas**: a diferencia de D-34, las cifras se reetiquetan: PROPUESTA pasa a «confirmada (D-71)», para que lo que sigue en PROPUESTA sea solo lo abierto.
+- Amplía D-34. Aplicado a 01, 02, 04 y 05.
+
+## D-72 Voz en off y marcadores de compás en Fase 2 (Q-15)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la **voz en off** grabada desde el micrófono y los **marcadores de compás** automáticos se quedan en **Fase 2**, como ya dicen 01 §5 y 05 FV-10.
+- **Consecuencia**: Q-15 queda cerrada. Las marcas PROPUESTA de esas dos funciones pasan a «confirmada (D-72)»; el algoritmo de los marcadores de compás sigue en VERIFICAR.
+- Aplicado a 01 (§5, Q-15) y 05 (FV-10, Q-15).
+
+## D-73 Sin render distribuido en la red local (Q-18)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): se **descarta** el render distribuido en la red local. Gafira no abre ninguna conexión de red salvo la de la licencia futura (D-01, ARQ-04).
+- **Consecuencia**: Q-18 queda cerrada. Ninguna fase planifica render en la red local; el texto que lo dejaba en suspenso pasa a descartado.
+- Confirma D-01. Aplicado a 01 (§5, Q-18) y 02 (§11.2, Q-18).
+
+## D-74 Sin tercer idioma por ahora (Q-23)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): no se planifica un tercer idioma; la pregunta se **aplaza** hasta después del lanzamiento. La arquitectura ya admite añadir idiomas (02 §14.8).
+- **Consecuencia**: Q-23 queda aplazada. El producto se publica en español e inglés (D-08).
+- Aplicado a 01 (§5, Q-23) y 02 (§4.16, Q-23).
+
+## D-75 Huecos SP1, SP2, SP3 y SP8 del engine (02 §5.6)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): se acepta lo que hace el código.
+  - **SP1**: `Gafira::new` solo falla con `EngineError::InvalidConfig` o con un error de un puerto (`crates/gafira-engine/src/engine.rs`). Hoy `InvalidConfig` lo devuelve `EngineConfig::new` y la construcción del engine no falla.
+  - **SP2**: los tipos de carga del bus (`SaveState`, `JobResult`, `RecoveryEntry`, `PressureLevel`, `StartupStep`) los define el crate `gafira-engine`.
+  - **SP3**: el engine construye `UserError { kind, message, detail, actions }`. `kind` es un enum cerrado; `detail` solo va al log local; `actions` son claves de mensaje. `CommandError` (`gafira-edit`) y `ValidationError` (`gafira-doc`) implementan `ToMessage` cuando llegue `E11`.
+  - **SP8**: los niveles son `PressureLevel { Normal, Critical }`, como en el código (`crates/gafira-engine/src/governor.rs`). El límite del 70 % de la VRAM lo aplica el adaptador del backend de render en GPU, no el governor del engine.
+- **Consecuencia**: SP1, SP2, SP3 y SP8 pasan a cerradas; `E11` ya no está bloqueada por SP3. SP7 sigue abierta.
+- Aplicado a 02 (§5.6) y a `specs/README.md`.
+
+## D-76 La sesión de solo lectura se puede editar en memoria (SP7, 02 §5.6)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): una sesión de solo lectura, abierta porque el archivo tiene un esquema futuro o un contenedor más nuevo o una capacidad requerida desconocida (D-68), **se puede editar en memoria**. «Guardar» se rechaza con un error de solo lectura antes de cualquier operación de archivo, y los cambios solo se conservan con «Guardar como», como hace el código (ARQ-55, 02 §7.1).
+- **Consecuencia**: SP7 queda cerrada y 02 §5.6 no tiene huecos abiertos; `E3c` deja de ser provisional por SP7.
+- Confirma ARQ-55 y precisa D-68. Aplicado a 02 (§5.6, ARQ-55), 04 (FD-63) y a `specs/README.md`.
+
+## D-77 Glosario y microcopy en inglés aprobados (Q-25)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los nombres ingleses del glosario (03 §2.8) y el microcopy en inglés (03 §12) se **aprueban** tal como están, a reserva de la búsqueda de marca de los nombres ingleses propios (R-17).
+- **Consecuencia**: Q-25 queda cerrada. La búsqueda de marca de los nombres ingleses pasa a los pendientes del titular (01 §12.4) y a la lista previa a publicar (05 C11, punto 13). Las marcas PROPUESTA de 03 §2.8 se quedan mientras 03 siga en backlog; una nota al inicio de §2.8 remite a esta decisión.
+- Aplicado a 01 (§12.3, §12.4), 02 (R-17, §12.3), 03 (nota en §2.8) y 05 (C11).
+
+## D-78 Q-34 y Q-48 pasan a tareas de la deuda abierta
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): Q-34 y Q-48 salen de las tablas de preguntas abiertas y pasan a tareas de `specs/07-deuda-abierta.md`:
+  - (a) **Ítem 133**: revisión visual de las fórmulas de FD-33 y del catálogo de filtros de FD-34 (antes Q-34).
+  - (b) **Ítem 134**: medición de la segmentación en el hardware de referencia de D-03 (antes Q-48).
+- **Consecuencia**: Q-34 y Q-48 quedan cerradas como preguntas. Las fórmulas de FD-33 siguen en PROPUESTA y las cifras de Q-48 siguen vigentes hasta que esas tareas se hagan; si una medición falla, el titular decide. El ítem 55 de 07 queda sin trabajo propio: lo recoge el 134.
+- Aplicado a 01 (§12.3), 02 (§4.17, §12.3), 04 (convenciones, FD-33, FD-34, FD-38, §18) y 07 (§0, §1.1, §1.2).
+
+## D-79 Firma, calidad, instalación, distribución y accesibilidad bloquean toda versión (05 C11)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los puntos 15 (firma de código) y 19 a 22 (calidad, instalación, distribución y accesibilidad) de 05 C11 bloquean **cualquier** versión, también la primera, gratuita. Motivo: SmartScreen (Windows) y Gatekeeper (macOS) bloquean las aplicaciones sin firmar.
+- **Consecuencia**: esos puntos pasan a «Toda versión» y C11 ya no tiene puntos sin clasificar.
+- Amplía D-70. Aplicado a 05 (C11).
+
+## D-80 Decisiones PROPUESTA confirmadas en bloque
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): toda decisión de producto o de diseño marcada PROPUESTA en 01, 02, 04 y 05 queda **confirmada** tal como está escrita. Las cifras ya las confirmó D-71.
+- **Quedan fuera** y siguen abiertas: el campo `template` del manifiesto (02 §7.1, hueco abierto; 04 FD-16 y §15) y el modo oscuro derivado (01 C-06). Lo aplazado sigue aplazado: Q-20 y el precio (D-70) y Q-23 (D-74). Las fórmulas de FD-33 siguen en PROPUESTA hasta la revisión visual del ítem 133 de 07 (D-78).
+- **Marcas**: como en D-71, PROPUESTA pasa a «confirmada (D-80)», para que lo que sigue en PROPUESTA sea solo lo abierto. No cambia el contenido de ninguna decisión.
+- Amplía D-71. Aplicado a 01 (convenciones, RNF-01, §10.1, §11.1, C-18), 02 (convenciones, §4.17.5, §7.3, §13.1, §13.2, §14.3, §14.5), 04 (convenciones, FD-05, FD-17, FD-21, FD-24, FD-26, FD-44, FD-48, FD-59) y 05 (convenciones, FV-15, FV-18, FV-19, C1, C4, C7, C10).
+
+## D-81 Campo `template` del manifiesto (04 FD-16 y §15; 02 §7.1)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): un `.gaf` es una **plantilla** cuando su `manifest.json` tiene el objeto opcional `template = { "tags": [string], "pageFormat": string, "style": string, "color": "#RRGGBB" }`. `pageFormat` es el id de un formato de inicio de 03 §6.2: `social`, `presentation`, `print`, `video_vertical`, `video_horizontal` o `custom`. Un lector que no conoce el campo lo ignora.
+- **Consecuencia**: se cierran el hueco abierto de 02 §7.1 y la PROPUESTA de 04 FD-16 y §15, que D-80 dejó fuera. «Formato» es el de página, no el de archivo, y un `.gaf` sin `template` es un proyecto normal.
+- Aplicado a 02 (§7.1), 04 (convenciones, FD-16, §15) y a la spec 008 (§5).
+
+## D-82 Modo oscuro derivado aprobado (01 C-06)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la paleta oscura derivada de `assets/theme/gafira.tokens.json` (03 §3), validada por los 84 pares de contraste de la spec 014, queda **aprobada** como modo oscuro. Se puede ajustar más adelante sin reabrir 01.
+- **Consecuencia**: C-06 queda cerrada, y con ella lo que D-80 dejó fuera sobre el modo oscuro. La marca PROPUESTA del modo oscuro en 03 se queda mientras 03 siga en backlog; una nota en §3 remite a esta decisión.
+- Aplicado a 01 (C-06) y 03 (nota en §3).
+
+## D-83 Cuándo un documento de referencia está aprobado
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): un documento de referencia de producto (01, 02, 04 y 05) está **«Aprobado»** cuando no tiene ninguna decisión del titular abierta. Los puntos VERIFICAR (licencias, patentes, dictámenes legales, comprobaciones de plataforma) y los *spikes* no lo bloquean, siempre que cada uno esté registrado como tarea en `specs/07-deuda-abierta.md` o en 05 §C11. Las decisiones aplazadas (Q-20 y el precio, D-70; Q-23, D-74) tampoco lo bloquean, porque están aplazadas de forma explícita.
+- **Consecuencia**: los VERIFICAR y *spikes* de 01, 02, 04 y 05 que no tenían seguimiento pasan a 07 como ítems 138 a 153; los ítems 133 a 137 de 07 y 05 §C11 ya cubrían el resto. Al aplicarla, el 16 de noviembre de 2026, ningún documento queda aprobado, porque cada uno conserva una decisión del titular abierta:
+  - 01: el primer país de registro de la marca (§12.4, punto 4; pendiente 4 del titular, D-04; ítem 145 de 07).
+  - 02 y 05: la herramienta de MSI, entre pagar la Open Source Maintenance Fee de WiX v6 o posterior y usar otra herramienta (02 §10.1; 05 FV-30 y R-F; ítem 139 de 07).
+  - 04: el aspecto de las fórmulas de FD-33 y el catálogo de FD-34, que siguen en PROPUESTA (D-78, D-80; ítem 133 de 07), y el tamaño mínimo de FD-28 (b) (ítem 60 de 07).
+- Cuando el titular cierre la decisión que bloquea un documento, su fila `Estado` pasa a «Aprobado (D-83, fecha)»; hasta entonces se queda como está. Aplicado a 07 (ítems 138 a 153).
+
+## D-84 Primer país de registro de la marca, aplazado
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la elección del primer país de registro de la marca se **aplaza** («por ahora no se hace, después»). La búsqueda de disponibilidad con abogado y la de los nombres ingleses del glosario siguen como tareas (ítem 145 de 07; 05 C11, puntos 12 y 13).
+- **Consecuencia**: es una decisión aplazada de forma explícita, así que, por D-83, no bloquea 01. Con ella, 01 ya no tiene ninguna decisión del titular abierta y pasa a «Aprobado (D-83, 2026-11-16)».
+- Precisa D-04. Aplicado a 00 (D-04, pendiente 4), 01 (estado, §12.4, punto 4) y 07 (§0, ítem 145).
+
+## D-85 El MSI no se hace con WiX
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): el MSI de Windows **no** se construye con WiX. Su licencia, MS-RL, no está en la allowlist, y desde v6 el uso con ingresos exige la Open Source Maintenance Fee, que es de pago. Se usa una herramienta de empaquetado con licencia permisiva; son candidatas `cargo-packager` y `msitools` (`wixl`).
+- **Consecuencia**: la licencia de la herramienta elegida se comprueba al implementar el empaquetado de Windows; el ítem 139 de 07 deja de ser una decisión del titular y pasa a ser esa comprobación técnica. Con ella, 02 y 05 ya no tienen ninguna decisión del titular abierta y pasan a «Aprobado (D-83, 2026-11-16)».
+- Aplicado a 02 (estado, §10.1), 03 (§5.1), 05 (estado, FV-30, FV-40, C11 punto 2, R-F) y 07 (§0, ítem 139).
+
+## D-86 Tamaño mínimo de FD-28 (b) y revisión visual de FD-33 y FD-34
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular):
+  - (a) 04 FD-28 (b) toma el mínimo que ya fija ARQ-122: una imagen y su versión al 50 % son parecidas (distancia de Hamming ≤ 10) si los dos lados de la original miden ≥ 128 px y la mitad se hace por media 2×2, o ≥ 640 px y la mitad se hace por bilineal o por vecino más cercano. Por debajo de esos tamaños no hay cota.
+  - (b) El aspecto de las fórmulas de FD-33 y el catálogo de FD-34 son la tarea de revisión visual del ítem 133 de 07, que **no** bloquea 04. Las fórmulas siguen en PROPUESTA, como valores provisionales que fijan las pruebas, hasta esa revisión.
+- **Consecuencia**: el ítem 60 de 07 queda resuelto, y el 133 sigue abierto como tarea sin bloquear 04. Con ello, 04 ya no tiene ninguna decisión del titular abierta y pasa a «Aprobado (D-83, 2026-11-16)».
+- Precisa D-78 y D-83. Aplicado a 04 (estado, convenciones, FD-28, FD-33) y 07 (§0, §1.2, §1.3, ítems 60 y 133).
+
+## D-87 Colección de iconos: Phosphor
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): la colección de iconos de partida es **Phosphor** (licencia MIT), no Lucide ni Feather. Se usa el peso «Regular»: 1,5 px de trazo a 24 px, con terminaciones y uniones redondeadas. Para los estados activos, que 03 §13 rellena, se usa el peso «Fill». Los iconos que falten se dibujan en la misma rejilla.
+- **Consecuencia**: cierra PD-07 de 03. La licencia de la versión adoptada se comprueba al importarla, y cada icono va a `assets/LICENSES.toml` con su aviso en `THIRD_PARTY_NOTICES.md` (ARQ-75). Los SVG se convierten en geometría en tiempo de compilación; no se usan fuentes de iconos.
+- Precisa 03 §13 («Origen»). Aplicado a 03 (§13 y PD-07).
+
+## D-88 Atajos de Alinear con Alt
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): los atajos de Alinear dejan `Ctrl+Alt+L/C/R`, porque `Ctrl+Alt+L` bloquea la sesión en algunos escritorios Linux. Pasan a `Alt` con una letra, y las seis acciones tienen atajo: `Alt+A` izquierda, `Alt+H` centro horizontal, `Alt+D` derecha, `Alt+W` arriba, `Alt+V` medio vertical y `Alt+S` abajo.
+- **Consecuencia**: cuentan solo con `Alt` exacto. AltGr no los dispara: en Windows llega como `Ctrl+Alt` y en Linux no llega como `Alt`, así que los caracteres que el teclado español escribe con AltGr no alinean. No chocan con los atajos de 03 §9.2 (`Shift+H` y `Shift+V` voltean; `W` del Editor de video no lleva modificador). `Ctrl+Alt+C` vuelve a ser una copia, como la convierte la ventana. Se aplica en la spec 044.
+- Precisa 03 §9.2 y 04 FD-11. Aplicado a 03 (§9.2) y 04 (FD-11).
+
+## D-89 Las esquinas conservan la proporción
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): al redimensionar, los cuatro tiradores de esquina conservan la proporción del elemento por defecto, con la esquina opuesta fija; mantener `Shift` mientras se arrastra la libera. Los tiradores de lado siguen cambiando una sola dimensión. Vale para formas, imágenes, cajas de texto y grupos, y para lo girado en sus propios ejes.
+- **Consecuencia**: invierte lo que decía 03 §9.1 («`Shift` conserva la proporción»). El Imán engancha el borde que manda y el otro lado sigue la proporción. El tamaño mínimo (1 px) y arrastrar más allá de la esquina opuesta no rompen la proporción. Se aplica en la spec 045.
+- Precisa 03 §9.1. Aplicado a 03 (§9.1 y §9.2).
+
+## D-90 Alt redimensiona desde el centro; Ctrl suelta el Imán
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): mantener `Alt` mientras se arrastra un tirador redimensiona desde el centro: el centro se queda fijo y los lados opuestos se mueven a la vez y lo mismo. Se combina con D-89: una esquina conserva la proporción por defecto, desde el centro; `Shift` la libera; `Alt+Shift` es libre y desde el centro. Un lado con `Alt` cambia esa dimensión simétrica. Vale para lo girado en sus propios ejes y para los grupos. Mantener `Ctrl` (`Cmd` en macOS) mientras se mueve o se redimensiona suelta el Imán; `Alt` ya no lo hace.
+- **Consecuencia**: resuelve el choque que dejó abierto la 045 (`Alt` desde el centro y `Alt` sin Imán) y saca el Imán de una tecla que algunos escritorios Linux usan para mover la ventana. El tamaño mínimo (1 px) se mantiene: más allá del centro el elemento se queda en el mínimo centrado, sin voltearse. El Imán engancha el borde arrastrado y refleja el opuesto. Durante el arrastre solo cuenta el estado de `Ctrl`: no dispara atajos ni copia. Se aplica en la spec 047.
+- Precisa 03 §9.1 y 04 FD-06. Aplicado a 03 (§9.1) y 04 (FD-06).
+
+## D-91 Lo bloqueado no se elige en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo: el clic pasa a lo que está debajo, y el marco y `Ctrl/Cmd+A` lo saltan. Se selecciona solo desde Capas. Seleccionado así, no muestra tiradores ni asa de giro y no se mueve con arrastre ni con flechas; girar, voltear, alinear (D-29) y eliminar desde los menús siguen actuando sobre él.
+- **Consecuencia**: un fondo bloqueado deja de tapar los clics sobre la página. Se aplica en la spec 048.
+- Precisa 04 FD-13. Aplicado a 04 (FD-13).
+- **Sustituida en parte** por D-110: un clic sí elige lo bloqueado.
+
+## D-92 Lo que sobresale de una página se recorta en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura de referencia): el lienzo dibuja cada elemento recortado a su página; la parte que sobresale no se ve. El marco de selección, sus tiradores y su asa de giro se dibujan completos por encima de todas las páginas, y se pueden tomar también fuera de la página. Arrastrar un elemento y soltarlo sobre otra página lo pasa a esa página.
+- **Consecuencia**: sustituye en el lienzo el «se atenúa» de FD-09; el documento sigue guardando la geometría completa y la exportación sigue recortando a la página. Se aplica en la spec 051.
+- Precisa 04 FD-09. Aplicado a 04 (FD-09).
+
+## D-93 Lo que se suelta fuera de su página se elimina
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): al soltar un arrastre de movimiento, un elemento cuya caja no comparte área con su página (ni la toca por dentro) se elimina, para que no quede contenido oculto que ocupe espacio. Mover y eliminar son un solo paso de deshacer. Soltarlo sobre otra página lo pasa a esa página (D-92).
+- **Consecuencia**: sustituye el «los elementos totalmente fuera se listan en Capas con un icono de aviso» de FD-09 para lo que se suelta fuera; un documento que ya traiga elementos totalmente fuera los conserva hasta que se muevan. Se aplica en la spec 051.
+- Precisa 04 FD-09. Aplicado a 04 (FD-09).
+
+## D-94 «Piezas» pasa a llamarse «Formas»
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): la pestaña del riel y la biblioteca de elementos que el glosario llama «Piezas» se llama «Formas» («Shapes» en inglés).
+- **Consecuencia**: cambia el nombre normativo de D-04 en el glosario de 03 (§2.1 y §2.8). Las demás menciones a «Piezas» en 03 y 04 se leen como «Formas»; se actualizan cuando se edite cada sección. Se aplica en la spec 052.
+- Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
+
+## D-95 Las formas nuevas son trazados vectoriales en el documento
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): los polígonos, estrellas, flechas, nubes, corazones y demás formas de la biblioteca se guardan como una geometría nueva de trazado vectorial (`ShapeGeometry::Path`), que se rellena, se contornea, se escala y se gira como un rectángulo o una elipse. Se descartaron las formas paramétricas (solo cubren polígonos y estrellas) y las imágenes SVG (no se les puede cambiar color ni contorno).
+- **Consecuencia**: cambio aditivo del esquema 1 del documento: los `.gaf` existentes se abren igual y un documento sin trazados escribe el mismo JSON, pero una versión anterior de Gafira no abre un archivo que use trazados. Se aplica en la spec 054.
+
+## D-96 Las formas pueden llevar texto, y el texto se escribe en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura de referencia): toda forma puede llevar un texto dentro o quedar vacía; el texto se alinea a la izquierda, al centro o a la derecha y arriba, al medio o abajo (por defecto, centrado y al medio). Todo texto, el de un elemento de texto y el de una forma, se escribe directamente en el lienzo con un doble clic, sin ir al panel. La negrita y la cursiva vienen en una spec posterior.
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.text`, escrito solo cuando existe): una forma sin texto conserva sus bytes; una versión anterior de Gafira no abre un archivo con texto en una forma. Se aplica en la spec 055.
+
+## D-97 «Identidad» pasa a llamarse «Marca»
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): la pestaña del riel y el concepto que el glosario llama «Identidad» e «Identidad visual» se llaman «Marca» («Brand» en inglés), un nombre más reconocible.
+- **Consecuencia**: cambia los nombres normativos de D-04 en el glosario de 03 (§2.1 y §2.8). Las claves internas y los ids de requisitos no cambian; las demás menciones se leen como «Marca» y se actualizan al editar cada sección. Se aplica en la spec 057.
+- Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
+
+## D-98 Las líneas son un elemento propio que se conecta a las formas
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): una línea es un tipo nuevo de elemento con dos extremos, una punta por extremo, color y grosor. Cada extremo puede quedar conectado a una forma en uno de cinco puntos (arriba, derecha, abajo, izquierda y centro); su posición se calcula desde la forma al dibujar y al exportar, así que la línea la sigue sin despegarse. Al arrastrar un extremo cerca de una forma se ven sus puntos y el extremo se engancha como un imán. Se descartó guardar la línea como un trazado con puntas (obliga a reescribir cada línea al mover una forma).
+- **Consecuencia**: cambio aditivo del esquema 1 (`NodeKind::Line`); una versión anterior de Gafira no abre un archivo con líneas. Una conexión a una forma borrada no invalida el documento: el extremo vuelve a su punto guardado. Se aplica en la spec 058.
+
+## D-99 Las guías son comunes a todas las páginas
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): las guías no son de cada página sino del documento: una guía creada, movida o borrada en una página aparece, se mueve o se borra en todas, en las mismas posiciones.
+- **Consecuencia**: sustituye «Las guías son por página» de FD-03. Sin cambio de formato: cada página sigue guardando `Page.guides` y la interfaz las mantiene iguales en todas (un cambio se escribe en todas en un paso de deshacer; una página nueva nace con las de la primera). Se aplica en la spec 060.
+- Precisa 04 FD-03. Aplicado a 04 (FD-03).
+
+## D-100 Biblioteca de fuentes incrustadas, con negrita y cursiva
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): Gafira incrusta una selección curada de familias de licencia libre (SIL OFL) con normal, negrita, cursiva y negrita cursiva donde existan, y un texto puede cambiar de fuente desde un panel «Fuente». Se descartaron una selección mínima y las fuentes del sistema (un diseño abierto en otro equipo cambiaría de fuente).
+- **Consecuencia**: el estilo de un tramo gana `bold` e `italic` (cambio aditivo del esquema 1: un texto sin ellos conserva sus bytes; una versión anterior no abre un archivo que los use). Playfair Display y Merriweather se cambian por EB Garamond y Source Serif 4 por sus nombres reservados. La app crece unos 12 MB. Se aplica en la spec 062.
+
+## D-101 El relleno de una forma puede ser un degradado
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): el relleno de una forma es un color sólido o un degradado de dos o más colores, lineal en cualquier dirección o circular, elegido en el Inspector con las pestañas «Color sólido» y «Degradado».
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.gradient`, que rellena en lugar de `fill` cuando existe): una forma sin degradado conserva sus bytes; una versión anterior no abre un archivo con degradados. El contrato del render gana `RenderOp::FillGradient`. Se aplica en la spec 063.
+
+## D-102 «Formas» pasa a llamarse «Elementos», con categorías
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): la pestaña del riel que el glosario llama «Formas» se llama «Elementos» («Elements» en inglés). Su panel muestra una cuadrícula de categorías (las de 03 §2.3: Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones); al pulsar una se entra en ella, con una flecha junto al título para volver. Volver a pulsar la pestaña activa del riel oculta el panel lateral, en todas las pestañas. Las tarjetas de categoría siguen la guía de marca: iconos de trazo simple en grafito sobre tarjetas claras apiladas (03 §13, P1); se descartaron iconos a color.
+- **Consecuencia**: cambia el nombre normativo de D-94 en el glosario de 03 (§2.3 y §2.8); «Formas» queda como categoría dentro de Elementos. Las claves internas no cambian. Se aplica en la spec 064.
+- Precisa D-94 y 03 §2.3, §2.8, §13. Aplicado a 03 (glosario).
+
+## D-103 «Luces y efectos»: Brillo y Destello de lente
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con una imagen de referencia): Elementos gana la categoría «Luces y efectos» («Lights & effects») con dos elementos personalizables: «Brillo» («Sparkle»), una estrella de luz con halo interior blanco, rayos (número, grosor, intensidad y ángulo) y halo exterior de color opcional; y «Destello de lente» («Lens flare»), el mismo brillo más el reflejo de una cámara que cruza la página desde la luz y se recalcula al moverla. Los nombres buscan que los entienda quien no es diseñador. Se descartó «Pasar por detrás» (reordenar objetos dentro de una forma): la categoría es solo de luces.
+- **Origen**: el comportamiento se tomó del manual público de un programa existente; su licencia prohíbe la ingeniería inversa, así que no se analizó su binario y la implementación es propia, con técnicas gráficas estándar.
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.effect`; una forma sin efecto conserva sus bytes; una versión anterior no abre un archivo que lo use). La luz se dibuja como imagen, así que el contrato del render no cambia. Se aplica en la spec 065.
+- Precisa D-102 y 03 §2.3.
+
+## D-104 Tres luces más: Destello de cine, Rayos de sol y Luces bokeh
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, pidiendo innovar sobre D-103): «Luces y efectos» gana «Destello de cine» («Cinematic streak»), la línea de luz de una lente anamórfica a lo largo de la página; «Rayos de sol» («Sun rays»), haces de luz que salen de la luz y cruzan la página; y «Luces bokeh» («Bokeh lights»), círculos de luz desenfocados repartidos por la caja de la forma. Usan los mismos ajustes que Brillo y Destello de lente (número, grosor o tamaño, intensidad, ángulo y color); el Inspector nombra cada ajuste según la luz.
+- **Consecuencia**: tres variantes más de `ShapeEffect` (aditivo, esquema 1). Se aplica en la spec 065.
+- Precisa D-103.
+
+## D-105 Todo lo que sale del panel Elementos se arrastra al lienzo
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): cada elemento del panel Elementos, de cualquier categoría presente o futura, se añade de dos formas, como las formas (spec 052): un clic lo pone en el centro de la página y un arrastre lo lleva al lienzo y lo deja centrado donde se suelta, seleccionado, en un solo paso de deshacer.
+- **Consecuencia**: una categoría nueva de Elementos no está terminada sin arrastrar y soltar. Aplicado a Formas (spec 052) y a «Luces y efectos» (spec 065).
+- Precisa D-102.
+
+## D-106 «Líneas» sale de Elementos; entra «Foto collage»
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): la categoría «Líneas» deja Elementos (las líneas siguen en la biblioteca de Formas) y su lugar lo ocupa «Foto collage» («Photo collage»): composiciones de varias fotos que funcionan como los Marcos (FD-18), cada hueco recibe una foto que queda recortada por él, pero con la estructura de un collage.
+- **Consecuencia**: cambia la lista de categorías de D-102 y del glosario de 03 (§2.3, §2.8). Foto collage depende del mecanismo de Marcos (FD-18), aún no implementado; hasta entonces su vista dice «Disponible pronto.».
+- Precisa D-102 y 03 §2.3.
+
+## D-107 La foto de un marco vive dentro del marco
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): el contenido de un marco (FD-18) es una referencia a la imagen guardada en el propio marco (`FrameContent { asset, natural }`), no un nodo hijo. Reemplazar la foto es un solo comando con un paso de deshacer, y la foto no aparece suelta en Capas ni se selecciona aparte del marco.
+- **Consecuencia**: precisa el `content: Option<NodeId>` de 02 §3.2. Se aplica en la spec 066.
+- Precisa 02 §3.2 y FD-18.
+
+## D-108 Fondo de la página
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): con la página o el lienzo seleccionados (nada seleccionado), el Inspector muestra solo «Fondo de la página»: un color (de una paleta, del selector, o buscado por nombre en español o inglés —«azul», «blue»— o por código hexadecimal —«#00c4cc»—), un degradado predefinido, un patrón (puntos, cuadrícula, rayas, cuadros, zigzag o cruces) con su color y su fondo, o una imagen subida que rellena, encaja o se repite en mosaico; y «Aplicar a todas las páginas».
+- **Consecuencia**: cambio aditivo del esquema 1 (`Page.background`; una página sin fondo conserva sus bytes; una versión anterior no abre un archivo que lo use). Se aplica en la spec 069.
+
+## D-109 Redimensionar una caja de texto
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura): una caja de texto tiene tiradores en sus cuatro esquinas y en el centro de sus lados, no en el centro de arriba ni de abajo. Una esquina escala la caja y el tamaño de letra en la misma proporción (la letra más pequeña no baja de 6 px); un lado cambia solo el ancho, nunca por debajo de lo que necesita una letra (1,2 veces la letra más grande).
+- **Consecuencia**: 03 DIS-89. Aplicado en `gafira-ui` (`textbox.rs`).
+
+## D-110 Un clic elige lo bloqueado para desbloquearlo
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular, con dos capturas): un clic sobre un elemento bloqueado lo selecciona (o el grupo bloqueado de más arriba), y la barra sobre la selección muestra solo el candado cerrado, resaltado, con «Desbloquear» al pasar el puntero. Sigue sin moverse ni mostrar tiradores. Un arrastre que empieza sobre él dibuja el marco de selección, y el marco y `Ctrl/Cmd+A` siguen saltándolo, así que un fondo bloqueado no estorba.
+- **Consecuencia**: sustituye en D-91 «el clic pasa a lo que está debajo» y «se selecciona solo desde Capas»; lo demás de D-91 sigue. Se aplica en la spec 070.
+
+## D-111 Fotos remotas: la segunda conexión de red
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): Elementos → Fotos busca e inserta fotos de catálogos públicos. Es la segunda conexión de red de la app, acotada: solo la abre el panel Fotos al buscar, cargar miniaturas o insertar una foto, desde el adaptador `gafira-photos`, con su cliente HTTP (`ureq`, TLS con `rustls` y el almacén de certificados del sistema) tras la feature `online`, activada solo en el binario. Editar, guardar y exportar siguen sin red: una foto insertada se guarda en el almacén del proyecto como cualquier imagen.
+- **Fuentes**: Openverse y Wikimedia Commons, sin clave de API (el titular pidió servicios gratuitos sin clave). Solo licencias que permiten uso comercial y modificación (CC0, dominio público, CC BY y CC BY-SA). Pixabay, Unsplash y Pexels quedan para cuando haya intermediario o clave (spec 071 §7). Ninguna clave en el código, el ejecutable ni el `.gaf`.
+- **Privacidad**: las peticiones llevan un `User-Agent` genérico de Gafira, sin datos de la persona; la consulta no se guarda en disco.
+- **Consecuencia**: precisa ARQ-04 y D-01: «la única conexión es la de licencias» pasa a «licencias y el panel Fotos». Se aplica en la spec 071.
+- **Ampliación** (titular, 2026-11-21): Elementos → Ilustraciones usa la misma conexión con Iconify (`api.iconify.design`), sin clave, solo con colecciones MIT o Apache 2.0 (spec 072).
+
+## D-112 PDF con vectores, texto real y contraseña
+
+Fecha: 21 de noviembre de 2026.
+
+- **Decisión** (titular): el PDF se escribe por defecto con vectores y texto real con su fuente incrustada; «Aplanar PDF» conserva el PDF de imagen. La contraseña cifra con AES-256 mediante `lopdf` 0.47 (MIT, sin sus funciones por defecto) sobre el PDF que escribe krilla, que no cifra; la clave del archivo sale de `getrandom`. El perfil CMYK es una conversión directa sin perfil ICC: los perfiles de imprenta (FOGRA, GRACoL) tienen licencias que no se han revisado.
+- **Consecuencia**: `RenderOp::Text` y `PageRenderer::vectors` en `gafira-ports`; `ParamKind::Text` en el contrato de opciones. Se aplica en la spec 073.
+
+## D-113 El código QR es un tipo de nodo propio
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un código QR es `NodeKind::Qr` (`QrNode`), como los marcos y las líneas, en lugar del nodo `Extension` con `type_id = "gafira.qr"` que pedía FD-20. Así el documento valida el logotipo, la exportación lo decodifica y editarlo es un paso de deshacer.
+- **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con códigos QR. La técnica y FD-20 (c) quedan sustituidas. Los Gráficos (FD-22) siguen como estaban. Se aplica en la spec 080.
+- Precisa ADR-02 y FD-20.
+
+## D-114 El gráfico es un tipo de nodo propio
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un gráfico es `NodeKind::Chart` (`ChartNode`), como los QR (D-113) y las tablas, en lugar del nodo `Extension` con `type_id = "gafira.chart"` de FD-22: la infraestructura de extensiones no existe y el nodo propio se valida, se deshace y se exporta como vectores.
+- **Consecuencia**: cambio aditivo del esquema 1; una versión anterior no abre un archivo con gráficos. La técnica y FD-22 (c) quedan sustituidas. Se aplica en la spec 083.
+- Precisa ADR-02, FD-22 y D-113.
+
+## D-115 Modelos de imagen integrados y descargables
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): «Mejorar resolución» y «Quitar fondo» usan modelos locales. El paquete incluye los dos más ligeros (`u2netp` y `realesr-general-x4v3`, menos de 10 MB entre ambos); los mayores y la aceleración por GPU se descargan solo cuando la persona lo pide y acepta, con su peso y su licencia a la vista.
+- **Consecuencia**: precisa ARQ-76, RNF-04 y FD-40 («sin modelos en el instalador» pasa a «sin modelos de más de 10 MB en total»), y ARQ-04 y D-111: es la tercera conexión de red, acotada al botón de descargar del panel de modelos, tras la feature `online`. Las imágenes no salen nunca de la máquina. Solo modelos con licencia permisiva y procedencia comprobada. Se aplica en la spec 084.
+
+## D-116 Edición de imagen completa
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): «Editar imagen» reúne ajustes, zonas, filtros y sombras. Se entregan el catálogo de filtros con nombres propios (D-40 lo aplazaba), y las sombras Brillo, Contorno y Curva (D-42 y D-27 las aplazaban) más Página flotante, En ángulo y Suelo. Primer plano y Fondo usan el modelo de quitar fondo (D-115) en lugar del `ClassicSegmenter`; Elemento se elige con un clic.
+- **Consecuencia**: precisa FD-32, FD-34, FD-35, D-27, D-40 y D-42; sus fórmulas y valores quedan sujetos a la revisión visual del titular. Cambio aditivo del esquema 1. Se aplica en la spec 085.
+
+## D-117 Modelos para reconstruir el fondo
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular, que pidió elegir por licencia): se usan los dos modelos propuestos, porque ambos tienen licencia permisiva verificada en su origen: MI-GAN (código y pesos MIT, `LICENSE-WEIGHTS` de su repositorio) como ligero y LaMa (Apache-2.0) como el de calidad. Son descargas opcionales: no entran en el límite de 10 MB integrados de D-115.
+- **Consecuencia**: precisa D-115 con una tarea nueva. Se aplica en la spec 086.
+
+## D-118 AVIF sin código nativo
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular, que pidió importar y exportar AVIF): se decodifica con `re_rav1d` (BSD-2-Clause, sin ensamblador, para no exigir `nasm`) y se codifica con `ravif` (BSD-3-Clause). El contenedor se lee con código propio: las alternativas son MPL-2.0 (`avif-parse`) o AGPL (`rav1d-safe`), fuera de la lista de licencias permitidas. AV1 es libre de regalías.
+- **Consecuencia**: dos dependencias nuevas de la capa 4; WebP se importa con `image-webp`, ya en el árbol. Se aplica en la spec 087.
+
+## D-119 Recorte de imágenes y Elementos sin «Iconos»
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): una imagen se recorta sin destruirla, en rectángulo, redondeado, círculo o a mano, libre o con proporción. La categoría «Iconos», que no tenía contenido, sale de Elementos. Marca y Plantillas van al final de la barra, apagadas hasta que se implementen.
+- **Consecuencia**: cambio aditivo del esquema 1. Se aplica en la spec 088.
+
+## D-120 Efectos de texto
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): un texto seleccionado tiene «Efectos»: Paralela, Brillo, Eco, Contorno, Fondo, Desalineado, Sin relleno, Neón y Distorsión, cada uno con sus parámetros; Curvar; y estilos listos con nombres propios.
+- **Consecuencia**: precisa FD-43 y FD-35 (en texto); cambio aditivo del esquema 1. Se aplica en la spec 089.
+
+## D-121 Publicación de binarios y coste de Actions
+
+Fecha: 22 de noviembre de 2026.
+
+- **Decisión** (titular): cada versión se publica con binarios de Linux y Windows, con instalador de Windows que registra `.gaf` y su icono; macOS cuando se pueda. Actions gasta lo mínimo.
+- **Consecuencia**: una etiqueta compila y publica sin repetir pruebas; CI corre en el PR a `main`, con pruebas en Linux y solo clippy en Windows; las de Windows y macOS, a petición. Se aplica en la spec 090.

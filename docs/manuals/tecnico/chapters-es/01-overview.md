@@ -15,36 +15,33 @@ Gafira es un editor de escritorio local para diseño gráfico, imagen y video, e
 | Área | Estado |
 |---|---|
 | Workspace, CI, puerta de licencias | Implementado |
-| `gafira-geom` (longitudes, transformaciones) | Implementado |
-| `gafira-color` (espacios de color, conversiones) | Implementado |
-| `gafira-doc` (modelo de documento, JSON, validación, capacidad de edición) | Implementado |
-| `gafira-time` (flicks, frecuencias de fotogramas y de muestreo, rangos de tiempo, timecode) | Implementado |
-| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`) | Implementado |
-| `gafira-pathops` (booleanas de trazados, contorno de trazo, simplificación, detección de impacto) | Implementado |
+| Capas 0 y 1: `gafira-geom`, `gafira-color`, `gafira-time`, `gafira-anim`, `gafira-doc`, `gafira-edit` | Implementado |
+| Capa 2: `gafira-pathops`, `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment` | Implementado |
+| Capas 3 y 4: `gafira-ports`, `gafira-render`, `gafira-media`, `gafira-render-cpu` | Implementado; el grafo de render solo emite rellenos y capas, y el backend de CPU devuelve un error para imágenes, máscaras, efectos y transiciones (`crates/gafira-render-cpu/src/backend.rs`) |
 | `gafira-testkit` (generador de documentos, arnés de propiedades de comandos) | Implementado (solo soporte de pruebas) |
 | `gafira-cli` | Solo `--help` y `--version` |
-| Formato, render, engine, UI, códecs, licencias | **Planificado** (véase el capítulo de arquitectura) |
+| `gafira-engine`, `gafira-format`, `gafira-ui`, códecs, licencias, empaquetado | **Planificado** (el capítulo de arquitectura tiene el inventario completo) |
 
-Versión del workspace: `0.1.0-beta.1`. Edición 2024, toolchain `1.93.1` fijado en `rust-toolchain.toml`.
+La tabla agrupa los crates por capa; el capítulo de arquitectura lista el inventario completo de crates.
+
+Versión del workspace: `0.1.0-beta.2`. Edición 2024, toolchain `1.93.1` fijado en `rust-toolchain.toml`.
 
 ## Mapa del repositorio
 
 | Ruta | Contenido |
 |---|---|
-| `crates/` | Crates de biblioteca (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`, `gafira-pathops`, `gafira-testkit`) |
+| `crates/` | Diecisiete crates de biblioteca en las capas 0 a 4, incluido el crate de soporte de pruebas `gafira-testkit`; el capítulo de arquitectura tiene el inventario completo |
 | `apps/gafira-cli/` | Binario de línea de comandos |
-| `specs/` | Especificaciones de producto y arquitectura; `00-decisiones.md` recoge las decisiones del titular |
+| `specs/` | Specs numeradas (activas, `backlog/`, `done/`; índice en `specs/README.md`) y los documentos de producto y arquitectura; `00-decisiones.md` recoge las decisiones del titular |
 | `docs/manuals/` | Manual de marca (`marca/`) y este manual técnico (`tecnico/`) |
-| `specs/capabilities/` | Specs principales por capacidad, fusionadas al archivar; los changes de carril rápido no las editan |
-| `specs/changes/` | Carpetas de change activas, solo para el trabajo que las necesita; las cerradas pasan a `specs/history/` |
-| `.odd/state.json` | Los resultados (outcomes) activos de ODD lite (véase el capítulo de metodología) |
-| `.agents/agents/` | Agentes del flujo de desarrollo (`.claude/agents` es un enlace simbólico) |
+| `specs/done/legacy/` | Registro del flujo anterior: specs por capacidad, carpetas de change y changes cerrados |
+| `.agents/agents/` | El agente `manual-writer` (`.claude/agents` es un enlace simbólico) |
 | `.github/workflows/ci.yml` | CI: pruebas, comprobaciones de política, `cargo-deny` |
 | `deny.toml`, `.cargo/mutants.toml` | Política de licencias y fuentes; ajustes de pruebas de mutación (el perfil `mutants` está en `Cargo.toml`) |
-| `docs/adr/` | Registros de decisiones de arquitectura, incluidas las del flujo (ADR 0001 modos y packs, ADR 0002 carril rápido, ADR 0011 ODD lite, aceptado) |
+| `docs/adr/` | Registros de decisiones de arquitectura, incluidas las del flujo (ADR 0018 flujo simple de specs, que reemplaza a ADR 0001, 0002, 0004 y 0011) |
 
 ## Orden de lectura
 
 1. Arquitectura y capas, para saber dónde puede vivir cada código.
 2. Los capítulos de crates, de abajo hacia arriba: geometría, color, documento, edición.
-3. Herramientas y metodología, antes de enviar un cambio. Las specs de producto se ejecutan por el flujo que describe el capítulo de metodología (ODD lite y el carril rápido).
+3. Herramientas y metodología, antes de enviar un cambio. Las specs se ejecutan por el flujo de `AGENTS.md` y el skill `gafira-specs` (ADR 0018), que describe el capítulo de metodología.

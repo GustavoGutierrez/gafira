@@ -2,12 +2,12 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 01 de 05 |
-| Estado | Borrador para revisión |
+| Documento | Especificación 01 |
+| Estado | Aprobado (D-83, 2026-11-16) |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-86 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
-| Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
+| Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar; **confirmada (D-80)** = decisión de producto o de diseño que fue PROPUESTA y el titular confirmó tal como está escrita (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
 ---
 
@@ -45,20 +45,20 @@ Creadores de contenido que producen piezas gráficas y videos con frecuencia y n
 |---|---|
 | Editores en línea basados en plantillas | Trabajo local sin conexión, proyecto portable y control profesional (capas, máscaras, curvas, color) |
 | Suites profesionales de escritorio | Una interfaz guiada (Elegir → Personalizar → Compartir) y un solo programa para diseño y video |
-| Herramientas gratuitas dispersas | Un único formato `.gafira`, una única Identidad visual y una sola cola de exportación |
+| Herramientas gratuitas dispersas | Un único formato `.gaf`, una única Identidad visual y una sola cola de exportación |
 
 ## 3. Propuesta de valor
 
 | Problema habitual del creador | Respuesta de Gafira | Requisitos |
 |---|---|---|
-| Precio y condiciones confusos | Una sola licencia, sin prueba gratuita (D-12): todo el producto en un único plan, sin módulos ni funciones sueltas por separado (D-01, §11). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» | §11, RF-63 |
+| Precio y condiciones confusos | Una sola licencia, sin prueba gratuita (D-12): todo el producto en un único plan, sin módulos ni funciones sueltas por separado (D-01, §11). La primera versión es una descarga gratuita (D-62, D-70); el modelo de pago se aplica cuando haya venta. Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» | §11, RF-63 |
 | Retrasos, cierres y pérdida de trabajo | Motor local, autoguardado transaccional, recuperación tras fallo y Copias ligeras | RF-03, RF-53, CAL-18 |
 | Exportaciones fallidas o archivos corruptos | Validación previa, escritura atómica, reintentos y alternativa de códec | RF-33, CAL-17 |
 | Poco control profesional | Capas, Máscaras, Fotogramas clave, Corrección de color, audio avanzado y exportación técnica | RF-45..RF-54 |
 | Resultados homogéneos | Plantillas como punto de partida: todo es editable; Estilos e Identidad visual propios | RF-15, RF-28 |
 | Inteligencia artificial intrusiva | Aislar sujeto sin modelo (técnica clásica); IA opcional, local y desactivable, fuera del MVP | RF-22, RF-23 |
 | Interfaz confusa | Flujo guiado, Paleta de comandos (Ctrl/Cmd+K), tooltips con atajo y teclado completo | RF-13, RNF-05 |
-| Portabilidad deficiente | `.gafira` abierto y documentado, formatos estándar de entrada y salida | RF-02, RF-35 |
+| Portabilidad deficiente | `.gaf` abierto y documentado, formatos estándar de entrada y salida | RF-02, RF-35 |
 | Soporte percibido como débil | Diagnóstico integrado, registros locales exportables y reporte de errores con datos técnicos que la persona decide enviar | RNF-04, RNF-06 |
 
 ## 4. Principios de producto
@@ -80,23 +80,23 @@ Las fases siguen el PRD (§6) y la hoja de ruta técnica de 02 (§11.2). Cuando 
 | Área | MVP (diseño + video básico) | Fase 2 (control profesional) | Fase 3 (diferenciación) |
 |---|---|---|---|
 | Arranque | Pantalla de arranque (D-09, RF-67): ilustración incrustada y reemplazable, logo y eslogan sobre panel claro, barra de carga real; visible al menos 1,2 s | — | — |
-| Proyecto | `.gafira`, autoguardado, recuperación, Versiones, Historial | Relocalización de medios (RF-55) | — |
+| Proyecto | `.gaf`, autoguardado, recuperación, Versiones, Historial | Relocalización de medios (RF-55) | — |
 | Lienzo | Tamaños, unidades, páginas, Reglas, Guías, Generador de guías, Imán, Cuadrícula, Zona de seguridad, Sangrado, Zoom 5–3200 % | Distribuir con reglas avanzadas | — |
 | Plantillas y Piezas | Plantillas locales, Piezas (formas, líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones), Dibujo, Biblioteca | Plantillas de video y componentes reutilizables | Biblioteca avanzada con búsqueda semántica local (opcional) |
-| Imagen | Ajustes de imagen, Filtros, Aislar sujeto (clásico), importación PNG/JPEG/WebP/GIF/TIFF/BMP/QOI/SVG | HEIC (solo lectura, vía SO; depende de Q-17), importar PDF, LUT en imagen | Segmentadores ONNX opcionales |
+| Imagen | Ajustes de imagen, Filtros, Aislar sujeto (clásico), importación PNG/JPEG/WebP/GIF/TIFF/BMP/QOI/SVG | HEIC (solo lectura, solo con el decodificador del SO; D-59), importar PDF, LUT en imagen | Segmentadores ONNX opcionales |
 | Texto | Texto completo, Efectos de texto, Columnas, Ajustar al cuadro, Fijar tipografía, Curvar | Texto sobre forma vectorial y vertical | Reescritura de texto con modelo local (opcional, desactivable) |
 | Identidad | Identidad visual, Estilos, Cambiar tamaño | — | Perfiles de identidad múltiples avanzados |
 | Exportar imagen | PNG, JPEG, WebP, GIF animado, SVG, PDF RGB | PDF CMYK, PPTX (una imagen por diapositiva, sin objetos editables; `gafira-io-pptx`, D-07) | Lotes con CSV |
-| Video básico | Línea de tiempo, cortes, velocidad, Invertir, Congelar fotograma, Transiciones, escenas, texto animado, Subtítulos manuales, Sonidos, volumen y fundidos, vista previa con scrubbing, Cola de exportación básica | Voz en off (PROPUESTA), marcadores de compás (PROPUESTA) | — |
-| Video avanzado | Modelo y motor listos (02, §3.4) | Multicapa y Agrupar en secuencia, Fotogramas clave con Editor de curvas, Máscaras, Clave de color, Seguimiento, Estabilizar, Corrección de color y Medidores, Mezclador completo (con Puerta de ruido `NoiseGate` y *time-stretch* `TimeStretch`), SRT/VTT, Copias ligeras (gestión), control de códec | Optimización GPU. El render distribuido en la red local queda **en suspenso** (abriría una conexión distinta de la de licencia, D-01; Q-18) |
+| Video básico | Línea de tiempo, cortes, velocidad, Invertir, Congelar fotograma, Transiciones, escenas, texto animado, Subtítulos manuales, Sonidos, volumen y fundidos, vista previa con scrubbing, Cola de exportación básica | Voz en off (confirmada, D-72), marcadores de compás (confirmada, D-72) | — |
+| Video avanzado | Modelo y motor listos (02, §3.4) | Multicapa y Agrupar en secuencia, Fotogramas clave con Editor de curvas, Máscaras, Clave de color, Seguimiento, Estabilizar, Corrección de color y Medidores, Mezclador completo (con Puerta de ruido `NoiseGate` y *time-stretch* `TimeStretch`), SRT/VTT, Copias ligeras (gestión), control de códec | Optimización GPU. El render distribuido en la red local queda **descartado** (D-73): no se abre más conexión de red que la de licencia (D-01) |
 | Exportar video | **WebM y MP4 con AV1 + Opus por defecto**; MP4 H.264/AAC solo vía API del sistema (`gafira-codec-os`); secuencia PNG; **extracción de fotograma (PNG) y de audio (WAV)**; sin salida HEVC ni MP3 (D-02, D-07) | WebM VP9, extracción de fotograma en JPEG y de audio en FLAC u Opus, control de bitrate, fps y rango de color | — |
 | Extensiones | — | — | Plugins (`PluginHost`), automatizaciones locales |
 | Distribución | MSI (Windows), `.deb`, `.rpm` y `.tar.gz` (Linux x86_64), DMG firmado y notarizado (macOS aarch64); sin actualizador (D-05, D-06) | — | — |
-| Idioma | **Español e inglés** con catálogos completos, idioma por defecto según el sistema (D-08), selector en Ajustes → General, cambio sin reiniciar, glosario y microcopy en los dos idiomas, plantillas empaquetadas con idioma declarado (`gafira-i18n`) | — | Otros idiomas, si el titular los decide (Q-23) |
+| Idioma | **Español e inglés** con catálogos completos, idioma por defecto según el sistema (D-08), selector en Ajustes → General, cambio sin reiniciar, glosario y microcopy en los dos idiomas, plantillas empaquetadas con idioma declarado (`gafira-i18n`) | — | Sin tercer idioma planificado; se decide después del lanzamiento (Q-23, aplazada por D-74) |
 
 ### 5.1 Fase final: licencia y distribución comercial
 
-La licencia queda **fuera del alcance de las primeras fases de desarrollo** y no bloquea el MVP técnico de diseño y video. Se entrega en una **fase final, «Licencia y distribución comercial»**, que reúne: el crate `gafira-license` y la integración con el `license-hub` (servicio externo ya existente, reutilizado tal cual), el modo sin licencia, los estados de licencia, la interfaz de activación, `PRIVACY.md` con el identificador de dispositivo, el acuerdo de licencia basado en el de Tracewright y la lista previa a la venta (05, Parte C). Las decisiones de D-01 y D-12 ya están fijadas (todo de pago, modo sin licencia, una sola licencia, única conexión de red = licencia); su diseño detallado se redacta al final. **Licencia y activación: ver spec 06 (pendiente, se redacta al final).**
+La licencia queda **fuera del alcance de las primeras fases de desarrollo** y no bloquea el MVP técnico de diseño y video. Se entrega en una **fase final, «Licencia y distribución comercial»**, que reúne: el crate `gafira-license` y la integración con el `license-hub` (servicio externo ya existente, reutilizado tal cual), el modo sin licencia, los estados de licencia, la interfaz de activación, `PRIVACY.md` con el identificador de dispositivo, el acuerdo de licencia basado en el de Tracewright y la lista previa a la venta (05, Parte C). Las decisiones de D-01 y D-12 ya están fijadas (todo de pago, modo sin licencia, una sola licencia, única conexión de red = licencia); su diseño detallado se redacta al final. La primera versión se publica **sin licencia** (D-62): el composition root inyecta `NoLicensing` (D-58), todo está habilitado y no hay conexión de red; esta fase queda aplazada hasta que el titular decida cobrar. La primera versión es una **descarga gratuita** (D-70): las licencias de terceros, las patentes, la marca y los avisos de terceros bloquean cualquier versión; la activación, el EULA de venta, el precio y el identificador de dispositivo de `PRIVACY.md` esperan a que haya venta (05, C11). **Licencia y activación: ver spec 06 (pendiente, se redacta al final).**
 
 ## 6. Fuera de alcance
 
@@ -124,9 +124,9 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
 | RF-01 | Crear, abrir, duplicar, renombrar, archivar y eliminar proyectos desde Inicio y Archivo; proyectos recientes con miniatura. | RF-01 | MVP | ADR-04 | 03 §7.2, 04 §13 |
-| RF-02 | Un único formato abierto y documentado, `.gafira` (ZIP + `manifest.json` versionado), con migraciones por paso y archivos de esquema futuro en solo lectura. | RF-01, RNF-06 | MVP | ADR-04, ARQ-53, ARQ-55 | 04 §13 |
+| RF-02 | Un único formato abierto y documentado, `.gaf` (ZIP + `manifest.json` versionado), con migraciones por paso y archivos de esquema futuro en solo lectura. | RF-01, RNF-06 | MVP | ADR-04, ARQ-53, ARQ-55 | 04 §13 |
 | RF-03 | Autoguardado cada 5–15 s (10 por defecto), guardado atómico y Recuperación tras fallo con pérdida ≤ 15 s. | RF-01, RF-10 | MVP | ARQ-50..52 | 04 §13, 03 §7.9 |
-| RF-04 | Deshacer y Rehacer amplios, fusión de gestos, Versiones nombradas y automáticas (carpeta `versions/` del `.gafira`; una automática al guardar si la última tiene más de 30 min, las 20 más recientes; las nombradas no se borran solas). | §2.1 Historial | MVP | ADR-03, ARQ-30, ARQ-32, ARQ-33, 02 §7.1 | 04 §13 |
+| RF-04 | Deshacer y Rehacer amplios, fusión de gestos, Versiones nombradas y automáticas (carpeta `versions/` del `.gaf`; una automática al guardar si la última tiene más de 30 min, las 20 más recientes; las nombradas no se borran solas). | §2.1 Historial | MVP | ADR-03, ARQ-30, ARQ-32, ARQ-33, 02 §7.1 | 04 §13 |
 | RF-05 | Todas las funciones de edición, importación y exportación funcionan sin conexión; la única conexión de red es la de la licencia (D-01). | RF-01, RNF-03 | MVP | ARQ-04, ARQ-91 | 04, 05 |
 
 ### 7.2 Lienzo y editor de diseño (PRD RF-02)
@@ -158,7 +158,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
-| RF-19 | Importar PNG, JPEG, WebP, GIF, TIFF, BMP, QOI y SVG; HEIC (lectura vía SO, `heic-os`, sujeto a Q-17; sin soporte en Linux) y PDF en Fase 2. | §2.1 Imágenes | MVP / F2 | ARQ-21, `heic-os` | 04 §8 |
+| RF-19 | Importar PNG, JPEG, WebP, GIF, TIFF, BMP, QOI y SVG; HEIC (solo lectura con el decodificador del SO, `heic-os`; en Linux solo si el sistema lo ofrece; sin decodificador, el archivo se rechaza explicando por qué; D-59) y PDF en Fase 2. | §2.1 Imágenes | MVP / F2 | ARQ-21, `heic-os` | 04 §8 |
 | RF-20 | Ajustes de imagen no destructivos con Zona de edición: Ajuste automático, Balance de blancos, Luz, Color, Textura. | RF-04 | MVP | `Effect`, ARQ-20 | 04 §8 |
 | RF-21 | Filtros con vista previa, Sombras, Bordes y esquinas, Comparar con el original y Restablecer. | RF-04 | MVP | `Effect` | 04 §8 |
 | RF-22 | **Aislar sujeto** sin modelo (técnica clásica), máscara no destructiva y Retocar borde con Pincel Quitar y Pincel Devolver. | RF-04 | MVP | `Segmenter`, `ClassicSegmenter` | 04 §9 |
@@ -171,7 +171,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-24 | Texto con fuente, tamaño, color (incluye degradados y colores de la Identidad), B/I/U/tachado, mayúsculas, alineación, Listas, interletrado, interlineado y kerning. | RF-05 | MVP | `gafira-text` | 04 §10 |
 | RF-25 | Efectos de texto: Contorno, Sombra, Degradado, fondo, brillo, eco y Curvar. | RF-05, §2.1 | MVP | `gafira-text`, `gafira-pathops` | 04 §10 |
 | RF-26 | **Columnas**, **Ajustar al cuadro** y **Fijar tipografía** como funciones propias (`TextNode.columns`, `autofit`, `type_lock`). | RF-05 | MVP | `gafira-text`, 02 §3.2 | 04 §10 |
-| RF-27 | Detección de fuentes del sistema, sustitución con aviso y fuente original recordada, Buscar y reemplazar, aviso de licencia de fuentes no incluidas. | RF-05 | MVP | `gafira-platform`, Q-10 | 04 §10 |
+| RF-27 | Detección de fuentes del sistema, sustitución con aviso y fuente original recordada, Buscar y reemplazar, aviso de licencia de fuentes no incluidas. Una fuente del usuario se incrusta en el proyecto según su licencia (bits `fsType`) y el formato de archivo; si no se puede incrustar, se vincula por nombre y al abrir sin ella se avisa de la fuente que falta (D-60). | RF-05 | MVP | `gafira-platform`, D-60 | 04 §10 |
 
 ### 7.6 Identidad visual y Cambiar tamaño (PRD RF-06, RF-03)
 
@@ -189,14 +189,14 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-32 | Exportar PDF RGB (Digital e Impresión, Sangrado y marcas de corte, aplanar, orden de lectura accesible, contraseña); PDF CMYK en Fase 2. | RF-09, §2.1 | MVP / F2 | `gafira-io-pdf`, `ColorTransform` | 04 §13 |
 | RF-33 | Validación previa (fuentes, recursos, resolución, códec) y escritura atómica; registro de cada exportación. | RF-09 | MVP | §6.4 de 02, ARQ-50 | 04 §13, 05 |
 | RF-34 | Cola de exportación: básica (MVP) y con prioridades, pausa y reintentos (Fase 2). | RF-09 | MVP / F2 | §6.4 de 02, ARQ-43 | 05 §B |
-| RF-35 | Exportar el proyecto editable con sus recursos para migrar a otro equipo. | RF-09 | MVP | `.gafira` | 04 §13 |
+| RF-35 | Exportar el proyecto editable con sus recursos para migrar a otro equipo. | RF-09 | MVP | `.gaf` (perfil `portable-full`, D-67) | 04 §13 |
 
 ### 7.8 Video básico (PRD RF-07)
 
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
 | RF-36 | Línea de tiempo con pistas de Video, Superposiciones, Texto y Audio, zoom, marcadores y Cabezal. | RF-07 | MVP | `Sequence`, `Track`, `Clip` | 05 §A |
-| RF-37 | Importar MP4/MOV, WebM/MKV, GIF, WAV, FLAC y Ogg; MP3 **solo importación** con decodificador permisivo (VERIFICAR licencia, D-07); H.264/AAC solo vía API del sistema (D-02); AVI en Fase 2 con códecs libres (D-07); con clase legal por códec. La importación de HEVC queda fuera del MVP (Q-17). | §2.2 | MVP / F2 | ADR-07, `Container`, `Codec` | 05 §A |
+| RF-37 | Importar MP4/MOV, WebM/MKV, GIF, WAV, FLAC y Ogg; MP3 **solo importación** con decodificador permisivo (`nanomp3` 0.2.0, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); D-07); H.264/AAC solo vía API del sistema (D-02); AVI en Fase 2 con códecs libres (D-07); con clase legal por códec. HEVC se importa solo con el decodificador del SO y nunca se exporta (D-59); sigue fuera del MVP. | §2.2 | MVP / F2 | ADR-07, `Container`, `Codec` | 05 §A |
 | RF-38 | Dividir, Recortar, Duplicar, reordenar, Velocidad, Invertir y Congelar fotograma, todo no destructivo. | RF-07 | MVP | `SplitClip`, `TrimClip` | 05 §A |
 | RF-39 | Nueva escena y Transiciones (Corte, Fundido, Deslizar, Zoom, Borrado, Disolvencia) en la unión de clips, con el trait `Transition` (dos entradas, `TransitionInstance` en `Clip.transitions`). | RF-07 | MVP | `Clip.transitions`, `Transition`, ARQ-25 | 05 §A |
 | RF-40 | Texto animado, títulos y tercios inferiores; presets de Movimiento y Ruta de movimiento. | RF-07 | MVP | `Animatable<T>` | 05 §A |
@@ -219,14 +219,14 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-52 | Importar y exportar SRT y VTT. | §2.3 | F2 | `gafira-captions` | 05 §B |
 | RF-53 | Copias ligeras: generación automática y manual para material de alta resolución; la exportación usa siempre el original. | RF-08 | MVP (motor) / F2 (gestión) | §6.5 de 02 | 05 §B |
 | RF-54 | Exportación con control de códec, bitrate, fps, resolución, rango de color, audio y metadatos. | RF-08, RF-09 | F2 | `EncoderConfig` | 05 §B |
-| RF-55 | Relocalizar medios cuando cambia una carpeta (medios vinculados: `manifest.assets[...].linked {rel_path, bytes, blake3}`; evento `LinksMissing`). | RF-08 | F2 | ARQ-56, 02 §7.1 | 05 §B, 04 §7 |
+| RF-55 | Relocalizar medios cuando cambia una carpeta (medios vinculados: `manifest.assets[...].linked {relPath, bytes, blake3}`, claves del manifiesto en camelCase (D-68); evento `LinksMissing`). | RF-08 | F2 | ARQ-56, 02 §7.1 | 05 §B, 04 §7 |
 
 ### 7.10 Distribución y extensión (PRD RNF-01, RNF-06)
 
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
-| RF-56 | Instaladores: MSI (Windows), `.deb`, `.rpm` y `.tar.gz` portable (solo Linux x86_64; sin AppImage, Flatpak ni aarch64; D-05), DMG firmado y notarizado (macOS aarch64). | RNF-01 | MVP | ARQ-03, ARQ-80, ARQ-83, ARQ-84 | 05 §C |
-| RF-57 | Asociación del tipo `.gafira` con icono y apertura al hacer doble clic. | RNF-01 | MVP | — | 05 §C |
+| RF-56 | Instaladores: MSI (Windows), `.deb`, `.rpm` y `.tar.gz` portable (solo Linux x86_64; sin AppImage, Flatpak ni aarch64; D-05), DMG firmado y notarizado (macOS aarch64). El instalador, los paquetes y el `.desktop` de Linux se ofrecen en español e inglés, según el idioma del sistema (D-61). | RNF-01 | MVP | ARQ-03, ARQ-80, ARQ-83, ARQ-84 | 05 §C |
+| RF-57 | Asociación del tipo `.gaf` con icono y apertura al hacer doble clic. | RNF-01 | MVP | — | 05 §C |
 | RF-58 | Avisos de terceros (`THIRD_PARTY_NOTICES.md`), SBOM y auditoría de licencias en cada versión. | RNF-06 | MVP | ARQ-70..76 | 05 §C |
 | RF-59 | **Cancelado (D-06).** La app no comprueba versiones nuevas ni contiene actualizador; el usuario descarga cada versión desde la web. El ID se conserva porque otras specs lo citan. | RNF-01 | — | ARQ-78 | 05 §C |
 | RF-60 | Plugins con API estable (efectos, importadores, proveedores, comandos). | RNF-06 | F3 | `PluginHost`, ARQ-24 | 05 §C |
@@ -238,7 +238,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
-| RF-64 | **Idiomas publicados: español e inglés.** Toda la interfaz (menús, pestañas, paneles, herramientas, mensajes, tooltips, nombres accesibles, Paleta de comandos), el glosario y el microcopy existen en los dos idiomas con correspondencia 1:1; números, fechas, tiempos relativos y unidades se formatean según el idioma. El contenido de la persona no se traduce. | — (decisión del titular; el PRD pide filtrar plantillas por idioma) | MVP | `gafira-i18n`, ADR-09, ARQ-97, ARQ-98, ARQ-102, ARQ-105, ARQ-106 | 03 §2.8, §12, §16; 02 §14 |
+| RF-64 | **Idiomas publicados: español e inglés.** Toda la interfaz (menús, pestañas, paneles, herramientas, mensajes, tooltips, nombres accesibles, Paleta de comandos), el glosario y el microcopy existen en los dos idiomas con correspondencia 1:1; números, fechas, tiempos relativos y unidades se formatean según el idioma, con la región del sistema cuando su idioma coincide con el de la interfaz (D-64). `gafira-cli` escribe en inglés por defecto y solo cambia con `--lang` (D-61, 02 ARQ-104). El contenido de la persona no se traduce. | — (decisión del titular; el PRD pide filtrar plantillas por idioma) | MVP | `gafira-i18n`, ADR-09, ARQ-97, ARQ-98, ARQ-102, ARQ-105, ARQ-106 | 03 §2.8, §12, §16; 02 §14 |
 | RF-65 | **Idioma por defecto según el sistema**, con la regla exacta de D-08: cualquier variante de español (`es`, `es-MX`, `es-CO`, `es-ES`…) → español; inglés (`en`, `en-US`, `en-GB`…) → inglés; **cualquier otro idioma, o ningún dato del SO → inglés**. Se detecta en Windows, macOS y Linux (variables de locale) y el primer arranque no pregunta el idioma. | — | MVP | `SystemLocaleSource` (`gafira-platform`), `D08LocaleResolver`, ARQ-100 | 02 §14.3, §14.4; 03 §16.2, DIS-74 |
 | RF-66 | **Selector manual** en Ajustes → General con las opciones `Sistema` (por defecto), `Español` y `English`; la elección se guarda en los ajustes, sobrevive a reiniciar y se aplica al momento, sin reiniciar ni cerrar el proyecto. | — | MVP | `LanguagePreference`, `LocaleChanged`, ARQ-101 | 03 §16.1, DIS-73, DIS-75 |
 
@@ -246,7 +246,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
-| RF-67 | **Pantalla de arranque.** Al iniciar, Gafira muestra brevemente una pantalla con la ilustración `assets/splash_screen.jpg` de fondo (recorte «cubrir») y, sobre un panel inferior de blanco cálido, el logo horizontal, el eslogan («Haz visibles tus ideas.» / «Bring your ideas to life.», según el idioma de D-08), la versión y una barra de carga coral que refleja el progreso real. Se cierra al terminar la carga necesaria para Inicio, con un mínimo de 1,2 s; avisa si la carga supera 5 s (PROPUESTA) y ofrece «Reintentar» si el arranque falla. Respeta reducir movimiento y no roba el foco. **La imagen es reemplazable**: se sustituye el archivo (mismo nombre, JPEG o PNG) y se recompila, sin tocar código; va incrustada en el binario y no depende de rutas del usuario. | — (decisión del titular; sin RF en el PRD) | MVP | ARQ-65..ARQ-69, ADR-10 | 03 §7.10, DIS-80..DIS-87 |
+| RF-67 | **Pantalla de arranque.** Al iniciar, Gafira muestra brevemente una pantalla con la ilustración `assets/splash_screen.jpg` de fondo (recorte «cubrir») y, sobre un panel inferior de blanco cálido, el logo horizontal, el eslogan («Haz visibles tus ideas.» / «Bring your ideas to life.», según el idioma de D-08), la versión y una barra de carga coral que refleja el progreso real. Se cierra al terminar la carga necesaria para Inicio, con un mínimo de 1,2 s; avisa si la carga supera 5 s (FIJADA, D-09) y ofrece «Reintentar» si el arranque falla. Respeta reducir movimiento y no roba el foco. **La imagen es reemplazable**: se sustituye el archivo (mismo nombre, JPEG o PNG) y se recompila, sin tocar código; va incrustada en el binario y no depende de rutas del usuario. | — (decisión del titular; sin RF en el PRD) | MVP | ARQ-65..ARQ-69, ADR-10 | 03 §7.10, DIS-80..DIS-87 |
 
 ---
 
@@ -254,7 +254,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 
 | ID | Requisito | PRD | ARQ | Criterios de calidad |
 |---|---|---|---|---|
-| RNF-01 | **Plataforma.** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Pantallas HiDPI, modo oscuro y teclado completo. Sin web ni otras plataformas. Varios monitores: la ventana principal es única; paneles flotantes en un segundo monitor son PROPUESTA de Fase 2. | RNF-01 | ARQ-03, ARQ-80 | — |
+| RNF-01 | **Plataforma.** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Pantallas HiDPI, modo oscuro y teclado completo. Sin web ni otras plataformas. Varios monitores: la ventana principal es única; paneles flotantes en un segundo monitor en Fase 2 (confirmada, D-80). | RNF-01 | ARQ-03, ARQ-80 | — |
 | RNF-02 | **Rendimiento.** Se cumplen las cifras de la §9; el hilo de UI nunca bloquea más de 16 ms por trabajo del engine; la GPU es opcional y existe siempre alternativa en CPU con estimación de tiempo visible. | RNF-02 | ARQ-40..44, ARQ-22, ARQ-65, ARQ-68 | CAL-01..CAL-16, CAL-38, CAL-39 |
 | RNF-03 | **Confiabilidad.** Autoguardado con recuperación del 100 %, guardado atómico, copia `.bak` de una generación, ninguna operación destructiva sin Deshacer, verificación de integridad en exportaciones. | RNF-03 | ARQ-50..57 | CAL-17, CAL-18 |
 | RNF-04 | **Seguridad y privacidad.** Procesamiento 100 % local; la única conexión de red es la de la licencia, que envía solo los datos que declara `PRIVACY.md` (identificador de dispositivo incluido; D-01); sin cuentas, nube ni telemetría automática; el registro de actividad es local y auditable; permisos mínimos del SO; los modelos de IA, si existen, se instalan aparte y se desactivan por defecto. | RNF-04 | ARQ-04, ARQ-24, ARQ-76, ARQ-91 | CAL-21 |
@@ -287,6 +287,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 ### 9.2 Método de medición común
 
 - Cada criterio tiene un benchmark en `gafira-cli bench` o `criterion` y un umbral en `perf-budgets.toml` (ARQ-40). El job nocturno en la máquina de referencia (*self-hosted*) falla si una métrica supera su umbral o empeora más de un 10 % frente a la base.
+- **Cifras medidas antes de que exista la puerta**: `perf-budgets.toml` y el job nocturno son el cambio de ARQ-40 (02 §6.7), así que hoy no existen. Una cifra medida con un *benchmark* de `criterion` mientras tanto queda como medición registrada y no rompe CI. CAL-11 es la primera: la mide `bench_export_png_1080` al construir el motor CPU y su número no es un criterio de CI hasta que la puerta exista.
 - Los percentiles se calculan sobre ≥ 300 muestras tras calentar; se reporta p50, p95 y p99. Los documentos de prueba son sintéticos y reproducibles (`gafira-testkit`: 100 capas, 20 páginas, video de 3 pistas, Reel de 60 s).
 - Las cifras de la tabla están **fijadas** por el titular (D-03: «las demás cifras propuestas en 02 pasan de PROPUESTA a fijadas»). Los criterios marcados **VERIFICAR** requieren un *spike* técnico antes de comprometerlos.
 - La medición de la experiencia (CAL-20) es una prueba de usabilidad con personas, no una prueba de CI.
@@ -305,7 +306,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-08 | Arranque hasta el primer frame interactivo de Inicio, incluida la Pantalla de arranque | < 5 s (objetivo interno < 2 s, FIJADA) | PRD | Gama media | `gafira --bench-startup` | RNF-02, RF-67 |
 | CAL-09 | Abrir un proyecto de 20 páginas | < 3 s hasta la primera página interactiva | PRD | Gama media | `bench_open_20_pages` | RF-01 |
 | CAL-10 | Abrir un documento de 100 capas | < 500 ms | spec técnica | Gama media | `bench_open_100_layers` | RF-02 |
-| CAL-11 | Exportar PNG de 1080p | < 2 s | spec técnica | Gama media | `bench_export_png_1080` | RF-31 |
+| CAL-11 | Exportar PNG de 1080p | < 2 s | spec técnica | Gama media | `bench_export_png_1080` (`criterion`); medición registrada, sin puerta hasta el cambio de ARQ-40 (§9.2) | RF-31 |
 | CAL-12 | Rango de zoom | 5 %–3200 %, vector sin pixelado a 3200 % | PRD | Gama media | Prueba funcional y golden | RF-09 |
 | CAL-13 | Vista previa de video de 60 s con 3 pistas | Frames de UI p99 < 16,7 ms durante la reproducción | PRD | Gama media | `bench_playback_3tracks` | RF-43 |
 | CAL-14 | Scrubbing 1080p | ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) | PRD (cifra: FIJADA) | Gama media | `bench_scrub_1080` | RF-43 |
@@ -330,10 +331,10 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-33 | Contraste y accesibilidad | AA en todos los pares de tokens; 0 widgets sin nombre accesible | manual y PRD | Todos | DIS-10, DIS-32 | RNF-08 |
 | CAL-34 | Coherencia vista previa y exportación | ≤ 1/255 por canal en el 99,9 % de los píxeles | 02 | CPU de referencia | ARQ-42 | RNF-10 |
 | CAL-35 | Estabilidad del hilo de UI | 0 trabajos > 16 ms fuera de diálogos del SO | 02 | Gama media | ARQ-41 | RNF-02 |
-| CAL-36 | Cambio de idioma con un proyecto abierto | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo, sin reiniciar | D-08 (cifra PROPUESTA, igual que el cambio de modo, DIS-64) | Gama media | `bench_locale_switch` (ARQ-101, DIS-75) | RF-66, RNF-13 |
+| CAL-36 | Cambio de idioma con un proyecto abierto | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo, sin reiniciar | D-08 (cifra confirmada, D-71, igual que el cambio de modo, DIS-64) | Gama media | `bench_locale_switch` (ARQ-101, DIS-75) | RF-66, RNF-13 |
 | CAL-37 | Cobertura de traducción | 100 % de claves en `es` y `en`; 0 truncados sin tooltip en las 8 pantallas en `es`, `en` y seudo-localización | D-08 | Todos | `xtask check-i18n` (ARQ-98), capturas de DIS-76 (ARQ-103) | RF-64, RNF-12 |
-| CAL-38 | Primer frame de la Pantalla de arranque desde que se lanza el proceso | < 300 ms | D-09 (cifra PROPUESTA) | Gama media y macOS de referencia | `gafira --bench-startup` (`splash_first_frame_ms`, ARQ-65) | RF-67, RNF-02 |
-| CAL-39 | Duración visible de la Pantalla de arranque | ≥ 1,2 s (D-09) y ≤ el mayor entre 1,2 s y el fin de la carga necesaria para Inicio, más 1 frame; aviso de carga lenta a los 5 s (PROPUESTA) | D-09 | Gama media | `gafira --bench-startup` (`splash_visible_ms`) y pruebas con arranque simulado (03 DIS-82, ARQ-68) | RF-67 |
+| CAL-38 | Primer frame de la Pantalla de arranque desde que se lanza el proceso | < 300 ms (FIJADA) | D-09 | Gama media y macOS de referencia | `gafira --bench-startup` (`splash_first_frame_ms`, ARQ-65) | RF-67, RNF-02 |
+| CAL-39 | Duración visible de la Pantalla de arranque | ≥ 1,2 s (D-09) y ≤ el mayor entre 1,2 s y el fin de la carga necesaria para Inicio, más 1 frame; aviso de carga lenta a los 5 s (FIJADA) | D-09 | Gama media | `gafira --bench-startup` (`splash_visible_ms`) y pruebas con arranque simulado (03 DIS-82, ARQ-68) | RF-67 |
 
 - **CAL-A**: ninguna cifra de la tabla se relaja sin un cambio documentado de esta spec y una nueva decisión del titular (D-03). *Aceptación*: `perf-budgets.toml` contiene una entrada por cada CAL medible y un revisor del repositorio lo valida en cada cambio de umbral.
 
@@ -351,7 +352,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | Exportaciones exitosas sin intervención | ≥ 98 % | PRD | `export_matrix` en CI (CAL-17) |
 | Reel de 60 s a 1080p | < 3 min | PRD | `bench_export_reel_60s` (CAL-16) |
 | Quejas de lag | < 5 % de sesiones | PRD | Informe local de frames lentos que la persona puede exportar y compartir de forma voluntaria; no hay envío automático (CAL-21) |
-| Adopción de funciones avanzadas | 30 % de usuarios activos mensuales usan Fotogramas clave, Máscaras o Corrección de color | PRD | **No medible de forma automática** sin telemetría. Se sustituye por encuesta voluntaria dentro de la app (PROPUESTA) y por conteos locales que la persona puede exportar. Ver §13 |
+| Adopción de funciones avanzadas | 30 % de usuarios activos mensuales usan Fotogramas clave, Máscaras o Corrección de color | PRD | **No medible de forma automática** sin telemetría. Se sustituye por encuesta voluntaria dentro de la app (confirmada, D-80) y por conteos locales que la persona puede exportar. Ver §13 |
 
 ### 10.2 Restricciones
 
@@ -373,16 +374,16 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 
 ## 11. Modelo comercial: todo de pago con modo sin licencia
 
-**Decisiones D-01 y D-12 (00-decisiones.md).** Gafira es de pago, con **una sola licencia**. No hay prueba gratuita: sin licencia, la app funciona en **modo sin licencia** (D-12). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» y el modelo anterior de «núcleo gratuito y módulos avanzados de pago». Se eliminan el reparto núcleo/avanzado, los módulos de pago separados y los requisitos que dependían de funciones gratuitas.
+**Decisiones D-01 y D-12 (00-decisiones.md).** Gafira es de pago, con **una sola licencia**. No hay prueba gratuita: sin licencia, la app funciona en **modo sin licencia** (D-12). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» y el modelo anterior de «núcleo gratuito y módulos avanzados de pago». Se eliminan el reparto núcleo/avanzado, los módulos de pago separados y los requisitos que dependían de funciones gratuitas. La primera versión se publica gratis y sin licencia (D-62, D-70); este modelo de pago no cambia y se aplica cuando el titular decida vender.
 
 ### 11.1 Principios
 
 1. **Una licencia, un binario.** El mismo ejecutable contiene todas las funciones de todas las fases; no hay módulos que se activen por separado.
-2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo.
-3. **Sin marcas de agua** en las exportaciones (PROPUESTA).
-4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20).
+2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo. El licenciamiento se puede deshabilitar por build sin cambiar el engine ni la UI: entonces no hay activación ni conexión de red y todo queda desbloqueado (D-58, 02 §4.14). La primera versión se publica así, sin licencia (D-62).
+3. **Sin marcas de agua** en las exportaciones (confirmada, D-80).
+4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20, aplazada por D-62 y D-70).
 5. **Única conexión de red = licencia** (activar, validar o desactivar). `PRIVACY.md` declara el identificador de dispositivo que se envía al activar y no puede afirmar que la app no transmite datos.
-6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, tentativo 99 USD, PROPUESTA; pendiente 1 del titular).
+6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, tentativo 99 USD, PROPUESTA; pendiente 1 del titular, aplazado hasta que haya venta, D-70).
 
 ### 11.2 Alcance y fase
 
@@ -422,49 +423,47 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-06 | Actualizaciones firmadas. | Cerrada: D-06 (la app no comprueba versiones). |
 | Q-07 | Hardware de referencia y cifras. | Cerrada: D-03 (cifras fijadas, §9). |
 | Q-08 | PPTX. | Cerrada: D-07 (Fase 2, una imagen por diapositiva). |
-| Q-09 | MP3 como importación. | Cerrada: D-07 (solo importación, decodificador permisivo, VERIFICAR licencia). |
+| Q-09 | MP3 como importación. | Cerrada: D-07 (solo importación, decodificador permisivo `nanomp3`, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)). |
 | Q-11 | Reparto núcleo/avanzado. | Cerrada: D-01 (no hay módulos de pago separados). |
 | Q-12 | Activación de módulos avanzados. | Cerrada: D-01 (activación con `gafira-license` y `license-hub`; detalle en la spec 06). |
 | Q-13 | Importación de AVI y de AAC/M4A. | Cerrada: D-07 (AVI en Fase 2 solo con códecs libres) y D-02 (AAC solo vía SO). |
 | Q-16 | Aprobación del glosario de 03. | Cerrada: D-04 (aprobado sin cambios); queda la búsqueda de marca del titular (§12.4). |
 | Q-14 | ¿Idioma del producto: solo español o también inglés al lanzar? | Cerrada: D-08 (español e inglés; por defecto según el sistema, cualquier otro idioma → inglés; selector en Ajustes → General). Requisitos RF-64..RF-66, RNF-12, RNF-13; arquitectura en 02 §14; diseño en 03 §2.8 y §16. |
 | Q-19 | Mecanismo de la prueba gratuita. | Cerrada: D-12 (no hay prueba gratuita). |
+| Q-10 | ¿Se permite empaquetar fuentes del usuario dentro de `.gaf` según su licencia? ¿Cómo se informa? | Cerrada: D-60 (se incrusta según su licencia, bits `fsType`, y según el perfil del `.gaf`; si no se puede, se vincula por nombre y se avisa al abrir sin ella; qué hace cada perfil se fija en la §17 de la spec 008). RF-27. |
+| Q-17 | ¿Se admite importar HEVC (y HEIC, `heic-os`) mediante la API del sistema? | Cerrada: D-59 (solo importación con el decodificador del SO; sin decodificador propio y nunca salida HEVC; sin decodificador del SO, el archivo se rechaza explicando por qué). RF-19, RF-37. |
+| Q-24 | ¿Números y fechas según la región del sistema dentro del idioma o un formato fijo por idioma? | Cerrada: D-64 (la región del sistema cuando su idioma coincide con el de la interfaz; si no, el formato CLDR del idioma de la interfaz; 02 §14.4). RF-64. |
+| Q-26 | ¿`gafira-cli` en inglés por defecto? ¿Instalador, paquetes y `.desktop` en los dos idiomas? | Cerrada: D-61 (la CLI escribe en inglés y solo cambia con `--lang`, ARQ-104; instalador, paquetes y `.desktop` en español e inglés según el idioma del sistema). RF-56, RF-64. |
+| Q-20 | ¿Qué puede hacer el usuario sin licencia válida? | Aplazada (D-62, D-70): la primera versión se publica gratis y sin licencia; la lista de funciones bloqueadas del modo sin licencia (D-12) se fija cuando haya venta, en la spec 06. Mientras tanto, en un build con licencia solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). RF-63. |
+| Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Cerrada: D-72 (las dos se quedan en Fase 2; el algoritmo de los marcadores de compás sigue en VERIFICAR). Spec 05, FV-10. |
+| Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? | Cerrada: D-73 (se descarta; Gafira no abre más conexión de red que la de la licencia futura, D-01, 02 ARQ-04). |
+| Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios. | Cerrada: D-77 (aprobados tal como están, a reserva de la búsqueda de marca de los nombres ingleses propios, *Pieces*, *Magnet*, *Light copies*…; R-17 de 02; §12.4). RF-64. |
+| Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (D-40). | Cerrada como pregunta: D-78 (pasa a tarea, la revisión visual del ítem 133 de 07). |
+| Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Aplazada (D-74): no se planifica un tercer idioma hasta después del lanzamiento; la arquitectura ya los admite (02 §14.8). RF-64. |
 
 ### 12.3 Preguntas abiertas
 
-Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
-
-| ID | Pregunta | Responsable | Bloquea |
-|---|---|---|---|
-| Q-10 | ¿Se permite empaquetar fuentes del usuario dentro de `.gafira` según su licencia? ¿Cómo se informa? | Legal + producto | RF-27 |
-| Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Producto | Spec 05 |
-| Q-17 | ¿Se admite importar HEVC (y HEIC, `heic-os`) mediante la API del sistema, o queda prohibido en toda vía? D-02 prohíbe «HEVC» sin distinguir importación de salida. | Titular + legal | RF-19, RF-37 |
-| Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Está en suspenso: abriría una conexión distinta de la de licencia, prohibida por D-01. | Titular | Fase 3 |
-| Q-20 | ¿Qué puede hacer el usuario sin licencia válida? D-12 sustituye la propuesta de solo lectura de 02: rige el modo sin licencia. Queda la lista de funciones bloqueadas; hasta entonces solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). | Titular | Spec 06, RF-63 |
-| Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Titular | Fase 3 (02 §14.8) |
-| Q-24 | ¿Números y fechas según la región del sistema dentro del idioma (es-MX `1,234.5`, es-ES `1234,5`) o un formato fijo por idioma? Propuesta de 02 §14.4: según la región. | Titular | RF-64 |
-| Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
-| Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto y solo cambia con `--lang` (02 ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux también se ofrecen en los dos idiomas (la spec 05 FV-30 dice solo español)? | Titular | RF-56, RF-64 |
-| Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (02 §12.3, D-40). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45). | Titular | No bloquea la especificación |
+Ninguna, ni aquí ni en 02 (§12.3). Q-25 la cerró D-77; Q-34 pasó a tarea de `07-deuda-abierta.md` (ítem 133, D-78). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45).
 
 ### 12.4 Pendientes del titular
 
 Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `license-hub`:
 
-1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio.
-2. Adaptar `LICENSE` y `LICENCIA.md` (contrato de Tracewright con las tres adaptaciones de D-01) y escribir el `PRIVACY.md` de Gafira, con el identificador de dispositivo.
+1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio. **Aplazado** por D-62 y D-70: la primera versión se publica gratis y sin licencia, así que no bloquea el lanzamiento.
+2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`, contrato de Tracewright con las tres adaptaciones de D-01) y el `PRIVACY.md` de Gafira, con el identificador de dispositivo, se escriben en la fase final de licencia (spec 06).
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
-4. Hacer la búsqueda de marca de D-04 (lista de comprobación siguiente).
-5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento (ítem 145 de 07) y, opcionalmente, reservar más dominios. La elección del primer país de registro queda **aplazada** (D-84) y no bloquea esta spec (D-83).
+5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: ver 00, pendiente 5, y 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. Aportar un conjunto de fotos reales con licencia para `gafira-segment` antes de publicar (D-20).
+7. Búsqueda de marca de los nombres ingleses propios del glosario (*Pieces*, *Magnet*, *Light copies*…) antes de publicar (D-77, R-17 de 02, 05 C11 punto 13).
 
-**Lista de comprobación de marca (D-04).** Sin abogado; registrar fecha, término, resultado y captura de cada búsqueda antes de publicar.
+**Lista de comprobación de marca (D-04).** Sin abogado; registrar fecha, término, resultado y captura de cada búsqueda antes de publicar. La búsqueda preliminar del 24 de octubre de 2026 cubrió las tres bases; el resultado detallado está en D-04.
 
 | # | Base de datos | Términos a buscar | Resultado |
 |---|---|---|---|
-| 1 | USPTO (Estados Unidos) | «Gafira» y «Gefira» (por parecido), clases de software y de diseño | Pendiente |
-| 2 | TMview (Unión Europea y oficinas asociadas) | «Gafira» y «Gefira» | Pendiente |
-| 3 | WIPO Global Brand Database (Madrid y nacionales) | «Gafira» y «Gefira» | Pendiente |
+| 1 | USPTO (Estados Unidos) | «Gafira» y «Gefira» (por parecido), clases de software y de diseño | Hecha (preliminar, 24-oct-2026, D-04) |
+| 2 | TMview (Unión Europea y oficinas asociadas) | «Gafira» y «Gefira» | Hecha (preliminar, 24-oct-2026, D-04) |
+| 3 | WIPO Global Brand Database (Madrid y nacionales) | «Gafira» y «Gefira» | Hecha (preliminar, 24-oct-2026, D-04) |
 
 Dato previo: una búsqueda web general encontró una empresa suiza de TI llamada «Gefira», con otra ortografía.
 
@@ -479,11 +478,11 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-01 | **Web frente a escritorio.** El manual describe uso en web (dominio de aplicación web y favicon). | Manual vs PRD | Gafira es **escritorio local**. Se ignoran las referencias web del manual. No hay favicon; hay icono de aplicación (03 §5.3). |
 | C-02 | **Sincronización y nube opcional**, biblioteca remota de plantillas y cifrado de sincronización. | PRD RF-01, RF-03, RNF-04 | Fuera de alcance (§6). Plantillas y recursos son locales. |
 | C-03 | **IA.** La spec técnica incluye reescritura de texto y separación del fondo con modelo; el PRD la deja opcional. | spec técnica vs PRD | IA opcional, local, desactivable y fuera del MVP (RF-23). Aislar sujeto usa técnica clásica sin modelo (RF-22) con el trait `Segmenter` para añadir modelos después. |
-| C-04 | **Formato de proyecto único.** `.designpkg` (PRD) frente a `.design` con SQLite (spec técnica). | PRD vs spec técnica | **`.gafira`**: ZIP con `manifest.json` versionado (ADR-04, RF-02). |
+| C-04 | **Formato de proyecto único.** `.designpkg` (PRD) frente a `.design` con SQLite (spec técnica). | PRD vs spec técnica | **`.gaf`**: ZIP con `manifest.json` versionado (ADR-04, RF-02). |
 | C-05 | **Tokens de marca.** El manual define coral y grafito; la spec técnica propone violeta `#8B3DFF`. | Manual vs spec técnica | Prevalecen los tokens de Gafira (spec 03 §3). El violeta se descarta. |
-| C-06 | **Modo oscuro** exigido por el PRD sin paleta en el manual. | PRD vs manual | Se **deriva** de la paleta y se valida con AA (spec 03 §3 y §4); es PROPUESTA hasta aprobación de marca. |
+| C-06 | **Modo oscuro** exigido por el PRD sin paleta en el manual. | PRD vs manual | Se **deriva** de la paleta y se valida con AA (spec 03 §3 y §4). Cerrada: D-82 aprueba la paleta oscura de `assets/theme/gafira.tokens.json`, validada por los 84 pares de contraste de la spec 014; se puede ajustar sin reabrir esta spec. |
 | C-07 | **Códecs.** El PRD pide MP4/H.264 y WebM/VP9 en el MVP. | PRD vs 02 | D-02: salida por defecto AV1 + Opus (WebM y MP4); H.264/AAC solo vía API del sistema; sin salida HEVC. VP9 llega en Fase 2 (ADR-07). |
-| C-08 | **Importaciones de video y audio.** El PRD lista AVI, AAC, M4A y MP3. | PRD vs 02 | AAC y M4A vía SO (D-02); MP3 solo importación con decodificador permisivo, VERIFICAR licencia (D-07); AVI en Fase 2 solo con códecs libres (D-07). |
+| C-08 | **Importaciones de video y audio.** El PRD lista AVI, AAC, M4A y MP3. | PRD vs 02 | AAC y M4A vía SO (D-02); MP3 solo importación con decodificador permisivo `nanomp3` (MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); D-07); AVI en Fase 2 solo con códecs libres (D-07). |
 | C-09 | **Plataformas.** El PRD pide macOS 12+ y «Linux principales» sin arquitectura. | PRD vs decisión | macOS solo aarch64; Linux solo x86_64 con `.deb`, `.rpm` y `.tar.gz` (D-05). |
 | C-10 | **Cola de render.** El PRD la coloca en el MVP; 02 la hace avanzada en Fase 2. | PRD vs 02 | Cola básica (un trabajo a la vez, cancelar, reintentos transitorios) en MVP; prioridades y pausa en Fase 2 (RF-34). |
 | C-11 | **Proxies.** El PRD los pone en Fase 2; 02 los usa en el motor del MVP. | PRD vs 02 | Motor de Copias ligeras en MVP para cumplir el scrubbing 1080p; gestión manual en Fase 2 (RF-53). |
@@ -493,9 +492,9 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-15 | **Modo simple y modo experto separados** (PRD §4). | PRD | Divulgación progresiva en una sola interfaz (PP-2), sin dos modos. |
 | C-16 | **Nombre de la función de marca.** El PRD y el producto explorado la designan con un nombre en inglés de otro producto. | PRD | Se llama **Identidad visual** (glosario de 03). |
 | C-17 | **PDF/X y formatos de impresión.** El PRD menciona PDF/X. | PRD vs 02 | PDF RGB en MVP; CMYK en Fase 2; PDF/X en VERIFICAR (no previsto en 02). |
-| C-18 | **Varios monitores.** El PRD lo cita en RNF-01. | PRD | Ventana única; paneles flotantes como PROPUESTA de Fase 2. |
+| C-18 | **Varios monitores.** El PRD lo cita en RNF-01. | PRD | Ventana única; paneles flotantes en Fase 2 (confirmada, D-80). |
 | C-19 | **Funciones esenciales sin retener tras un plan de pago** (principio del PRD). | PRD vs D-01 | D-01 y D-12 lo sustituyen: todo de pago, modo sin licencia y una sola licencia (§11). |
-| C-20 | **Idioma del producto.** El manual fija español e inglés como idiomas prioritarios y da el eslogan inglés; el PRD no define idioma de interfaz; 03 decía «la traducción al inglés (si se hace)» y 05 FV-30 limita el instalador al español «según Q-14». | Manual vs PRD vs 03/05 | D-08: español e inglés, por defecto según el sistema y cualquier otro idioma → inglés (§7.11). 03 ya está alineada; 05 FV-30 queda pendiente de actualizar (Q-26). |
+| C-20 | **Idioma del producto.** El manual fija español e inglés como idiomas prioritarios y da el eslogan inglés; el PRD no define idioma de interfaz; 03 decía «la traducción al inglés (si se hace)» y 05 FV-30 limita el instalador al español «según Q-14». | Manual vs PRD vs 03/05 | D-08: español e inglés, por defecto según el sistema y cualquier otro idioma → inglés (§7.11). 03 ya está alineada; 05 FV-30 ofrece el instalador en español e inglés (D-61). |
 | C-21 | **Plantillas por idioma.** El PRD pide una biblioteca «local y remota» filtrable por idioma. | PRD vs §6 | Solo plantillas locales (§6); cada plantilla empaquetada declara su idioma y la pestaña Plantillas filtra por él (nota de §7.3). |
 | C-22 | **Logo del splash.** El manual cita el «símbolo aislado» como uso correcto en un splash (§7.9, uso 3) y prohíbe el logo sobre una fotografía agitada sin superficie de contraste (§7.10); 03 §5.1 preveía un logo apilado sobre `bg` sin imagen. | Manual vs D-09 vs 03 | D-09: logo horizontal `gafira-logo-primary.svg` sobre un panel `#FAFAF7` (uso correcto 1 y 6 del manual), nunca sobre la ilustración; 03 §5.1 y §7.10 ya están alineadas (RF-67). |
 

@@ -13,3 +13,4 @@ The order of this list is the order of the manual. Keep it in sync with `chapter
 - [Tooling and quality gates](chapters/09-tooling-and-quality.md)
 - [Development methodology](chapters/10-methodology.md)
 - [Glossary](chapters/11-glossary.md)
+- [gafira-ports: the ports and their registries](chapters/12-crate-gafira-ports.md)

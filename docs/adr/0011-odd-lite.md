@@ -1,6 +1,6 @@
 # 0011. ODD lite: outcome-first routing on top of the existing flow
 
-- Status: accepted (owner confirmation 2026-11-01; confirmed again the same day with two exceptions, see "Phase D: criteria")
+- Status: superseded by 0018
 - Date: 2026-11-01
 - Related: ADR 0001, 0002, 0003, 0004 (amended, not removed), `AGENTS.md`, `.agents/agents/`, `docs/methodology/odd-ligero-migracion.md` (owner's brief), changes `odd-lite`, `layout-core`
 

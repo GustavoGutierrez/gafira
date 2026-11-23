@@ -1,14 +1,17 @@
 //! Every core command runs the six 02 §10 laws (ARQ-81).
 
+use std::sync::Arc;
+
 use gafira_color::{Color, Rgba};
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
-    BlendMode, DocMut, Document, Dpi, GroupNode, NodeId, NodeKind, PageId, PageSize, Placement,
-    ShapeGeometry, ShapeNode,
+    AssetEntry, AssetRef, AssetStorage, BlendMode, ContentHash, DocMut, Document, Dpi, GroupNode,
+    NodeId, NodeKind, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
 };
 use gafira_edit::{
-    Applied, Command, CommandError, DirtySet, GestureId, InsertNodes, InsertPage, NodeSpec,
-    Property, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction,
+    Applied, Command, CommandError, DirtySet, DuplicatePage, GestureId, InsertAsset, InsertNodes,
+    InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder, ReorderPage, Reparent,
+    RestoreVersion, SetProperty, Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -344,6 +347,86 @@ fn remove_page(doc: &Document) -> BoxedStrategy<RemovePage> {
 #[test]
 fn remove_page_obeys_the_command_laws() {
     prop_command(remove_page);
+}
+
+/// A page of `doc` (or a missing one now and then) and an index that is
+/// sometimes past the end.
+fn reorder_page(doc: &Document) -> BoxedStrategy<ReorderPage> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    let len = pages.len();
+    pages.push(PageId::new(u64::MAX));
+    (prop::sample::select(pages), 0..=len)
+        .prop_map(|(page, index)| ReorderPage::new(page, index))
+        .boxed()
+}
+
+#[test]
+fn reorder_page_obeys_the_command_laws() {
+    prop_command(reorder_page);
+}
+
+/// A page of `doc`, or a missing one now and then.
+fn duplicate_page(doc: &Document) -> BoxedStrategy<DuplicatePage> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    pages.push(PageId::new(u64::MAX));
+    prop::sample::select(pages)
+        .prop_map(DuplicatePage::new)
+        .boxed()
+}
+
+#[test]
+fn duplicate_page_obeys_the_command_laws() {
+    prop_command(duplicate_page);
+}
+
+/// A reference the document already has now and then, so the `Unchanged`
+/// path runs too, and otherwise a new one; either storage (spec 011).
+fn insert_asset(doc: &Document) -> BoxedStrategy<InsertAsset> {
+    let mut known: Vec<AssetRef> = doc.assets().keys().copied().collect();
+    known.push(AssetRef::new(ContentHash([7; 32])));
+    let reference = prop_oneof![
+        prop::sample::select(known),
+        any::<[u8; 32]>().prop_map(|bytes| AssetRef::new(ContentHash(bytes))),
+    ];
+    let storage = prop_oneof![Just(AssetStorage::Embedded), Just(AssetStorage::Linked)];
+    (reference, "[a-z]{0,8}", storage)
+        .prop_map(|(reference, name, storage)| {
+            InsertAsset::new(reference, AssetEntry { name, storage })
+        })
+        .boxed()
+}
+
+#[test]
+fn insert_asset_obeys_the_command_laws() {
+    prop_command(insert_asset);
+}
+
+/// A version of `doc` (spec 031): now and then the same content, so the
+/// `Unchanged` path runs, otherwise a subset of its pages under a counter
+/// at or above its own.
+fn restore_version(doc: &Document) -> BoxedStrategy<RestoreVersion> {
+    let same = RestoreVersion::new(doc);
+    let pages = doc.pages().to_vec();
+    let (next_id, dpi) = (doc.next_id(), doc.dpi());
+    let subset = (prop::collection::vec(any::<bool>(), pages.len()), 0..3_u64).prop_map(
+        move |(keep, extra)| {
+            let kept = pages
+                .iter()
+                .zip(&keep)
+                .filter(|(_, keep)| **keep)
+                .map(|(page, _)| Arc::clone(page))
+                .collect();
+            let version = Document::from_parts(next_id + extra, dpi, kept)
+                .expect("a subset of valid pages is a valid document");
+            RestoreVersion::new(&version)
+        },
+    );
+    prop_oneof![1 => Just(same), 4 => subset].boxed()
+}
+
+#[test]
+fn restore_version_obeys_the_command_laws() {
+    prop_command(restore_version);
 }
 
 /// One child of a generated transaction. Every step is valid on any
