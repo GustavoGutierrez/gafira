@@ -113,8 +113,8 @@ enum Screen {
     Home(Home),
     /// «Crear un diseño» (spec 076), from a shortcut of Inicio.
     Create(Create),
-    /// Marca (spec 093).
-    Brand(crate::brand_screen::BrandScreen),
+    /// Marca (spec 093). Boxed: it holds its kits and thumbnails.
+    Brand(Box<crate::brand_screen::BrandScreen>),
     /// Boxed: the editor holds the canvas state and its textures.
     Editor(Box<Editor>),
 }
@@ -899,10 +899,10 @@ impl eframe::App for Shell {
                 self.screen = Screen::Home(Home::new(list, thumbs, Tab::Templates, kind));
             }
             Go::Brand(kit) => {
-                self.screen = Screen::Brand(crate::brand_screen::BrandScreen::new(
+                self.screen = Screen::Brand(Box::new(crate::brand_screen::BrandScreen::new(
                     self.brand.as_ref(),
                     kit,
-                ));
+                )));
             }
             Go::FromTemplate(path) => {
                 self.notice = None;

@@ -41,6 +41,8 @@ arboard.workspace = true
 # Spec 066, S66-10: custom frames from SVG and PDF outlines.
 gafira-io-vector.workspace = true
 rfd.workspace = true
+# Spec 093: the colours of an SVG logo; already in the tree through egui_extras.
+resvg.workspace = true
 
 [lints]
 workspace = true
@@ -59,5 +61,4 @@ gafira-io-pdf.workspace = true
 # Spec 080: every format of the app, read back by a QR reader.
 gafira-io-svg.workspace = true
 gafira-io-pptx.workspace = true
-resvg.workspace = true
 gafira-testkit.workspace = true

@@ -4,6 +4,13 @@
 # Both catalogs must have the same keys and parameters (checked by the build).
 
 [brand]
+extract = "Extract from an image"
+extract_title = "Extract colours from an image"
+extract_pick = "Choose an image of the kit or upload one from your computer."
+extract_upload = "Upload image"
+extract_choose = "Colours found: choose the ones you want in the palette"
+extract_none = "We found no colours in this image."
+extract_add = "Add {n} to the palette"
 save_as_template = "Save as brand template"
 template_saved = "Saved as a brand template."
 colors_of_brand = "Brand colours"
