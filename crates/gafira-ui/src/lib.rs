@@ -81,3 +81,11 @@ pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, ShowInFolder, UiConfig, run};
 pub use system_fonts::{SystemFont, SystemFonts};
 pub use templates::{TemplateListing, TemplateStore};
+
+/// The guides a page of the size named `key` starts with in «Crear un
+/// diseño» (spec 076): the folds, locked, and the safe margins. The
+/// templates of that size carry the same ones (spec 091).
+#[must_use]
+pub fn size_guides(key: &str) -> Option<gafira_doc::GuideSet> {
+    design_sizes::by_key(key).map(design_sizes::DesignSize::guides)
+}
