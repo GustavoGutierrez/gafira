@@ -349,7 +349,7 @@ impl Writer<'_, '_, '_> {
                 }
                 let end = |cap: LineCap, tag: &str| match cap {
                     LineCap::Arrow => format!("<a:{tag} type=\"triangle\"/>"),
-                    LineCap::Circle => format!("<a:{tag} type=\"oval\"/>"),
+                    LineCap::Circle | LineCap::CircleFilled => format!("<a:{tag} type=\"oval\"/>"),
                     LineCap::Diamond | LineCap::DiamondFilled => {
                         format!("<a:{tag} type=\"diamond\"/>")
                     }
@@ -357,13 +357,18 @@ impl Writer<'_, '_, '_> {
                 };
                 let _ = write!(
                     out,
-                    "<p:cxnSp><p:nvCxnSpPr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm{flips}><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"line\"><a:avLst/></a:prstGeom><a:ln w=\"{}\">{}{}{}</a:ln></p:spPr></p:cxnSp>",
+                    "<p:cxnSp><p:nvCxnSpPr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm{flips}><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"line\"><a:avLst/></a:prstGeom><a:ln w=\"{}\">{}{}{}{}</a:ln></p:spPr></p:cxnSp>",
                     self.emu(x0),
                     self.emu(y0),
                     self.emu(w),
                     self.emu(h),
                     self.emu(line.width).max(1),
                     solid_fill(line.color, opacity),
+                    match line.dash {
+                        gafira_doc::LineDash::Solid => "",
+                        gafira_doc::LineDash::Dashed => "<a:prstDash val=\"dash\"/>",
+                        gafira_doc::LineDash::Dotted => "<a:prstDash val=\"sysDot\"/>",
+                    },
                     end(line.start.cap, "headEnd"),
                     end(line.end.cap, "tailEnd")
                 );

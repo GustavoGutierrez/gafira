@@ -1083,3 +1083,10 @@ Fecha: 23 de noviembre de 2026.
 
 - **Decisión** (titular, con capturas): un texto nuevo es tan ancho como su línea más larga y crece o se encoge a lo ancho al escribir o borrar; Enter abre otra línea. Arrastrar un lado fija el ancho y desde entonces las líneas se parten en él. La caja de un texto curvo siempre contiene todo su arco. Mover un elemento muestra el puntero de mover de Gafira.
 - **Consecuencia**: los textos nuevos usan `TextSizing::AutoWidth` (ya en el modelo, 02 §3.1) y la edición gana la propiedad `TextSizing`. Se aplica en la spec 095.
+
+## D-127 Más formas, filas con flechas y «Ver todo»
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): el panel Formas muestra cinco formas por sección; si hay más, la sección tiene «Ver todo» (todas, de tres en tres) y flechas a los lados de la fila para recorrerla. Se añaden formas a todas las secciones, entre ellas más líneas (discontinuas, punteadas, con extremos rellenos y de barra), y dos secciones nuevas: «Formas abstractas» y «Colgantes».
+- **Consecuencia**: la línea del documento gana el trazo (`LineDash`) y los extremos círculo relleno, cuadrado relleno y barra, aditivos al esquema 1. Se aplica en la spec 096.

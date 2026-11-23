@@ -30,6 +30,7 @@ A new Inicio with templates, and brand kits.
 - A new text box is as wide as its longest line and follows it while you write or delete; dragging a side fixes its width.
 - A curved text always fits inside its box.
 - Moving an element shows Gafira's move pointer.
+- Formas: 173 shapes (from 48), new Abstract shapes and Hang tags sections, rows of five with arrows and «Ver todo», and dashed and dotted lines with filled circle, filled square and bar ends.
 - System file dialogs open in front of Gafira's window.
 - The top bar shows the Gafira logo and icons for Inicio, Plantillas and Ajustes; Proyectos, not yet available, is gone.
 - Ajustes: sections with icons, the language as cards and each theme with a small picture of the interface; Privacidad says when Gafira goes online.

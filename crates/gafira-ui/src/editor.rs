@@ -1,7 +1,7 @@
 //! The regions of the Design editor (03 §7.1, §7.3): top bar, tab rail, side
 //! panel, canvas with the page, inspector and bottom bar.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use egui::{
@@ -403,6 +403,10 @@ pub(crate) struct Editor {
     /// The box a curved text needs to hold its arc, found when its picture
     /// is drawn again (spec 095).
     curved_fit: Option<(PageId, NodeId, Option<Placement>)>,
+    /// The first shape each row of Formas shows, by section (spec 096).
+    piece_rows: std::cell::RefCell<HashMap<&'static str, usize>>,
+    /// The section of Formas open whole with «Ver todo» (spec 096).
+    piece_section: std::cell::Cell<Option<&'static str>>,
     /// The Fuente panel takes the side panel (spec 062), with the font of
     /// the selected text and the families the document uses, as the
     /// Inspector last saw them.
@@ -577,6 +581,8 @@ impl Default for Editor {
             fit_pending: None,
             text_measure: None,
             curved_fit: None,
+            piece_rows: std::cell::RefCell::new(HashMap::new()),
+            piece_section: std::cell::Cell::new(None),
             font_panel: false,
             selection_font: None,
             document_fonts: Vec::new(),
@@ -2379,7 +2385,32 @@ impl Editor {
                         go = elements::grid(ui, theme, texts).map(Move::Enter);
                         return;
                     };
-                    if elements::header(ui, theme, texts, category) {
+                    // A section of Formas open whole: its own title, and
+                    // the arrow goes back to every section (spec 096).
+                    if category == Category::Shapes
+                        && let Some(section) = self.piece_section.get()
+                    {
+                        let back = ui
+                            .horizontal(|ui| {
+                                let back = crate::widgets::IconButton::new(
+                                    crate::icons::Icon::Back,
+                                    plain(texts, "elements.back"),
+                                )
+                                .small()
+                                .show(ui, theme);
+                                ui.label(
+                                    RichText::new(plain(texts, section))
+                                        .font(theme.font("ui-label"))
+                                        .color(theme.c("text")),
+                                );
+                                back.clicked()
+                            })
+                            .inner;
+                        ui.add_space(12.0);
+                        if back {
+                            self.piece_section.set(None);
+                        }
+                    } else if elements::header(ui, theme, texts, category) {
                         go = Some(Move::Back);
                     }
                     if category == Category::Collage {
@@ -2631,45 +2662,110 @@ impl Editor {
                     // (spec 053): a click adds it to the middle of the
                     // page, a drag carries it to where it is dropped
                     // (spec 052).
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        for (title, pieces) in canvas::PIECE_SECTIONS {
-                            ui.label(
-                                RichText::new(plain(texts, title))
-                                    .font(theme.font("ui-label"))
-                                    .color(theme.c("text")),
-                            );
-                            ui.add_space(8.0);
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing = Vec2::splat(4.0);
-                                for piece in *pieces {
-                                    let tile = self.piece_tile(
-                                        ui,
-                                        theme,
-                                        *piece,
-                                        plain(texts, piece.key()),
+                    let open = self.piece_section.get().and_then(|key| {
+                        canvas::PIECE_SECTIONS
+                            .iter()
+                            .find(|(title, _)| *title == key)
+                    });
+                    egui::ScrollArea::vertical()
+                        .id_salt(("editor.pieces", self.piece_section.get()))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            if let Some((_, pieces)) = open {
+                                // «Ver todo»: every shape of the section,
+                                // three to a line (spec 096).
+                                let gap = 8.0;
+                                let side = ((ui.available_width() - 2.0 * gap) / 3.0).max(40.0);
+                                for line in pieces.chunks(3) {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing = Vec2::splat(gap);
+                                        for piece in line {
+                                            self.piece_entry(ui, theme, texts, *piece, side, asked);
+                                        }
+                                    });
+                                    ui.add_space(gap);
+                                }
+                                return;
+                            }
+                            for (title, pieces) in canvas::PIECE_SECTIONS {
+                                let more = crate::shapes::has_more(pieces.len());
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new(plain(texts, title))
+                                            .font(theme.font("ui-label"))
+                                            .color(theme.c("text")),
                                     );
-                                    if tile.clicked() {
-                                        asked.insert = Some(*piece);
+                                    if more {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                let all = ui.add(
+                                                    egui::Button::new(
+                                                        RichText::new(plain(
+                                                            texts,
+                                                            "illustrations.see_all",
+                                                        ))
+                                                        .font(theme.font("body-sm")),
+                                                    )
+                                                    .frame(false),
+                                                );
+                                                if all.hovered() {
+                                                    ui.ctx().set_cursor_icon(
+                                                        egui::CursorIcon::PointingHand,
+                                                    );
+                                                }
+                                                if all.clicked() {
+                                                    self.piece_section.set(Some(title));
+                                                }
+                                            },
+                                        );
                                     }
-                                    let at = ui.input(|i| i.pointer.latest_pos());
-                                    if tile.dragged()
-                                        && let Some(at) = at
+                                });
+                                ui.add_space(8.0);
+                                // One row of five; arrows at its sides move
+                                // a row at a time (spec 096).
+                                let gap = 4.0;
+                                let row = crate::shapes::ROW;
+                                let side = ((ui.available_width() - gap * (row - 1) as f32)
+                                    / row as f32)
+                                    .clamp(40.0, 72.0);
+                                let first = self
+                                    .piece_rows
+                                    .borrow()
+                                    .get(title)
+                                    .map_or(0, |f| crate::shapes::paged(pieces.len(), *f, 0));
+                                let strip = ui
+                                    .horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing = Vec2::splat(gap);
+                                        for piece in pieces.iter().skip(first).take(row) {
+                                            self.piece_entry(ui, theme, texts, *piece, side, asked);
+                                        }
+                                    })
+                                    .response
+                                    .rect;
+                                if more {
+                                    let mut moved = 0;
+                                    if first > 0
+                                        && row_arrow(ui, theme, texts, strip, false).clicked()
                                     {
-                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                                        self.piece_ghost(ui.ctx(), theme, *piece, at);
+                                        moved = -1;
                                     }
-                                    if tile.drag_stopped()
-                                        && let Some(at) = at
-                                        && let Some((page, point)) =
-                                            canvas::drop_point(&self.page_rects, self.zoom, at)
+                                    if first + row < pieces.len()
+                                        && row_arrow(ui, theme, texts, strip, true).clicked()
                                     {
-                                        asked.drop_piece = Some((*piece, page, point));
+                                        moved = 1;
+                                    }
+                                    if moved != 0 {
+                                        self.piece_rows.borrow_mut().insert(
+                                            title,
+                                            crate::shapes::paged(pieces.len(), first, moved),
+                                        );
                                     }
                                 }
-                            });
-                            ui.add_space(16.0);
-                        }
-                    });
+                                ui.add_space(16.0);
+                            }
+                        });
                     return;
                 }
                 if TABS[self.rail.tab].0 == "tab.drawing" {
@@ -3713,6 +3809,7 @@ impl Editor {
                 end: gafira_doc::LineEnd::new([1.0, 0.5], end),
                 color: canvas::document_color(color),
                 width: 2.0,
+                dash: piece.line_dash(),
             };
             let y = rect.center().y;
             painter.extend(canvas::line_shapes(
@@ -4461,15 +4558,47 @@ impl Editor {
         }
     }
 
+    /// One shape of Formas, `side` px square (spec 053): a click adds it to
+    /// the middle of the page, a drag carries it to where it is dropped
+    /// (spec 052).
+    fn piece_entry(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        piece: canvas::Piece,
+        side: f32,
+        asked: &mut Asked,
+    ) {
+        let tile = self.piece_tile(ui, theme, piece, plain(texts, piece.key()), side);
+        if tile.clicked() {
+            asked.insert = Some(piece);
+        }
+        let at = ui.input(|i| i.pointer.latest_pos());
+        if tile.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            self.piece_ghost(ui.ctx(), theme, piece, at);
+        }
+        if tile.drag_stopped()
+            && let Some(at) = at
+            && let Some((page, point)) = canvas::drop_point(&self.page_rects, self.zoom, at)
+        {
+            asked.drop_piece = Some((piece, page, point));
+        }
+    }
+
     fn piece_tile(
         &self,
         ui: &mut egui::Ui,
         theme: &Theme,
         piece: canvas::Piece,
         name: String,
+        side: f32,
     ) -> egui::Response {
         let (rect, response) =
-            ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::click_and_drag());
+            ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click_and_drag());
         if response.hovered() || response.dragged() {
             ui.painter()
                 .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
@@ -4479,7 +4608,7 @@ impl Editor {
             ui.ctx(),
             ui.painter(),
             piece,
-            rect.shrink(6.0),
+            rect.shrink(side / 9.0),
             theme.c("text"),
         );
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
@@ -13832,6 +13961,81 @@ fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32)
     Some(f64::from((pos.y + galley.size().y - at.min.y) / zoom))
 }
 
+/// A round arrow over one end of a row of shapes (spec 096): `next` on
+/// the right, else on the left; the shapes under it fade into the panel.
+fn row_arrow(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    strip: Rect,
+    next: bool,
+) -> egui::Response {
+    let radius = 14.0;
+    let centre = if next {
+        Pos2::new(strip.right() - radius - 2.0, strip.center().y)
+    } else {
+        Pos2::new(strip.left() + radius + 2.0, strip.center().y)
+    };
+    // The fade: the panel colour growing over the last tile.
+    let fade = 36.0;
+    let (from, to) = if next {
+        (strip.right() - fade, strip.right())
+    } else {
+        (strip.left() + fade, strip.left())
+    };
+    let ground = theme.c("surface");
+    let mut mesh = egui::Mesh::default();
+    let clear = ground.gamma_multiply(0.0);
+    let top = strip.top();
+    let bottom = strip.bottom();
+    mesh.colored_vertex(Pos2::new(from, top), clear);
+    mesh.colored_vertex(Pos2::new(to, top), ground);
+    mesh.colored_vertex(Pos2::new(to, bottom), ground);
+    mesh.colored_vertex(Pos2::new(from, bottom), clear);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+    let rect = Rect::from_center_size(centre, Vec2::splat(radius * 2.0));
+    let id = ui.id().with(("piece-row-arrow", strip.min.y as i32, next));
+    let response = ui.interact(rect, id, egui::Sense::click());
+    let fill = if response.hovered() {
+        theme.c("secondary.bg")
+    } else {
+        theme.c("surface")
+    };
+    ui.painter()
+        .circle(centre, radius, fill, Stroke::new(1.0, theme.c("border")));
+    let d = if next { 1.0 } else { -1.0 };
+    let ink = Stroke::new(1.8, theme.c("text"));
+    ui.painter().line_segment(
+        [
+            centre + Vec2::new(-2.5 * d, -5.0),
+            centre + Vec2::new(2.5 * d, 0.0),
+        ],
+        ink,
+    );
+    ui.painter().line_segment(
+        [
+            centre + Vec2::new(2.5 * d, 0.0),
+            centre + Vec2::new(-2.5 * d, 5.0),
+        ],
+        ink,
+    );
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let name = plain(
+        texts,
+        if next {
+            "pieces.next"
+        } else {
+            "pieces.previous"
+        },
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+    response.on_hover_text(name)
+}
+
 /// The move pointer at `at` (spec 095): the brand ink with a white ring so
 /// it reads on any colour, above everything.
 fn move_pointer(ctx: &egui::Context, theme: &Theme, at: Pos2) {
@@ -18219,6 +18423,7 @@ pub(crate) mod tests {
             end: LineEnd::new([1.0, 0.0], LineCap::Arrow),
             color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
             width: 4.0,
+            dash: Default::default(),
         };
         let id = NodeId::new(engine.edit().document().expect("a document").next_id());
         engine

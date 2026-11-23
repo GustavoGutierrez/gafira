@@ -374,16 +374,31 @@ pub(crate) fn line_shapes(
     let dir = (b - a) / length;
     let size = (line.width as f32 * 2.5).max(5.0) * zoom;
     let reach = |cap: LineCap| match cap {
-        LineCap::None | LineCap::Arrow => 0.0,
+        LineCap::None | LineCap::Arrow | LineCap::Bar => 0.0,
         _ => size,
     };
     let (ra, rb) = (reach(line.start.cap), reach(line.end.cap));
     let mut out = Vec::new();
     if ra + rb < length {
-        out.push(egui::Shape::line_segment(
-            [a + dir * ra, b - dir * rb],
-            stroke,
-        ));
+        // Solid, in dashes or in dots (spec 096), as the export draws it.
+        let from = a + dir * ra;
+        let span = f64::from(length - ra - rb);
+        let pieces = gafira_doc::line_pieces(line.dash, f64::from(width), span);
+        for (s, e) in pieces {
+            let (s, e) = (s as f32, e as f32);
+            if line.dash == gafira_doc::LineDash::Dotted {
+                out.push(egui::Shape::circle_filled(
+                    from + dir * ((s + e) / 2.0),
+                    width / 2.0,
+                    color,
+                ));
+            } else {
+                out.push(egui::Shape::line_segment(
+                    [from + dir * s, from + dir * e],
+                    stroke,
+                ));
+            }
+        }
     }
     for (at, cap, out_dir) in [(a, line.start.cap, -dir), (b, line.end.cap, dir)] {
         let normal = Vec2::new(-out_dir.y, out_dir.x);
@@ -400,6 +415,20 @@ pub(crate) fn line_shapes(
             LineCap::Circle => {
                 out.push(egui::Shape::circle_stroke(centre, size, stroke));
             }
+            LineCap::CircleFilled => {
+                out.push(egui::Shape::Circle(egui::epaint::CircleShape {
+                    center: centre,
+                    radius: size,
+                    fill: color,
+                    stroke,
+                }));
+            }
+            LineCap::Bar => {
+                out.push(egui::Shape::line_segment(
+                    [at + normal * size, at - normal * size],
+                    stroke,
+                ));
+            }
             LineCap::Diamond | LineCap::DiamondFilled => {
                 let points = vec![
                     at,
@@ -414,13 +443,17 @@ pub(crate) fn line_shapes(
                 };
                 out.push(egui::Shape::convex_polygon(points, fill, stroke));
             }
-            LineCap::Square => {
+            LineCap::Square | LineCap::SquareFilled => {
                 let half = size * 0.8;
-                let points = [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
+                let points: Vec<Pos2> = [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
                     .into_iter()
                     .map(|(u, v)| centre + out_dir * (half * u) + normal * (half * v))
                     .collect();
-                out.push(egui::Shape::closed_line(points, stroke));
+                if cap == LineCap::SquareFilled {
+                    out.push(egui::Shape::convex_polygon(points, color, stroke));
+                } else {
+                    out.push(egui::Shape::closed_line(points, stroke));
+                }
             }
         }
     }
@@ -608,6 +641,7 @@ pub(crate) fn new_shape(page_px: Vec2, piece: Piece, fill: Color) -> NodeSpec {
             end: gafira_doc::LineEnd::new([1.0, 0.5], end),
             color: Color::Srgb(Rgba::new(0.1, 0.1, 0.1, 1.0)),
             width: 4.0,
+            dash: piece.line_dash(),
         };
         let placement = Placement::new(
             (f64::from(page_px.x) - side) / 2.0,
@@ -2309,7 +2343,7 @@ mod s41_tests {
     fn s58_05_the_lines_come_first() {
         let (title, pieces) = PIECE_SECTIONS[0];
         assert_eq!(title, "pieces.lines");
-        assert_eq!(pieces.len(), 5);
+        assert!(pieces.len() > 5, "spec 096 adds more");
         assert!(pieces.iter().all(|p| p.line_caps().is_some()));
         let fill = default_fill();
         let spec = new_shape(Vec2::new(900.0, 600.0), Piece::LineArrow, fill);

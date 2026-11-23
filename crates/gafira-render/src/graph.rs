@@ -1804,17 +1804,30 @@ fn line_layers(line: &gafira_doc::LineNode, [a, b]: [kurbo::Point; 2]) -> Vec<Be
     let size = (width * 2.5).max(5.0);
     // How far a cap reaches back along the line from its end.
     let reach = |cap: LineCap| match cap {
-        LineCap::None | LineCap::Arrow => 0.0,
-        LineCap::Circle | LineCap::Diamond | LineCap::DiamondFilled | LineCap::Square => size,
+        LineCap::None | LineCap::Arrow | LineCap::Bar => 0.0,
+        LineCap::Circle
+        | LineCap::CircleFilled
+        | LineCap::Diamond
+        | LineCap::DiamondFilled
+        | LineCap::Square
+        | LineCap::SquareFilled => size,
     };
     let (ra, rb) = (reach(line.start.cap), reach(line.end.cap));
     let mut out = Vec::new();
     let stroke = |path: &BezPath| stroke_path(path, width);
     if ra + rb < length {
-        let mut body = BezPath::new();
-        body.move_to(a + dir * ra);
-        body.line_to(b - dir * rb);
-        out.extend(stroke(&body));
+        let (from, to) = (a + dir * ra, b - dir * rb);
+        for (s, e) in gafira_doc::line_pieces(line.dash, width, (to - from).hypot()) {
+            if line.dash == gafira_doc::LineDash::Dotted {
+                let centre = from + dir * ((s + e) / 2.0);
+                out.push(kurbo::Circle::new(centre, width / 2.0).to_path(SHAPE_TOLERANCE));
+            } else {
+                let mut body = BezPath::new();
+                body.move_to(from + dir * s);
+                body.line_to(from + dir * e);
+                out.extend(stroke(&body));
+            }
+        }
     }
     for (at, cap, out_dir) in [(a, line.start.cap, -dir), (b, line.end.cap, dir)] {
         let normal = kurbo::Vec2::new(-out_dir.y, out_dir.x);
@@ -1828,11 +1841,19 @@ fn line_layers(line: &gafira_doc::LineNode, [a, b]: [kurbo::Point; 2]) -> Vec<Be
                 arrow.line_to(back - normal * size);
                 out.extend(stroke(&arrow));
             }
-            LineCap::Circle => {
+            LineCap::Circle | LineCap::CircleFilled => {
                 let centre = at - out_dir * size;
-                out.extend(stroke(
-                    &kurbo::Circle::new(centre, size).to_path(SHAPE_TOLERANCE),
-                ));
+                let circle = kurbo::Circle::new(centre, size).to_path(SHAPE_TOLERANCE);
+                if cap == LineCap::CircleFilled {
+                    out.push(circle.clone());
+                }
+                out.extend(stroke(&circle));
+            }
+            LineCap::Bar => {
+                let mut bar = BezPath::new();
+                bar.move_to(at + normal * size);
+                bar.line_to(at - normal * size);
+                out.extend(stroke(&bar));
             }
             LineCap::Diamond | LineCap::DiamondFilled => {
                 let centre = at - out_dir * size;
@@ -1847,7 +1868,7 @@ fn line_layers(line: &gafira_doc::LineNode, [a, b]: [kurbo::Point; 2]) -> Vec<Be
                 }
                 out.extend(stroke(&diamond));
             }
-            LineCap::Square => {
+            LineCap::Square | LineCap::SquareFilled => {
                 let centre = at - out_dir * size;
                 let half = size * 0.8;
                 let mut square = BezPath::new();
@@ -1863,6 +1884,9 @@ fn line_layers(line: &gafira_doc::LineNode, [a, b]: [kurbo::Point; 2]) -> Vec<Be
                     }
                 }
                 square.close_path();
+                if cap == LineCap::SquareFilled {
+                    out.push(square.clone());
+                }
                 out.extend(stroke(&square));
             }
         }
@@ -2743,6 +2767,7 @@ mod tests {
                 end,
                 color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
                 width: 4.0,
+                dash: Default::default(),
             };
             let base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 20.0, 20.0));
             page.nodes.insert(
@@ -2770,6 +2795,59 @@ mod tests {
         );
         let far = line_box(300.0);
         assert!((far.x1 - 300.0).abs() < 3.0, "the line follows: {far:?}");
+    }
+
+    // S96-03: a dashed line is drawn in dashes and a dotted one in dots;
+    // a filled circle or square covers its middle, and a bar crosses the
+    // end.
+    #[test]
+    fn s96_03_dashes_dots_and_new_caps() {
+        use gafira_doc::{LineCap, LineDash, LineEnd, LineNode};
+        use kurbo::Shape as _;
+        let make = |dash, start, end| LineNode {
+            start: LineEnd::new([0.0, 0.0], start),
+            end: LineEnd::new([1.0, 1.0], end),
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            width: 4.0,
+            dash,
+        };
+        let ends = [kurbo::Point::new(0.0, 0.0), kurbo::Point::new(200.0, 0.0)];
+        let none = LineCap::None;
+        assert_eq!(
+            line_layers(&make(LineDash::Solid, none, none), ends).len(),
+            1
+        );
+        let dashes = line_layers(&make(LineDash::Dashed, none, none), ends);
+        let dots = line_layers(&make(LineDash::Dotted, none, none), ends);
+        assert!(dashes.len() >= 10, "{}", dashes.len());
+        assert!(dots.len() > dashes.len(), "{} dots", dots.len());
+        for dot in &dots {
+            let b = dot.bounding_box();
+            assert!(b.width() <= 4.5 && b.height() <= 4.5, "{b:?}");
+        }
+        let size = 10.0; // 2.5 × the width
+        let filled = line_layers(
+            &make(
+                LineDash::Solid,
+                LineCap::CircleFilled,
+                LineCap::SquareFilled,
+            ),
+            ends,
+        );
+        let covers = |p: kurbo::Point| filled.iter().any(|l| l.winding(p) != 0);
+        assert!(covers(kurbo::Point::new(size, 0.0)), "the circle is filled");
+        assert!(
+            covers(kurbo::Point::new(200.0 - size, 0.0)),
+            "the square is filled"
+        );
+        let bar = line_layers(&make(LineDash::Solid, LineCap::Bar, none), ends);
+        assert!(
+            bar.iter().any(|l| {
+                let b = l.bounding_box();
+                b.height() >= 2.0 * size - 0.5 && b.width() <= 6.0
+            }),
+            "a bar across the start"
+        );
     }
 
     // S81-12: a table draws the fills, the borders and, each cell a text
