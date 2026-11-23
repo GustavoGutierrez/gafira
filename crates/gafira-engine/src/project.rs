@@ -126,6 +126,17 @@ impl ProjectService {
         self.install(document, None, false, Vec::new())
     }
 
+    /// The document of the template at `path`, read and nothing else
+    /// (spec 091): the session does not change, and the template's media
+    /// land in the content store, so its pages can be put on a page of the
+    /// session.
+    ///
+    /// # Errors
+    /// Those of [`ProjectService::open`].
+    pub fn read_template(&self, path: &Path) -> Result<Document, EngineError> {
+        Ok(self.repository.load(path)?.document)
+    }
+
     /// End the session: the document and its history go, and so do its
     /// recovery slots, because the person chose to leave (spec 016). The UI
     /// asks «¿Guardar los cambios?» first (03 §6.1). Nothing is published.
@@ -1462,6 +1473,28 @@ mod tests {
         engine.projects().open(Path::new(TARGET)).expect("an open");
         assert_eq!(session_id(&mut engine), id(2), "a nil id gets the next one");
         assert!(!engine.projects().is_modified());
+    }
+
+    // S91-10
+    #[test]
+    fn s91_10_a_template_is_read_without_touching_the_session() {
+        let (mut engine, fs, _repository) = engine_with_target(false);
+        engine.projects().new_document().expect("a session");
+        append_page(&mut engine);
+        let modified = engine.projects().is_modified();
+        let template = two_page_document().with_project_id(ProjectId::from_u128(0xfeed));
+        fs.put(OTHER, template.to_json().expect("json").as_bytes());
+
+        let read = engine
+            .projects()
+            .read_template(Path::new(OTHER))
+            .expect("the template");
+
+        assert_eq!(read.pages().len(), template.pages().len());
+        assert_eq!(session_id(&mut engine), id(1), "the session stays");
+        assert_eq!(engine.projects().is_modified(), modified);
+        assert_eq!(engine.projects().path(), None);
+        assert_eq!(fs.file(&format!("{OTHER}.lock")), None, "not locked");
     }
 
     // S91-03
