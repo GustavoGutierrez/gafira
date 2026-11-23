@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- A new Inicio: search design types and templates, shortcuts to each category of «Crear un diseño», recent projects and templates by type.
+- Plantillas: browse every template by category and type, with search in Spanish or English; a template opens as a new design, fully editable.
+- Plantillas in the editor: the templates that suit the page's proportions; one replaces the page's content, adds its other pages after it, and undoes in one step.
+- 50 templates in Spanish and English: Instagram posts and other social media, invitations, presentations, trifold brochures, print, documents, web and video.
+
+- Template details: a click on a template shows it large with its size, «Customise this template» and similar templates.
+
+### Changed
+
+- The top bar shows the Gafira logo and icons for Inicio, Plantillas and Ajustes; Proyectos, not yet available, is gone.
+- Ajustes: sections with icons, the language as cards and each theme with a small picture of the interface; Privacidad says when Gafira goes online.
+- «Crear un diseño» opens from the shortcuts of Inicio, on the chosen category, and leads back to Inicio and to Plantillas.
+
 ## [0.1.0-beta.3] - 2026-11-22
 
 The first version with the desktop application and with binaries for Linux and Windows.

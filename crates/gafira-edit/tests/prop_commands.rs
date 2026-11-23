@@ -6,12 +6,12 @@ use gafira_color::{Color, Rgba};
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
     AssetEntry, AssetRef, AssetStorage, BlendMode, ContentHash, DocMut, Document, Dpi, GroupNode,
-    NodeId, NodeKind, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
+    NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
 };
 use gafira_edit::{
-    Applied, Command, CommandError, DirtySet, DuplicatePage, GestureId, InsertAsset, InsertNodes,
-    InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder, ReorderPage, Reparent,
-    RestoreVersion, SetProperty, Transaction,
+    Applied, ApplyTemplate, Command, CommandError, DirtySet, DuplicatePage, GestureId, InsertAsset,
+    InsertNodes, InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder, ReorderPage,
+    Reparent, RestoreVersion, SetProperty, Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -377,6 +377,23 @@ fn duplicate_page(doc: &Document) -> BoxedStrategy<DuplicatePage> {
 #[test]
 fn duplicate_page_obeys_the_command_laws() {
     prop_command(duplicate_page);
+}
+
+/// A page of the document, or a missing one, and up to three of its own
+/// pages as the template, none now and then (spec 091).
+fn apply_template(doc: &Document) -> BoxedStrategy<ApplyTemplate> {
+    let mut targets: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    targets.push(PageId::new(u64::MAX));
+    let pages: Vec<Page> = doc.pages().iter().map(|p| (**p).clone()).collect();
+    let most = pages.len().min(3);
+    (prop::sample::select(targets), 0..=most)
+        .prop_map(move |(target, n)| ApplyTemplate::new(target, pages[..n].to_vec()))
+        .boxed()
+}
+
+#[test]
+fn apply_template_obeys_the_command_laws() {
+    prop_command(apply_template);
 }
 
 /// A reference the document already has now and then, so the `Unchanged`

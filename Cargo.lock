@@ -1926,8 +1926,10 @@ version = "0.1.0-beta.3"
 dependencies = [
  "eframe",
  "gafira-assets",
+ "gafira-doc",
  "gafira-engine",
  "gafira-format",
+ "gafira-geom",
  "gafira-i18n",
  "gafira-io-image",
  "gafira-io-pdf",
@@ -1940,6 +1942,7 @@ dependencies = [
  "gafira-render",
  "gafira-render-cpu",
  "gafira-theme",
+ "gafira-time",
  "gafira-ui",
  "gafira-vision",
  "serde_json",

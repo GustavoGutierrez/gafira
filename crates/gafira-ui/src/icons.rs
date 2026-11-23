@@ -96,11 +96,19 @@ pub(crate) enum Icon {
     Streak,
     SunRays,
     Bokeh,
+    /// Ajustes and its sections (spec 092).
+    Settings,
+    Language,
+    Privacy,
+    About,
+    Light,
+    Dark,
+    System,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 56] = [
+    pub(crate) const ALL: [Self; 63] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -157,6 +165,13 @@ impl Icon {
         Self::SunRays,
         Self::Crop,
         Self::Bokeh,
+        Self::Settings,
+        Self::Language,
+        Self::Privacy,
+        Self::About,
+        Self::Light,
+        Self::Dark,
+        Self::System,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -218,6 +233,13 @@ impl Icon {
             Self::SunRays => "sun-horizon",
             Self::Crop => "crop",
             Self::Bokeh => "circles-three",
+            Self::Settings => "gear-six",
+            Self::Language => "globe",
+            Self::Privacy => "shield-check",
+            Self::About => "info",
+            Self::Light => "sun",
+            Self::Dark => "moon",
+            Self::System => "monitor",
         }
     }
 
@@ -232,6 +254,13 @@ impl Icon {
                 | Self::Identity
                 | Self::Library
                 | Self::Drawing
+                | Self::Settings
+                | Self::Language
+                | Self::Privacy
+                | Self::About
+                | Self::Light
+                | Self::Dark
+                | Self::System
         )
     }
 

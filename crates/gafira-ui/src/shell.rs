@@ -14,17 +14,20 @@ use crate::app_icon;
 use crate::settings::{self, Change, SettingsView};
 use gafira_theme::ThemeTokens;
 
+use crate::create::{Create, Tab, Thumbs};
+use crate::design_sizes::Category;
 use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
 use crate::editor::Editor;
 use crate::export;
 use crate::files::{self, FileAction, Outcome};
 #[cfg(test)]
 use crate::format::StartFormat;
-use crate::home::{Home, Thumbs};
+use crate::home::Home;
 use crate::recent::{self, RecentStore};
 use crate::saving::{self, Ended, Saving};
 use crate::splash;
 use crate::style::Theme;
+use crate::templates::Catalogue;
 use crate::text::Texts;
 
 /// Builds the engine once the window exists, with the waker that repaints
@@ -70,6 +73,8 @@ pub struct UiConfig {
     /// px: the one under the pointer (spec 078). The splash is centred on
     /// it; `None` leaves the centring to the windowing library.
     pub start_monitor: Option<(i32, i32, u32, u32)>,
+    /// The templates of Inicio and Plantillas (spec 091); none without them.
+    pub templates: Option<Arc<dyn crate::TemplateStore>>,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -102,7 +107,10 @@ fn grow_into_main_window(ctx: &egui::Context) {
 /// The screen on display.
 enum Screen {
     Splash,
+    /// Inicio and Plantillas (spec 091).
     Home(Home),
+    /// «Crear un diseño» (spec 076), from a shortcut of Inicio.
+    Create(Create),
     /// Boxed: the editor holds the canvas state and its textures.
     Editor(Box<Editor>),
 }
@@ -113,6 +121,12 @@ pub(crate) enum Go {
     Home,
     /// A new document on this page: its size and guides (spec 076).
     Create(Box<gafira_doc::Page>),
+    /// «Crear un diseño» on a category (spec 091).
+    CreateIn(Category),
+    /// Plantillas, on the templates of one kind if given (spec 091).
+    Templates(Option<&'static str>),
+    /// A new document with the content of the template at this path.
+    FromTemplate(PathBuf),
     File(FileAction),
     /// Open a project of «Recientes».
     OpenRecent(PathBuf),
@@ -188,6 +202,8 @@ struct Shell {
     waker: egui::Context,
     /// The textures of the thumbnails of «Recientes» (spec 033).
     thumbs: Thumbs,
+    /// The templates of Inicio and Plantillas (spec 091).
+    catalogue: std::rc::Rc<std::cell::RefCell<Catalogue>>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -284,6 +300,10 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 saving: None,
                 waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
+                catalogue: std::rc::Rc::new(std::cell::RefCell::new(Catalogue::new(
+                    config.templates,
+                    &cc.egui_ctx,
+                ))),
             }))
         }),
     )
@@ -302,6 +322,7 @@ impl Shell {
     fn new_editor(&self) -> Box<Editor> {
         let mut editor = Box::<Editor>::default();
         editor.library = Some(std::rc::Rc::clone(&self.library));
+        editor.templates = Some(std::rc::Rc::clone(&self.catalogue));
         editor
             .photo_panel
             .get_mut()
@@ -363,6 +384,17 @@ impl Shell {
     /// Inicio with the recent projects as they are now, and the thumbnails
     /// of the ones it shows (spec 033).
     fn home(&self) -> Screen {
+        let (list, thumbs) = self.recents();
+        Screen::Home(Home::new(list, thumbs, Tab::Home, None))
+    }
+
+    /// The recent projects and the thumbnails of the ones Inicio shows.
+    fn recents(
+        &self,
+    ) -> (
+        Vec<recent::RecentProject>,
+        std::collections::BTreeMap<PathBuf, recent::RecentThumbnail>,
+    ) {
         let list = self.recent.list();
         let thumbs = recent::shown(&list)
             .iter()
@@ -371,7 +403,7 @@ impl Shell {
                 Some((project.path.clone(), thumb))
             })
             .collect();
-        Screen::Home(Home::new(list, thumbs))
+        (list, thumbs)
     }
 
     /// Put the open project in «Recientes» (spec 025).
@@ -762,8 +794,16 @@ impl eframe::App for Shell {
                     Go::Stay
                 }
             }
-            Screen::Home(home) => {
-                home.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)
+            Screen::Home(home) => home.show(
+                ctx,
+                &self.theme,
+                &self.texts,
+                unix_now(),
+                &mut self.thumbs,
+                &mut self.catalogue.borrow_mut(),
+            ),
+            Screen::Create(create) => {
+                create.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)
             }
             Screen::Editor(editor) => editor.show(
                 ctx,
@@ -832,6 +872,24 @@ impl eframe::App for Shell {
                 Ok(()) => self.screen = Screen::Editor(self.new_editor()),
                 Err(error) => eprintln!("new document: {error}"),
             },
+            Go::CreateIn(category) => {
+                let (list, thumbs) = self.recents();
+                self.screen = Screen::Create(Create::new(list, thumbs, category));
+            }
+            Go::Templates(kind) => {
+                let (list, thumbs) = self.recents();
+                self.screen = Screen::Home(Home::new(list, thumbs, Tab::Templates, kind));
+            }
+            Go::FromTemplate(path) => {
+                self.notice = None;
+                match self.engine.projects().new_document_from_template(&path) {
+                    Ok(()) => self.screen = Screen::Editor(self.new_editor()),
+                    Err(error) => {
+                        eprintln!("template {}: {error}", path.display());
+                        self.notice = Some(self.texts.t(&gafira_doc::msg!("templates.failed")));
+                    }
+                }
+            }
         }
     }
 }

@@ -6,6 +6,8 @@
 //! ports from the adapters, the engine over them, and hands both to the
 //! shell (spec 018).
 
+mod templates;
+
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -275,6 +277,10 @@ fn main() -> eframe::Result {
         // Spec 039: «Mostrar en carpeta» opens the system file manager.
         show_in_folder: Box::new(gafira_platform::show_in_folder),
         system_fonts,
+        // Spec 091: the templates the app carries, written out once.
+        templates: Some(Arc::new(templates::Templates {
+            dir: data_dir.join("templates").join("bundled"),
+        })),
         // D-111: Openverse and Wikimedia Commons, and the illustrations of
         // Iconify (spec 072), without an API key.
         photos: Some(Arc::clone(&catalog) as Arc<dyn gafira_ports::photos::PhotoCatalog>),

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{self, Seek, SeekFrom, Write};
 
 use gafira_doc::{AssetRef, AssetStorage, Document};
-use gafira_ports::repository::{RepositoryError, Thumbnail, Version, VersionKind};
+use gafira_ports::repository::{RepositoryError, TemplateMeta, Thumbnail, Version, VersionKind};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
 use serde_json::{Value, json};
@@ -119,6 +119,32 @@ pub fn write_gaf<W: Write + Seek>(
     thumbnail: Option<&Thumbnail>,
     store: &dyn ContentStore,
 ) -> Result<(), RepositoryError> {
+    write(sink, document, versions, thumbnail, None, store)
+}
+
+/// [`write_gaf`] of a template (D-81, spec 091): `document` with no
+/// versions, and `meta` as the manifest's `template`.
+///
+/// # Errors
+/// Those of [`write_gaf`].
+pub fn write_template<W: Write + Seek>(
+    sink: W,
+    document: &Document,
+    thumbnail: Option<&Thumbnail>,
+    meta: &TemplateMeta,
+    store: &dyn ContentStore,
+) -> Result<(), RepositoryError> {
+    write(sink, document, &[], thumbnail, Some(meta), store)
+}
+
+fn write<W: Write + Seek>(
+    sink: W,
+    document: &Document,
+    versions: &[Version],
+    thumbnail: Option<&Thumbnail>,
+    template: Option<&TemplateMeta>,
+    store: &dyn ContentStore,
+) -> Result<(), RepositoryError> {
     // The document names an asset first; a version adds only the ones the
     // document does not have.
     let mut embedded: BTreeMap<AssetRef, String> = BTreeMap::new();
@@ -148,7 +174,7 @@ pub fn write_gaf<W: Write + Seek>(
         .unwrap_or(0);
     let project_id = main.root.get("project_id").cloned().unwrap_or(Value::Null);
     let version_ids: Vec<Value> = versions.iter().map(|v| Value::from(v.info.id.0)).collect();
-    let manifest = manifest::build(
+    let mut manifest = manifest::build(
         schema,
         &project_id,
         &main.page_ids(),
@@ -157,6 +183,9 @@ pub fn write_gaf<W: Write + Seek>(
         &sizes,
         &version_ids,
     );
+    if let (Some(meta), Some(fields)) = (template, manifest.as_object_mut()) {
+        fields.insert("template".to_owned(), manifest::template_value(meta));
+    }
     let splits = versions
         .iter()
         .map(|version| Split::of(&version.document))

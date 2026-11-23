@@ -29,6 +29,31 @@ pub struct Thumbnail {
     pub image: ImageBuf,
 }
 
+/// The page formats a template may name (D-81, 03 §6.2).
+pub const TEMPLATE_PAGE_FORMATS: [&str; 6] = [
+    "social",
+    "presentation",
+    "print",
+    "video_vertical",
+    "video_horizontal",
+    "custom",
+];
+
+/// What makes a `.gaf` a template: the optional `template` object of its
+/// manifest (D-81). A file without it is an ordinary project.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateMeta {
+    /// Free words to find it by (spec 091 gives some of them a meaning:
+    /// a size key such as `size.ig_square`, `lang:es`).
+    pub tags: Vec<String>,
+    /// One of [`TEMPLATE_PAGE_FORMATS`].
+    pub page_format: String,
+    /// A style word, such as `minimal`.
+    pub style: String,
+    /// Its main colour, `#RRGGBB`.
+    pub color: String,
+}
+
 /// Names one version inside a project file (02 §7.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VersionId(pub u64);
