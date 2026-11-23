@@ -12,6 +12,7 @@ use egui::{Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use gafira_doc::msg::{Message, MessageKey};
 use gafira_doc::{BlendMode, NodeId, PageId, PathCommand, ShapePath};
 
+use crate::icons::{self, Icon, Weight};
 use crate::style::Theme;
 use crate::text::Texts;
 
@@ -926,24 +927,15 @@ fn brush_card(
             t(texts, brush.key)
         }
         Tool::Select => {
-            // The arrow of the pointer.
-            let c = art.center() + Vec2::new(-4.0, -2.0);
-            let ink = theme.c("text");
-            let head = vec![
-                c + Vec2::new(-8.0, -14.0),
-                c + Vec2::new(10.0, 4.0),
-                c + Vec2::new(-8.0, 6.0),
-            ];
-            ui.painter()
-                .add(egui::Shape::convex_polygon(head, ink, Stroke::NONE));
-            let stem = vec![
-                c + Vec2::new(-1.0, 3.0),
-                c + Vec2::new(3.0, 1.0),
-                c + Vec2::new(9.0, 13.0),
-                c + Vec2::new(5.0, 15.0),
-            ];
-            ui.painter()
-                .add(egui::Shape::convex_polygon(stem, ink, Stroke::NONE));
+            // Gafira's cursor, the pointer of «Seleccionar».
+            let icon = Rect::from_center_size(art.center(), Vec2::splat(34.0));
+            icons::paint(
+                ui.painter(),
+                icon,
+                Icon::Cursor,
+                Weight::Regular,
+                theme.c("text"),
+            );
             t(texts, "draw.select")
         }
         Tool::Eraser => {

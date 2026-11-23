@@ -26,6 +26,7 @@ A new Inicio with templates, and brand kits.
 
 ### Changed
 
+- Dibujo: «Seleccionar» uses Gafira's own cursor icon.
 - System file dialogs open in front of Gafira's window.
 - The top bar shows the Gafira logo and icons for Inicio, Plantillas and Ajustes; Proyectos, not yet available, is gone.
 - Ajustes: sections with icons, the language as cards and each theme with a small picture of the interface; Privacidad says when Gafira goes online.
