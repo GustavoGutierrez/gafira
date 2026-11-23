@@ -1922,7 +1922,7 @@ checksum = "312d2295c7302019c395cfb90dacd00a82a2eabd700429bba9c7a3f38dbbe11b"
 
 [[package]]
 name = "gafira"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "eframe",
  "gafira-assets",
@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-anim"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-assets"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "blake3",
  "gafira-doc",
@@ -1972,7 +1972,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-audio"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "assert_no_alloc",
  "criterion",
@@ -1986,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-chart"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -1997,11 +1997,11 @@ dependencies = [
 
 [[package]]
 name = "gafira-cli"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 
 [[package]]
 name = "gafira-color"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "proptest",
  "serde",
@@ -2010,7 +2010,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-doc"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -2023,7 +2023,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-edit"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-engine"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "crossbeam-channel",
  "gafira-doc",
@@ -2049,7 +2049,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-format"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "blake3",
  "flate2",
@@ -2064,7 +2064,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-geom"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "kurbo 0.13.1",
  "proptest",
@@ -2074,7 +2074,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-i18n"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-doc",
  "gafira-ports",
@@ -2086,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-image"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2107,7 +2107,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-pdf"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2129,7 +2129,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-pptx"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "flate2",
  "gafira-chart",
@@ -2148,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-svg"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2168,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-vector"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2179,7 +2179,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-xlsx"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "flate2",
  "gafira-color",
@@ -2193,7 +2193,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-layout"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "criterion",
  "gafira-doc",
@@ -2203,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-media"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2216,7 +2216,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-pathops"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-doc",
  "gafira-geom",
@@ -2227,7 +2227,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-photos"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-ports",
  "serde",
@@ -2237,7 +2237,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-platform"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-doc",
  "gafira-ports",
@@ -2250,7 +2250,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-ports"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2265,7 +2265,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-qr"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2278,7 +2278,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-raster"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2291,7 +2291,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-render"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "blake3",
  "gafira-anim",
@@ -2313,7 +2313,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-render-cpu"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-segment"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2345,7 +2345,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-table"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-testkit"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "assert_no_alloc",
  "gafira-color",
@@ -2373,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-text"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-theme"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "gafira-doc",
  "serde_json",
@@ -2397,7 +2397,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-time"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "proptest",
  "serde",
@@ -2406,7 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-ui"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "arboard",
  "blake3",
@@ -2450,7 +2450,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-vision"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "blake3",
  "flate2",
@@ -6845,7 +6845,7 @@ checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "xtask"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 dependencies = [
  "resvg",
 ]
