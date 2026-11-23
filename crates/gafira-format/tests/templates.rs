@@ -6,7 +6,9 @@ use std::io::{self, Cursor, Read, Write};
 use std::sync::Mutex;
 
 use gafira_doc::{ContentHash, Document, PageId, ProjectId};
-use gafira_format::{Limits, read_gaf, read_template_info, write_gaf, write_template};
+use gafira_format::{
+    Limits, read_gaf, read_template_info, set_template, write_gaf, write_template,
+};
 use gafira_ports::repository::{TemplateMeta, Thumbnail};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
@@ -173,4 +175,55 @@ fn s91_01_a_malformed_template_is_ignored_and_the_file_opens() {
         )
         .expect("the project still opens");
     }
+}
+
+#[test]
+fn s93_01_set_template_marks_a_project_and_keeps_the_rest() {
+    let mut project = Cursor::new(Vec::new());
+    write_gaf(
+        &mut project,
+        &document(),
+        &[],
+        Some(&thumbnail()),
+        &MemoryStore::default(),
+    )
+    .expect("writes");
+    let project = project.into_inner();
+    let mut brand = meta();
+    brand.tags.push("brand:k1".to_owned());
+    let mut out = Cursor::new(Vec::new());
+    set_template(Cursor::new(&project), &mut out, &brand, Limits::default()).expect("copies");
+    let out = out.into_inner();
+    let info = read_template_info(Cursor::new(&out), Limits::default())
+        .expect("reads")
+        .expect("a template now");
+    assert_eq!(info.meta, brand);
+    assert!(info.thumbnail.is_some(), "the thumbnail stays");
+    let names = |bytes: &[u8]| -> Vec<String> {
+        let zip = ZipArchive::new(Cursor::new(bytes)).expect("a zip");
+        zip.file_names()
+            .map(|name| name.expect("a name").into_owned())
+            .collect()
+    };
+    assert_eq!(
+        names(&out),
+        names(&project),
+        "the same entries in the same order"
+    );
+    let loaded =
+        read_gaf(Cursor::new(out), Limits::default(), &MemoryStore::default()).expect("opens");
+    assert_eq!(loaded.document.pages().len(), 1);
+    // A template's template is replaced, not added twice.
+    let mut again = Cursor::new(Vec::new());
+    set_template(
+        Cursor::new(template_gaf(None)),
+        &mut again,
+        &brand,
+        Limits::default(),
+    )
+    .expect("copies");
+    let info = read_template_info(Cursor::new(again.into_inner()), Limits::default())
+        .expect("reads")
+        .expect("a template");
+    assert_eq!(info.meta, brand);
 }

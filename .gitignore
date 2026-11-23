@@ -46,3 +46,6 @@ docs/manuals/tecnico/build/
 
 # Agent worktrees (local, never tracked)
 .claude/worktrees/
+
+# Lock files a running Gafira keeps next to an open project (spec 028).
+*.gaf.lock

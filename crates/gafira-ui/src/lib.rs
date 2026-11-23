@@ -13,6 +13,9 @@
 
 mod app_icon;
 mod arrange;
+mod brand;
+mod brand_panel;
+mod brand_screen;
 mod canvas;
 mod chart_templates;
 mod charts;
@@ -75,6 +78,10 @@ mod widgets;
 mod zones;
 mod zoom;
 
+pub use brand::{
+    BRAND_TAG, BrandColor, BrandFiles, BrandKit, BrandPalette, BrandStore, BrandTextStyle,
+    parse_hex as parse_brand_hex,
+};
 pub use export::{ExportPresets, PresetValue};
 pub use library::{LibraryEntry, LibraryStore};
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};

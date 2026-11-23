@@ -15,9 +15,13 @@ pub struct SystemFont {
 }
 
 /// The fonts of the system, shared and filled once the scan ends; empty and
-/// not ready until then.
+/// not ready until then. The fonts a person uploads to a brand kit (spec
+/// 093) are added apart, so the scan never takes them away.
 #[derive(Clone, Default)]
-pub struct SystemFonts(Arc<RwLock<Option<Arc<Vec<SystemFont>>>>>);
+pub struct SystemFonts(
+    Arc<RwLock<Option<Arc<Vec<SystemFont>>>>>,
+    Arc<RwLock<Vec<SystemFont>>>,
+);
 
 impl SystemFonts {
     /// An empty catalogue, not ready.
@@ -39,14 +43,38 @@ impl SystemFonts {
         self.0.read().is_ok_and(|slot| slot.is_some())
     }
 
-    /// Every face, empty until the scan ends.
+    /// Every face: those the person added, then those the scan found.
     #[must_use]
     pub fn faces(&self) -> Arc<Vec<SystemFont>> {
-        self.0
+        let scanned = self
+            .0
             .read()
             .ok()
             .and_then(|slot| slot.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let added = self.added();
+        if added.is_empty() {
+            return scanned;
+        }
+        Arc::new(added.into_iter().chain(scanned.iter().cloned()).collect())
+    }
+
+    /// Add faces the person uploaded (spec 093); a file already added is
+    /// added once.
+    pub fn add(&self, faces: Vec<SystemFont>) {
+        if let Ok(mut added) = self.1.write() {
+            for face in faces {
+                if !added.iter().any(|f| f.path == face.path) {
+                    added.push(face);
+                }
+            }
+        }
+    }
+
+    /// The faces the person uploaded, in the order they came.
+    #[must_use]
+    pub fn added(&self) -> Vec<SystemFont> {
+        self.1.read().map(|a| a.clone()).unwrap_or_default()
     }
 
     /// The families of the system, each once, in order, but those of
@@ -125,5 +153,12 @@ mod tests {
         );
         assert_eq!(fonts.path("Ubuntu Italic"), None);
         assert_eq!(fonts.faces().len(), 4);
+        // Spec 093: a font uploaded to a brand kit joins the catalogue apart
+        // from the scan, once per file.
+        fonts.add(vec![face("Marca Sans", false, false)]);
+        fonts.add(vec![face("Marca Sans", false, false)]);
+        assert_eq!(fonts.added().len(), 1, "a file is added once");
+        assert!(fonts.families(&[]).contains(&"Marca Sans".to_owned()));
+        assert!(fonts.path("Marca Sans").is_some());
     }
 }

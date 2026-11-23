@@ -114,6 +114,7 @@ impl Home {
                         let next = side_margins(ui, |ui| match self.tab {
                             Tab::Home => self.home(ui, theme, texts, now, textures, catalogue),
                             Tab::Templates => self.templates(ui, theme, texts, catalogue),
+                            Tab::Brand => None,
                         });
                         match next {
                             // A template opens its details first.
@@ -372,7 +373,7 @@ impl Home {
         ui.add_space(row.height() + 18.0);
         let hint = match self.tab {
             Tab::Home => "home.search_hint",
-            Tab::Templates => "templates.search_hint",
+            Tab::Templates | Tab::Brand => "templates.search_hint",
         };
         let rect = centred(ui, SEARCH_WIDTH.min(ui.available_width()), 48.0);
         let mut search = ui.new_child(egui::UiBuilder::new().max_rect(rect));

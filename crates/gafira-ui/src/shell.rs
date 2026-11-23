@@ -75,6 +75,8 @@ pub struct UiConfig {
     pub start_monitor: Option<(i32, i32, u32, u32)>,
     /// The templates of Inicio and Plantillas (spec 091); none without them.
     pub templates: Option<Arc<dyn crate::TemplateStore>>,
+    /// The brand kits of Marca (spec 093).
+    pub brand: Box<dyn crate::BrandStore>,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -111,6 +113,8 @@ enum Screen {
     Home(Home),
     /// «Crear un diseño» (spec 076), from a shortcut of Inicio.
     Create(Create),
+    /// Marca (spec 093).
+    Brand(crate::brand_screen::BrandScreen),
     /// Boxed: the editor holds the canvas state and its textures.
     Editor(Box<Editor>),
 }
@@ -127,6 +131,8 @@ pub(crate) enum Go {
     Templates(Option<&'static str>),
     /// A new document with the content of the template at this path.
     FromTemplate(PathBuf),
+    /// Marca, on the page of a kit if given (spec 093).
+    Brand(Option<String>),
     File(FileAction),
     /// Open a project of «Recientes».
     OpenRecent(PathBuf),
@@ -204,6 +210,8 @@ struct Shell {
     thumbs: Thumbs,
     /// The templates of Inicio and Plantillas (spec 091).
     catalogue: std::rc::Rc<std::cell::RefCell<Catalogue>>,
+    /// The brand kits (spec 093).
+    brand: std::rc::Rc<dyn crate::BrandStore>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -300,6 +308,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 saving: None,
                 waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
+                brand: std::rc::Rc::from(config.brand),
                 catalogue: std::rc::Rc::new(std::cell::RefCell::new(Catalogue::new(
                     config.templates,
                     &cc.egui_ctx,
@@ -323,6 +332,7 @@ impl Shell {
         let mut editor = Box::<Editor>::default();
         editor.library = Some(std::rc::Rc::clone(&self.library));
         editor.templates = Some(std::rc::Rc::clone(&self.catalogue));
+        editor.brand = Some(std::rc::Rc::clone(&self.brand));
         editor
             .photo_panel
             .get_mut()
@@ -371,12 +381,12 @@ impl Shell {
     }
 
     /// Leave the editor for `to`, closing the session (its slots go with it).
-    fn proceed(&mut self, to: Leave) {
+    fn proceed(&mut self, to: Leave, window: Option<&eframe::Frame>) {
         self.engine.projects().close();
         self.screen = self.home();
         match to {
             Leave::Home => {}
-            Leave::Open => self.file(FileAction::Open, None),
+            Leave::Open => self.file(FileAction::Open, None, window),
             Leave::Recent(path) => self.open_recent(&path),
         }
     }
@@ -431,13 +441,13 @@ impl Shell {
 
     /// Run `action` of the Archivo menu; a save goes to its thread and
     /// `then` follows it once it succeeded.
-    fn file(&mut self, action: FileAction, then: Option<Leave>) {
+    fn file(&mut self, action: FileAction, then: Option<Leave>, window: Option<&eframe::Frame>) {
         self.notice = None;
         if action != FileAction::Open && self.saving.is_some() {
             self.notice = Some(self.texts.t(&gafira_doc::msg!("file.busy")));
             return;
         }
-        match files::plan(&self.engine, action) {
+        match files::plan(&self.engine, action, window) {
             files::Plan::Cancelled | files::Plan::Opened(Outcome::Cancelled) => {}
             files::Plan::Opened(Outcome::Done) => {
                 self.remember();
@@ -460,7 +470,7 @@ impl Shell {
 
     /// «Guardar versión» with `name`; a project never saved asks for its
     /// file first, because a version lives inside the file (spec 031).
-    fn save_version(&mut self, name: String) {
+    fn save_version(&mut self, name: String, window: Option<&eframe::Frame>) {
         self.notice = None;
         if self.saving.is_some() {
             self.notice = Some(self.texts.t(&gafira_doc::msg!("file.busy")));
@@ -469,7 +479,7 @@ impl Shell {
         let at = if self.engine.projects().path().is_some() {
             None
         } else {
-            let Some(path) = files::pick_new(&self.engine) else {
+            let Some(path) = files::pick_new(&self.engine, window) else {
                 return;
             };
             Some(path)
@@ -501,7 +511,7 @@ impl Shell {
 
     /// The save on its thread (spec 036): its card while it runs; when it
     /// ends the engine accounts for it, and what waited for it follows.
-    fn pump_save(&mut self, ctx: &egui::Context) {
+    fn pump_save(&mut self, ctx: &egui::Context, window: Option<&eframe::Frame>) {
         let Some((running, _)) = self.saving.as_mut() else {
             return;
         };
@@ -510,13 +520,13 @@ impl Shell {
             return;
         };
         if let Some((_, after)) = self.saving.take() {
-            self.save_ended(ended, after);
+            self.save_ended(ended, after, window);
         }
         ctx.request_repaint();
     }
 
     /// Account for a save that ended, then do what waited for it.
-    fn save_ended(&mut self, ended: Ended, after: AfterSave) {
+    fn save_ended(&mut self, ended: Ended, after: AfterSave, window: Option<&eframe::Frame>) {
         let result = match ended {
             Ended::Ran(outcome) => self
                 .engine
@@ -531,7 +541,7 @@ impl Shell {
                     self.remember();
                 }
                 if let Some(to) = after.then {
-                    self.proceed(to);
+                    self.proceed(to, window);
                 }
             }
             Err(detail) => {
@@ -637,12 +647,12 @@ impl Shell {
                 LeaveChoice::Cancel => self.leaving = None,
                 LeaveChoice::Discard => {
                     self.leaving = None;
-                    self.proceed(to);
+                    self.proceed(to, Some(window));
                 }
                 LeaveChoice::Save => {
                     self.leaving = None;
                     // The way on follows the save, once it succeeded.
-                    self.file(FileAction::Save, Some(to));
+                    self.file(FileAction::Save, Some(to), Some(window));
                 }
             }
             return true;
@@ -765,6 +775,7 @@ impl eframe::App for Shell {
                     then: None,
                     ..after
                 },
+                None,
             );
         }
     }
@@ -805,18 +816,25 @@ impl eframe::App for Shell {
             Screen::Create(create) => {
                 create.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)
             }
+            Screen::Brand(screen) => screen.show(
+                ctx,
+                &self.theme,
+                &self.texts,
+                self.brand.as_ref(),
+                Some(frame),
+            ),
             Screen::Editor(editor) => editor.show(
                 ctx,
                 &mut self.engine,
                 &self.theme,
                 &self.texts,
-                self.notice.as_deref(),
                 &mut self.clipboard,
+                (self.notice.as_deref(), Some(frame)),
             ),
         };
         let blocked = self.dialogs(ctx, frame);
         self.pump_export(ctx);
-        self.pump_save(ctx);
+        self.pump_save(ctx, Some(frame));
         let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request
@@ -828,7 +846,7 @@ impl eframe::App for Shell {
         match go {
             Go::Stay => {}
             Go::Home if in_editor && modified => self.leaving = Some(Leave::Home),
-            Go::Home if in_editor => self.proceed(Leave::Home),
+            Go::Home if in_editor => self.proceed(Leave::Home, Some(frame)),
             Go::Home => {
                 self.screen = self.home();
                 // Once, as Inicio first appears (03 §6.1).
@@ -841,8 +859,8 @@ impl eframe::App for Shell {
                 }
             }
             Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
-            Go::File(action) => self.file(action, None),
-            Go::SaveVersion(name) => self.save_version(name),
+            Go::File(action) => self.file(action, None, Some(frame)),
+            Go::SaveVersion(name) => self.save_version(name, Some(frame)),
             Go::OpenRecent(path) if in_editor && modified => {
                 self.leaving = Some(Leave::Recent(path));
             }
@@ -879,6 +897,12 @@ impl eframe::App for Shell {
             Go::Templates(kind) => {
                 let (list, thumbs) = self.recents();
                 self.screen = Screen::Home(Home::new(list, thumbs, Tab::Templates, kind));
+            }
+            Go::Brand(kit) => {
+                self.screen = Screen::Brand(crate::brand_screen::BrandScreen::new(
+                    self.brand.as_ref(),
+                    kit,
+                ));
             }
             Go::FromTemplate(path) => {
                 self.notice = None;

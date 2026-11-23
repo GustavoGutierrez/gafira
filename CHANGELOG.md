@@ -15,8 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - Template details: a click on a template shows it large with its size, «Customise this template» and similar templates.
 
+- Marca: brand kits with logos, colour palettes (HEX and CMYK), text styles, uploaded fonts, photos, graphics and icons, managed on their own screen and used from the Marca panel of the editor and in the colour pickers; a design can be saved as a brand template, or a .gaf uploaded as one.
+
 ### Changed
 
+- System file dialogs open in front of Gafira's window.
 - The top bar shows the Gafira logo and icons for Inicio, Plantillas and Ajustes; Proyectos, not yet available, is gone.
 - Ajustes: sections with icons, the language as cards and each theme with a small picture of the interface; Privacidad says when Gafira goes online.
 - «Crear un diseño» opens from the shortcuts of Inicio, on the chosen category, and leads back to Inicio and to Plantillas.

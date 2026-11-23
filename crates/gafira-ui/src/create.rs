@@ -618,6 +618,8 @@ impl Create {
 pub(crate) enum Tab {
     Home,
     Templates,
+    /// Marca (spec 093).
+    Brand,
 }
 
 /// The topbar of the start screens (spec 092): the logo, Inicio and
@@ -654,6 +656,10 @@ pub(crate) fn start_topbar(
         .clicked()
         {
             go = Some(Go::Templates(None));
+        }
+        let brand = t(texts, "nav.brand");
+        if widgets::nav_item(ui, theme, Icon::Identity, &brand, on == Some(Tab::Brand)).clicked() {
+            go = Some(Go::Brand(None));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let settings = t(texts, "nav.settings");
