@@ -6,6 +6,7 @@ import { screens } from '../lib/screens';
 import { getImage } from 'astro:assets';
 import { copy, homePath, type Locale } from '../i18n/ui';
 import { downloads, type Release } from '../lib/release';
+import BackToTop from '../components/BackToTop.astro';
 import manrope from '@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2?url';
 import inter from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
 // The brand colours and radii, from the same token file the app loads.
@@ -171,6 +172,7 @@ const rootVars =
   <body>
     <a class="skip" href="#main">{t.nav.skip}</a>
     <slot />
+    <BackToTop locale={locale} />
     <script>
       // Reveals elements as they enter the screen, once.
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
