@@ -16,7 +16,8 @@ The landing page of Gafira at <https://gafira.com>: Spanish at `/`, English at `
 | `src/i18n/ui.ts` | Every text, in Spanish and English, with one shared type |
 | `src/components/` | Header, Hero, How (with `MotionDesign`, the looping motion graphic), Features, Showcase, Local, Download, Cta, Footer |
 | `src/assets/screens/` | Screenshots of Gafira (optimised at build) |
-| `public/` | Favicon, logos, icons, `site.webmanifest`, `robots.txt` |
+| `public/` | Favicon, logos, icons, `site.webmanifest`, `robots.txt`, `_headers` |
+| `src/assets/og/` | The share image of each language (1200 × 630), made with `scripts/og-image.html` |
 
 ## Commands
 
@@ -32,6 +33,8 @@ Run them from `website/`. Node 22.12 or later is required.
 | `npm run deploy` | Build and publish to Cloudflare |
 
 Optional: set `GITHUB_TOKEN` to raise the GitHub API rate limit of the build.
+
+**Share image.** When the screenshots or the slogan change, serve `website/` (`python3 -m http.server 4330` from it), open `http://localhost:4330/scripts/og-image.html?lang=es` (and `?lang=en`) in a 1200 × 630 window, and save each screenshot as `src/assets/og/og-<lang>.png`. After a deploy, refresh the previews that apps keep in cache: Facebook [Sharing Debugger](https://developers.facebook.com/tools/debug/) ("Scrape Again") and LinkedIn [Post Inspector](https://www.linkedin.com/post-inspector/).
 
 ## Cloudflare setup (once)
 
