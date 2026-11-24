@@ -1,6 +1,6 @@
 # 099 — Sitio web de Gafira (landing)
 
-> **Estado:** in-progress — 2026-11-24 — publicado en https://gafira.com (Cloudflare Workers, primera versión desplegada y verificada: páginas 200, 404 propia, cabeceras de caché y seguridad); pendiente la redirección de `www` (registro DNS y Redirect Rule en el panel) y la revisión del titular.
+> **Estado:** in-progress — 2026-11-24 — publicado en https://gafira.com (Cloudflare Workers, primera versión desplegada y verificada: páginas 200, 404 propia, cabeceras de caché y seguridad; `www` → `gafira.com` con 301 que conserva ruta y consulta, y http → https); pendiente la revisión del titular.
 
 ## Problema y resultado esperado
 
@@ -32,6 +32,5 @@
 ## Pendiente
 
 - Revisión del titular.
-- Registro `www` y Redirect Rule en el panel de Cloudflare (ver `website/README.md`); la sesión de Wrangler no tiene permiso de DNS ni de reglas.
 - Dar de alta el sitio en Google Search Console y enviar el sitemap.
 - Tras cada versión nueva: volver a compilar y desplegar el sitio.
