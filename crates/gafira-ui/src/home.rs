@@ -473,7 +473,7 @@ impl Home {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(10.0, 14.0);
             // Centred when they fit on one line.
-            let count = SHORTCUTS.len() as f32 + 2.0;
+            let count = SHORTCUTS.len() as f32 + 3.0;
             let row = count * SHORTCUT_WIDTH + (count - 1.0) * 10.0;
             let room = ui.available_width();
             if row < room {
@@ -512,6 +512,19 @@ impl Home {
             });
             if open.clicked() {
                 go = Some(Go::File(crate::files::FileAction::Open));
+            }
+            // Spec 097: a `.gafpack`, shown before it is installed.
+            let install = shortcut(ui, theme, &t(texts, "packs.install_pack"), |ui, rect| {
+                icons::paint(
+                    ui.painter(),
+                    rect,
+                    Icon::Package,
+                    Weight::Regular,
+                    theme.c("text"),
+                );
+            });
+            if install.clicked() {
+                go = Some(Go::InstallPack);
             }
         });
         go

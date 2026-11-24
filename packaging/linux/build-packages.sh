@@ -22,6 +22,7 @@ repo=$(CDPATH='' cd -- "$here/../.." && pwd)
 app=gafira
 doc=application-vnd.gafira.project+zip
 kit=application-vnd.gafira.brandkit+zip
+pack=application-vnd.gafira.gafpack+zip
 sizes="16 24 32 48 64 128 256 512"
 dist=$repo/dist
 work=$repo/target/packaging
@@ -46,13 +47,13 @@ lay_out() {
     install -D -m 644 "$here/gafira-mime.xml" "$prefix/share/mime/packages/$app.xml"
     icons=$repo/assets/app-icon/hicolor
     for size in $sizes; do
-        for context in "apps/$app" "mimetypes/$doc" "mimetypes/$kit"; do
+        for context in "apps/$app" "mimetypes/$doc" "mimetypes/$kit" "mimetypes/$pack"; do
             install -D -m 644 "$icons/${size}x${size}/$context.png" \
                 "$prefix/share/icons/hicolor/${size}x${size}/$context.png"
         done
     done
     install -D -m 644 "$icons/scalable/apps/$app.svg" "$prefix/share/icons/hicolor/scalable/apps/$app.svg"
-    for name in $doc $kit; do
+    for name in $doc $kit $pack; do
         install -D -m 644 "$icons/scalable/mimetypes/$name.svg" \
             "$prefix/share/icons/hicolor/scalable/mimetypes/$name.svg"
     done
@@ -78,7 +79,7 @@ Depends: libc6 (>= 2.35), libgcc-s1, libgl1 | libegl1, libxkbcommon0, libx11-6, 
 Recommends: libwayland-client0, libwayland-egl1, libxkbcommon-x11-0, xdg-desktop-portal
 Description: Design editor
  Gafira is a desktop editor for social media posts, presentations,
- print and video designs. Projects are saved as .gaf files; brand kits are shared as .gafkit files.
+ print and video designs. Projects are saved as .gaf files; brand kits are shared as .gafkit files and asset packages are installed from .gafpack files.
 EOF
     mkdir -p "$dist"
     out=$dist/${app}_${deb_version}_amd64.deb

@@ -75,6 +75,7 @@ getrandom = "0.3"
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 x11rb = { version = "0.13", default-features = false, features = ["randr"] }
 roxmltree = "0.20"
+sha2 = "0.11"
 # D-115: inference for the image models (spec 084).
 tract-onnx = { version = "0.23", default-features = false }
 tract-linalg = { version = "0.23", default-features = false, features = ["multithread-mm"] }

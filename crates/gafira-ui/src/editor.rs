@@ -1,7 +1,7 @@
 //! The regions of the Design editor (03 §7.1, §7.3): top bar, tab rail, side
 //! panel, canvas with the page, inspector and bottom bar.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use egui::{
@@ -303,6 +303,16 @@ pub(crate) struct Editor {
     template_panel: std::cell::RefCell<crate::template_panel::Panel>,
     /// The brand kits, shared with Marca (spec 093).
     pub(crate) brand: Option<std::rc::Rc<dyn crate::BrandStore>>,
+    /// The installed asset packages (spec 097).
+    pub(crate) packs: Option<std::sync::Arc<dyn crate::PackStore>>,
+    /// The installed packages, read once until they change.
+    pack_list: std::cell::RefCell<Option<Vec<crate::InstalledPack>>>,
+    /// The package filter and search of each panel (spec 097).
+    pack_filters:
+        std::cell::RefCell<BTreeMap<crate::packs::PackSection, crate::pack_panel::PackFilter>>,
+    /// While an asset of a package is placed: it is not added to
+    /// Biblioteca.
+    quiet: std::cell::Cell<bool>,
     brand_panel: std::cell::RefCell<crate::brand_panel::BrandPanel>,
     /// What saving a brand template said, and when, shown a few seconds.
     brand_note: Option<(gafira_doc::msg::Message, f64)>,
@@ -537,6 +547,10 @@ impl Default for Editor {
             templates: None,
             template_panel: std::cell::RefCell::default(),
             brand: None,
+            packs: None,
+            pack_list: std::cell::RefCell::new(None),
+            pack_filters: std::cell::RefCell::new(BTreeMap::new()),
+            quiet: std::cell::Cell::new(false),
             brand_panel: std::cell::RefCell::default(),
             brand_note: None,
             brand_clock: 0.0,
@@ -698,6 +712,9 @@ struct Asked {
     /// A file of Biblioteca added: in the middle of the page, or dropped
     /// at a screen point (spec 068).
     library_add: Option<(std::path::PathBuf, bool, Option<Pos2>)>,
+    /// An asset of an installed package to place, at a screen point when
+    /// dropped (spec 097).
+    pack_insert: Option<(crate::packs::PackUse, Option<Pos2>)>,
     /// Files taken out of Biblioteca's list (path and tab); they stay on
     /// the disk (spec 068).
     library_remove: Vec<(std::path::PathBuf, bool)>,
@@ -2420,6 +2437,15 @@ impl Editor {
                             .id_salt("editor.collage")
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
+                                // The collages of the installed packages
+                                // (spec 097).
+                                self.pack_assets(
+                                    ui,
+                                    theme,
+                                    texts,
+                                    crate::packs::PackSection::Collages,
+                                    asked,
+                                );
                                 ui.label(
                                     RichText::new(plain(texts, "collage.hint"))
                                         .font(theme.font("body-sm"))
@@ -2515,6 +2541,13 @@ impl Editor {
                             .id_salt("editor.illustrations")
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
+                                self.pack_assets(
+                                    ui,
+                                    theme,
+                                    texts,
+                                    crate::packs::PackSection::Illustrations,
+                                    asked,
+                                );
                                 let mut panel = self.illustration_panel.borrow_mut();
                                 if !panel.available() {
                                     ui.label(plain(texts, "photos.unavailable"));
@@ -2654,6 +2687,29 @@ impl Editor {
                         self.frames_panel(ui, theme, texts, asked);
                         return;
                     }
+                    if category == Category::Icons {
+                        // Spec 097: the icons of the installed packages.
+                        egui::ScrollArea::vertical()
+                            .id_salt("editor.icons")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                let shown = self.pack_assets(
+                                    ui,
+                                    theme,
+                                    texts,
+                                    crate::packs::PackSection::Icons,
+                                    asked,
+                                );
+                                if !shown {
+                                    ui.label(
+                                        RichText::new(plain(texts, "packs.no_icons"))
+                                            .font(theme.font("body-sm"))
+                                            .color(theme.c("text.secondary")),
+                                    );
+                                }
+                            });
+                        return;
+                    }
                     if category != Category::Shapes {
                         elements::soon(ui, theme, texts);
                         return;
@@ -2688,6 +2744,15 @@ impl Editor {
                                 }
                                 return;
                             }
+                            // The shapes of the installed packages first
+                            // (spec 097).
+                            self.pack_assets(
+                                ui,
+                                theme,
+                                texts,
+                                crate::packs::PackSection::Shapes,
+                                asked,
+                            );
                             for (title, pieces) in canvas::PIECE_SECTIONS {
                                 let more = crate::shapes::has_more(pieces.len());
                                 ui.horizontal(|ui| {
@@ -4353,6 +4418,18 @@ impl Editor {
             .id_salt("editor.frames")
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                // The frames and powerclips of the installed packages
+                // (spec 097).
+                self.pack_assets_in(
+                    ui,
+                    theme,
+                    texts,
+                    &[
+                        crate::packs::PackSection::Frames,
+                        crate::packs::PackSection::Powerclips,
+                    ],
+                    asked,
+                );
                 let mut view = self.frames_view.borrow_mut();
                 ui.add(widgets::field(&mut view.0, plain(texts, "frames.search")));
                 ui.add_space(10.0);
@@ -4556,6 +4633,71 @@ impl Editor {
             let square = Rect::from_center_size(rect.center(), Vec2::splat(side as f32));
             painter.image(texture, square, uv, Color32::WHITE);
         }
+    }
+
+    /// The installed packages, read again only after they change.
+    fn installed_packs(&self) -> Vec<crate::InstalledPack> {
+        let mut cached = self.pack_list.borrow_mut();
+        if cached.is_none() {
+            *cached = Some(
+                self.packs
+                    .as_ref()
+                    .map(|p| p.installed())
+                    .unwrap_or_default(),
+            );
+        }
+        cached.clone().unwrap_or_default()
+    }
+
+    /// The packages were installed or removed: the panels read them again.
+    pub(crate) fn packs_changed(&mut self) {
+        *self.pack_list.get_mut() = None;
+    }
+
+    /// The assets of the installed packages for `section`, with their
+    /// filter; whether any package has some (spec 097).
+    fn pack_assets(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        section: crate::packs::PackSection,
+        asked: &mut Asked,
+    ) -> bool {
+        self.pack_assets_in(ui, theme, texts, &[section], asked)
+    }
+
+    /// [`Self::pack_assets`] of several sections in one list.
+    fn pack_assets_in(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        sections: &[crate::packs::PackSection],
+        asked: &mut Asked,
+    ) -> bool {
+        let packs = self.installed_packs();
+        let Some(&section) = sections.first() else {
+            return false;
+        };
+        if crate::pack_panel::with_any(&packs, sections).is_empty() {
+            return false;
+        }
+        let rects = self.page_rects.clone();
+        let zoom = self.zoom;
+        let can_drop = move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+        let mut filters = self.pack_filters.borrow_mut();
+        let filter = filters.entry(section).or_default();
+        match crate::pack_panel::show(ui, theme, texts, (sections, &packs), filter, &can_drop) {
+            Some(crate::pack_panel::PackPick::Insert(usage)) => {
+                asked.pack_insert = Some((usage, None));
+            }
+            Some(crate::pack_panel::PackPick::Drop(usage, at)) => {
+                asked.pack_insert = Some((usage, Some(at)));
+            }
+            None => {}
+        }
+        true
     }
 
     /// One shape of Formas, `side` px square (spec 053): a click adds it to
@@ -7235,6 +7377,11 @@ impl Editor {
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine, window);
         }
+        // An asset of a package comes in as a file of Biblioteca does,
+        // without being added to it (spec 097).
+        if let Some((usage, at)) = asked.pack_insert.clone() {
+            self.place_pack_asset(engine, usage, at);
+        }
         if let Some((file, design, at)) = asked.library_add.clone() {
             // An SVG of Biblioteca comes in the way it came in before: no
             // question (spec 068).
@@ -8754,6 +8901,9 @@ impl Editor {
 
     /// Biblioteca remembers `file` as just imported (spec 068).
     fn remember(&self, file: &std::path::Path, design: bool) {
+        if self.quiet.get() {
+            return;
+        }
         if let Some(library) = &self.library {
             library.record(file, design);
         }
@@ -9246,6 +9396,17 @@ impl Editor {
         outline: gafira_io_vector::Outline,
         at: Option<Pos2>,
     ) {
+        self.place_custom_frame_fit(engine, outline, at, gafira_doc::Fit::Fill);
+    }
+
+    /// [`Self::place_custom_frame`] with its photo fitted by `fit`.
+    fn place_custom_frame_fit(
+        &mut self,
+        engine: &mut Gafira,
+        outline: gafira_io_vector::Outline,
+        at: Option<Pos2>,
+        fit: gafira_doc::Fit,
+    ) {
         let Some(document) = engine.edit().document() else {
             return;
         };
@@ -9265,6 +9426,9 @@ impl Editor {
         };
         let px = Vec2::new(size.width() as f32, size.height() as f32);
         let mut spec = canvas::new_custom_frame(px, outline);
+        if let gafira_doc::NodeKind::Frame(frame) = &mut spec.kind {
+            frame.fit = fit;
+        }
         if let Some((_, point)) = dropped {
             spec.placement.x = point.0 - spec.placement.w / 2.0;
             spec.placement.y = point.1 - spec.placement.h / 2.0;
@@ -9277,6 +9441,71 @@ impl Editor {
                 self.active = Some(page);
             }
             Err(error) => eprintln!("custom frame: {error}"),
+        }
+    }
+
+    /// An asset of an installed package, used as its type says (spec 097):
+    /// a file as Biblioteca brings one in, without adding it there; a
+    /// frame or powerclip as a frame of its mask's outline; a collage as a
+    /// group of frames over its page.
+    fn place_pack_asset(
+        &mut self,
+        engine: &mut Gafira,
+        usage: crate::packs::PackUse,
+        at: Option<Pos2>,
+    ) {
+        use crate::packs::{ContentFit, PackUse};
+        match usage {
+            PackUse::File(file) => {
+                self.quiet.set(true);
+                if is_svg_path(&file) {
+                    self.pending_svg = Some((vec![file], at));
+                    self.place_svgs(engine, true);
+                } else {
+                    self.place_images(engine, &[file], at);
+                }
+                self.quiet.set(false);
+            }
+            PackUse::Frame { mask, fit } => {
+                if let Some(outline) = vector_outline(&mask) {
+                    let fit = match fit {
+                        ContentFit::Cover => gafira_doc::Fit::Fill,
+                        ContentFit::Contain => gafira_doc::Fit::Fit,
+                    };
+                    self.place_custom_frame_fit(engine, outline, at, fit);
+                }
+            }
+            PackUse::Collage { cells, gap } => {
+                let Some(document) = engine.edit().document() else {
+                    return;
+                };
+                let dropped = at
+                    .and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at))
+                    .map(|(page, _)| page);
+                let Some(page) = dropped.or_else(|| self.current_page(&document).map(|p| p.id))
+                else {
+                    return;
+                };
+                let Some(on) = document.page(page) else {
+                    return;
+                };
+                let Ok(size) = on.size.to_px(document.dpi()) else {
+                    return;
+                };
+                let spec = crate::collage::spec_of(&cells, (size.width(), size.height()), gap);
+                let next = NodeId::new(document.next_id());
+                let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+                match engine.edit().execute(Box::new(command)) {
+                    Ok(_) => {
+                        self.selected = Selection::one(page, next);
+                        self.active = Some(page);
+                        self.scope = None;
+                    }
+                    Err(error) => eprintln!("collage: {error}"),
+                }
+            }
+            // A template opens from Plantillas.
+            PackUse::Template(_) => {}
         }
     }
 

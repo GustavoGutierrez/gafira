@@ -18,17 +18,26 @@ pub(crate) enum Section {
     General,
     Appearance,
     Privacy,
+    /// The installed asset packages (spec 097).
+    Packages,
     About,
 }
 
 impl Section {
-    const ALL: [Self; 4] = [Self::General, Self::Appearance, Self::Privacy, Self::About];
+    const ALL: [Self; 5] = [
+        Self::General,
+        Self::Appearance,
+        Self::Privacy,
+        Self::Packages,
+        Self::About,
+    ];
 
     fn icon(self) -> Icon {
         match self {
             Self::General => Icon::Language,
             Self::Appearance => Icon::Identity,
             Self::Privacy => Icon::Privacy,
+            Self::Packages => Icon::Package,
             Self::About => Icon::About,
         }
     }
@@ -38,29 +47,38 @@ impl Section {
             Self::General => gafira_doc::msg!("settings.general"),
             Self::Appearance => gafira_doc::msg!("settings.appearance.title"),
             Self::Privacy => gafira_doc::msg!("settings.privacy"),
+            Self::Packages => gafira_doc::msg!("packs.settings_title"),
             Self::About => gafira_doc::msg!("settings.about"),
         }
     }
 }
 
 /// What the person changed this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Change {
     None,
     Back,
     Language(LanguagePreference),
     Appearance(Appearance),
+    /// Choose a `.gafpack` to install (spec 097).
+    InstallPack,
+    /// Remove the installed package with this id (spec 097).
+    Uninstall(String),
 }
 
 /// The open Ajustes screen.
 pub(crate) struct SettingsView {
     pub(crate) section: Section,
+    /// The package whose «Desinstalar» was pressed once, waiting for the
+    /// confirmation.
+    pub(crate) confirm: Option<String>,
 }
 
 impl Default for SettingsView {
     fn default() -> Self {
         Self {
             section: Section::General,
+            confirm: None,
         }
     }
 }
@@ -100,7 +118,7 @@ pub(crate) fn show(
     view: &mut SettingsView,
     current: Settings,
     system: &ResolvedLocale,
-    version: &str,
+    (version, packs): (&str, &[crate::InstalledPack]),
 ) -> Change {
     let mut change = Change::None;
     widgets::topbar(ctx, theme, "settings.topbar", |ui| {
@@ -184,6 +202,7 @@ pub(crate) fn show(
                             privacy(ui, theme, texts);
                             Change::None
                         }
+                        Section::Packages => packages(ui, theme, texts, packs, &mut view.confirm),
                         Section::About => {
                             about(ui, theme, texts, version);
                             Change::None
@@ -571,6 +590,117 @@ fn privacy(ui: &mut egui::Ui, theme: &Theme, texts: &Texts) {
 }
 
 /// Acerca de: the logo, the version and what Gafira carries.
+/// «Paquetes» (spec 097, §8.3): «Instalar paquete…» and each installed
+/// package with its thumbnail, name and description in the language of
+/// the interface, type, version, declared author, size and what it holds;
+/// «Desinstalar» asks once more before it removes it.
+fn packages(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    packs: &[crate::InstalledPack],
+    confirm: &mut Option<String>,
+) -> Change {
+    let mut change = Change::None;
+    let t = |key: &'static str| {
+        texts.t(&gafira_doc::msg::Message {
+            key: gafira_doc::msg::MessageKey(key),
+            args: Vec::new(),
+        })
+    };
+    section_header(
+        ui,
+        theme,
+        texts,
+        gafira_doc::msg!("packs.settings_title"),
+        gafira_doc::msg!("packs.settings_hint"),
+    );
+    if widgets::primary_icon(ui, theme, Icon::Package, t("packs.install_pack")).clicked() {
+        change = Change::InstallPack;
+    }
+    ui.add_space(16.0);
+    if packs.is_empty() {
+        card(ui, theme, |ui| {
+            ui.label(
+                RichText::new(t("packs.none_installed"))
+                    .font(theme.font("body"))
+                    .color(theme.c("text.secondary")),
+            );
+        });
+        return change;
+    }
+    let spanish = texts.locale == Locale::Es;
+    for pack in packs {
+        let m = &pack.manifest;
+        card(ui, theme, |ui| {
+            ui.horizontal_top(|ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(88.0), Sense::hover());
+                crate::pack_dialog::checkerboard(ui, theme, rect);
+                if let Some(image) = crate::brand_screen::file_image(ui.ctx(), &pack.thumbnail()) {
+                    crate::brand_screen::paint_fitted(ui, image, rect);
+                }
+                ui.add_space(14.0);
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new(m.name.get(spanish))
+                            .font(theme.font("ui-label"))
+                            .color(theme.c("text")),
+                    );
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(m.description.get(spanish))
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("text")),
+                        )
+                        .wrap(),
+                    );
+                    let kind = crate::packs::PackType::parse(&m.package_type)
+                        .map(|k| t(k.key()))
+                        .unwrap_or_default();
+                    let assets = m.assets.len();
+                    ui.label(
+                        RichText::new(format!(
+                            "{kind} · {} {} · {} · {}",
+                            t("packs.version"),
+                            m.version,
+                            t("packs.assets_count").replace("{n}", &assets.to_string()),
+                            crate::pack_dialog::size_text(pack.size)
+                        ))
+                        .font(theme.font("caption"))
+                        .color(theme.c("text.secondary")),
+                    );
+                    ui.label(
+                        RichText::new(t("packs.author").replace("{name}", &m.author.name))
+                            .font(theme.font("caption"))
+                            .color(theme.c("text.secondary")),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if confirm.as_deref() == Some(m.id.as_str()) {
+                            ui.label(
+                                RichText::new(t("packs.uninstall_ask"))
+                                    .font(theme.font("body-sm"))
+                                    .color(theme.c("text")),
+                            );
+                            if widgets::primary(ui, theme, t("packs.uninstall")).clicked() {
+                                change = Change::Uninstall(m.id.clone());
+                                *confirm = None;
+                            }
+                            if widgets::secondary(ui, theme, t("packs.cancel")).clicked() {
+                                *confirm = None;
+                            }
+                        } else if widgets::secondary(ui, theme, t("packs.uninstall")).clicked() {
+                            *confirm = Some(m.id.clone());
+                        }
+                    });
+                });
+            });
+        });
+        ui.add_space(12.0);
+    }
+    change
+}
+
 fn about(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, version: &str) {
     section_header(
         ui,

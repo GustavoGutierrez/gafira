@@ -3755,3 +3755,12 @@ origin = "Move pointer supplied by the owner (file MoveCursor.svg), moved to the
 modificado = "true"
 source_file = "MoveCursor.svg"
 license_note = "VERIFICAR: the owner confirms where it comes from and its licence."
+
+[[asset]]
+path = "assets/icons/gafira/package.svg"
+hash = "90aaecdc200e673a9a9e9ccd438dba05000c5a881c3b9457fca3f1469a0eb128"
+license = "LicenseRef-Gafira"
+"autoría" = "Gafira (drawn for spec 097)"
+origin = "Drawn for Gafira: a box of outlines on the 256-unit icon grid, for «Instalar paquete»."
+"exige atribución" = "false"
+modificado = "false"

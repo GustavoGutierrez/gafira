@@ -12,9 +12,47 @@ use gafira_ports::repository::RepositoryError;
 
 include!(concat!(env!("OUT_DIR"), "/templates.rs"));
 
-/// The bundled templates, under `dir`.
+/// The bundled templates, under `dir`, and the templates of the asset
+/// packages installed under `packs` (spec 097).
 pub(crate) struct Templates {
     pub(crate) dir: PathBuf,
+    pub(crate) packs: Option<PathBuf>,
+}
+
+/// The template files of the installed packages under `packs`, each with
+/// the words to find it by: its name and its package's names and id.
+fn pack_templates(packs: &Path) -> Vec<(PathBuf, String, Vec<String>)> {
+    let mut out = Vec::new();
+    let Ok(homes) = std::fs::read_dir(packs) else {
+        return out;
+    };
+    for home in homes.flatten() {
+        let Ok(versions) = std::fs::read_dir(home.path()) else {
+            continue;
+        };
+        for version in versions.flatten() {
+            let dir = version.path();
+            let Some(manifest) = std::fs::read(dir.join("manifest.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<gafira_ui::PackManifest>(&b).ok())
+            else {
+                continue;
+            };
+            let words = vec![
+                manifest.name.es.clone(),
+                manifest.name.en.clone(),
+                manifest.id.clone(),
+            ];
+            for asset in manifest.assets.iter().filter(|a| a.kind == "template") {
+                if let Some(file) = &asset.file
+                    && gafira_ui::pack_safe_path(file)
+                {
+                    out.push((dir.join(file), asset.name.clone(), words.clone()));
+                }
+            }
+        }
+    }
+    out
 }
 
 impl Templates {
@@ -78,7 +116,12 @@ impl gafira_ui::TemplateStore for Templates {
         let mut paths = Vec::new();
         gafs(&self.dir, &mut paths);
         paths.sort();
-        paths
+        let from_packs = self
+            .packs
+            .as_deref()
+            .map(pack_templates)
+            .unwrap_or_default();
+        let mut listed: Vec<gafira_ui::TemplateListing> = paths
             .into_iter()
             .filter_map(|path| {
                 let read = std::fs::File::open(&path)
@@ -106,7 +149,23 @@ impl gafira_ui::TemplateStore for Templates {
                     }
                 }
             })
-            .collect()
+            .collect();
+        // The templates of the packages: named by their asset and found by
+        // their package (spec 097).
+        for (path, name, words) in from_packs {
+            let read = std::fs::File::open(&path)
+                .map_err(RepositoryError::Io)
+                .and_then(|file| read_template_info(BufReader::new(file), Limits::default()));
+            if let Ok(Some(info)) = read {
+                let mut meta = info.meta;
+                // The name the package gives it.
+                meta.tags.retain(|t| !t.starts_with("title:"));
+                meta.tags.push(format!("title:{name}"));
+                meta.tags.extend(words);
+                listed.push(gafira_ui::TemplateListing { path, meta });
+            }
+        }
+        listed
     }
 
     fn thumbnail(&self, path: &Path) -> Option<gafira_ui::RecentThumbnail> {

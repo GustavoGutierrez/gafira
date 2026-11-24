@@ -1945,6 +1945,7 @@ dependencies = [
  "gafira-time",
  "gafira-ui",
  "gafira-vision",
+ "image",
  "serde_json",
  "winresource",
  "zip",
@@ -2446,6 +2447,10 @@ dependencies = [
  "rayon",
  "resvg",
  "rfd",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha2",
  "tiny-skia 0.12.0",
 ]
 

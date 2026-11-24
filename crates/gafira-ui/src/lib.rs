@@ -46,6 +46,9 @@ mod library;
 mod lines;
 mod looks;
 mod magnet;
+mod pack_dialog;
+mod pack_panel;
+mod packs;
 mod pairings;
 mod photos;
 mod qr;
@@ -85,6 +88,13 @@ pub use brand::{
 };
 pub use export::{ExportPresets, PresetValue};
 pub use library::{LibraryEntry, LibraryStore};
+pub use packs::{
+    ContentFit as PackContentFit, InstalledPack, PACK_EXTENSION, PACK_THUMBNAIL, PackInspection,
+    PackManifest, PackProblem, PackProgress, PackStore, PackUse, Version as PackVersion,
+    asset_problems as pack_asset_problems, file_problems as pack_file_problems,
+    manifest_problems as pack_manifest_problems, safe_path as pack_safe_path,
+    thumbnail_problems as pack_thumbnail_problems,
+};
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, ShowInFolder, UiConfig, run};
 pub use system_fonts::{SystemFont, SystemFonts};

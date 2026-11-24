@@ -108,7 +108,7 @@ jobs:
           fi
       - name: Build
         run: packaging/windows/build.sh
-      - name: Install, check the .gaf and .gafkit files and uninstall
+      - name: Install, check the .gaf, .gafkit and .gafpack files and uninstall
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -129,11 +129,15 @@ jobs:
           $kitIcon = (Get-ItemProperty "$classes\$kit\DefaultIcon").'(default)'
           if ($kit -ne 'Gafira.BrandKit') { throw ".gafkit is '$kit'" }
           if ($kitIcon -ne "$dir\gafira-brandkit.ico,0" -or -not (Test-Path "$dir\gafira-brandkit.ico")) { throw "kit icon '$kitIcon'" }
+          $pack = (Get-ItemProperty "$classes\.gafpack").'(default)'
+          $packIcon = (Get-ItemProperty "$classes\$pack\DefaultIcon").'(default)'
+          if ($pack -ne 'Gafira.AssetPackage') { throw ".gafpack is '$pack'" }
+          if ($packIcon -ne "$dir\gafira-gafpack.ico,0" -or -not (Test-Path "$dir\gafira-gafpack.ico")) { throw "pack icon '$packIcon'" }
           Start-Process "$dir\Uninstall.exe" -ArgumentList '/S' -Wait
           # The uninstaller goes on from a copy of itself.
           foreach ($i in 1..30) { if (-not (Test-Path "$dir\Gafira.exe")) { break }; Start-Sleep 1 }
           Start-Sleep 2
-          if ((Test-Path "$dir\Gafira.exe") -or (Test-Path "$classes\$class") -or (Test-Path "$classes\$kit")) { throw 'it was not uninstalled' }
+          if ((Test-Path "$dir\Gafira.exe") -or (Test-Path "$classes\$class") -or (Test-Path "$classes\$kit") -or (Test-Path "$classes\$pack")) { throw 'it was not uninstalled' }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-windows
