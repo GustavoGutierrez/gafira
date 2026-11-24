@@ -568,21 +568,33 @@ impl PhotosPanel {
                     hex(0x2563EB),
                 )
             };
-            let label = format!("✔ {}", plain(texts, key));
+            let label = plain(texts, key);
             let font = egui::FontId::proportional(10.0);
             let w = painter
                 .layout_no_wrap(label.clone(), font.clone(), Color32::WHITE)
                 .size()
                 .x
-                + 12.0;
+                + 28.0;
             let pill = Rect::from_min_size(
                 Pos2::new(picture.right() - w - 6.0, picture.top() + 5.0),
                 Vec2::new(w, 20.0),
             );
             painter.rect_filled(pill, 10.0, fill);
+            // The tick is an icon: the interface font has no «✔» (spec 098).
+            let tick = Rect::from_center_size(
+                Pos2::new(pill.left() + 13.0, pill.center().y),
+                Vec2::splat(11.0),
+            );
+            crate::icons::paint(
+                &painter,
+                tick,
+                crate::icons::Icon::Check,
+                crate::icons::Weight::Regular,
+                Color32::WHITE,
+            );
             painter.text(
-                pill.center(),
-                Align2::CENTER_CENTER,
+                Pos2::new(pill.left() + 21.0, pill.center().y),
+                Align2::LEFT_CENTER,
                 label,
                 font,
                 Color32::WHITE,

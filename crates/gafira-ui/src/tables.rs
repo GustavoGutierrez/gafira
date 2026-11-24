@@ -972,7 +972,7 @@ pub(crate) fn menu(
     item(ui, "table.excel", "", true, Picked::Menu(Menu::Excel));
     item(ui, "layers.lock", "", true, Picked::Menu(Menu::Lock));
     let button = egui::Button::new(plain(texts, "table.align_page"))
-        .right_text("›")
+        .right_text(crate::widgets::submenu_arrow(ui))
         .min_size(Vec2::new(ui.available_width(), 0.0));
     egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
         for (index, key) in aligns.iter().enumerate() {

@@ -352,7 +352,7 @@ impl IllustrationsPanel {
             self.grid(ui, &look, &List::Search(words), &mut chosen);
         } else if let Some(row) = self.open {
             ui.horizontal(|ui| {
-                let back = ui.add(egui::Button::new("←").frame(false));
+                let back = crate::widgets::back_arrow(ui);
                 if back.hovered() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }

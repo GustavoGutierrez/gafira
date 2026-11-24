@@ -140,7 +140,7 @@ fn s45_06_the_size_label_text() {
     assert_eq!(number(180.46), "180.5");
     assert_eq!(number(-0.04), "0");
     assert_eq!(size_text(320.0, 180.0), "320 × 180");
-    assert_eq!(delta_text(20.0, -11.0), "+20 × −11");
+    assert_eq!(delta_text(20.0, -11.0), "+20 × –11");
     assert_eq!(delta_text(0.0, 0.5), "0 × +0.5");
 }
 

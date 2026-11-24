@@ -115,11 +115,19 @@ pub(crate) enum Icon {
     Package,
     /// «Tomar un color» beside every colour picker (spec 098).
     Eyedropper,
+    /// The menu of a row of Capas (spec 098): Copiar, Pegar and Capa.
+    CopySimple,
+    Paste,
+    Stack,
+    /// In place of «›», «✓» and «⚠», which the interface font lacks (spec 098).
+    Submenu,
+    Check,
+    Warning,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 69] = [
+    pub(crate) const ALL: [Self; 75] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -189,6 +197,12 @@ impl Icon {
         Self::Move,
         Self::Package,
         Self::Eyedropper,
+        Self::CopySimple,
+        Self::Paste,
+        Self::Stack,
+        Self::Submenu,
+        Self::Check,
+        Self::Warning,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -263,6 +277,12 @@ impl Icon {
             Self::Move => "move",
             Self::Package => "package",
             Self::Eyedropper => "eyedropper",
+            Self::CopySimple => "copy-simple",
+            Self::Paste => "clipboard-text",
+            Self::Stack => "stack",
+            Self::Submenu => "caret-right",
+            Self::Check => "check",
+            Self::Warning => "warning",
         }
     }
 

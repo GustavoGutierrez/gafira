@@ -1375,6 +1375,11 @@ hide = "Hide"
 show = "Show"
 lock = "Lock"
 unlock = "Unlock"
+more = "More options"
+rename = "Rename"
+layer = "Layer"
+align_page = "Align to page"
+delete_key = "Delete"
 
 [inspector]
 looks = "Appearance"
@@ -1947,3 +1952,11 @@ reading = "Reading the package…"
 
 [eyedropper]
 name = "Pick a colour from the screen"
+
+[presets]
+see_all = "See all"
+back = "Back"
+cold = "Cool tones"
+warm = "Warm tones"
+mono = "Monochrome"
+all_gradients = "All gradients"

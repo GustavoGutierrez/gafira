@@ -18,6 +18,14 @@ use crate::icons::{self, Icon, Weight};
 struct State {
     /// The picker waiting for a click on the window.
     armed: Option<Id>,
+    /// Frames to wait after arming before the screenshot, so a picker that
+    /// was open has closed and is not in it.
+    settle: u8,
+    /// The screenshot asked for and not arrived yet.
+    requested: bool,
+    /// The window as it was when the dropper was armed: the loupe shows it
+    /// and the click reads it.
+    shot: Option<std::sync::Arc<ColorImage>>,
     /// The picker and the point clicked, waiting for the screenshot.
     waiting: Option<(Id, Pos2)>,
     /// The colour taken, for the picker that asked for it.
@@ -67,42 +75,68 @@ pub(crate) fn with_taken(rgba: [u8; 4], taken: [u8; 3]) -> [u8; 4] {
 }
 
 /// Once per frame, before the screens draw: keep the button's name and
-/// colours, read the screenshot that was asked for, and while the dropper is
-/// armed, cover the window so the click goes to it and not to the canvas.
+/// colours and read the screenshot that arrived. While the dropper is armed,
+/// a screenshot of the window is taken once, a loupe shows its pixels under
+/// the pointer, and the window is covered so the click goes to the dropper
+/// and not to the canvas; the click takes the pixel at once.
 pub(crate) fn frame(ctx: &egui::Context, name: String, ink: (Color32, Color32)) {
     let mut state = read(ctx);
     state.name = name;
     state.ink = Some(ink);
-    if let Some((id, at)) = state.waiting {
-        let shot = ctx.input(|i| {
-            i.raw.events.iter().find_map(|event| match event {
-                egui::Event::Screenshot { image, .. } => Some(image.clone()),
-                _ => None,
-            })
-        });
-        if let Some(image) = shot {
-            state.waiting = None;
+    let arrived = ctx.input(|i| {
+        i.raw.events.iter().find_map(|event| match event {
+            egui::Event::Screenshot { image, .. } => Some(image.clone()),
+            _ => None,
+        })
+    });
+    if let Some(image) = arrived {
+        state.requested = false;
+        if let Some((id, at)) = state.waiting.take() {
             state.picked = pixel_at(&image, at, ctx.pixels_per_point()).map(|rgb| (id, rgb));
-            ctx.request_repaint();
+        } else if state.armed.is_some() {
+            state.shot = Some(image);
         }
+        ctx.request_repaint();
     }
     if state.armed.is_some() {
         let leave =
             ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.pointer.secondary_clicked());
         if leave {
             state.armed = None;
-        } else if let Some(at) = cover(ctx) {
-            state.waiting = state.armed.take().map(|id| (id, at));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
-            ctx.request_repaint();
+            state.shot = None;
+        } else {
+            if state.shot.is_none() && !state.requested {
+                if state.settle > 0 {
+                    state.settle -= 1;
+                } else {
+                    state.requested = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
+                        egui::UserData::default(),
+                    ));
+                }
+                ctx.request_repaint();
+            }
+            if let Some(at) = cover(ctx, state.shot.as_deref()) {
+                let id = state.armed.take();
+                match (id, state.shot.take()) {
+                    (Some(id), Some(shot)) => {
+                        state.picked =
+                            pixel_at(&shot, at, ctx.pixels_per_point()).map(|rgb| (id, rgb));
+                    }
+                    // Clicked before the screenshot: it is read on arrival.
+                    (Some(id), None) => state.waiting = Some((id, at)),
+                    _ => {}
+                }
+                ctx.request_repaint();
+            }
         }
     }
     write(ctx, state);
 }
 
-/// A transparent layer over the whole window with the crosshair; the point
-/// clicked on it, if any.
-fn cover(ctx: &egui::Context) -> Option<Pos2> {
+/// A transparent layer over the whole window with the crosshair and, once
+/// the screenshot is there, the loupe; the point clicked on it, if any.
+fn cover(ctx: &egui::Context, shot: Option<&ColorImage>) -> Option<Pos2> {
     let screen = ctx.content_rect();
     let area = egui::Area::new(Id::new("eyedropper.cover"))
         .order(egui::Order::Foreground)
@@ -110,14 +144,139 @@ fn cover(ctx: &egui::Context) -> Option<Pos2> {
         .interactable(true)
         .show(ctx, |ui| {
             let (_, response) = ui.allocate_exact_size(screen.size(), Sense::click());
+            let hover = response.hover_pos();
+            if let (Some(shot), Some(at)) = (shot, hover) {
+                loupe(ui.painter(), shot, at, ui.ctx().pixels_per_point());
+            }
+            // The crosshair stays: its point is the middle of the loupe.
+            let cursor = egui::CursorIcon::Crosshair;
             response
-                .on_hover_cursor(egui::CursorIcon::Crosshair)
+                .on_hover_cursor(cursor)
                 .clicked()
                 .then(|| ui.ctx().pointer_interact_pos())
                 .flatten()
         });
     ctx.move_to_top(area.response.layer_id);
+    if shot.is_some() {
+        // The loupe follows the pointer.
+        ctx.request_repaint();
+    }
     area.inner
+}
+
+/// How many pixels across the loupe shows, an odd number around the one
+/// taken, and how large each one is drawn.
+const LOUPE_PIXELS: i32 = 11;
+const LOUPE_CELL: f32 = 9.0;
+
+/// The pixels of `shot` around `at`, `LOUPE_PIXELS` across, row by row;
+/// outside the image they are none.
+pub(crate) fn around(shot: &ColorImage, at: Pos2, ppp: f32) -> Vec<Option<Color32>> {
+    let half = LOUPE_PIXELS / 2;
+    // Inside the window: the casts only drop the fraction.
+    let (cx, cy) = ((at.x * ppp).floor() as i64, (at.y * ppp).floor() as i64);
+    let [w, h] = shot.size;
+    let mut out = Vec::with_capacity((LOUPE_PIXELS * LOUPE_PIXELS) as usize);
+    for j in -half..=half {
+        for i in -half..=half {
+            let (x, y) = (cx + i64::from(i), cy + i64::from(j));
+            let inside = x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h;
+            out.push(inside.then(|| shot.pixels[y as usize * w + x as usize]));
+        }
+    }
+    out
+}
+
+/// The loupe: a circle of enlarged pixels on a grid, the one taken framed in
+/// the middle, and its code under it.
+fn loupe(painter: &egui::Painter, shot: &ColorImage, at: Pos2, ppp: f32) {
+    let side = LOUPE_PIXELS as f32 * LOUPE_CELL;
+    let radius = side / 2.0;
+    let centre = at;
+    let origin = centre - Vec2::splat(radius);
+    // The pixels as a small texture, drawn sharp on a disc.
+    let n = LOUPE_PIXELS as usize;
+    let pixels = around(shot, at, ppp)
+        .into_iter()
+        .map(|p| p.unwrap_or(Color32::from_gray(128)))
+        .collect();
+    let texture = painter.ctx().load_texture(
+        "eyedropper.loupe",
+        ColorImage::new([n, n], pixels),
+        egui::TextureOptions::NEAREST,
+    );
+    let mut disc = egui::Mesh::with_texture(texture.id());
+    const SIDES: u32 = 48;
+    disc.vertices.push(egui::epaint::Vertex {
+        pos: centre,
+        uv: Pos2::new(0.5, 0.5),
+        color: Color32::WHITE,
+    });
+    for k in 0..=SIDES {
+        let angle = k as f32 / SIDES as f32 * std::f32::consts::TAU;
+        let (sin, cos) = angle.sin_cos();
+        disc.vertices.push(egui::epaint::Vertex {
+            pos: centre + Vec2::new(cos, sin) * radius,
+            uv: Pos2::new(0.5 + cos / 2.0, 0.5 + sin / 2.0),
+            color: Color32::WHITE,
+        });
+        if k > 0 {
+            disc.add_triangle(0, k, k + 1);
+        }
+    }
+    painter.add(disc);
+    // The grid, each line cut where it meets the circle.
+    let grid = Stroke::new(0.5, Color32::from_black_alpha(60));
+    for k in 1..LOUPE_PIXELS {
+        let d = k as f32 * LOUPE_CELL - radius;
+        let half = (radius * radius - d * d).max(0.0).sqrt();
+        painter.line_segment(
+            [centre + Vec2::new(d, -half), centre + Vec2::new(d, half)],
+            grid,
+        );
+        painter.line_segment(
+            [centre + Vec2::new(-half, d), centre + Vec2::new(half, d)],
+            grid,
+        );
+    }
+    painter.circle_stroke(centre, radius, Stroke::new(3.0, Color32::WHITE));
+    painter.circle_stroke(
+        centre,
+        radius + 1.5,
+        Stroke::new(1.0, Color32::from_black_alpha(140)),
+    );
+    let middle =
+        Rect::from_center_size(origin + Vec2::splat(radius), Vec2::splat(LOUPE_CELL + 2.0));
+    painter.rect_stroke(
+        middle,
+        1.0,
+        Stroke::new(2.0, Color32::WHITE),
+        egui::StrokeKind::Middle,
+    );
+    painter.rect_stroke(
+        middle.expand(1.5),
+        1.0,
+        Stroke::new(1.0, Color32::BLACK),
+        egui::StrokeKind::Middle,
+    );
+    if let Some(rgb) = pixel_at(shot, at, ppp) {
+        let text = hex_of([rgb[0], rgb[1], rgb[2], 255]);
+        let font = egui::FontId::monospace(12.0);
+        let galley = painter.layout_no_wrap(text, font, Color32::WHITE);
+        let tag = Rect::from_center_size(
+            centre + Vec2::new(0.0, radius + 16.0),
+            galley.size() + Vec2::new(16.0, 8.0),
+        );
+        painter.rect_filled(tag, 6.0, Color32::from_black_alpha(200));
+        let dot = Pos2::new(tag.left() - 12.0, tag.center().y);
+        painter.circle(
+            dot,
+            7.0,
+            Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
+            Stroke::new(2.0, Color32::WHITE),
+        );
+        painter.galley(tag.center() - galley.size() / 2.0, galley, Color32::WHITE);
+    }
 }
 
 /// The colour taken for the picker `id`, once.
@@ -167,7 +326,11 @@ fn button(ui: &mut Ui, id: Id, side: f32) -> Response {
         let mut state = read(ui.ctx());
         state.armed = if armed { None } else { Some(id) };
         state.waiting = None;
+        state.shot = None;
+        state.settle = 2;
         write(ui.ctx(), state);
+        // An open picker would be in the screenshot, over what is taken.
+        egui::Popup::close_all(ui.ctx());
     }
     response.on_hover_text(name)
 }
@@ -497,6 +660,20 @@ mod tests {
     }
 
     #[test]
+    fn s98_01_the_loupe_shows_the_pixels_around_the_one_taken() {
+        let image = image();
+        let cells = around(&image, Pos2::new(1.0, 0.0), 1.0);
+        let n = LOUPE_PIXELS as usize;
+        assert_eq!(cells.len(), n * n);
+        // The middle is the pixel taken; its right neighbour follows.
+        let middle = n * n / 2;
+        assert_eq!(cells[middle], Some(Color32::from_rgb(10, 1, 2)));
+        assert_eq!(cells[middle + 1], Some(Color32::from_rgb(20, 1, 2)));
+        // Above the window there is nothing.
+        assert_eq!(cells[middle - n], None);
+    }
+
+    #[test]
     fn s98_02_the_taken_colour_keeps_the_transparency_of_the_picker() {
         assert_eq!(with_taken([1, 2, 3, 128], [9, 8, 7]), [9, 8, 7, 128]);
         assert_eq!(with_taken([1, 2, 3, 255], [9, 8, 7]), [9, 8, 7, 255]);
@@ -554,6 +731,43 @@ mod tests {
         assert_eq!(parse_hex("#61844"), None);
         assert_eq!(parse_hex("#GG0000"), None);
         assert_eq!(parse_hex("#ÿÿÿ"), None);
+    }
+
+    #[test]
+    fn s98_01_a_click_with_the_loupe_takes_the_pixel_at_once() {
+        let ctx = egui::Context::default();
+        let id = Id::new("picker");
+        write(
+            &ctx,
+            State {
+                armed: Some(id),
+                shot: Some(std::sync::Arc::new(image())),
+                ..State::default()
+            },
+        );
+        let at = Pos2::new(2.0, 1.0);
+        let run = |events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                events,
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0))),
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                frame(ctx, String::new(), (Color32::BLACK, Color32::WHITE));
+            });
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(vec![egui::Event::PointerMoved(at)]);
+        run(vec![egui::Event::PointerMoved(at)]);
+        run(vec![button(true)]);
+        run(vec![button(false)]);
+        assert_eq!(read(&ctx).armed, None);
+        assert_eq!(take(&ctx, id), Some([60, 1, 2]));
     }
 
     #[test]

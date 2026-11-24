@@ -81,6 +81,14 @@ const FLIP_H: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::H)
 const FLIP_V: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::V);
 /// Cortar, Copiar, Pegar, Duplicar, Agrupar and Desagrupar (03 §9.2, spec
 /// 043).
+/// «Tamaño» in the top bar and «Notas» in the bottom bar do nothing yet:
+/// hidden until they do (spec 098).
+const SHOW_UNFINISHED: bool = false;
+
+/// A colour for the letters of a text, a shape or a page: one colour, or a
+/// gradient over the box (specs 070, 098).
+use crate::presets::Fill as TextFill;
+
 const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::X);
 const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
 const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
@@ -2059,7 +2067,7 @@ impl Editor {
                         ui.close();
                     }
                 }
-                arrange_menu(ui, texts, can, asked);
+                arrange_menu(ui, theme, texts, can, asked);
             });
             widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.view")), |ui| {
                 ui.set_min_width(200.0);
@@ -2085,24 +2093,24 @@ impl Editor {
                         ViewSettings::new(now.rulers, now.guides, !now.magnet),
                     ),
                 ] {
-                    let item = egui::Button::selectable(on, plain(texts, key))
-                        .shortcut_text(keys_text(ui.ctx(), &keys));
-                    if ui.add(item).clicked() {
+                    let shortcut = keys_text(ui.ctx(), &keys);
+                    if widgets::check_item(ui, on, plain(texts, key), Some(shortcut)).clicked() {
                         asked.shown = Some(flip);
                         ui.close();
                     }
                 }
                 ui.separator();
-                let mut dark = theme.dark;
-                if ui
-                    .checkbox(&mut dark, texts.t(&gafira_doc::msg!("view.dark_mode")))
-                    .changed()
-                {
-                    asked.dark = Some(dark);
+                let dark = theme.dark;
+                let text = texts.t(&gafira_doc::msg!("view.dark_mode"));
+                if widgets::check_item(ui, dark, text, None).clicked() {
+                    asked.dark = Some(!dark);
                     ui.close();
                 }
             });
-            widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.size")), false);
+            // «Tamaño» stays hidden until it does something (spec 098).
+            if SHOW_UNFINISHED {
+                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.size")), false);
+            }
             ui.add_space(24.0);
             ui.label(
                 RichText::new(
@@ -2184,12 +2192,14 @@ impl Editor {
                 // is under the last page (spec 077).
                 let label = |text: String| RichText::new(text).font(theme.font("ui-label"));
                 ui.horizontal_centered(|ui| {
-                    // Notas is not a function yet (FD-02): shown, muted.
-                    bar_icon(ui, theme, Icon::Notes, theme.c("text.disabled"));
-                    ui.label(
-                        label(texts.t(&gafira_doc::msg!("bottom.notes")))
-                            .color(theme.c("text.disabled")),
-                    );
+                    // Notas is not a function yet (FD-02): hidden (spec 098).
+                    if SHOW_UNFINISHED {
+                        bar_icon(ui, theme, Icon::Notes, theme.c("text.disabled"));
+                        ui.label(
+                            label(texts.t(&gafira_doc::msg!("bottom.notes")))
+                                .color(theme.c("text.disabled")),
+                        );
+                    }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let ids: Vec<PageId> = document
                             .as_ref()
@@ -2954,8 +2964,23 @@ impl Editor {
                 });
                 ui.add_space(24.0);
                 if self.inspector_tab == 1 {
-                    self.layers(ui, theme, texts, document, asked);
+                    self.layers(ui, theme, texts, document, can, asked);
                     return;
+                }
+                // «Ver todo» of the preset colours, in place of the fields
+                // (spec 098), while what it is for is still selected.
+                if let Some((target, full)) = crate::presets::opened(ctx) {
+                    match preset_now(target, selection, document) {
+                        Some(now) => {
+                            let in_use = |f: &TextFill| now.as_ref() == Some(f);
+                            let chosen = crate::presets::full_view(ui, theme, texts, full, &in_use);
+                            if let Some(fill) = chosen {
+                                apply_preset(target, fill, selection, asked);
+                            }
+                            return;
+                        }
+                        None => crate::presets::set_open(ctx, None),
+                    }
                 }
                 let shape = match selection {
                     [] => {
@@ -3100,7 +3125,8 @@ impl Editor {
                                 .and_then(|d| d.page(shape.page))
                                 .map(design_colors)
                                 .unwrap_or_default();
-                            text_fields(ui, theme, texts, (text, &design), asked);
+                            let target = crate::presets::Target::Text(shape.page, shape.node);
+                            text_fields(ui, theme, texts, (text, &design, target), asked);
                             ui.add_space(16.0);
                         }
                         // A light shows its own settings instead of the fill,
@@ -3121,7 +3147,7 @@ impl Editor {
                         } else if let Some(effect) = &shape.effect {
                             effect_fields(ui, theme, texts, effect, asked);
                         } else if shape.text.is_none() && !shape.group && shape.line.is_none() {
-                            fill_field(ui, texts, shape, asked);
+                            fill_field(ui, (theme, texts), shape, true, asked);
                             // Any shape can become a light (spec 065, S65-06).
                             if plain_shape {
                                 ui.add_space(8.0);
@@ -3202,19 +3228,24 @@ impl Editor {
         box_fields(ui, theme, texts, shape, can, asked);
     }
 
-    /// The Capas tab (03 §2.4): the elements of the selected element's page
-    /// (or the first page), front first. A click selects, a double click
-    /// renames and a drag moves the row among its siblings; the eye hides
-    /// and the lock locks (spec 048); Subir, Bajar and Eliminar act on the
-    /// one selected element.
+    /// The Capas tab (03 §2.4, spec 098): the elements of the selected
+    /// element's page (or the first page), front first, as cards that
+    /// scroll. A click selects and a double click renames; a row is dragged
+    /// by its grip or anywhere on it, with a line where it will land and a
+    /// copy under the pointer, and the list scrolls at its edges; the eye
+    /// and the lock show on the row under the pointer or the selected one
+    /// (always when hidden or locked); «⋮» or a right click opens the menu
+    /// of the row (spec 048 kept: dimmed rows, one step per action).
     fn layers(
         &mut self,
         ui: &mut egui::Ui,
         theme: &Theme,
         texts: &Texts,
         document: Option<&Document>,
+        can: CanArrange,
         asked: &mut Asked,
     ) {
+        use crate::layer_rows::{self, ROW_HEIGHT};
         let Some(document) = document else { return };
         let Some(page) = self.current_page(document) else {
             return;
@@ -3228,161 +3259,296 @@ impl Editor {
             );
             return;
         }
+        let paste = self.clip.is_some();
         let dragged = self
             .row_drag
             .and_then(|node| rows.iter().find(|row| row.node == node).cloned());
-        // The rows of the dragged row's siblings, front first, for the
-        // insertion line.
-        let mut sibling_rows: Vec<Rect> = Vec::new();
         let mut released = false;
-        for row in rows {
-            let Some(node) = page.node(row.node) else {
-                continue;
-            };
-            let last = row.siblings.saturating_sub(1);
-            let selected = self.selected.contains(page.id, row.node);
-            // A hidden or locked row, or one inside a hidden or locked
-            // group, is dimmed (03 «Lista con arrastre»).
-            let dim = layers::locked(page, row.node) || layers::hidden(page, row.node);
-            let label = row.name.clone().unwrap_or_else(|| {
+        let mut rename: Option<(NodeId, String)> = None;
+        // One line: a text is named by its words, line breaks included.
+        let label_of = |row: &canvas::Layer| {
+            let kind = || {
                 texts.t(&gafira_doc::msg::Message {
                     key: gafira_doc::msg::MessageKey(row.kind),
                     args: Vec::new(),
                 })
-            });
-            let line = ui.horizontal(|ui| {
-                // A group's children sit one step in, below it (spec 043).
-                ui.add_space(16.0 * row.depth as f32);
-                let (_, opener) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
-                if row.opens {
-                    let open = self.open.contains(&row.node);
-                    egui::collapsing_header::paint_default_icon(
-                        ui,
-                        if open { 1.0 } else { 0.0 },
-                        &opener,
-                    );
-                    let tip = plain(texts, if open { "layers.close" } else { "layers.open" });
-                    if opener.on_hover_text(tip).clicked() {
-                        asked.toggle_open = Some(row.node);
-                    }
-                }
-                // The eye and the lock, on the right of every row; Subir,
-                // Bajar and Eliminar before them on the selected one.
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let lock = node.base.locked;
-                    let (icon, key) = if lock {
-                        (Icon::Locked, "layers.unlock")
-                    } else {
-                        (Icon::Unlocked, "layers.lock")
+            };
+            let name = layers::one_line(row.name.as_deref().unwrap_or_default());
+            if name.is_empty() { kind() } else { name }
+        };
+        egui::ScrollArea::vertical()
+            .id_salt("layers.list")
+            .auto_shrink([false, false])
+            // A drag moves a row, not the list.
+            .scroll_source(egui::scroll_area::ScrollSource {
+                drag: false,
+                ..egui::scroll_area::ScrollSource::ALL
+            })
+            .show(ui, |ui| {
+                // Room for the scroll bar, beside the rows.
+                ui.set_max_width(ui.available_width() - 12.0);
+                ui.spacing_mut().item_spacing.y = 4.0;
+                // The rows of the dragged row's siblings, front first, for
+                // the insertion line.
+                let mut sibling_rows: Vec<Rect> = Vec::new();
+                for row in &rows {
+                    let Some(node) = page.node(row.node) else {
+                        continue;
                     };
-                    let button = IconButton::new(icon, plain(texts, key))
-                        .active(lock)
-                        .small()
-                        .show(ui, theme);
-                    if button.clicked() {
-                        asked.flag = Some((page.id, vec![row.node], Flag::Locked, !lock));
+                    let selected = self.selected.contains(page.id, row.node);
+                    // A hidden or locked row, or one inside a hidden or
+                    // locked group, is dimmed (03 «Lista con arrastre»).
+                    let dim = layers::locked(page, row.node) || layers::hidden(page, row.node);
+                    let label = label_of(row);
+                    let width = ui.available_width();
+                    let (rect, response) = ui.allocate_exact_size(
+                        Vec2::new(width, ROW_HEIGHT),
+                        egui::Sense::click_and_drag(),
+                    );
+                    if dragged
+                        .as_ref()
+                        .is_some_and(|d| d.parent == row.parent && d.depth == row.depth)
+                    {
+                        sibling_rows.push(rect);
+                    }
+                    let menu_id = ui.id().with(("layers.menu", row.node));
+                    let context_id = menu_id.with("context");
+                    let menu_open = egui::Popup::is_id_open(ui.ctx(), menu_id)
+                        || egui::Popup::is_id_open(ui.ctx(), context_id);
+                    let is_dragged = self.row_drag == Some(row.node);
+                    let hot = self.row_drag.is_none() && ui.rect_contains_pointer(rect);
+                    let painter = ui.painter();
+                    let radius = theme.radius_sm();
+                    if is_dragged {
+                        painter.rect_stroke(
+                            rect,
+                            radius,
+                            Stroke::new(1.0, theme.c("border")),
+                            egui::StrokeKind::Inside,
+                        );
+                    } else if selected {
+                        painter.rect(
+                            rect,
+                            radius,
+                            theme.c("selection.bg"),
+                            Stroke::new(1.5, theme.c("accent")),
+                            egui::StrokeKind::Inside,
+                        );
+                    } else if hot || menu_open {
+                        painter.rect_filled(rect, radius, theme.c("secondary.bg"));
+                    }
+                    let grip = if hot || selected {
+                        theme.c("text.secondary")
+                    } else {
+                        theme.c("text.muted").gamma_multiply(0.45)
+                    };
+                    layer_rows::grip(
+                        painter,
+                        Pos2::new(rect.left() + 13.0, rect.center().y),
+                        grip,
+                    );
+                    // A group's children sit one step in, below it (spec 043).
+                    let mut x = rect.left() + 26.0 + 14.0 * row.depth as f32;
+                    if row.opens {
+                        let opener_rect = Rect::from_center_size(
+                            Pos2::new(x + 8.0, rect.center().y),
+                            Vec2::splat(16.0),
+                        );
+                        let opener =
+                            ui.interact(opener_rect, menu_id.with("opener"), egui::Sense::click());
+                        let open = self.open.contains(&row.node);
+                        egui::collapsing_header::paint_default_icon(
+                            ui,
+                            if open { 1.0 } else { 0.0 },
+                            &opener,
+                        );
+                        let tip = plain(texts, if open { "layers.close" } else { "layers.open" });
+                        if opener.on_hover_text(tip).clicked() {
+                            asked.toggle_open = Some(row.node);
+                        }
+                        x += 18.0;
+                    }
+                    let tile = Rect::from_min_size(
+                        Pos2::new(x, rect.center().y - 14.0),
+                        Vec2::splat(28.0),
+                    );
+                    layer_rows::tile(ui.painter(), theme, tile, node);
+                    x = tile.right() + 10.0;
+                    // The buttons on the right, then the name in what is left.
+                    let right = Rect::from_min_max(
+                        Pos2::new(x, rect.top()),
+                        Pos2::new(rect.right() - 6.0, rect.bottom()),
+                    );
+                    let mut child = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(right)
+                            .layout(Layout::right_to_left(Align::Center)),
+                    );
+                    child.spacing_mut().item_spacing.x = 2.0;
+                    let more = layer_rows::menu_button(
+                        &mut child,
+                        theme,
+                        &plain(texts, "layers.more"),
+                        menu_open,
+                    );
+                    if (more.clicked() || response.secondary_clicked()) && !selected {
+                        asked.select = Some(Selection::one(page.id, row.node));
+                    }
+                    let image = node_image(node);
+                    let what = LayerMenu {
+                        page: page.id,
+                        node: row.node,
+                        locked: node.base.locked,
+                        shown: node.base.visible,
+                        image,
+                        can,
+                        paste,
+                    };
+                    let mut renamed = false;
+                    egui::Popup::menu(&more)
+                        .id(menu_id)
+                        .show(|ui| renamed |= layer_menu(ui, theme, texts, &what, asked));
+                    egui::Popup::context_menu(&response)
+                        .id(context_id)
+                        .show(|ui| renamed |= layer_menu(ui, theme, texts, &what, asked));
+                    if renamed {
+                        rename = Some((row.node, row.name.clone().unwrap_or(label.clone())));
+                    }
+                    let show = hot || selected || menu_open;
+                    let lock = node.base.locked;
+                    if show || lock {
+                        let (icon, key) = if lock {
+                            (Icon::Locked, "layers.unlock")
+                        } else {
+                            (Icon::Unlocked, "layers.lock")
+                        };
+                        let button = IconButton::new(icon, plain(texts, key))
+                            .active(lock)
+                            .small()
+                            .show(&mut child, theme);
+                        if button.clicked() {
+                            asked.flag = Some((page.id, vec![row.node], Flag::Locked, !lock));
+                        }
                     }
                     let shown = node.base.visible;
-                    let (icon, key) = if shown {
-                        (Icon::Visible, "layers.hide")
-                    } else {
-                        (Icon::Hidden, "layers.show")
-                    };
-                    let button = IconButton::new(icon, plain(texts, key))
-                        .small()
-                        .show(ui, theme);
-                    if button.clicked() {
-                        asked.flag = Some((page.id, vec![row.node], Flag::Hidden, shown));
-                    }
-                    if selected && self.selected.len() == 1 {
-                        let delete = IconButton::new(
-                            Icon::Delete,
-                            texts.t(&gafira_doc::msg!("editor.delete")),
-                        )
-                        .small()
-                        .show(ui, theme);
-                        asked.delete |= delete.clicked();
-                        let down = ui.add_enabled_ui(row.index > 0, |ui| {
-                            IconButton::new(
-                                Icon::SendBackward,
-                                texts.t(&gafira_doc::msg!("layers.down")),
-                            )
+                    if show || !shown {
+                        let (icon, key) = if shown {
+                            (Icon::Visible, "layers.hide")
+                        } else {
+                            (Icon::Hidden, "layers.show")
+                        };
+                        let button = IconButton::new(icon, plain(texts, key))
                             .small()
-                            .show(ui, theme)
-                        });
-                        if down.inner.clicked() {
-                            asked.reorder = Some((page.id, row.node, row.index - 1));
-                        }
-                        let up = ui.add_enabled_ui(row.index < last, |ui| {
-                            IconButton::new(
-                                Icon::BringForward,
-                                texts.t(&gafira_doc::msg!("layers.up")),
-                            )
-                            .small()
-                            .show(ui, theme)
-                        });
-                        if up.inner.clicked() {
-                            asked.reorder = Some((page.id, row.node, row.index + 1));
+                            .show(&mut child, theme);
+                        if button.clicked() {
+                            asked.flag = Some((page.id, vec![row.node], Flag::Hidden, shown));
                         }
                     }
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        self.layer_name(ui, theme, page.id, &row, (label, selected, dim), asked)
-                    })
-                    .inner
-                })
-                .inner
-            });
-            if let Some(name) = line.inner {
-                if name.drag_started() {
-                    self.row_drag = Some(row.node);
+                    child.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        self.layer_name(ui, theme, page.id, row, (&label, dim), asked);
+                    });
+                    // The row itself: select, rename, drag.
+                    if response.double_clicked() {
+                        rename = Some((row.node, row.name.clone().unwrap_or(label.clone())));
+                    } else if response.clicked() {
+                        // Ctrl/Cmd or Shift + click toggles the row (spec 040).
+                        let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+                        asked.select = Some(if toggle {
+                            let mut next = self.selected.clone();
+                            next.toggle(page.id, row.node);
+                            next
+                        } else {
+                            Selection::one(page.id, row.node)
+                        });
+                        // A child of a group enters that group on the canvas.
+                        asked.scope = Some(row.parent.map(|group| (page.id, group)));
+                    }
+                    if response.drag_started() {
+                        self.row_drag = Some(row.node);
+                    }
+                    if self.row_drag == Some(row.node) {
+                        released |= response.drag_stopped();
+                        if response.dragged() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                        }
+                    } else if hot && self.row_drag.is_none() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                    }
                 }
-                released |= self.row_drag == Some(row.node) && name.drag_stopped();
-            }
-            if dragged
-                .as_ref()
-                .is_some_and(|d| d.parent == row.parent && d.depth == row.depth)
-            {
-                sibling_rows.push(line.response.rect);
-            }
-        }
-        // The insertion line while a row is dragged; dropping it reorders
-        // it among its siblings in one step (S48-06).
-        let Some(row) = dragged else {
-            self.row_drag = None;
-            return;
-        };
-        let Some(at) = ui.input(|i| i.pointer.latest_pos()) else {
-            return;
-        };
-        let gap = sibling_rows.iter().filter(|r| r.center().y < at.y).count();
-        let y = match sibling_rows.get(gap) {
-            Some(below) => below.top(),
-            None => sibling_rows.last().map_or(at.y, |r| r.bottom()),
-        };
-        if !released {
-            let x = ui.min_rect().x_range();
-            ui.painter()
-                .hline(x, y, Stroke::new(2.0, theme.c("primary.bg")));
-            return;
-        }
-        self.row_drag = None;
-        if let Some(index) = layers::dropped(row.index, row.siblings, gap) {
-            asked.reorder = Some((page.id, row.node, index));
+                // The insertion line while a row is dragged; dropping it
+                // reorders it among its siblings in one step (S48-06).
+                // Read again: the drag may have started on this frame.
+                let Some(row) = self
+                    .row_drag
+                    .and_then(|node| rows.iter().find(|row| row.node == node))
+                else {
+                    self.row_drag = None;
+                    return;
+                };
+                if dragged.is_none() {
+                    // Its siblings are known from the next frame on.
+                    ui.ctx().request_repaint();
+                    return;
+                }
+                let Some(at) = ui.input(|i| i.pointer.latest_pos()) else {
+                    return;
+                };
+                // Near the top or the bottom, the list scrolls.
+                let view = ui.clip_rect();
+                if at.y < view.top() + 28.0 {
+                    ui.scroll_with_delta(Vec2::new(0.0, 8.0));
+                    ui.ctx().request_repaint();
+                } else if at.y > view.bottom() - 28.0 {
+                    ui.scroll_with_delta(Vec2::new(0.0, -8.0));
+                    ui.ctx().request_repaint();
+                }
+                let gap = sibling_rows.iter().filter(|r| r.center().y < at.y).count();
+                let y = match (
+                    gap.checked_sub(1).and_then(|g| sibling_rows.get(g)),
+                    sibling_rows.get(gap),
+                ) {
+                    (Some(above), Some(below)) => (above.bottom() + below.top()) / 2.0,
+                    (None, Some(below)) => below.top() - 2.0,
+                    (Some(above), None) => above.bottom() + 2.0,
+                    (None, None) => at.y,
+                };
+                if !released {
+                    let left = ui.min_rect().left() + 6.0 + 14.0 * row.depth as f32;
+                    let x = left..=ui.min_rect().right() - 4.0;
+                    let ink = theme.c("accent");
+                    let painter = ui.painter();
+                    painter.hline(x, y, Stroke::new(2.5, ink));
+                    painter.circle(
+                        Pos2::new(left, y),
+                        4.0,
+                        theme.c("surface"),
+                        Stroke::new(2.0, ink),
+                    );
+                    let width = ui.min_rect().width().min(240.0);
+                    layer_rows::ghost(ui.ctx(), theme, at, width, &label_of(row));
+                    return;
+                }
+                self.row_drag = None;
+                if let Some(index) = layers::dropped(row.index, row.siblings, gap) {
+                    asked.reorder = Some((page.id, row.node, index));
+                }
+            });
+        if let Some((node, name)) = rename {
+            self.renaming = Some((node, name, false));
         }
     }
 
-    /// The name of a row of Capas: a label that selects on a click, starts
-    /// a rename on a double click and can be dragged; or, while renamed,
-    /// the field (S48-05). With the label's response.
+    /// The name of a row of Capas, cut with «…» when long; or, while it is
+    /// renamed, the field (S48-05).
     fn layer_name(
         &mut self,
         ui: &mut egui::Ui,
         theme: &Theme,
         page: PageId,
         row: &canvas::Layer,
-        (label, selected, dim): (String, bool, bool),
+        (label, dim): (&str, bool),
         asked: &mut Asked,
-    ) -> Option<egui::Response> {
+    ) {
         if let Some((node, text, focused)) = self.renaming.as_mut()
             && *node == row.node
         {
@@ -3403,31 +3569,22 @@ impl Editor {
                 }
                 self.renaming = None;
             }
-            return None;
+            return;
         }
-        let mut text = RichText::new(label.clone());
-        if dim {
-            text = text.color(theme.c("text.muted"));
-        }
-        let name = ui
-            .selectable_label(selected, text)
-            .interact(egui::Sense::click_and_drag());
-        if name.double_clicked() {
-            self.renaming = Some((row.node, row.name.clone().unwrap_or(label), false));
-        } else if name.clicked() {
-            // Ctrl/Cmd or Shift + click toggles the row (spec 040).
-            let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-            asked.select = Some(if toggle {
-                let mut next = self.selected.clone();
-                next.toggle(page, row.node);
-                next
-            } else {
-                Selection::one(page, row.node)
-            });
-            // A child of a group enters that group on the canvas.
-            asked.scope = Some(row.parent.map(|group| (page, group)));
-        }
-        Some(name)
+        let color = if dim {
+            theme.c("text.muted")
+        } else {
+            theme.c("text")
+        };
+        let text = RichText::new(label)
+            .font(theme.font("body-sm"))
+            .color(color);
+        ui.add(
+            egui::Label::new(text)
+                .truncate()
+                .selectable(false)
+                .sense(egui::Sense::hover()),
+        );
     }
 
     /// A text of `preset` with `words` on `page`, centred on `at` (px of
@@ -3900,9 +4057,7 @@ impl Editor {
         page: &gafira_doc::Page,
         asked: &mut Asked,
     ) {
-        use gafira_doc::{
-            BackgroundFit, Gradient, GradientKind, GradientStop, PageBackground, PatternKind,
-        };
+        use gafira_doc::{BackgroundFit, PageBackground, PatternKind};
         let current = page.background.clone();
         let heading = |ui: &mut egui::Ui, key: &'static str| {
             ui.add_space(12.0);
@@ -3932,11 +4087,8 @@ impl Editor {
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
                 for color in found {
-                    if swatch(ui, theme, |p, r| {
-                        p.rect_filled(r, 6.0, canvas::screen_color(color));
-                    })
-                    .clicked()
-                    {
+                    let fill = TextFill::Solid(color);
+                    if crate::presets::dot(ui, theme, (&fill, false), 30.0).clicked() {
                         asked.page_background = Some(Some(PageBackground::Solid(color)));
                     }
                 }
@@ -3956,50 +4108,16 @@ impl Editor {
         if let Some(color) = crate::brand_panel::swatches(ui, texts) {
             asked.page_background = Some(Some(PageBackground::Solid(color)));
         }
-        ui.add_space(6.0);
-        ui.horizontal_wrapped(|ui| {
-            for code in crate::colors::PALETTE {
-                let color = crate::colors::hex(code);
-                if swatch(ui, theme, |p, r| {
-                    p.rect_filled(r, 6.0, canvas::screen_color(color));
-                })
-                .clicked()
-                {
-                    asked.page_background = Some(Some(PageBackground::Solid(color)));
-                }
-            }
-        });
-        heading(ui, "background.gradient");
-        ui.horizontal_wrapped(|ui| {
-            for (a, b, angle) in crate::colors::GRADIENTS {
-                let (ca, cb) = (crate::colors::hex(a), crate::colors::hex(b));
-                let clicked = swatch(ui, theme, |p, r| {
-                    paint_gradient_swatch(
-                        p,
-                        r,
-                        canvas::screen_color(ca),
-                        canvas::screen_color(cb),
-                        angle,
-                    );
-                })
-                .clicked();
-                if clicked {
-                    asked.page_background = Some(Some(PageBackground::Gradient(Gradient {
-                        kind: GradientKind::Linear { angle_deg: angle },
-                        stops: vec![
-                            GradientStop {
-                                offset: 0.0,
-                                color: ca,
-                            },
-                            GradientStop {
-                                offset: 1.0,
-                                color: cb,
-                            },
-                        ],
-                    })));
-                }
-            }
-        });
+        let now = match &current {
+            Some(PageBackground::Solid(c)) => Some(TextFill::Solid(*c)),
+            Some(PageBackground::Gradient(g)) => Some(TextFill::Gradient(g.clone())),
+            _ => None,
+        };
+        let in_use = |f: &TextFill| now.as_ref() == Some(f);
+        let target = crate::presets::Target::Page(page.id);
+        if let Some(fill) = crate::presets::sections(ui, theme, texts, target, &in_use) {
+            apply_preset(target, fill, &[], asked);
+        }
         heading(ui, "background.patterns");
         let (pattern_color, pattern_back) = match &current {
             Some(PageBackground::Pattern { color, back, .. }) => (*color, *back),
@@ -4389,7 +4507,7 @@ impl Editor {
                         return;
                     };
                     ui.horizontal(|ui| {
-                        let back = ui.add(egui::Button::new("←").frame(false));
+                        let back = crate::widgets::back_arrow(ui);
                         if back.hovered() {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
@@ -12576,7 +12694,13 @@ fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorI
 /// «Relleno»: a colour picker showing `shape`'s fill and «Sin relleno».
 /// A shape, not an image, also has «Color sólido» and «Degradado» (spec
 /// 063).
-fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+fn fill_field(
+    ui: &mut egui::Ui,
+    (theme, texts): (&Theme, &Texts),
+    shape: &Shape,
+    presets: bool,
+    asked: &mut Asked,
+) {
     if shape.image.is_none() {
         ui.horizontal(|ui| {
             let solid = shape.gradient.is_none();
@@ -12617,6 +12741,79 @@ fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked
     // Spec 093: the colours of the brand kit in use.
     if let Some(color) = crate::brand_panel::swatches(ui, texts) {
         asked.fill = Some(Some(color));
+    }
+    if presets {
+        let now = shape_fill(shape);
+        let in_use = |f: &TextFill| now.as_ref() == Some(f);
+        let target = crate::presets::Target::Shape(shape.page, shape.node);
+        if let Some(fill) = crate::presets::sections(ui, theme, texts, target, &in_use) {
+            apply_preset(target, fill, std::slice::from_ref(shape), asked);
+        }
+    }
+}
+
+/// The fill of a shape as a preset shows it.
+fn shape_fill(shape: &Shape) -> Option<TextFill> {
+    match &shape.gradient {
+        Some(g) => Some(TextFill::Gradient(g.clone())),
+        None => shape.fill.map(TextFill::Solid),
+    }
+}
+
+/// What `target` shows now, if it is still what is selected: `None` when
+/// the full view of presets no longer applies.
+fn preset_now(
+    target: crate::presets::Target,
+    selection: &[Shape],
+    document: Option<&Document>,
+) -> Option<Option<TextFill>> {
+    use crate::presets::Target;
+    match (target, selection) {
+        (Target::Text(_, node), [shape]) if shape.node == node => {
+            let text = shape.text.as_ref()?;
+            Some(match &text.gradient {
+                Some(g) => Some(TextFill::Gradient(g.clone())),
+                None => text.content.first_style().map(|s| TextFill::Solid(s.color)),
+            })
+        }
+        (Target::Shape(_, node), [shape]) if shape.node == node => Some(shape_fill(shape)),
+        (Target::Page(page), []) => {
+            let page = document?.page(page)?;
+            Some(match &page.background {
+                Some(gafira_doc::PageBackground::Solid(c)) => Some(TextFill::Solid(*c)),
+                Some(gafira_doc::PageBackground::Gradient(g)) => {
+                    Some(TextFill::Gradient(g.clone()))
+                }
+                _ => None,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// A preset chosen for `target`, as the fields of the Inspector ask for it.
+fn apply_preset(
+    target: crate::presets::Target,
+    fill: TextFill,
+    selection: &[Shape],
+    asked: &mut Asked,
+) {
+    use crate::presets::Target;
+    match (target, fill) {
+        (Target::Text(..), fill) => asked.text_fill = Some(fill),
+        (Target::Shape(..), TextFill::Solid(color)) => {
+            asked.fill = Some(Some(color));
+            if selection.iter().any(|s| s.gradient.is_some()) {
+                asked.gradient = Some(None);
+            }
+        }
+        (Target::Shape(..), TextFill::Gradient(g)) => asked.gradient = Some(Some(g)),
+        (Target::Page(_), TextFill::Solid(color)) => {
+            asked.page_background = Some(Some(gafira_doc::PageBackground::Solid(color)));
+        }
+        (Target::Page(_), TextFill::Gradient(g)) => {
+            asked.page_background = Some(Some(gafira_doc::PageBackground::Gradient(g)));
+        }
     }
 }
 
@@ -12845,7 +13042,7 @@ fn many_fields(
             && shape.table.is_none()
             && !shape.group
     }) {
-        fill_field(ui, texts, primary, asked);
+        fill_field(ui, (theme, texts), primary, false, asked);
         ui.add_space(8.0);
     }
     opacity_field(ui, theme, texts, primary, asked);
@@ -12994,11 +13191,213 @@ fn arrange_buttons(
     });
 }
 
+/// The element a menu of Capas is for, and what can be done now.
+struct LayerMenu {
+    page: PageId,
+    node: NodeId,
+    locked: bool,
+    shown: bool,
+    image: Option<gafira_doc::timeline::AssetRef>,
+    can: CanArrange,
+    paste: bool,
+}
+
+/// The image of `node`, if it is one.
+fn node_image(node: &gafira_doc::Node) -> Option<gafira_doc::timeline::AssetRef> {
+    match &node.kind {
+        gafira_doc::NodeKind::Image(image) => Some(image.asset),
+        _ => None,
+    }
+}
+
+/// An item of a menu with its icon and, if any, its shortcut; whether it
+/// was chosen.
+fn menu_item(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    (icon, text): (Icon, String),
+    keys: Option<String>,
+    enabled: bool,
+) -> bool {
+    let image = crate::icons::image(
+        ui.ctx(),
+        icon,
+        crate::icons::Weight::Regular,
+        16.0,
+        theme.c("text"),
+    );
+    let mut item = egui::Button::image_and_text(image, text);
+    if let Some(keys) = keys {
+        item = item.shortcut_text(keys);
+    }
+    let chosen = ui.add_enabled(enabled, item).clicked();
+    if chosen {
+        ui.close();
+    }
+    chosen
+}
+
+/// A submenu with its icon and its arrow.
+fn submenu(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    (icon, text): (Icon, String),
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let image = crate::icons::image(
+        ui.ctx(),
+        icon,
+        crate::icons::Weight::Regular,
+        16.0,
+        theme.c("text"),
+    );
+    let arrow = crate::widgets::submenu_arrow(ui);
+    let button = egui::Button::image_and_text(image, text).right_text(arrow);
+    egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
+        crate::widgets::menu_style(ui, theme);
+        add(ui);
+    });
+}
+
+/// The menu of a row of Capas (spec 098): the clipboard, Duplicar and
+/// Eliminar, «Capa» (the order) and «Alinear a la página», Cambiar nombre,
+/// Bloquear and Ocultar, and an image as the background. The row is the
+/// selection by then. Whether «Cambiar nombre» was chosen.
+fn layer_menu(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    what: &LayerMenu,
+    asked: &mut Asked,
+) -> bool {
+    ui.set_min_width(240.0);
+    crate::widgets::menu_style(ui, theme);
+    let keys = |ui: &egui::Ui, k: &KeyboardShortcut| Some(keys_text(ui.ctx(), k));
+    if menu_item(
+        ui,
+        theme,
+        (Icon::CopySimple, plain(texts, "editor.copy")),
+        keys(ui, &COPY),
+        true,
+    ) {
+        asked.copy = true;
+    }
+    if menu_item(
+        ui,
+        theme,
+        (Icon::Paste, plain(texts, "editor.paste")),
+        keys(ui, &PASTE),
+        what.paste,
+    ) {
+        asked.paste = true;
+    }
+    if menu_item(
+        ui,
+        theme,
+        (Icon::PageCopy, plain(texts, "editor.duplicate")),
+        keys(ui, &DUPLICATE),
+        true,
+    ) {
+        asked.duplicate = true;
+    }
+    if menu_item(
+        ui,
+        theme,
+        (Icon::Delete, texts.t(&gafira_doc::msg!("editor.delete"))),
+        Some(plain(texts, "layers.delete_key")),
+        true,
+    ) {
+        asked.delete = true;
+    }
+    ui.separator();
+    submenu(
+        ui,
+        theme,
+        (Icon::Stack, plain(texts, "layers.layer")),
+        |ui| {
+            ui.set_min_width(220.0);
+            for (index, (order, key, icon, shortcut)) in ORDERS.into_iter().enumerate() {
+                let text = plain(texts, key);
+                if menu_item(
+                    ui,
+                    theme,
+                    (icon, text),
+                    keys(ui, &shortcut),
+                    what.can.order[index],
+                ) {
+                    asked.order = Some(order);
+                }
+            }
+        },
+    );
+    submenu(
+        ui,
+        theme,
+        (Icon::AlignLeft, plain(texts, "layers.align_page")),
+        |ui| {
+            ui.set_min_width(220.0);
+            for (action, key, icon, shortcut) in ALIGNS {
+                let shortcut = shortcut.and_then(|k| keys(ui, &k));
+                if menu_item(
+                    ui,
+                    theme,
+                    (icon, plain(texts, key)),
+                    shortcut,
+                    what.can.align,
+                ) {
+                    asked.align = Some(action);
+                }
+            }
+        },
+    );
+    ui.separator();
+    let renamed = menu_item(
+        ui,
+        theme,
+        (Icon::Drawing, plain(texts, "layers.rename")),
+        None,
+        true,
+    );
+    let (icon, key) = if what.locked {
+        (Icon::Unlocked, "layers.unlock")
+    } else {
+        (Icon::Locked, "layers.lock")
+    };
+    if menu_item(ui, theme, (icon, plain(texts, key)), None, true) {
+        asked.flag = Some((what.page, vec![what.node], Flag::Locked, !what.locked));
+    }
+    let (icon, key) = if what.shown {
+        (Icon::Hidden, "layers.hide")
+    } else {
+        (Icon::Visible, "layers.show")
+    };
+    if menu_item(ui, theme, (icon, plain(texts, key)), None, true) {
+        asked.flag = Some((what.page, vec![what.node], Flag::Hidden, what.shown));
+    }
+    if let Some(asset) = what.image {
+        ui.separator();
+        let text = plain(texts, "inspector.as_background");
+        if menu_item(ui, theme, (Icon::Library, text), None, !what.locked) {
+            asked.image_to_background = Some((what.page, what.node, asset));
+        }
+    }
+    renamed
+}
+
 /// Edición → Organizar: Align, Distribute and the layer order, with their
 /// shortcuts; an action that cannot act now is off (FD-12).
-fn arrange_menu(ui: &mut egui::Ui, texts: &Texts, can: CanArrange, asked: &mut Asked) {
-    ui.menu_button(plain(texts, "arrange.menu"), |ui| {
+fn arrange_menu(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    can: CanArrange,
+    asked: &mut Asked,
+) {
+    let arrow = crate::widgets::submenu_arrow(ui);
+    let button = egui::Button::new(plain(texts, "arrange.menu")).right_text(arrow);
+    egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
         ui.set_min_width(220.0);
+        crate::widgets::menu_style(ui, theme);
         for (action, key, _, keys) in ALIGNS {
             let mut item = egui::Button::new(plain(texts, key));
             if let Some(keys) = keys {
@@ -13113,41 +13512,6 @@ fn swatch(
     };
     painter.rect_stroke(rect, 6.0, ring, egui::StrokeKind::Inside);
     response
-}
-
-/// A linear gradient from `a` to `b` at `angle_deg` over `rect`, as a mesh
-/// whose corners take the colour of where they fall along the direction.
-fn paint_gradient_swatch(
-    painter: &egui::Painter,
-    rect: Rect,
-    a: Color32,
-    b: Color32,
-    angle_deg: f64,
-) {
-    let (dy, dx) = angle_deg.to_radians().sin_cos();
-    let corners = [
-        rect.left_top(),
-        rect.right_top(),
-        rect.right_bottom(),
-        rect.left_bottom(),
-    ];
-    let along = |p: Pos2| f64::from(p.x - rect.left()) * dx + f64::from(p.y - rect.top()) * dy;
-    let values = corners.map(along);
-    let (lo, hi) = values
-        .iter()
-        .fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
-    let mut mesh = egui::Mesh::default();
-    for (corner, value) in corners.into_iter().zip(values) {
-        let t = if hi > lo {
-            ((value - lo) / (hi - lo)) as f32
-        } else {
-            0.0
-        };
-        mesh.colored_vertex(corner, a.lerp_to_gamma(b, t));
-    }
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    painter.add(mesh);
 }
 
 /// Where a card of a side panel was let go: the page and the point on it.
@@ -13639,7 +14003,7 @@ fn text_fields(
     ui: &mut egui::Ui,
     theme: &Theme,
     texts: &Texts,
-    (text, design): (&gafira_doc::TextNode, &DesignColors),
+    (text, design, target): (&gafira_doc::TextNode, &DesignColors, crate::presets::Target),
     asked: &mut Asked,
 ) {
     use gafira_doc::TextAlign;
@@ -13807,7 +14171,7 @@ fn text_fields(
         asked.text_curve = Some(curve);
     }
     ui.add_space(12.0);
-    text_color_fields(ui, theme, texts, (text, &style, design), asked);
+    text_color_fields(ui, theme, texts, (text, &style, design, target), asked);
 }
 
 /// The colours a design already uses (spec 070): the solid colours and the
@@ -13874,7 +14238,12 @@ fn text_color_fields(
     ui: &mut egui::Ui,
     theme: &Theme,
     texts: &Texts,
-    (text, style, design): (&gafira_doc::TextNode, &gafira_doc::SpanStyle, &DesignColors),
+    (text, style, design, target): (
+        &gafira_doc::TextNode,
+        &gafira_doc::SpanStyle,
+        &DesignColors,
+        crate::presets::Target,
+    ),
     asked: &mut Asked,
 ) {
     let section = |ui: &mut egui::Ui, key: &'static str| {
@@ -13926,69 +14295,14 @@ fn text_color_fields(
             .collect();
         row(ui, fills, asked);
     }
-    section(ui, "inspector.solid_presets");
-    row(
-        ui,
-        crate::colors::TEXT_PALETTE
-            .iter()
-            .map(|code| TextFill::Solid(crate::colors::hex(*code)))
-            .collect(),
-        asked,
-    );
-    section(ui, "inspector.gradient_presets");
-    row(
-        ui,
-        crate::colors::TEXT_GRADIENTS
-            .iter()
-            .map(|(a, b, angle)| TextFill::Gradient(crate::colors::gradient(*a, *b, *angle)))
-            .collect(),
-        asked,
-    );
+    if let Some(fill) = crate::presets::sections(ui, theme, texts, target, &in_use) {
+        asked.text_fill = Some(fill);
+    }
 }
 
-/// A colour for the letters of a text: one colour, or a gradient over the
-/// box (spec 070).
-#[derive(Clone, Debug, PartialEq)]
-enum TextFill {
-    Solid(gafira_color::Color),
-    Gradient(gafira_doc::Gradient),
-}
-
-/// A round swatch of `fill`, ringed when it is the one in use; a hand
-/// over it.
+/// A round swatch of a colour of the design (spec 070).
 fn dot(ui: &mut egui::Ui, theme: &Theme, on: bool, fill: &TextFill) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
-    let painter = ui.painter();
-    let inner = rect.shrink(2.0);
-    match fill {
-        TextFill::Solid(color) => {
-            painter.circle_filled(
-                inner.center(),
-                inner.width() / 2.0,
-                canvas::screen_color(*color),
-            );
-        }
-        TextFill::Gradient(gradient) => {
-            // The gradient swatch, cut round by the page colour around it.
-            painter.add(gradient_swatch(gradient, inner));
-            let ring = inner.width() / 2.0 + 4.0;
-            painter.circle_stroke(
-                inner.center(),
-                ring - 2.0,
-                Stroke::new(8.0, ui.visuals().panel_fill),
-            );
-        }
-    }
-    let ring = if on {
-        Stroke::new(2.0, theme.c("primary.bg"))
-    } else {
-        Stroke::new(1.0, theme.c("border"))
-    };
-    painter.circle_stroke(rect.center(), rect.width() / 2.0 - 1.0, ring);
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    response
+    crate::presets::dot(ui, theme, (fill, on), 28.0)
 }
 
 /// A square button of the text formats, drawn by `paint` in the text colour

@@ -217,7 +217,8 @@ pub(crate) fn delta_text(dw: f64, dh: f64) -> String {
         } else if v > 0.0 {
             format!("+{text}")
         } else {
-            format!("−{text}")
+            // An en dash: the interface font has no minus sign (spec 098).
+            format!("–{text}")
         }
     };
     format!("{} × {}", signed(dw), signed(dh))

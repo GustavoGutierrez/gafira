@@ -887,8 +887,8 @@ impl Editing {
         if let Some(note) = self.note {
             ui.add_space(8.0);
             let color = theme.c("error.fg");
-            let text = RichText::new(format!("⚠ {}", with.t(note)));
-            ui.label(text.font(theme.font("body-sm")).color(color));
+            let text = RichText::new(with.t(note)).font(theme.font("body-sm"));
+            widgets::note(ui, Icon::Warning, text, color);
             if note == "image.no_model" && ui.button(with.t("vision.models")).clicked() {
                 asks.vision = Some(Ask::Models);
             }
