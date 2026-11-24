@@ -2,7 +2,7 @@
 import '@fontsource-variable/manrope';
 import '@fontsource-variable/inter';
 import '../styles/global.css';
-import ogImage from '../assets/screens/editor-es.png';
+import { screens } from '../lib/screens';
 import { getImage } from 'astro:assets';
 import { copy, homePath, type Locale } from '../i18n/ui';
 // The brand colours and radii, from the same token file the app loads.
@@ -22,7 +22,7 @@ const pageTitle = title ?? t.meta.title;
 const pageDescription = description ?? t.meta.description;
 const site = Astro.site ?? new URL('https://gafira.com');
 const canonical = new URL(Astro.url.pathname, site).href;
-const og = await getImage({ src: ogImage, width: 1200, format: 'png' });
+const og = await getImage({ src: screens[locale].editor, width: 1200, format: 'png' });
 const ogUrl = new URL(og.src, site).href;
 const light = tokens.modes.light as Record<string, string>;
 const dark = tokens.modes.dark as Record<string, string>;

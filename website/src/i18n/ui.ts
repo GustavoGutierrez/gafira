@@ -86,7 +86,7 @@ const es: Copy = {
     downloadFor: 'Descargar para',
     features: 'Ver funciones',
     platforms: 'Windows · macOS · Linux',
-    screenAlt: 'El editor de Gafira: una publicación de cafetería abierta, con el panel de formas y los colores del diseño',
+    screenAlt: 'El editor de Gafira: una publicación de cafetería abierta, con el panel Elementos y los colores del diseño',
     chips: { background: 'Fondo quitado', colors: 'Colores del diseño', exported: 'Exportado en PDF' },
   },
   how: {
@@ -185,7 +185,7 @@ const es: Copy = {
         title: 'Un editor claro y directo',
         text: 'Lo que necesitas está a la vista: los elementos a la izquierda, tu diseño al centro y sus propiedades a la derecha.',
         points: ['Colores del diseño y gotero', 'Formas con un clic o arrastrando', 'Deshacer y rehacer en cada paso'],
-        alt: 'El editor de Gafira con el panel Formas abierto y las propiedades de una forma',
+        alt: 'El editor de Gafira con el panel Elementos abierto y las propiedades de una forma',
       },
       {
         title: 'Empieza por una plantilla',
@@ -296,7 +296,7 @@ const en: Copy = {
     downloadFor: 'Download for',
     features: 'See features',
     platforms: 'Windows · macOS · Linux',
-    screenAlt: 'The Gafira editor: a coffee shop post open, with the shapes panel and the design colours',
+    screenAlt: 'The Gafira editor: a coffee shop post open, with the Elements panel and the design colours',
     chips: { background: 'Background removed', colors: 'Design colours', exported: 'Exported to PDF' },
   },
   how: {
@@ -395,7 +395,7 @@ const en: Copy = {
         title: 'A clear, direct editor',
         text: 'What you need is in sight: elements on the left, your design in the middle and its properties on the right.',
         points: ['Design colours and an eyedropper', 'Shapes with a click or a drag', 'Undo and redo at every step'],
-        alt: 'The Gafira editor with the Shapes panel open and the properties of a shape',
+        alt: 'The Gafira editor with the Elements panel open and the properties of a shape',
       },
       {
         title: 'Start from a template',
