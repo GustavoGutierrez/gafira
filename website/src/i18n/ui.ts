@@ -23,6 +23,7 @@ export interface Copy {
     language: string;
     menu: string;
     theme: string;
+    top: string;
   };
   hero: {
     title: string;
@@ -78,6 +79,7 @@ const es: Copy = {
     language: 'Idioma',
     menu: 'Menú',
     theme: 'Cambiar entre modo claro y oscuro',
+    top: 'Volver arriba',
   },
   hero: {
     title: 'Haz visibles tus ideas.',
@@ -288,6 +290,7 @@ const en: Copy = {
     language: 'Language',
     menu: 'Menu',
     theme: 'Switch between light and dark mode',
+    top: 'Back to top',
   },
   hero: {
     title: 'Bring your ideas to life.',

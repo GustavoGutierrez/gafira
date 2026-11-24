@@ -1,0 +1,85 @@
+---
+// A button that takes the page back to the top. It shows once the visitor
+// has scrolled past the first screen, and moves the focus to the logo so
+// keyboard users continue from the top.
+import Icon from './Icon.astro';
+import { copy, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const t = copy[Astro.props.locale];
+---
+
+<button class="top" type="button" data-top aria-label={t.nav.top} title={t.nav.top} hidden>
+  <Icon name="arrow-up" size={22} />
+</button>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('[data-top]');
+  if (button) {
+    button.hidden = false;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => button.classList.toggle('is-shown', window.scrollY > window.innerHeight * 0.9);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    button.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: reduced.matches ? 'auto' : 'smooth' });
+      // Keyboard users carry on from the start of the header (the logo).
+      document.querySelector<HTMLElement>('.header__logo')?.focus({ preventScroll: true });
+    });
+  }
+</script>
+
+<style>
+  .top {
+    position: fixed;
+    right: clamp(16px, 3vw, 32px);
+    bottom: clamp(16px, 3vw, 32px);
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--tile);
+    color: #fff;
+    box-shadow: 0 10px 24px rgb(10 17 32 / 0.22);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(16px) scale(0.9);
+    transition:
+      opacity 220ms var(--ease),
+      transform 220ms var(--ease),
+      visibility 0s linear 220ms,
+      background-color 160ms var(--ease);
+  }
+
+  .top:global(.is-shown) {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 220ms var(--ease),
+      transform 220ms var(--ease),
+      visibility 0s,
+      background-color 160ms var(--ease);
+  }
+
+  .top:hover {
+    background: var(--coral);
+    color: var(--ink);
+  }
+
+  .top:hover :global(svg) {
+    transform: translateY(-2px);
+  }
+
+  .top :global(svg) {
+    transition: transform 160ms var(--ease);
+  }
+</style>
