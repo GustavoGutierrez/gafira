@@ -1,0 +1,154 @@
+---
+import Icon from './Icon.astro';
+import MotionDesign from './MotionDesign.astro';
+import { copy, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale];
+const icons = ['cursor-click', 'sliders-horizontal', 'share-network'];
+---
+
+<section class="section" id="how">
+  <div class="container">
+    <div class="section-head section-head--center">
+      <h2>{t.how.title}</h2>
+    </div>
+    <div class="reveal reveal--zoom">
+      <MotionDesign locale={locale} />
+    </div>
+    <ol class="steps reveal">
+      {
+        t.how.steps.map((step, index) => (
+          <li class="step">
+            <div class="step__top">
+              <span class="step__number">{index + 1}</span>
+              <span class="step__icon">
+                <Icon name={icons[index] ?? 'check'} size={26} />
+              </span>
+            </div>
+            <h3>{step.title}</h3>
+            <p>{step.text}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .steps {
+    margin-top: 40px !important;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .step {
+    position: relative;
+    padding: 32px;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 2px solid var(--muted);
+  }
+
+  .step__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .step__number {
+    font-family: var(--font-head);
+    font-size: 44px;
+    line-height: 1;
+    font-weight: 800;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step__icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-md);
+    background: var(--tile);
+    color: #fff;
+  }
+
+  .step:nth-child(2) .step__icon {
+    background: var(--coral);
+    color: var(--ink);
+  }
+
+  .step:nth-child(3) .step__icon {
+    background: var(--mint);
+    color: var(--ink);
+  }
+
+  h3 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+  }
+
+  p {
+    margin-top: 10px;
+    color: var(--text-secondary);
+  }
+
+  /* Each card lights up while the motion graphic shows its step (the same
+     10 s cycle as MotionDesign.astro). */
+  .step {
+    animation: 10s cubic-bezier(0.2, 0.7, 0.2, 1) infinite both;
+    transition: none;
+  }
+
+  .step:nth-child(1) {
+    animation-name: step-choose;
+  }
+
+  .step:nth-child(2) {
+    animation-name: step-customise;
+  }
+
+  .step:nth-child(3) {
+    animation-name: step-share;
+  }
+
+  @keyframes step-choose {
+    0%, 6%, 34%, 100% { border-color: var(--muted); transform: none; }
+    10%, 30% { border-color: var(--text); transform: translateY(-4px); }
+  }
+
+  @keyframes step-customise {
+    0%, 32%, 60%, 100% { border-color: var(--muted); transform: none; }
+    36%, 56% { border-color: var(--coral); transform: translateY(-4px); }
+  }
+
+  @keyframes step-share {
+    0%, 60%, 90%, 100% { border-color: var(--muted); transform: none; }
+    64%, 86% { border-color: var(--mint); transform: translateY(-4px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .step {
+      animation: none;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .steps {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

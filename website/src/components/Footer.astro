@@ -1,0 +1,112 @@
+---
+import { copy, homePath, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale];
+const home = homePath(locale);
+const year = new Date().getFullYear();
+---
+
+<footer class="footer">
+  <div class="container footer__grid">
+    <div class="footer__brand">
+      <img src="/logo-dark.svg" alt="Gafira" width="160" height="51" />
+      <p>{t.footer.tagline}</p>
+    </div>
+    <nav aria-label={t.footer.product}>
+      <h2>{t.footer.product}</h2>
+      <ul>
+        <li><a href={`${home}#features`}>{t.nav.features}</a></li>
+        <li><a href={`${home}#how`}>{t.nav.how}</a></li>
+        <li><a href={`${home}#download`}>{t.nav.download}</a></li>
+        <li><a href="https://github.com/GustavoGutierrez/gafira/releases">{t.footer.releases}</a></li>
+      </ul>
+    </nav>
+    <nav aria-label={t.footer.language}>
+      <h2>{t.footer.language}</h2>
+      <ul>
+        <li><a href={homePath('es')} hreflang="es" lang="es" aria-current={locale === 'es' ? 'page' : undefined}>Español</a></li>
+        <li><a href={homePath('en')} hreflang="en" lang="en" aria-current={locale === 'en' ? 'page' : undefined}>English</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="container footer__bottom">
+    <p>© {year} Gafira. {t.footer.rights}</p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    background: var(--deep);
+    color: #fff;
+    padding-top: 64px;
+  }
+
+  .footer__grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 40px;
+  }
+
+  .footer__brand img {
+    width: 160px;
+    height: auto;
+  }
+
+  .footer__brand p {
+    margin-top: 16px;
+    color: var(--mist);
+  }
+
+  h2 {
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--mist);
+  }
+
+  ul {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  a {
+    text-decoration: none;
+    color: #fff;
+  }
+
+  a:hover,
+  a[aria-current='page'] {
+    text-decoration: underline;
+    text-decoration-color: var(--mint);
+    text-underline-offset: 4px;
+  }
+
+  .footer__bottom {
+    margin-top: 56px;
+    padding-block: 24px;
+    border-top: 1px solid rgb(231 234 242 / 0.14);
+    font-size: 14px;
+    color: var(--mist);
+  }
+
+  @media (max-width: 760px) {
+    .footer__grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .footer__brand {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

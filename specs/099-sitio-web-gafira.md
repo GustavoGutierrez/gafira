@@ -1,0 +1,36 @@
+# 099 — Sitio web de Gafira (landing)
+
+> **Estado:** in-progress — 2026-11-24 — sitio construido y revisado en local (escritorio, móvil, claro y oscuro, ES y EN); pendiente la revisión del titular, el primer despliegue en Cloudflare y la redirección de `www`.
+
+## Problema y resultado esperado
+
+- Gafira no tiene una página pública que la presente ni un lugar estable desde donde descargarla.
+- Resultado: una landing en `gafira.com`, en español e inglés, con las funciones que existen, capturas reales de la app y las descargas de la última versión publicada en GitHub.
+
+## Decisión técnica
+
+- **Astro (estático), no VitePress.** VitePress está pensado para documentación y envía su tema y su runtime de Vue a cada página; Astro envía cero JavaScript por defecto (solo dos scripts pequeños: revelado/tema y detección del sistema), optimiza las capturas a AVIF/WebP y trae i18n y sitemap. La documentación, si llega, puede ser otra sección o sitio.
+- **Carpeta `website/`** en la raíz: `apps/*` es miembro del workspace de Cargo.
+- **Cloudflare Workers con recursos estáticos** (igual que el sitio de referencia del titular): dominio propio `gafira.com`, sin script de Worker; `www.gafira.com` → `gafira.com` con una Redirect Rule 301 de la zona que conserva ruta y consulta.
+
+## Requisitos
+
+- **S99-01 Idiomas.** Español en `/` e inglés en `/en/`, con selector, `hreflang` y sitemap con alternativas. Todos los textos en `src/i18n/ui.ts` con un tipo común (falta un texto = error de `astro check`).
+- **S99-02 Marca.** Colores y radios leídos de `assets/theme/gafira.tokens.json`; Manrope en títulos e Inter en texto; botón principal coral con texto tinta; logotipo principal en claro y la variante de fondo oscuro en oscuro; favicon y símbolo del manual; iconos de toque y del manifiesto desde `assets/app-icon/`.
+- **S99-03 Modo claro y oscuro.** Sigue al sistema por defecto; el botón de la cabecera lo cambia y lo recuerda (`localStorage`), aplicado antes del primer pintado. Colores de cada modo desde los tokens `modes.light` y `modes.dark`.
+- **S99-04 Contenido verdadero.** Solo funciones que existen; cifras comprobadas en el código (75 plantillas por idioma, 215 formas en 17 secciones, 33 familias tipográficas, 16 pinceles). Capturas reales de Gafira 0.2.0.
+- **S99-05 Descargas.** Al compilar se lee la última versión de GitHub y se ordenan sus paquetes por sistema (instalador y .zip de Windows, .dmg de macOS, .deb y AppImage de Linux), con tamaño, notas, sumas SHA-256 y todas las versiones; sin red se usa `src/data/release-fallback.json`. El botón principal apunta al paquete del sistema del visitante y marca su tarjeta («Para tu equipo»); en móvil o sin JavaScript lleva a la sección de descargas.
+- **S99-06 Movimiento.** Entrada escalonada del hero, ventana que se endereza al desplazar (donde hay animaciones por desplazamiento), chips flotantes, gráfico animado del flujo Elegir → Personalizar → Compartir sincronizado con las tarjetas de pasos, revelado de pasos, capturas y descargas, sombra de la cabecera al desplazar. Todo se detiene con `prefers-reduced-motion`.
+- **S99-07 Accesibilidad y SEO.** Enlace «Saltar al contenido», foco visible, textos alternativos, contraste verificado, `canonical`, Open Graph, datos estructurados `SoftwareApplication`, `robots.txt`, sitemap y página 404 bilingüe.
+
+## Pruebas y evidencia
+
+- `npm run build` (incluye `astro check`): 0 errores.
+- Revisión en navegador a 1440×900 y 390×844, ES y EN, claro y oscuro; sin desbordamiento horizontal.
+- Pasada `polish` del skill `impeccable` y su detector: sin hallazgos.
+
+## Pendiente
+
+- Revisión del titular.
+- Primer despliegue (`npm run deploy`) con la cuenta de Cloudflare del titular, registro `www` y Redirect Rule (ver `website/README.md`).
+- Tras cada versión nueva: volver a compilar y desplegar el sitio.

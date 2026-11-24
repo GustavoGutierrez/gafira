@@ -49,3 +49,6 @@ docs/manuals/tecnico/build/
 
 # Lock files a running Gafira keeps next to an open project (spec 028).
 *.gaf.lock
+
+# Impeccable design skill working files (screenshots, cache)
+/.impeccable/

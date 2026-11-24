@@ -1,0 +1,24 @@
+// Cloudflare Workers configuration of the Gafira website (static landing page).
+// Astro builds the site into dist/ and Workers serves those files; there is no
+// Worker script, so no request runs code.
+//
+// No account ID, zone ID or token lives here: Wrangler reads
+// CLOUDFLARE_ACCOUNT_ID and, optionally, CLOUDFLARE_API_TOKEN from the
+// environment or from the untracked website/.env (see .env.example). A custom
+// domain only needs the hostname: Cloudflare finds the gafira.com zone in the
+// account and creates its DNS record. www.gafira.com is redirected to
+// gafira.com by a Redirect Rule of the zone (see README.md).
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gafira-website",
+  "compatibility_date": "2026-11-24",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "routes": [{ "pattern": "gafira.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true }
+}

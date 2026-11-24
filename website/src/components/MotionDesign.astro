@@ -1,0 +1,250 @@
+---
+// A looping motion graphic of the Gafira flow, Elegir → Personalizar →
+// Compartir: the three panels of the symbol come together on a page, the
+// texts arrive, the cursor picks a colour for the button, and the design is
+// exported. Pure SVG and CSS, one 10 s cycle shared with the step cards in
+// How.astro. With reduced motion it shows the finished design, still.
+import { copy, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const t = copy[Astro.props.locale].how.motion;
+---
+
+<figure class="motion" role="img" aria-label={t.alt}>
+  <svg viewBox="0 0 520 360" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <filter id="motion-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#18243B" flood-opacity="0.14" />
+      </filter>
+      <clipPath id="motion-page">
+        <rect x="36" y="28" width="252" height="304" rx="12" />
+      </clipPath>
+    </defs>
+
+    <!-- The page of the design. -->
+    <g class="m-page">
+      <rect x="36" y="28" width="252" height="304" rx="12" style="fill:#FFFFFF" filter="url(#motion-shadow)" />
+      <g clip-path="url(#motion-page)">
+        <rect class="m-wash" x="36" y="28" width="252" height="304" style="fill:var(--canvas)" />
+        <!-- The three panels, after the symbol. -->
+        <path class="m-coral" d="M74 62h104a12 12 0 0 1 12 12v40a12 12 0 0 1-12 12H96l-22 16V74a12 12 0 0 1 0-12Z" style="fill:var(--coral)" />
+        <path class="m-mint" d="M168 96h82a12 12 0 0 1 12 12v40a12 12 0 0 1-12 12h-70a12 12 0 0 1-12-12Z" style="fill:var(--mint)" />
+        <path class="m-ink" d="M66 128l92 22a12 12 0 0 1 9 12v42a12 12 0 0 1-12 12H66a12 12 0 0 1-12-12v-64a12 12 0 0 1 12-12Z" style="fill:var(--ink)" />
+        <text class="m-title" x="56" y="254" font-family="Manrope Variable, Inter Variable, sans-serif" font-size="24" font-weight="800" style="fill:var(--ink)">{t.title}</text>
+        <text class="m-subtitle" x="57" y="278" font-family="Inter Variable, sans-serif" font-size="13" font-weight="500" style="fill:var(--ink);fill-opacity:0.78">{t.subtitle}</text>
+        <g class="m-button">
+          <rect class="m-button__fill" x="56" y="292" width="76" height="26" rx="13" style="fill:var(--mist)" />
+          <text x="94" y="309.5" text-anchor="middle" font-family="Inter Variable, sans-serif" font-size="12" font-weight="700" style="fill:var(--ink)">{t.cta}</text>
+        </g>
+        <rect class="m-select" x="51" y="287" width="86" height="36" rx="16" fill="none" style="stroke:var(--mint)" stroke-width="2" stroke-dasharray="5 4" />
+      </g>
+    </g>
+
+    <!-- The colours of the design. -->
+    <g class="m-palette">
+      <rect x="318" y="40" width="168" height="96" rx="14" style="fill:#FFFFFF" filter="url(#motion-shadow)" />
+      <rect x="334" y="56" width="70" height="8" rx="4" style="fill:var(--mist)" />
+      <circle cx="346" cy="98" r="13" style="fill:var(--ink)" />
+      <circle class="m-swatch" cx="380" cy="98" r="13" style="fill:var(--coral)" />
+      <circle cx="414" cy="98" r="13" style="fill:var(--mint)" />
+      <circle cx="448" cy="98" r="13" style="fill:var(--mist);stroke:var(--border)" />
+      <circle class="m-ring" cx="380" cy="98" r="18" fill="none" style="stroke:var(--ink)" stroke-width="2" />
+    </g>
+
+    <!-- Export. -->
+    <g class="m-export">
+      <rect x="318" y="232" width="168" height="76" rx="14" style="fill:var(--ink)" filter="url(#motion-shadow)" />
+      <text x="336" y="262" font-family="Inter Variable, sans-serif" font-size="13" font-weight="700" style="fill:var(--surface)">PNG · PDF · PPTX</text>
+      <rect x="336" y="280" width="104" height="6" rx="3" style="fill:var(--surface)" fill-opacity="0.16" />
+      <rect class="m-progress" x="336" y="280" width="104" height="6" rx="3" style="fill:var(--mint)" />
+      <g class="m-check">
+        <circle cx="460" cy="283" r="12" style="fill:var(--mint)" />
+        <path d="M454 283l4 4 8-8" fill="none" style="stroke:var(--ink)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+      </g>
+    </g>
+
+    <!-- The pointer. -->
+    <g class="m-cursor">
+      <path d="M0 0v22l6-6 4 10 4-2-4-10h8Z" stroke-width="1.6" stroke-linejoin="round" style="fill:var(--ink);stroke:var(--surface)" />
+    </g>
+  </svg>
+</figure>
+
+<style>
+  .motion {
+    margin: 0 auto;
+    max-width: 640px;
+    padding: clamp(16px, 3vw, 28px);
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(60% 70% at 15% 10%, rgb(63 191 169 / 0.16), transparent 70%),
+      radial-gradient(50% 60% at 90% 90%, rgb(255 107 87 / 0.14), transparent 70%),
+      var(--muted);
+  }
+
+  svg {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  svg * {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  /* One 10 s cycle: choose (8–30 %), customise (32–58 %), share (62–88 %),
+     then everything fades and starts again. */
+  .m-page,
+  .m-coral,
+  .m-mint,
+  .m-ink,
+  .m-title,
+  .m-subtitle,
+  .m-button,
+  .m-button__fill,
+  .m-select,
+  .m-palette,
+  .m-swatch,
+  .m-ring,
+  .m-export,
+  .m-progress,
+  .m-check,
+  .m-cursor {
+    animation-duration: 10s;
+    animation-iteration-count: infinite;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+    animation-fill-mode: both;
+  }
+
+  .m-page { animation-name: m-page; }
+  .m-coral { animation-name: m-coral; }
+  .m-mint { animation-name: m-mint; }
+  .m-ink { animation-name: m-ink; }
+  .m-title { animation-name: m-title; }
+  .m-subtitle { animation-name: m-subtitle; }
+  .m-button { animation-name: m-button; }
+  .m-button__fill { animation-name: m-button-fill; }
+  .m-select { animation-name: m-select; }
+  .m-palette { animation-name: m-palette; }
+  .m-ring { animation-name: m-ring; }
+  .m-swatch { animation-name: m-swatch; }
+  .m-export { animation-name: m-export; }
+  .m-progress { animation-name: m-progress; transform-origin: left center; }
+  .m-check { animation-name: m-check; }
+  .m-cursor { animation-name: m-cursor; transform-box: view-box; transform-origin: 0 0; }
+
+  @keyframes m-page {
+    0% { opacity: 0; transform: scale(0.92); }
+    7%, 92% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: scale(0.98); }
+  }
+
+  @keyframes m-coral {
+    0%, 8% { opacity: 0; transform: translate(-60px, -10px) rotate(-8deg); }
+    16%, 100% { opacity: 1; transform: none; }
+  }
+
+  @keyframes m-mint {
+    0%, 14% { opacity: 0; transform: translate(60px, 0) rotate(8deg); }
+    22%, 100% { opacity: 1; transform: none; }
+  }
+
+  @keyframes m-ink {
+    0%, 20% { opacity: 0; transform: translateY(50px); }
+    28%, 100% { opacity: 1; transform: none; }
+  }
+
+  @keyframes m-title {
+    0%, 32% { opacity: 0; transform: translateY(14px); }
+    38%, 100% { opacity: 1; transform: none; }
+  }
+
+  @keyframes m-subtitle {
+    0%, 35% { opacity: 0; transform: translateY(10px); }
+    41%, 100% { opacity: 1; transform: none; }
+  }
+
+  @keyframes m-button {
+    0%, 38% { opacity: 0; transform: scale(0.6); }
+    43%, 100% { opacity: 1; transform: none; }
+  }
+
+  @keyframes m-button-fill {
+    0%, 53% { fill: var(--mist); }
+    56%, 100% { fill: var(--coral); }
+  }
+
+  @keyframes m-select {
+    0%, 45% { opacity: 0; }
+    47%, 58% { opacity: 1; }
+    61%, 100% { opacity: 0; }
+  }
+
+  @keyframes m-palette {
+    0%, 30% { opacity: 0; transform: translateY(16px); }
+    36%, 88% { opacity: 1; transform: none; }
+    93%, 100% { opacity: 0; transform: translateY(-8px); }
+  }
+
+  @keyframes m-ring {
+    0%, 50% { opacity: 0; transform: scale(0.7); }
+    53%, 60% { opacity: 1; transform: none; }
+    64%, 100% { opacity: 0; transform: none; }
+  }
+
+  @keyframes m-swatch {
+    0%, 51% { transform: none; }
+    52.5% { transform: scale(0.82); }
+    55%, 100% { transform: none; }
+  }
+
+  @keyframes m-export {
+    0%, 62% { opacity: 0; transform: translateY(24px); }
+    67%, 90% { opacity: 1; transform: none; }
+    95%, 100% { opacity: 0; transform: translateY(-8px); }
+  }
+
+  @keyframes m-progress {
+    0%, 67% { transform: scaleX(0); }
+    80%, 100% { transform: scaleX(1); }
+  }
+
+  @keyframes m-check {
+    0%, 80% { opacity: 0; transform: scale(0.4); }
+    84%, 100% { opacity: 1; transform: none; }
+  }
+
+  /* The pointer comes in, selects the button, picks coral and leaves. */
+  @keyframes m-cursor {
+    0%, 40% { opacity: 0; transform: translate(470px, 340px); }
+    43% { opacity: 1; transform: translate(420px, 320px); }
+    47% { opacity: 1; transform: translate(118px, 312px); }
+    48.5% { opacity: 1; transform: translate(118px, 312px) scale(0.86); }
+    50% { opacity: 1; transform: translate(118px, 312px); }
+    52% { opacity: 1; transform: translate(384px, 102px); }
+    52.8% { opacity: 1; transform: translate(384px, 102px) scale(0.86); }
+    54% { opacity: 1; transform: translate(384px, 102px); }
+    60% { opacity: 1; transform: translate(430px, 190px); }
+    64%, 100% { opacity: 0; transform: translate(450px, 210px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .motion * {
+      animation: none !important;
+    }
+
+    .m-button__fill {
+      fill: var(--coral) !important;
+    }
+
+    .m-cursor,
+    .m-select,
+    .m-ring {
+      opacity: 0;
+    }
+  }
+</style>
