@@ -633,7 +633,7 @@ pub(crate) fn border_controls(
             asked = Some(Act::Borders(BorderSet::All, None));
         }
         let mut rgba = canvas::picker_rgba(Some(pen.color));
-        ui.color_edit_button_srgba_unmultiplied(&mut rgba)
+        crate::eyedropper::color_edit(ui, &mut rgba)
             .on_hover_text(plain(texts, "table.border_color"))
             .changed()
             .then(|| pen.color = canvas::picked_color(Some(pen.color), rgba));
@@ -667,10 +667,8 @@ pub(crate) fn spacing_controls(
                 .color(theme.c("text.secondary")),
         );
         let mut value = value;
-        ui.spacing_mut().slider_width = (ui.available_width() - 64.0).max(80.0);
-        if ui
-            .add(egui::Slider::new(&mut value, 0.0..=TableNode::MAX_SPACING).max_decimals(0))
-            .changed()
+        if crate::slider::Slider::new(plain(texts, key), &mut value, (0.0, TableNode::MAX_SPACING))
+            .show(ui, theme)
         {
             asked = Some(make(value));
         }
@@ -691,8 +689,7 @@ pub(crate) fn look_controls(
     let style = t.cell(range.r0, range.c0)?.style.clone();
     let mut asked = None;
     let mut rgba = canvas::picker_rgba(style.fill);
-    if ui
-        .color_edit_button_srgba_unmultiplied(&mut rgba)
+    if crate::eyedropper::color_edit(ui, &mut rgba)
         .on_hover_text(plain(texts, "table.fill"))
         .changed()
     {
@@ -706,8 +703,7 @@ pub(crate) fn look_controls(
     };
     let mut ink = canvas::picker_rgba(Some(style.color));
     ui.push_id("ink", |ui| {
-        if ui
-            .color_edit_button_srgba_unmultiplied(&mut ink)
+        if crate::eyedropper::color_edit(ui, &mut ink)
             .on_hover_text(plain(texts, "table.ink"))
             .changed()
         {

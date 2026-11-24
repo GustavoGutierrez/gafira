@@ -567,6 +567,19 @@ version = "2.1.1"
 source_file = "assets/regular/pencil-simple.svg"
 
 [[asset]]
+path = "assets/icons/phosphor/regular/eyedropper.svg"
+hash = "033c071b2df1a7733cecbf49e3a49f66c0c3f60bac1cc5a8188a95906260d5f1"
+license = "MIT"
+"autoría" = "Copyright (c) 2023 Phosphor Icons"
+origin = "npm @phosphor-icons/core 2.1.1, assets/regular/eyedropper.svg (https://github.com/phosphor-icons/core)"
+"exige atribución" = "true"
+modificado = "false"
+license_file = "assets/icons/phosphor/LICENSE"
+upstream = "https://github.com/phosphor-icons/core"
+version = "2.1.1"
+source_file = "assets/regular/eyedropper.svg"
+
+[[asset]]
 path = "assets/icons/phosphor/regular/plus.svg"
 hash = "98b016cc2bd67dbaa0e690eb93e0d6d76b10b8192daa8443e75b0ba93318c9df"
 license = "MIT"

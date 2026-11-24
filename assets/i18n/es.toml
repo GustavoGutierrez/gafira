@@ -1944,3 +1944,6 @@ bad_template = "La plantilla no es un archivo .gaf de plantilla"
 checking = "Comprobando {file}…"
 installing = "Instalando {file}…"
 reading = "Leyendo el paquete…"
+
+[eyedropper]
+name = "Tomar un color de la pantalla"

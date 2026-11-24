@@ -511,13 +511,17 @@ impl Eraser {
                     }
                 });
                 ui.add_space(14.0);
-                ui.label(plain(texts, "eraser.size"));
-                ui.add_space(4.0);
-                ui.spacing_mut().slider_width = 190.0;
-                let slider = egui::Slider::new(&mut self.size, SIZES)
-                    .logarithmic(true)
-                    .max_decimals(0);
-                ui.add(slider);
+                let mut size = f64::from(self.size);
+                let range = (f64::from(*SIZES.start()), f64::from(*SIZES.end()));
+                if crate::slider::Slider::new(plain(texts, "eraser.size"), &mut size, range)
+                    .rest(range.0)
+                    .logarithmic()
+                    .step(1.0, 0)
+                    .show(ui, theme)
+                {
+                    // Within SIZES: the cast loses nothing seen.
+                    self.size = size as f32;
+                }
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     ui.label(plain(texts, "eraser.compare"));

@@ -3015,13 +3015,7 @@ impl Editor {
                             }
                             self.table_pen.set(pen);
                             ui.add_space(16.0);
-                            position_fields(ui, theme, texts, shape, asked);
-                            ui.add_space(8.0);
-                            turn_buttons(ui, theme, texts, asked);
-                            ui.add_space(16.0);
-                            arrange_buttons(ui, theme, texts, can, asked);
-                            ui.add_space(8.0);
-                            opacity_field(ui, texts, shape, asked);
+                            box_fields(ui, theme, texts, shape, can, asked);
                         });
                     return;
                 }
@@ -3039,13 +3033,7 @@ impl Editor {
                             }
                             take_chart(asked, at, asks);
                             ui.add_space(16.0);
-                            position_fields(ui, theme, texts, shape, asked);
-                            ui.add_space(8.0);
-                            turn_buttons(ui, theme, texts, asked);
-                            ui.add_space(16.0);
-                            arrange_buttons(ui, theme, texts, can, asked);
-                            ui.add_space(8.0);
-                            opacity_field(ui, texts, shape, asked);
+                            box_fields(ui, theme, texts, shape, can, asked);
                         });
                     return;
                 }
@@ -3066,13 +3054,7 @@ impl Editor {
                                 asked.qr_to_shapes = true;
                             }
                             ui.add_space(16.0);
-                            position_fields(ui, theme, texts, shape, asked);
-                            ui.add_space(8.0);
-                            turn_buttons(ui, theme, texts, asked);
-                            ui.add_space(16.0);
-                            arrange_buttons(ui, theme, texts, can, asked);
-                            ui.add_space(8.0);
-                            opacity_field(ui, texts, shape, asked);
+                            box_fields(ui, theme, texts, shape, can, asked);
                         });
                     asked.qr_rest = ctx.memory(|m| m.focused().is_none())
                         && !ctx.input(|i| i.pointer.any_down())
@@ -3097,67 +3079,72 @@ impl Editor {
                         });
                     return;
                 }
-                if let Some(text) = &shape.text {
-                    if !shape.locked {
-                        if crate::text_effects::button(ui, theme, texts) {
-                            asked.effects_open = Some((shape.page, shape.node));
+                // Texts, shapes, lines, groups, frames and lights: what is
+                // their own, then their box, scrolled when it does not fit
+                // (spec 098).
+                egui::ScrollArea::vertical()
+                    .id_salt("inspector.element")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        // Room for the scroll bar, beside the fields.
+                        ui.set_max_width(ui.available_width() - 14.0);
+                        if let Some(text) = &shape.text {
+                            if !shape.locked {
+                                if crate::text_effects::button(ui, theme, texts) {
+                                    asked.effects_open = Some((shape.page, shape.node));
+                                }
+                                ui.add_space(12.0);
+                            }
+                            font_button(ui, theme, texts, text.content.first_style(), asked);
+                            let design = document
+                                .and_then(|d| d.page(shape.page))
+                                .map(design_colors)
+                                .unwrap_or_default();
+                            text_fields(ui, theme, texts, (text, &design), asked);
+                            ui.add_space(16.0);
                         }
-                        ui.add_space(12.0);
-                    }
-                    font_button(ui, theme, texts, text.content.first_style(), asked);
-                    let design = document
-                        .and_then(|d| d.page(shape.page))
-                        .map(design_colors)
-                        .unwrap_or_default();
-                    text_fields(ui, theme, texts, (text, &design), asked);
-                    ui.add_space(16.0);
-                }
-                position_fields(ui, theme, texts, shape, asked);
-                ui.add_space(8.0);
-                turn_buttons(ui, theme, texts, asked);
-                ui.add_space(16.0);
-                arrange_buttons(ui, theme, texts, can, asked);
-                ui.add_space(16.0);
-                // A light shows its own settings instead of the fill,
-                // outline and text (spec 065).
-                let plain_shape = shape.text.is_none()
-                    && shape.image.is_none()
-                    && !shape.group
-                    && shape.line.is_none();
-                // The colours of a group (an SVG brought in as shapes),
-                // each one changed everywhere in it (spec 067).
-                if shape.group
-                    && let Some(page) = document.and_then(|d| d.page(shape.page))
-                {
-                    group_colors(ui, texts, page, shape.node, asked);
-                }
-                if let Some(frame) = &shape.frame {
-                    frame_fields(ui, texts, frame, asked);
-                } else if let Some(effect) = &shape.effect {
-                    effect_fields(ui, texts, effect, asked);
-                } else if shape.text.is_none() && !shape.group && shape.line.is_none() {
-                    fill_field(ui, texts, shape, asked);
-                    // Any shape can become a light (spec 065, S65-06).
-                    if plain_shape {
+                        // A light shows its own settings instead of the fill,
+                        // outline and text (spec 065).
+                        let plain_shape = shape.text.is_none()
+                            && shape.image.is_none()
+                            && !shape.group
+                            && shape.line.is_none();
+                        // The colours of a group (an SVG brought in as shapes),
+                        // each one changed everywhere in it (spec 067).
+                        if shape.group
+                            && let Some(page) = document.and_then(|d| d.page(shape.page))
+                        {
+                            group_colors(ui, texts, page, shape.node, asked);
+                        }
+                        if let Some(frame) = &shape.frame {
+                            frame_fields(ui, texts, frame, asked);
+                        } else if let Some(effect) = &shape.effect {
+                            effect_fields(ui, theme, texts, effect, asked);
+                        } else if shape.text.is_none() && !shape.group && shape.line.is_none() {
+                            fill_field(ui, texts, shape, asked);
+                            // Any shape can become a light (spec 065, S65-06).
+                            if plain_shape {
+                                ui.add_space(8.0);
+                                light_kind_row(ui, texts, None, asked);
+                            }
+                        }
+                        if shape.effect.is_none()
+                            && shape.text.is_none()
+                            && shape.image.is_none()
+                            && !shape.group
+                            && shape.line.is_none()
+                        {
+                            ui.add_space(8.0);
+                            outline_fields(ui, texts, shape, asked);
+                            shape_text_fields(ui, theme, texts, shape, asked);
+                            if let Some(inner) = &shape.inner {
+                                font_button(ui, theme, texts, inner.content.first_style(), asked);
+                            }
+                        }
                         ui.add_space(8.0);
-                        light_kind_row(ui, texts, None, asked);
-                    }
-                }
-                if shape.effect.is_none()
-                    && shape.text.is_none()
-                    && shape.image.is_none()
-                    && !shape.group
-                    && shape.line.is_none()
-                {
-                    ui.add_space(8.0);
-                    outline_fields(ui, texts, shape, asked);
-                    shape_text_fields(ui, theme, texts, shape, asked);
-                    if let Some(inner) = &shape.inner {
-                        font_button(ui, theme, texts, inner.content.first_style(), asked);
-                    }
-                }
-                ui.add_space(8.0);
-                opacity_field(ui, texts, shape, asked);
+                        box_fields(ui, theme, texts, shape, can, asked);
+                        ui.add_space(16.0);
+                    });
             });
     }
 
@@ -3175,7 +3162,7 @@ impl Editor {
         can: CanArrange,
         asked: &mut Asked,
     ) {
-        use crate::image_panel::{Track, heading, main_button, slider};
+        use crate::image_panel::main_button;
         let at = (shape.page, shape.node);
         if !name.is_empty() {
             let name = RichText::new(name)
@@ -3212,61 +3199,7 @@ impl Editor {
             let ask = crate::vision::buttons(ui, theme, texts, &self.studio, target);
             asked.vision = ask.or(asked.vision.take());
         }
-        heading(ui, theme, plain(texts, "inspector.position_size"));
-        let mut placement = shape.placement;
-        let mut changed = false;
-        let half = ((ui.available_width() - 12.0) / 2.0).floor();
-        let mut field = |ui: &mut egui::Ui, key, value: &mut f64, least: f64| {
-            ui.vertical(|ui| {
-                ui.set_width(half);
-                let label = RichText::new(plain(texts, key)).font(theme.font("body-sm"));
-                ui.label(label.color(theme.c("text.secondary")));
-                let drag = egui::DragValue::new(value)
-                    .speed(1.0)
-                    .range(least..=f64::MAX)
-                    .max_decimals(1);
-                changed |= ui.add_sized(Vec2::new(half, 32.0), drag).changed();
-            });
-        };
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 12.0;
-            field(ui, "inspector.x", &mut placement.x, f64::MIN);
-            field(ui, "inspector.y", &mut placement.y, f64::MIN);
-        });
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 12.0;
-            field(ui, "inspector.width", &mut placement.w, 1.0);
-            field(ui, "inspector.height", &mut placement.h, 1.0);
-        });
-        ui.add_space(10.0);
-        // From −180 to 180: none is in the middle.
-        let turned = rotation::normalized(placement.rotation_deg);
-        let mut degrees = if turned > 180.0 {
-            turned - 360.0
-        } else {
-            turned
-        };
-        let what = (&mut degrees, (-180.0, 180.0), 0.0);
-        let turn = plain(texts, "inspector.rotation");
-        if slider(ui, theme, turn, what, Track::Plain) {
-            placement.rotation_deg = rotation::normalized(degrees);
-            changed = true;
-        }
-        if changed {
-            asked.place = Some(placement);
-        }
-        turn_buttons(ui, theme, texts, asked);
-        heading(ui, theme, plain(texts, "inspector.looks"));
-        let mut percent = f64::from(shape.opacity) * 100.0;
-        let what = (&mut percent, (0.0, 100.0), 100.0);
-        let opacity = plain(texts, "inspector.opacity");
-        if slider(ui, theme, opacity, what, Track::Plain) {
-            // Within 0 to 1: the cast loses nothing seen.
-            asked.opacity = Some((percent / 100.0) as f32);
-        }
-        ui.add_space(12.0);
-        arrange_buttons(ui, theme, texts, can, asked);
+        box_fields(ui, theme, texts, shape, can, asked);
     }
 
     /// The Capas tab (03 §2.4): the elements of the selected element's page
@@ -12034,16 +11967,18 @@ pub(crate) fn zoom_controls(
     ] {
         if step == ZoomAsk::Out {
             // 5 to 3200 %, logarithmic, so each doubling is as long.
-            let mut value = scale_now;
-            ui.spacing_mut().slider_width = 120.0;
-            let slider = ui.add(
-                egui::Slider::new(&mut value, zoom::MIN..=zoom::MAX)
-                    .logarithmic(true)
-                    .show_value(false),
-            );
-            slider.widget_info(|| egui::WidgetInfo::slider(true, f64::from(value), name.as_str()));
-            if slider.changed() {
-                ask = Some(ZoomAsk::To(value));
+            let mut value = f64::from(scale_now);
+            let range = (f64::from(zoom::MIN), f64::from(zoom::MAX));
+            let changed = crate::slider::Slider::new(name.clone(), &mut value, range)
+                .rest(1.0)
+                .step(0.0, 2)
+                .logarithmic()
+                .width(120.0)
+                .compact()
+                .show(ui, theme);
+            if changed {
+                // Within 0.05 to 32: the cast loses nothing seen.
+                ask = Some(ZoomAsk::To(value as f32));
             }
         }
         let name = texts.t(&key);
@@ -12692,7 +12627,7 @@ fn color_button(
     color: Option<gafira_color::Color>,
 ) -> Option<gafira_color::Color> {
     let mut rgba = canvas::picker_rgba(color);
-    ui.color_edit_button_srgba_unmultiplied(&mut rgba)
+    crate::eyedropper::color_edit(ui, &mut rgba)
         .changed()
         .then(|| canvas::picked_color(color, rgba))
 }
@@ -12772,17 +12707,16 @@ fn gradient_stop_button(
     // Each colour keeps its own picker id, so adding or removing one does
     // not move another's picker.
     ui.push_id(("gradient_stop", index), |ui| {
-        if ui
+        let pending = ui
             .ctx()
             .data(|d| d.get_temp::<usize>(gradient_pending_id()))
-            == Some(index)
-        {
-            egui::Popup::open_id(ui.ctx(), ui.auto_id_with("popup"));
+            == Some(index);
+        if pending {
             ui.ctx()
                 .data_mut(|d| d.remove::<usize>(gradient_pending_id()));
         }
         let mut rgba = canvas::picker_rgba(Some(stop.color));
-        let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
+        let response = crate::eyedropper::color_edit_opening(ui, &mut rgba, pending);
         if response.changed() {
             changed = Some(Some(crate::gradients::with_color(
                 gradient,
@@ -12858,23 +12792,23 @@ fn gradient_swatch(gradient: &gafira_doc::Gradient, rect: Rect) -> egui::Shape {
 }
 
 /// «Opacidad»: a slider showing `shape`'s opacity in percent.
-fn opacity_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
-    ui.horizontal(|ui| {
-        ui.label(texts.t(&gafira_doc::msg!("inspector.opacity")));
-        let mut percent = shape.opacity * 100.0;
-        // The unit comes from the catalog, like every visible text (ARQ-97).
-        let slider = egui::Slider::new(&mut percent, 0.0..=100.0)
-            .max_decimals(0)
-            .custom_formatter(|value, _| {
-                texts.t(&gafira_doc::msg!(
-                    "format.percent",
-                    value = Text(format!("{value:.0}"))
-                ))
-            });
-        if ui.add(slider).changed() {
-            asked.opacity = Some(percent / 100.0);
-        }
-    });
+fn opacity_field(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    shape: &Shape,
+    asked: &mut Asked,
+) {
+    let mut percent = f64::from(shape.opacity) * 100.0;
+    let name = texts.t(&gafira_doc::msg!("inspector.opacity"));
+    if crate::slider::Slider::new(name, &mut percent, (0.0, 100.0))
+        .rest(100.0)
+        .suffix(crate::slider::percent(texts))
+        .show(ui, theme)
+    {
+        // Within 0 to 1: the cast loses nothing seen.
+        asked.opacity = Some((percent / 100.0) as f32);
+    }
 }
 
 /// The Inspector of a multi-selection (spec 040): how many elements, then
@@ -12914,15 +12848,7 @@ fn many_fields(
         fill_field(ui, texts, primary, asked);
         ui.add_space(8.0);
     }
-    opacity_field(ui, texts, primary, asked);
-}
-
-/// `value` degrees as the catalog writes them («45°»).
-fn degrees_text(texts: &Texts, value: f64) -> String {
-    texts.t(&gafira_doc::msg!(
-        "unit.deg",
-        value = Text(format!("{value:.1}"))
-    ))
+    opacity_field(ui, theme, texts, primary, asked);
 }
 
 /// Girar 90° a la izquierda y a la derecha, Voltear horizontalmente y
@@ -13133,16 +13059,11 @@ fn crop_fields(
         });
     });
     ui.add_space(16.0);
-    ui.label(
-        RichText::new(plain(texts, "crop.zoom"))
-            .small()
-            .color(theme.c("text.secondary")),
-    );
-    ui.spacing_mut().slider_width = (ui.available_width() - 64.0).max(80.0);
     let mut zoom = frame.content_scale * 100.0;
-    if ui
-        .add(egui::Slider::new(&mut zoom, 100.0..=400.0).suffix(" %"))
-        .changed()
+    if crate::slider::Slider::new(plain(texts, "crop.zoom"), &mut zoom, (100.0, 400.0))
+        .rest(100.0)
+        .suffix(crate::slider::percent(texts))
+        .show(ui, theme)
     {
         asked.crop_set = Some((
             frame.content_offset,
@@ -13151,15 +13072,11 @@ fn crop_fields(
         ));
     }
     ui.add_space(12.0);
-    ui.label(
-        RichText::new(plain(texts, "crop.rotate"))
-            .small()
-            .color(theme.c("text.secondary")),
-    );
     let mut degrees = frame.content_rotation_deg;
-    if ui
-        .add(egui::Slider::new(&mut degrees, -180.0..=180.0).suffix("°"))
-        .changed()
+    if crate::slider::Slider::new(plain(texts, "crop.rotate"), &mut degrees, (-180.0, 180.0))
+        .rest(0.0)
+        .suffix(crate::slider::degrees(texts))
+        .show(ui, theme)
     {
         asked.crop_set = Some((frame.content_offset, frame.content_scale, degrees));
     }
@@ -13287,64 +13204,77 @@ fn card_frame(ui: &egui::Ui, theme: &Theme, rect: Rect, hovered: bool) {
     );
 }
 
-/// «Posición y tamaño» of the selected element.
-fn position_fields(
+/// The box of the selected element, as «Editar imagen» shows it (spec 098):
+/// «Posición y tamaño» with X and Y, then width and height, side by side;
+/// «Giro» as a slider from −180° to 180° and the turn and flip buttons (a
+/// group has no turn of its own: its box is upright around its children,
+/// spec 043); «Apariencia» with the opacity; and the arrange buttons.
+fn box_fields(
     ui: &mut egui::Ui,
     theme: &Theme,
     texts: &Texts,
     shape: &Shape,
+    can: CanArrange,
     asked: &mut Asked,
 ) {
-    ui.label(
-        RichText::new(plain(texts, "inspector.position_size"))
-            .font(theme.font("body-sm"))
-            .color(theme.c("text.secondary")),
-    );
-    ui.add_space(4.0);
+    use crate::image_panel::heading;
+    use crate::slider::Slider;
+    heading(ui, theme, plain(texts, "inspector.position_size"));
     let mut placement = shape.placement;
     let mut changed = false;
-    egui::Grid::new("inspector.position")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            for (key, value, min) in [
-                (gafira_doc::msg!("inspector.x"), &mut placement.x, f64::MIN),
-                (gafira_doc::msg!("inspector.y"), &mut placement.y, f64::MIN),
-                (gafira_doc::msg!("inspector.width"), &mut placement.w, 1.0),
-                (gafira_doc::msg!("inspector.height"), &mut placement.h, 1.0),
-            ] {
-                ui.label(texts.t(&key));
-                changed |= ui
-                    .add(
-                        egui::DragValue::new(value)
-                            .speed(1.0)
-                            .range(min..=f64::MAX)
-                            .max_decimals(1),
-                    )
-                    .changed();
-                ui.end_row();
-            }
-            // «Giro», in degrees within one turn (spec 041). A
-            // group has no turn of its own: its box is upright
-            // around its children (spec 043).
-            if shape.group {
-                return;
-            }
-            ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
-            let mut degrees = rotation::normalized(placement.rotation_deg);
-            let field = egui::DragValue::new(&mut degrees)
+    let half = ((ui.available_width() - 12.0) / 2.0).floor();
+    let mut field = |ui: &mut egui::Ui, key, value: &mut f64, least: f64| {
+        ui.vertical(|ui| {
+            ui.set_width(half);
+            let label = RichText::new(plain(texts, key)).font(theme.font("body-sm"));
+            ui.label(label.color(theme.c("text.secondary")));
+            let drag = egui::DragValue::new(value)
                 .speed(1.0)
-                .max_decimals(1)
-                .custom_formatter(|value, _| degrees_text(texts, value));
-            if ui.add(field).changed() {
-                placement.rotation_deg = rotation::normalized(degrees);
-                changed = true;
-            }
-            ui.end_row();
+                .range(least..=f64::MAX)
+                .max_decimals(1);
+            changed |= ui.add_sized(Vec2::new(half, 32.0), drag).changed();
         });
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        field(ui, "inspector.x", &mut placement.x, f64::MIN);
+        field(ui, "inspector.y", &mut placement.y, f64::MIN);
+    });
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        field(ui, "inspector.width", &mut placement.w, 1.0);
+        field(ui, "inspector.height", &mut placement.h, 1.0);
+    });
+    ui.add_space(10.0);
+    if !shape.group {
+        // From −180 to 180: none is in the middle.
+        let turned = rotation::normalized(placement.rotation_deg);
+        let mut degrees = if turned > 180.0 {
+            turned - 360.0
+        } else {
+            turned
+        };
+        let turn = Slider::new(
+            plain(texts, "inspector.rotation"),
+            &mut degrees,
+            (-180.0, 180.0),
+        )
+        .rest(0.0)
+        .suffix(crate::slider::degrees(texts));
+        if turn.show(ui, theme) {
+            placement.rotation_deg = rotation::normalized(degrees);
+            changed = true;
+        }
+    }
     if changed {
         asked.place = Some(placement);
     }
+    turn_buttons(ui, theme, texts, asked);
+    heading(ui, theme, plain(texts, "inspector.looks"));
+    opacity_field(ui, theme, texts, shape, asked);
+    ui.add_space(12.0);
+    arrange_buttons(ui, theme, texts, can, asked);
 }
 
 /// The title of «Propiedades» for `shape`: what kind of element it is.
@@ -13493,6 +13423,7 @@ fn light_kind_row(
 /// Inspector, so nothing is cut or crowded.
 fn effect_fields(
     ui: &mut egui::Ui,
+    theme: &Theme,
     texts: &Texts,
     effect: &gafira_doc::ShapeEffect,
     asked: &mut Asked,
@@ -13500,8 +13431,7 @@ fn effect_fields(
     use gafira_doc::{Light, ShapeEffect};
     light_kind_row(ui, texts, Some(effect), asked);
     ui.add_space(12.0);
-    // Room for the value box after the slider.
-    ui.spacing_mut().slider_width = (ui.available_width() - 64.0).max(80.0);
+    use crate::slider::Slider;
     let setting =
         |ui: &mut egui::Ui, key: &'static str, add: &mut dyn FnMut(&mut egui::Ui) -> bool| {
             ui.label(
@@ -13523,31 +13453,44 @@ fn effect_fields(
             (Some("effect.rays"), "effect.ray_width", "effect.halo")
         }
     };
+    let percent = crate::slider::percent(texts);
     if let Some(rays) = rays {
-        changed |= setting(ui, rays, &mut |ui| {
-            ui.add(egui::Slider::new(
-                &mut next.rays,
-                Light::MIN_RAYS..=Light::MAX_RAYS,
-            ))
-            .changed()
-        });
+        let mut count = f64::from(next.rays);
+        let range = (f64::from(Light::MIN_RAYS), f64::from(Light::MAX_RAYS));
+        if Slider::new(plain(texts, rays), &mut count, range).show(ui, theme) {
+            // Within MIN_RAYS..=MAX_RAYS: the cast is exact.
+            next.rays = count.round().clamp(range.0, range.1) as u8;
+            changed = true;
+        }
     }
-    let mut thick = next.ray_width * 100.0;
-    changed |= setting(ui, width, &mut |ui| {
-        ui.add(egui::Slider::new(&mut thick, 0.0..=100.0).suffix(" %"))
-            .changed()
-    });
-    next.ray_width = thick / 100.0;
-    let mut intensity = next.intensity * 100.0;
-    changed |= setting(ui, "effect.intensity", &mut |ui| {
-        ui.add(egui::Slider::new(&mut intensity, 0.0..=100.0).suffix(" %"))
-            .changed()
-    });
-    next.intensity = intensity / 100.0;
-    changed |= setting(ui, "effect.angle", &mut |ui| {
-        ui.add(egui::Slider::new(&mut next.angle_deg, 0.0..=360.0).suffix("°"))
-            .changed()
-    });
+    let mut thick = f64::from(next.ray_width) * 100.0;
+    if Slider::new(plain(texts, width), &mut thick, (0.0, 100.0))
+        .suffix(percent.clone())
+        .show(ui, theme)
+    {
+        // Within 0 to 1: the cast loses nothing seen.
+        next.ray_width = (thick / 100.0) as f32;
+        changed = true;
+    }
+    let mut intensity = f64::from(next.intensity) * 100.0;
+    if Slider::new(
+        plain(texts, "effect.intensity"),
+        &mut intensity,
+        (0.0, 100.0),
+    )
+    .suffix(percent)
+    .show(ui, theme)
+    {
+        next.intensity = (intensity / 100.0) as f32;
+        changed = true;
+    }
+    changed |= Slider::new(
+        plain(texts, "effect.angle"),
+        &mut next.angle_deg,
+        (0.0, 360.0),
+    )
+    .suffix(crate::slider::degrees(texts))
+    .show(ui, theme);
     changed |= setting(ui, colour, &mut |ui| {
         ui.horizontal(|ui| {
             let mut changed = false;
@@ -13831,44 +13774,38 @@ fn text_fields(
     });
     ui.add_space(6.0);
     // Letter spacing and line height (FD-41).
-    egui::Grid::new("inspector.text_spacing")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            let mut letters = text.letter_spacing;
-            let mut lines = text.line_height.unwrap_or(1.0);
-            let (lo, hi) = (
-                *gafira_doc::TextNode::LETTER_SPACING.start(),
-                *gafira_doc::TextNode::LETTER_SPACING.end(),
-            );
-            ui.label(plain(texts, "inspector.letter_spacing"));
-            let a = ui.add(egui::Slider::new(&mut letters, lo..=hi).step_by(1.0));
-            ui.end_row();
-            let (lo, hi) = (
-                *gafira_doc::TextNode::LINE_HEIGHT.start(),
-                *gafira_doc::TextNode::LINE_HEIGHT.end(),
-            );
-            ui.label(plain(texts, "inspector.line_height"));
-            let b = ui.add(egui::Slider::new(&mut lines, lo..=hi).step_by(0.05));
-            ui.end_row();
-            if a.changed() || b.changed() {
-                let lines = (b.changed() || text.line_height.is_some()).then_some(lines);
-                asked.text_spacing = Some((letters, lines));
-            }
-        });
+    use crate::slider::Slider;
+    let range = |r: &std::ops::RangeInclusive<f64>| (*r.start(), *r.end());
+    let mut letters = text.letter_spacing;
+    let mut lines = text.line_height.unwrap_or(1.0);
+    let a = Slider::new(
+        plain(texts, "inspector.letter_spacing"),
+        &mut letters,
+        range(&gafira_doc::TextNode::LETTER_SPACING),
+    )
+    .rest(0.0)
+    .show(ui, theme);
+    let b = Slider::new(
+        plain(texts, "inspector.line_height"),
+        &mut lines,
+        range(&gafira_doc::TextNode::LINE_HEIGHT),
+    )
+    .rest(1.0)
+    .step(0.05, 2)
+    .show(ui, theme);
+    if a || b {
+        let lines = (b || text.line_height.is_some()).then_some(lines);
+        asked.text_spacing = Some((letters, lines));
+    }
     // «Curva»: from a cup (-100) through straight (0) to an arch (100).
-    ui.add_space(6.0);
     let mut curve = text.curve;
-    ui.horizontal(|ui| {
-        ui.label(plain(texts, "inspector.curve"));
-        let max = gafira_doc::TextNode::MAX_CURVE;
-        if ui
-            .add(egui::Slider::new(&mut curve, -max..=max).step_by(1.0))
-            .changed()
-        {
-            asked.text_curve = Some(curve);
-        }
-    });
+    let max = gafira_doc::TextNode::MAX_CURVE;
+    if Slider::new(plain(texts, "inspector.curve"), &mut curve, (-max, max))
+        .rest(0.0)
+        .show(ui, theme)
+    {
+        asked.text_curve = Some(curve);
+    }
     ui.add_space(12.0);
     text_color_fields(ui, theme, texts, (text, &style, design), asked);
 }

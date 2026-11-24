@@ -1944,3 +1944,6 @@ bad_template = "The template is not a template .gaf file"
 checking = "Checking {file}…"
 installing = "Installing {file}…"
 reading = "Reading the package…"
+
+[eyedropper]
+name = "Pick a colour from the screen"

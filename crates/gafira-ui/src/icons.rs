@@ -113,11 +113,13 @@ pub(crate) enum Icon {
     Move,
     /// «Instalar paquete» (spec 097): Gafira's own box.
     Package,
+    /// «Tomar un color» beside every colour picker (spec 098).
+    Eyedropper,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 68] = [
+    pub(crate) const ALL: [Self; 69] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -186,6 +188,7 @@ impl Icon {
         Self::Cursor,
         Self::Move,
         Self::Package,
+        Self::Eyedropper,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -259,6 +262,7 @@ impl Icon {
             Self::Cursor => "cursor",
             Self::Move => "move",
             Self::Package => "package",
+            Self::Eyedropper => "eyedropper",
         }
     }
 
