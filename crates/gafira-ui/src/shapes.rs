@@ -2334,17 +2334,20 @@ fn tail_base(((cx, cy), (rx, ry)): ((f64, f64), (f64, f64)), tip: (f64, f64)) ->
     [at(towards - 0.22), at(towards + 0.22)]
 }
 
-/// A tail from `from` to its point `tip` and back to `to`, its sides
-/// bowed by `bend` (a share of its length, signed), as drawn bubbles have.
+/// A tail from `from` to its point `tip` and back to `to`, swept to one
+/// side by `bend` (a share of its length, signed): both sides bow the same
+/// way, one hollow and one full, as a drawn tail does; bowing them apart
+/// would swell it round in the middle.
 fn curved_tail(from: (f64, f64), tip: (f64, f64), to: (f64, f64), bend: f64) -> BezPath {
-    let bow = |a: (f64, f64), b: (f64, f64)| {
+    let bow = |a: (f64, f64), b: (f64, f64), k: f64| {
         let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-        ((a.0 + b.0) / 2.0 - dy * bend, (a.1 + b.1) / 2.0 + dx * bend)
+        ((a.0 + b.0) / 2.0 - dy * k, (a.1 + b.1) / 2.0 + dx * k)
     };
     let mut p = BezPath::new();
     p.move_to(from);
-    p.quad_to(bow(from, tip), tip);
-    p.quad_to(bow(tip, to), to);
+    p.quad_to(bow(from, tip, bend), tip);
+    // Back the other way: the opposite sign bows it to the same side.
+    p.quad_to(bow(tip, to, -bend), to);
     p.close_path();
     p
 }
