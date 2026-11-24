@@ -112,3 +112,14 @@ pub use templates::{TemplateListing, TemplateStore};
 pub fn size_guides(key: &str) -> Option<gafira_doc::GuideSet> {
     design_sizes::by_key(key).map(design_sizes::DesignSize::guides)
 }
+
+/// The geometry of the shape of the Formas panel whose catalog key is `key`
+/// (`pieces.quote_cut`) and its width over its height, for designs built
+/// outside the editor, as the templates (spec 098).
+#[must_use]
+pub fn piece_geometry(key: &str) -> Option<(gafira_doc::ShapeGeometry, f64)> {
+    shapes::Piece::ALL
+        .iter()
+        .find(|piece| piece.key() == key)
+        .map(|piece| (piece.geometry(), piece.aspect()))
+}
