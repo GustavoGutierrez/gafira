@@ -1341,18 +1341,21 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
             circle(0.13, 1.0, 0.05),
         ]),
         Piece::SpeechCloudWide => {
-            let mut parts = cloud(((1.0, 0.6), (0.95, 0.48)), 9, (0.42, 0.28));
-            parts.push(curved_tail((0.5, 0.95), (0.3, 1.4), (0.72, 1.0), -0.15));
+            let core = ((1.0, 0.6), (0.95, 0.48));
+            let mut parts = cloud(core, 9, (0.42, 0.28));
+            parts.push(cloud_tail(core, (0.3, 1.4), -0.15));
             union(parts)
         }
         Piece::SpeechCloudFlat => {
-            let mut parts = cloud(((1.0, 0.5), (1.0, 0.36)), 9, (0.34, 0.22));
-            parts.push(curved_tail((0.45, 0.78), (0.25, 1.2), (0.65, 0.82), -0.12));
+            let core = ((1.0, 0.5), (1.0, 0.36));
+            let mut parts = cloud(core, 9, (0.34, 0.22));
+            parts.push(cloud_tail(core, (0.25, 1.2), -0.12));
             union(parts)
         }
         Piece::SpeechCloudRound => {
-            let mut parts = cloud(((0.85, 0.75), (0.78, 0.62)), 9, (0.42, 0.3));
-            parts.push(curved_tail((0.55, 1.2), (0.4, 1.65), (0.78, 1.25), -0.1));
+            let core = ((0.85, 0.75), (0.78, 0.62));
+            let mut parts = cloud(core, 9, (0.42, 0.3));
+            parts.push(cloud_tail(core, (0.4, 1.65), -0.1));
             union(parts)
         }
         Piece::SpeechCloudThink => {
@@ -1374,13 +1377,15 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
             union(parts)
         }
         Piece::SpeechCloudSoft => {
-            let mut parts = cloud(((0.9, 0.7), (0.8, 0.55)), 7, (0.46, 0.32));
-            parts.push(curved_tail((0.7, 1.12), (0.6, 1.6), (0.95, 1.15), 0.1));
+            let core = ((0.9, 0.7), (0.8, 0.55));
+            let mut parts = cloud(core, 7, (0.46, 0.32));
+            parts.push(cloud_tail(core, (0.6, 1.6), 0.1));
             union(parts)
         }
         Piece::SpeechCloudCurl => {
-            let mut parts = cloud(((0.9, 0.72), (0.85, 0.6)), 10, (0.4, 0.28));
-            parts.push(curved_tail((0.3, 1.1), (0.0, 1.62), (0.55, 1.22), -0.3));
+            let core = ((0.9, 0.72), (0.85, 0.6));
+            let mut parts = cloud(core, 10, (0.4, 0.28));
+            parts.push(cloud_tail(core, (0.0, 1.62), -0.3));
             union(parts)
         }
         Piece::SpeechHand => union(vec![
@@ -2314,6 +2319,21 @@ fn cloud(
     parts
 }
 
+/// A cloud's tail to `tip`: its base corners are well inside the core
+/// ellipse of the cloud, on each side of the way to the tip, so only the
+/// point leaves the cloud and no corner sits in a notch between puffs.
+fn cloud_tail(core: ((f64, f64), (f64, f64)), tip: (f64, f64), bend: f64) -> BezPath {
+    let [from, to] = tail_base(core, tip);
+    curved_tail(from, tip, to, bend)
+}
+
+/// The two base corners of [`cloud_tail`].
+fn tail_base(((cx, cy), (rx, ry)): ((f64, f64), (f64, f64)), tip: (f64, f64)) -> [(f64, f64); 2] {
+    let towards = ((tip.1 - cy) / ry).atan2((tip.0 - cx) / rx);
+    let at = |a: f64| (cx + 0.65 * rx * a.cos(), cy + 0.65 * ry * a.sin());
+    [at(towards - 0.22), at(towards + 0.22)]
+}
+
 /// A tail from `from` to its point `tip` and back to `to`, its sides
 /// bowed by `bend` (a share of its length, signed), as drawn bubbles have.
 fn curved_tail(from: (f64, f64), tip: (f64, f64), to: (f64, f64), bend: f64) -> BezPath {
@@ -2682,6 +2702,20 @@ mod tests {
             !in_puff(CLOUD_TAIL[1]) && core(CLOUD_TAIL[1]) > 1.0,
             "the point is out"
         );
+    }
+
+    // Spec 098: the tail of any cloud starts inside its core, whatever
+    // the way to its point.
+    #[test]
+    fn a_cloud_tail_starts_inside_the_core() {
+        let core = ((1.0, 0.6), (0.95, 0.48));
+        for tip in [(0.3, 1.4), (0.0, 1.62), (1.9, 1.3), (1.0, 1.5), (-0.2, 0.6)] {
+            for (x, y) in tail_base(core, tip) {
+                let ((cx, cy), (rx, ry)) = core;
+                let v = ((x - cx) / rx).powi(2) + ((y - cy) / ry).powi(2);
+                assert!(v < 0.5, "{tip:?}: {v}");
+            }
+        }
     }
 
     #[test]
