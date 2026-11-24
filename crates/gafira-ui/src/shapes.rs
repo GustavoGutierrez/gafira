@@ -214,12 +214,17 @@ pub(crate) enum Piece {
     QuoteCircleOpen,
     QuoteSquare,
     QuoteSquareOpen,
+    QuoteCut,
+    QuoteCutClose,
+    QuoteCutSingle,
+    QuoteCutWide,
+    QuoteCutSlim,
+    QuoteCutDeep,
 }
 
 impl Piece {
     /// Every shape, in the order of the panel.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 197] = [
+    pub(crate) const ALL: [Self; 203] = [
         Self::LineCircles,
         Self::LineDiamonds,
         Self::LineDiamondsFilled,
@@ -417,6 +422,12 @@ impl Piece {
         Self::QuoteCircleOpen,
         Self::QuoteSquare,
         Self::QuoteSquareOpen,
+        Self::QuoteCut,
+        Self::QuoteCutClose,
+        Self::QuoteCutSingle,
+        Self::QuoteCutWide,
+        Self::QuoteCutSlim,
+        Self::QuoteCutDeep,
     ];
 
     /// Its geometry in the document: a rectangle, an ellipse or a path.
@@ -672,6 +683,12 @@ impl Piece {
             Self::QuoteCircleOpen => "pieces.quote_circle_open",
             Self::QuoteSquare => "pieces.quote_square",
             Self::QuoteSquareOpen => "pieces.quote_square_open",
+            Self::QuoteCut => "pieces.quote_cut",
+            Self::QuoteCutClose => "pieces.quote_cut_close",
+            Self::QuoteCutSingle => "pieces.quote_cut_single",
+            Self::QuoteCutWide => "pieces.quote_cut_wide",
+            Self::QuoteCutSlim => "pieces.quote_cut_slim",
+            Self::QuoteCutDeep => "pieces.quote_cut_deep",
         }
     }
 }
@@ -959,6 +976,12 @@ pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[
             Piece::QuoteCircleOpen,
             Piece::QuoteSquare,
             Piece::QuoteSquareOpen,
+            Piece::QuoteCut,
+            Piece::QuoteCutClose,
+            Piece::QuoteCutSingle,
+            Piece::QuoteCutWide,
+            Piece::QuoteCutSlim,
+            Piece::QuoteCutDeep,
         ],
     ),
 ];
@@ -1609,9 +1632,7 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
         Piece::QuoteStraight => {
             pair(|x| RoundedRect::new(x, 0.0, x + 0.2, 1.0, 0.1).to_path(TOLERANCE))
         }
-        Piece::QuoteStraightSingle => {
-            RoundedRect::new(0.0, 0.0, 0.3, 1.0, 0.15).to_path(TOLERANCE)
-        }
+        Piece::QuoteStraightSingle => RoundedRect::new(0.0, 0.0, 0.3, 1.0, 0.15).to_path(TOLERANCE),
         Piece::QuoteAngle => union(vec![chevron(0.0), chevron(0.42)]),
         Piece::QuoteAngleClose => opening(union(vec![chevron(0.0), chevron(0.42)])),
         Piece::QuoteAngleSingle => chevron(0.0),
@@ -1619,6 +1640,12 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
         Piece::QuoteCircleOpen => badge(true, true),
         Piece::QuoteSquare => badge(false, false),
         Piece::QuoteSquareOpen => badge(true, false),
+        Piece::QuoteCut => pair(|x| cut_mark(x, 0.42, 0.45)),
+        Piece::QuoteCutClose => opening(pair(|x| cut_mark(x, 0.42, 0.45))),
+        Piece::QuoteCutSingle => cut_mark(0.0, 0.42, 0.45),
+        Piece::QuoteCutWide => pair(|x| cut_mark(x, 0.54, 0.42)),
+        Piece::QuoteCutSlim => pair(|x| cut_mark(x, 0.32, 0.5)),
+        Piece::QuoteCutDeep => pair(|x| cut_mark(x, 0.42, 0.62)),
         Piece::LabelClassic => label(1.6, 1.0),
         Piece::LabelTall => label(1.0, 1.4),
         Piece::LabelScalloped => {
@@ -2115,6 +2142,21 @@ fn comma(x: f64, heavy: f64) -> BezPath {
     p.curve_to((x, 0.45 * r), (x + 0.45 * r, 0.0), (x + r, 0.0));
     p.close_path();
     p
+}
+
+/// A square opening mark at `x`, `w` wide: a block from `foot` down, and
+/// above it a slanted hook up to the right (the quotes of heavy grotesques).
+fn cut_mark(x: f64, w: f64, foot: f64) -> BezPath {
+    let hook = w * 0.42;
+    poly(&[
+        (x, foot),
+        (x + w - hook, 0.0),
+        (x + w, 0.0),
+        (x + w - hook * 0.55, foot),
+        (x + w, foot),
+        (x + w, 1.0),
+        (x, 1.0),
+    ])
 }
 
 /// A square closing mark at `x`: a block with a slanted tail.
