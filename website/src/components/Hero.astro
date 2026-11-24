@@ -1,0 +1,394 @@
+---
+import { Picture } from 'astro:assets';
+import editor from '../assets/screens/editor-es.png';
+import Icon from './Icon.astro';
+import { copy, homePath, type Locale } from '../i18n/ui';
+import { downloads, type Release } from '../lib/release';
+
+interface Props {
+  locale: Locale;
+  release: Release;
+}
+
+const { locale, release } = Astro.props;
+const t = copy[locale];
+const files = downloads(release);
+const home = homePath(locale);
+// The button points to the download section until the script below finds
+// the visitor's system (no JavaScript: the section is still one click away).
+const targets = {
+  windows: files.windowsInstaller?.url,
+  macos: files.macos?.url,
+  linux: `${home}#download-linux`,
+};
+const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+---
+
+<section class="hero">
+  <div class="hero__glow" aria-hidden="true"></div>
+  <div class="container hero__inner">
+    <h1 class="hero__title">{t.hero.title}</h1>
+    <p class="hero__lead">{t.hero.lead}</p>
+    <div class="hero__actions">
+      <a
+        class="button button--primary hero__download"
+        href={`${home}#download`}
+        data-download
+        data-targets={JSON.stringify(targets)}
+        data-names={JSON.stringify(names)}
+        data-label={t.hero.downloadFor}
+      >
+        <Icon name="download-simple" size={20} />
+        <span data-download-label>{t.hero.download}</span>
+      </a>
+      <a class="button button--outline" href={`${home}#features`}>
+        {t.hero.features}
+        <Icon name="arrow-down" size={18} />
+      </a>
+    </div>
+    <p class="hero__meta">
+      <span>{t.hero.platforms}</span>
+      <span aria-hidden="true">·</span>
+      <span>{t.download.version} {release.version}</span>
+    </p>
+  </div>
+
+  <div class="container hero__stage">
+    <div class="hero__panel hero__panel--coral" aria-hidden="true"></div>
+    <div class="hero__panel hero__panel--mint" aria-hidden="true"></div>
+    <div class="chip chip--background" aria-hidden="true">
+      <span class="chip__icon chip__icon--mint"><Icon name="magic-wand" size={18} /></span>
+      {t.hero.chips.background}
+    </div>
+    <div class="chip chip--colors" aria-hidden="true">
+      <span class="chip__dots"><i></i><i></i><i></i><i></i></span>
+      {t.hero.chips.colors}
+    </div>
+    <div class="chip chip--exported" aria-hidden="true">
+      <span class="chip__icon chip__icon--coral"><Icon name="check" size={18} /></span>
+      {t.hero.chips.exported}
+    </div>
+    <figure class="window">
+      <div class="window__bar" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <Picture
+        src={editor}
+        formats={['avif', 'webp']}
+        widths={[720, 1080, 1440]}
+        sizes="(max-width: 1240px) calc(100vw - 48px), 1100px"
+        alt={t.hero.screenAlt}
+        loading="eager"
+        fetchpriority="high"
+      />
+    </figure>
+  </div>
+</section>
+
+<script>
+  // The visitor's system picks the main download (no tracking, no request).
+  type System = 'windows' | 'macos' | 'linux';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean } };
+  const platform = (nav.userAgentData?.platform || navigator.platform || '').toLowerCase();
+  const agent = navigator.userAgent.toLowerCase();
+  const mobile = nav.userAgentData?.mobile || /android|iphone|ipad|ipod|mobile/.test(agent);
+  let system: System | undefined;
+  if (!mobile) {
+    if (platform.includes('win') || agent.includes('windows')) system = 'windows';
+    else if (platform.includes('mac') || agent.includes('mac os')) system = 'macos';
+    else if (platform.includes('linux') || agent.includes('linux') || agent.includes('x11')) system = 'linux';
+  }
+  if (system) {
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-download]')) {
+      const targets = JSON.parse(link.dataset.targets ?? '{}') as Record<System, string | undefined>;
+      const names = JSON.parse(link.dataset.names ?? '{}') as Record<System, string>;
+      const target = targets[system];
+      if (!target) continue;
+      link.href = target;
+      const label = link.querySelector('[data-download-label]');
+      if (label) label.textContent = `${link.dataset.label} ${names[system]}`;
+    }
+    document.querySelector(`[data-system="${system}"]`)?.classList.add('is-recommended');
+  }
+</script>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding-top: clamp(56px, 9vw, 112px);
+  }
+
+  .hero__glow {
+    position: absolute;
+    inset: -20% -10% auto;
+    height: 720px;
+    background:
+      radial-gradient(40% 50% at 20% 30%, rgb(63 191 169 / 0.16), transparent 70%),
+      radial-gradient(35% 45% at 80% 20%, rgb(255 107 87 / 0.14), transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero__inner {
+    position: relative;
+    text-align: center;
+    max-width: 860px;
+  }
+
+  .hero__title {
+    animation: rise 700ms var(--ease) 60ms both;
+    margin-top: 0;
+    text-wrap: balance;
+    font-size: clamp(40px, 7vw, 64px);
+    line-height: 1.08;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+  }
+
+  .hero__lead {
+    animation: rise 700ms var(--ease) 180ms both;
+    margin: 24px auto 0;
+    max-width: 680px;
+    font-size: clamp(17px, 2vw, 19px);
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .hero__actions {
+    animation: rise 700ms var(--ease) 270ms both;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 36px;
+  }
+
+  .hero__meta {
+    animation: rise 700ms var(--ease) 360ms both;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--text-secondary);
+  }
+
+  .hero__stage {
+    position: relative;
+    margin-top: clamp(48px, 7vw, 80px);
+    padding-bottom: clamp(56px, 8vw, 96px);
+    max-width: 1100px;
+  }
+
+  /* Two panels behind the window, after the layers of the symbol. */
+  .hero__panel {
+    position: absolute;
+    border-radius: var(--radius-lg);
+  }
+
+  @keyframes float {
+    from {
+      translate: 0 0;
+    }
+    to {
+      translate: 0 -14px;
+    }
+  }
+
+  .hero__panel {
+    animation: float 7s ease-in-out infinite alternate;
+  }
+
+  .hero__panel--coral {
+    width: 34%;
+    height: 42%;
+    left: -2%;
+    top: -5%;
+    background: var(--coral);
+    transform: rotate(-4deg);
+  }
+
+  .hero__panel--mint {
+    width: 30%;
+    height: 40%;
+    right: -2%;
+    bottom: 6%;
+    background: var(--mint);
+    transform: rotate(4deg);
+    animation-delay: -3.5s;
+  }
+
+  .hero__stage {
+    perspective: 1800px;
+  }
+
+  .window {
+    animation: rise 900ms var(--ease) 420ms both;
+  }
+
+  /* Where the browser has scroll-driven animations, the window straightens
+     as it comes into view. */
+  @supports (animation-timeline: view()) {
+    .window {
+      transform-origin: center top;
+      animation:
+        rise 900ms var(--ease) 420ms both,
+        straighten linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, entry 0% cover 45%;
+    }
+
+    @keyframes straighten {
+      from {
+        transform: rotateX(14deg) scale(0.94);
+      }
+      to {
+        transform: none;
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero__panel,
+    .chip,
+    .window,
+    .hero__title,
+    .hero__lead,
+    .hero__actions,
+    .hero__meta {
+      animation: none;
+    }
+  }
+
+  /* Interface chips floating around the window. */
+  .chip {
+    position: absolute;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 10px 10px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 600;
+    white-space: nowrap;
+    animation:
+      chip-in 700ms var(--ease) both,
+      float 6s ease-in-out infinite alternate;
+  }
+
+  .chip--background {
+    left: -3%;
+    top: 30%;
+    animation-delay: 1100ms, 1800ms;
+  }
+
+  .chip--colors {
+    right: -4%;
+    top: 12%;
+    animation-delay: 1300ms, 0ms;
+  }
+
+  .chip--exported {
+    right: 8%;
+    bottom: 8%;
+    animation-delay: 1500ms, 900ms;
+  }
+
+  @keyframes chip-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .chip__icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    color: var(--ink);
+  }
+
+  .chip__icon--mint {
+    background: var(--mint);
+  }
+
+  .chip__icon--coral {
+    background: var(--coral);
+  }
+
+  .chip__dots {
+    display: flex;
+    padding-left: 6px;
+  }
+
+  .chip__dots i {
+    width: 22px;
+    height: 22px;
+    margin-left: -6px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    background: var(--tile);
+  }
+
+  .chip__dots i:nth-child(2) {
+    background: var(--coral);
+  }
+
+  .chip__dots i:nth-child(3) {
+    background: var(--mint);
+  }
+
+  .chip__dots i:nth-child(4) {
+    background: var(--mist);
+  }
+
+  .window {
+    position: relative;
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--ink);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .window__bar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--ink);
+  }
+
+  .window__bar span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: rgb(231 234 242 / 0.28);
+  }
+
+  .window :global(img) {
+    width: 100%;
+  }
+
+  @media (max-width: 640px) {
+    .hero__actions .button {
+      width: 100%;
+    }
+
+    .hero__panel,
+    .chip {
+      display: none;
+    }
+  }
+</style>

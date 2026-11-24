@@ -1,0 +1,113 @@
+---
+import Icon from './Icon.astro';
+import { copy, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const t = copy[Astro.props.locale];
+const tones = ['ink', 'coral', 'mint'];
+---
+
+<section class="section section--white" id="features">
+  <div class="container">
+    <div class="section-head">
+      <h2>{t.features.title}</h2>
+      <p>{t.features.lead}</p>
+    </div>
+    <ul class="features">
+      {
+        t.features.items.map((feature, index) => (
+          <li class="feature">
+            <span class={`feature__icon feature__icon--${tones[index % 3]}`}>
+              <Icon name={feature.icon} size={24} />
+            </span>
+            <h3>{feature.title}</h3>
+            <p>{feature.text}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    column-gap: clamp(32px, 4vw, 56px);
+    row-gap: 0;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .feature {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    column-gap: 18px;
+    align-items: start;
+    padding-block: 28px;
+    border-top: 1px solid var(--muted);
+  }
+
+  .feature__icon {
+    grid-row: span 2;
+    transition: transform 200ms var(--ease);
+  }
+
+  .feature:hover .feature__icon {
+    transform: rotate(-6deg) scale(1.06);
+  }
+
+  .feature__icon {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+  }
+
+  .feature__icon--ink {
+    background: var(--tile);
+    color: #fff;
+  }
+
+  .feature__icon--coral {
+    background: var(--coral);
+    color: var(--ink);
+  }
+
+  .feature__icon--mint {
+    background: var(--mint);
+    color: var(--ink);
+  }
+
+  .feature h3 {
+    margin-top: 2px;
+    font-size: 19px;
+    line-height: 28px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .feature p {
+    margin-top: 8px;
+    font-size: 15px;
+    line-height: 24px;
+    color: var(--text-secondary);
+  }
+
+  @media (max-width: 960px) {
+    .features {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 620px) {
+    .features {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
