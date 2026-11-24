@@ -1273,10 +1273,13 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
         Piece::ManualInput => poly(&[(0.0, 0.3), (1.6, 0.0), (1.6, 1.0), (0.0, 1.0)]),
         Piece::Card => poly(&[(0.3, 0.0), (1.5, 0.0), (1.5, 1.0), (0.0, 1.0), (0.0, 0.3)]),
         Piece::SpeechCloud => {
-            let mut parts = cloud_ring(0.62, 0.4, (0.5, 0.3), 9, 0.17);
-            // The base of the tail well inside the body, so only the tail
-            // shows: a corner between two puffs would stick out.
-            parts.push(poly(&[(0.8, 0.95), (0.6, 1.45), (1.05, 1.0)]));
+            let mut parts: Vec<BezPath> = CLOUD_PUFFS
+                .iter()
+                .map(|&(x, y, r)| circle(x, y, r))
+                .collect();
+            let ((cx, cy), radii) = CLOUD_CORE;
+            parts.push(Ellipse::new((cx, cy), radii, 0.0).to_path(TOLERANCE));
+            parts.push(poly(&CLOUD_TAIL));
             union(parts)
         }
         Piece::SpeechOval => union(vec![
@@ -2146,6 +2149,24 @@ fn comma(x: f64, heavy: f64) -> BezPath {
     p
 }
 
+/// The cloud of the cloud bubble: big puffs on top, smaller ones along a
+/// flatter bottom (x, y, radius), over a core that fills the gaps.
+const CLOUD_PUFFS: [(f64, f64, f64); 9] = [
+    (0.40, 0.62, 0.24),
+    (0.68, 0.42, 0.30),
+    (1.02, 0.34, 0.34),
+    (1.34, 0.50, 0.26),
+    (1.50, 0.74, 0.18),
+    (0.30, 0.86, 0.17),
+    (0.58, 0.92, 0.20),
+    (0.92, 0.95, 0.21),
+    (1.24, 0.93, 0.20),
+];
+const CLOUD_CORE: ((f64, f64), (f64, f64)) = ((0.9, 0.72), (0.55, 0.25));
+/// Its tail: the two corners of its base inside the puffs, then the point,
+/// so only the point leaves the cloud.
+const CLOUD_TAIL: [(f64, f64); 3] = [(0.55, 0.95), (0.42, 1.3), (0.78, 1.02)];
+
 /// A square opening mark at `x`, `w` wide: a block from `foot` down, and
 /// above it a hook up to the right (the quotes of heavy grotesques). A
 /// `straight` hook is a band of even width, its two edges parallel; else it
@@ -2457,14 +2478,17 @@ mod tests {
 
     // S96-02: every section the reference asks to grow has more than five
     // shapes, so it has «Ver todo».
-    // The tail of the cloud bubble leaves its body only at its point: its
-    // base corners are inside the body ellipse.
+    // The tail of the cloud bubble leaves its body only at its point: the
+    // corners of its base are inside a puff.
     #[test]
     fn the_cloud_bubble_tail_starts_inside_the_body() {
-        let body = Ellipse::new((0.5 + 0.62, 0.3 + 0.4), (0.62, 0.4), 0.0);
-        for corner in [(0.8, 0.95), (1.05, 1.0)] {
-            assert!(body.contains(Point::new(corner.0, corner.1)), "{corner:?}");
-        }
+        let inside = |(x, y): (f64, f64)| {
+            CLOUD_PUFFS
+                .iter()
+                .any(|&(cx, cy, r)| (x - cx).hypot(y - cy) < r)
+        };
+        assert!(inside(CLOUD_TAIL[0]) && inside(CLOUD_TAIL[2]));
+        assert!(!inside(CLOUD_TAIL[1]), "the point is out");
     }
 
     #[test]
