@@ -46,8 +46,8 @@ pub(crate) fn project_name(path: Option<&Path>) -> Option<String> {
         .map(|stem| stem.to_string_lossy().into_owned())
 }
 
-fn dialog() -> rfd::FileDialog {
-    rfd::FileDialog::new().add_filter("Gafira", &["gaf"])
+fn dialog(window: Option<&eframe::Frame>) -> rfd::FileDialog {
+    picker(window).add_filter("Gafira", &["gaf"])
 }
 
 /// What an action of the Archivo menu comes to once its dialog closed.
@@ -62,9 +62,9 @@ pub(crate) enum Plan {
 
 /// The new file of a project, from the system save dialog: the session's
 /// folder and name are proposed.
-pub(crate) fn pick_new(engine: &Gafira) -> Option<PathBuf> {
+pub(crate) fn pick_new(engine: &Gafira, window: Option<&eframe::Frame>) -> Option<PathBuf> {
     let start = engine.projects().path();
-    let mut picker = dialog();
+    let mut picker = dialog(window);
     if let Some(folder) = start.as_deref().and_then(Path::parent) {
         picker = picker.set_directory(folder);
     }
@@ -76,9 +76,9 @@ pub(crate) fn pick_new(engine: &Gafira) -> Option<PathBuf> {
 
 /// `action`: the dialog first when it needs a path, then «Abrir» here or
 /// the save to run.
-pub(crate) fn plan(engine: &Gafira, action: FileAction) -> Plan {
+pub(crate) fn plan(engine: &Gafira, action: FileAction, window: Option<&eframe::Frame>) -> Plan {
     match action {
-        FileAction::Open => Plan::Opened(match dialog().pick_file() {
+        FileAction::Open => Plan::Opened(match dialog(window).pick_file() {
             None => Outcome::Cancelled,
             Some(path) => match engine.projects().open(&path) {
                 Ok(()) => Outcome::Done,
@@ -86,11 +86,15 @@ pub(crate) fn plan(engine: &Gafira, action: FileAction) -> Plan {
             },
         }),
         FileAction::Save if engine.projects().path().is_some() => Plan::Save(SaveRequest::Save),
-        FileAction::Save | FileAction::SaveAs | FileAction::SaveCopy => match pick_new(engine) {
-            None => Plan::Cancelled,
-            Some(path) if action == FileAction::SaveCopy => Plan::Save(SaveRequest::SaveCopy(path)),
-            Some(path) => Plan::Save(SaveRequest::SaveAs(path)),
-        },
+        FileAction::Save | FileAction::SaveAs | FileAction::SaveCopy => {
+            match pick_new(engine, window) {
+                None => Plan::Cancelled,
+                Some(path) if action == FileAction::SaveCopy => {
+                    Plan::Save(SaveRequest::SaveCopy(path))
+                }
+                Some(path) => Plan::Save(SaveRequest::SaveAs(path)),
+            }
+        }
     }
 }
 
@@ -113,6 +117,16 @@ pub(crate) fn dimensions(path: &std::path::Path) -> Option<(u32, u32)> {
 /// The image `path`.
 pub(crate) fn open(path: &std::path::Path) -> Option<image::DynamicImage> {
     reader(path)?.decode().ok()
+}
+
+/// A system file dialog over Gafira's window, when it is known, so the
+/// window manager puts it in front (owner report: some opened behind).
+pub(crate) fn picker(window: Option<&eframe::Frame>) -> rfd::FileDialog {
+    let picker = rfd::FileDialog::new();
+    match window {
+        Some(window) => picker.set_parent(window),
+        None => picker,
+    }
 }
 
 #[cfg(test)]

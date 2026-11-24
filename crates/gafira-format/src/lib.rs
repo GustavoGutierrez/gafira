@@ -30,8 +30,8 @@ mod write;
 pub use limits::Limits;
 pub use read::read_gaf;
 pub use repository::GafRepository;
-pub use thumbs::{ThumbnailImage, read_thumbnail};
-pub use write::write_gaf;
+pub use thumbs::{TemplateInfo, ThumbnailImage, read_template_info, read_thumbnail};
+pub use write::{set_template, write_gaf, write_template};
 
 /// The exact text of the `mimetype` entry (02 §7.1).
 pub const MIMETYPE: &str = "application/vnd.gafira.project+zip";

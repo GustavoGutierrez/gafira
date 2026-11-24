@@ -1,17 +1,18 @@
 //! Writing a `.gaf` (02 §7.1, D-68).
 
 use std::collections::BTreeMap;
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use gafira_doc::{AssetRef, AssetStorage, Document};
-use gafira_ports::repository::{RepositoryError, Thumbnail, Version, VersionKind};
+use gafira_ports::repository::{RepositoryError, TemplateMeta, Thumbnail, Version, VersionKind};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
 use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
-use crate::{MIMETYPE, assets, manifest, thumbs, versions};
+use crate::read::{check_mimetype, corrupt, json, zip_error};
+use crate::{FORMAT, Limits, MIMETYPE, assets, manifest, thumbs, versions};
 
 fn io(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> RepositoryError {
     RepositoryError::Io(std::io::Error::other(error))
@@ -119,6 +120,32 @@ pub fn write_gaf<W: Write + Seek>(
     thumbnail: Option<&Thumbnail>,
     store: &dyn ContentStore,
 ) -> Result<(), RepositoryError> {
+    write(sink, document, versions, thumbnail, None, store)
+}
+
+/// [`write_gaf`] of a template (D-81, spec 091): `document` with no
+/// versions, and `meta` as the manifest's `template`.
+///
+/// # Errors
+/// Those of [`write_gaf`].
+pub fn write_template<W: Write + Seek>(
+    sink: W,
+    document: &Document,
+    thumbnail: Option<&Thumbnail>,
+    meta: &TemplateMeta,
+    store: &dyn ContentStore,
+) -> Result<(), RepositoryError> {
+    write(sink, document, &[], thumbnail, Some(meta), store)
+}
+
+fn write<W: Write + Seek>(
+    sink: W,
+    document: &Document,
+    versions: &[Version],
+    thumbnail: Option<&Thumbnail>,
+    template: Option<&TemplateMeta>,
+    store: &dyn ContentStore,
+) -> Result<(), RepositoryError> {
     // The document names an asset first; a version adds only the ones the
     // document does not have.
     let mut embedded: BTreeMap<AssetRef, String> = BTreeMap::new();
@@ -148,7 +175,7 @@ pub fn write_gaf<W: Write + Seek>(
         .unwrap_or(0);
     let project_id = main.root.get("project_id").cloned().unwrap_or(Value::Null);
     let version_ids: Vec<Value> = versions.iter().map(|v| Value::from(v.info.id.0)).collect();
-    let manifest = manifest::build(
+    let mut manifest = manifest::build(
         schema,
         &project_id,
         &main.page_ids(),
@@ -157,6 +184,9 @@ pub fn write_gaf<W: Write + Seek>(
         &sizes,
         &version_ids,
     );
+    if let (Some(meta), Some(fields)) = (template, manifest.as_object_mut()) {
+        fields.insert("template".to_owned(), manifest::template_value(meta));
+    }
     let splits = versions
         .iter()
         .map(|version| Split::of(&version.document))
@@ -240,4 +270,49 @@ fn take_list(root: &mut serde_json::Map<String, Value>, key: &str) -> Vec<Value>
 /// The id of a page or a sequence as its file name.
 pub(crate) fn entry_id(item: &Value) -> String {
     item.get("id").map(Value::to_string).unwrap_or_default()
+}
+
+/// Copy the `.gaf` in `source` to `sink` with `meta` as its `template`
+/// (D-81, spec 093): every entry but the manifest is copied as it is, in
+/// its order and without packing it again; the manifest gets `template`,
+/// in place of any it had. «Guardar como plantilla de marca» and «Subir
+/// plantilla» make a template this way.
+///
+/// # Errors
+/// [`RepositoryError::Corrupt`] when `source` is not a `.gaf` within
+/// `limits`, [`RepositoryError::Io`] when a stream fails.
+pub fn set_template<R: Read + Seek, W: Write + Seek>(
+    source: R,
+    sink: W,
+    meta: &TemplateMeta,
+    limits: Limits,
+) -> Result<(), RepositoryError> {
+    let mut zip = zip::ZipArchive::new(source).map_err(zip_error)?;
+    if zip.len() > limits.max_entries {
+        return Err(corrupt(format!(
+            "{} entries, more than {}",
+            zip.len(),
+            limits.max_entries
+        )));
+    }
+    check_mimetype(&mut zip)?;
+    let mut manifest = json(&mut zip, "manifest.json", limits)?;
+    if manifest.get("format").and_then(Value::as_str) != Some(FORMAT) {
+        return Err(corrupt("the manifest is not a gafira-project"));
+    }
+    if let Some(fields) = manifest.as_object_mut() {
+        fields.insert("template".to_owned(), manifest::template_value(meta));
+    }
+    let mut out = ZipWriter::new(sink);
+    for index in 0..zip.len() {
+        let entry = zip.by_index_raw(index).map_err(zip_error)?;
+        if entry.name().map_err(zip_error)? == "manifest.json" {
+            drop(entry);
+            json_entry(&mut out, "manifest.json".to_owned(), &manifest)?;
+        } else {
+            out.raw_copy_file(entry).map_err(io)?;
+        }
+    }
+    out.finish().map_err(io)?;
+    Ok(())
 }

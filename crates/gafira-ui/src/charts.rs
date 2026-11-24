@@ -537,7 +537,7 @@ fn swatch(ui: &mut Ui, c: &ChartNode, index: usize, asks: &mut Asks) -> egui::Re
     let place = index % c.colors.len().max(1);
     let color = c.colors.get(place).copied();
     let mut rgba = canvas::picker_rgba(color);
-    let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
+    let response = crate::eyedropper::color_edit(ui, &mut rgba);
     if response.changed() {
         let picked = canvas::picked_color(color, rgba);
         asks.edit(c, |c| set_color(c, index, picked));
@@ -865,19 +865,33 @@ fn looks(ui: &mut Ui, theme: &Theme, texts: &Texts, c: &ChartNode, asks: &mut As
         title(ui, "chart.shape");
     }
     if rounded {
-        share(ui, texts, "chart.round", c.round, 1.0, |v| {
+        share(ui, (theme, texts), "chart.round", c.round, 1.0, |v| {
             asks.edit(c, |c| c.round = v);
         });
     }
     if bars {
-        share(ui, texts, "chart.gap", c.gap, ChartNode::MAX_GAP, |v| {
-            asks.edit(c, |c| c.gap = v);
-        });
+        share(
+            ui,
+            (theme, texts),
+            "chart.gap",
+            c.gap,
+            ChartNode::MAX_GAP,
+            |v| {
+                asks.edit(c, |c| c.gap = v);
+            },
+        );
     }
     if hollow {
-        share(ui, texts, "chart.hole", c.hole, ChartNode::MAX_HOLE, |v| {
-            asks.edit(c, |c| c.hole = v);
-        });
+        share(
+            ui,
+            (theme, texts),
+            "chart.hole",
+            c.hole,
+            ChartNode::MAX_HOLE,
+            |v| {
+                asks.edit(c, |c| c.hole = v);
+            },
+        );
     }
     if weighed {
         ui.allocate_ui_with_layout(
@@ -943,18 +957,17 @@ fn switch(ui: &mut Ui, theme: &Theme, name: String, on: &mut bool) -> bool {
 
 fn share(
     ui: &mut Ui,
-    texts: &Texts,
+    (theme, texts): (&Theme, &Texts),
     key: &'static str,
     value: f64,
     most: f64,
     set: impl FnOnce(f64),
 ) {
-    ui.label(plain(texts, key));
     let mut percent = value * 100.0;
-    let slider = egui::Slider::new(&mut percent, 0.0..=most * 100.0)
-        .max_decimals(0)
-        .suffix("%");
-    if ui.add(slider).changed() {
+    if crate::slider::Slider::new(plain(texts, key), &mut percent, (0.0, most * 100.0))
+        .suffix(crate::slider::percent(texts))
+        .show(ui, theme)
+    {
         set((percent / 100.0).clamp(0.0, most));
     }
 }
@@ -976,7 +989,7 @@ fn text_controls(ui: &mut Ui, theme: &Theme, texts: &Texts, c: &ChartNode, asks:
 fn ink_controls(ui: &mut Ui, theme: &Theme, texts: &Texts, c: &ChartNode, asks: &mut Asks) {
     let mut ink = canvas::picker_rgba(Some(c.text.color));
     ui.push_id("chart.ink", |ui| {
-        let button = ui.color_edit_button_srgba_unmultiplied(&mut ink);
+        let button = crate::eyedropper::color_edit(ui, &mut ink);
         if button.on_hover_text(plain(texts, "table.ink")).changed() {
             let picked = canvas::picked_color(Some(c.text.color), ink);
             asks.edit(c, |c| c.text.color = picked);

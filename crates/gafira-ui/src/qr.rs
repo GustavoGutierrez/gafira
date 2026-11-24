@@ -984,7 +984,7 @@ fn contact_form(ui: &mut Ui, form: &mut Form<'_>, c: &mut QrContact) {
 /// A colour picker over `color`.
 fn color_pick(ui: &mut Ui, color: &mut gafira_color::Color) -> bool {
     let mut rgba = canvas::picker_rgba(Some(*color));
-    let changed = ui.color_edit_button_srgba_unmultiplied(&mut rgba).changed();
+    let changed = crate::eyedropper::color_edit(ui, &mut rgba).changed();
     if changed {
         *color = canvas::picked_color(Some(*color), rgba);
     }
@@ -1348,17 +1348,10 @@ fn slider(
     value: &mut f64,
     range: std::ops::RangeInclusive<f64>,
 ) -> bool {
-    row(ui, theme, label, |ui| {
-        ui.label(RichText::new(format!("{value:.0}")).font(theme.font("body-sm")));
-    });
-    ui.spacing_mut().slider_width = ui.available_width();
-    let changed = ui
-        .add(
-            egui::Slider::new(value, range)
-                .step_by(1.0)
-                .show_value(false),
-        )
-        .changed();
+    let range = (*range.start(), *range.end());
+    let changed = crate::slider::Slider::new(label, value, range)
+        .rest(range.0)
+        .show(ui, theme);
     ui.add_space(ROW_GAP);
     changed
 }

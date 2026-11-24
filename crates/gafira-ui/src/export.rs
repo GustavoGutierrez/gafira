@@ -1064,6 +1064,7 @@ fn control(
     values: &mut ParamValues,
     wide: f32,
 ) {
+    let name = texts.t(&label(def.label));
     let hint = |ui: &mut egui::Ui| {
         if let Some(key) = hint_of(def.id) {
             info(ui, theme, texts.t(&label(gafira_doc::msg::MessageKey(key))));
@@ -1071,29 +1072,49 @@ fn control(
     };
     ui.horizontal(|ui| match &def.kind {
         // The scale is dragged (owner request), in steps of a quarter.
-        ParamKind::Float { min, max, default } if def.id == SCALE => {
-            let mut value = values.float(def.id).unwrap_or(*default);
-            let slider = egui::Slider::new(&mut value, *min..=*max)
-                .step_by(0.25)
-                .suffix("×")
-                .fixed_decimals(2);
-            ui.spacing_mut().slider_width = wide - 60.0;
-            if ui.add(slider).changed() {
-                values.set(def.id, ParamValue::Float(value));
-            }
-            hint(ui);
-        }
         ParamKind::Float { min, max, default } => {
             let mut value = values.float(def.id).unwrap_or(*default);
-            if ui.add(egui::Slider::new(&mut value, *min..=*max)).changed() {
+            // The scale is dragged in steps of a quarter.
+            let (step, decimals, suffix) = if def.id == SCALE {
+                (0.25, 2, "×")
+            } else {
+                (0.0, 2, "")
+            };
+            let slider = crate::slider::Slider::new(name.clone(), &mut value, (*min, *max))
+                .rest(*default)
+                .step(step, decimals)
+                .suffix(suffix)
+                .unnamed();
+            if ui
+                .vertical(|ui| {
+                    ui.set_width(wide - 40.0);
+                    slider.show(ui, theme)
+                })
+                .inner
+            {
                 values.set(def.id, ParamValue::Float(value));
             }
             hint(ui);
         }
         ParamKind::Int { min, max, default } => {
-            let mut value = values.int(def.id).unwrap_or(*default);
-            if ui.add(egui::Slider::new(&mut value, *min..=*max)).changed() {
-                values.set(def.id, ParamValue::Int(value));
+            // A whole number in an i64 well inside f64's exact range.
+            let (mut value, range, rest) = (
+                values.int(def.id).unwrap_or(*default) as f64,
+                (*min as f64, *max as f64),
+                *default as f64,
+            );
+            let slider = crate::slider::Slider::new(name.clone(), &mut value, range)
+                .rest(rest)
+                .unnamed();
+            if ui
+                .vertical(|ui| {
+                    ui.set_width(wide - 40.0);
+                    slider.show(ui, theme)
+                })
+                .inner
+            {
+                // Rounded within the range: the cast is exact.
+                values.set(def.id, ParamValue::Int(value.round() as i64));
             }
             hint(ui);
         }
@@ -1241,7 +1262,7 @@ pub(crate) mod tests {
     }
 
     /// An engine with a new Redes document of `pages` pages.
-    fn document_engine(pages: usize) -> Gafira {
+    fn document_engine(pages: usize) -> crate::editor::tests::TestEngine {
         let mut engine = engine();
         start(&mut engine, StartFormat::Social).expect("a document");
         for at in 1..pages {

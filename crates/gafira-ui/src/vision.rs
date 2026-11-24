@@ -618,10 +618,8 @@ pub(crate) fn progress(ui: &mut Ui, theme: &Theme, texts: &Texts, studio: &Studi
 fn said(ui: &mut Ui, theme: &Theme, texts: &Texts, studio: &Studio) {
     if let Some(error) = &studio.error {
         ui.add_space(4.0);
-        let text = RichText::new(format!("⚠ {}", plain(texts, message(error))))
-            .font(theme.font("body-sm"))
-            .color(theme.c("error.fg"));
-        ui.label(text);
+        let text = RichText::new(plain(texts, message(error))).font(theme.font("body-sm"));
+        crate::widgets::note(ui, crate::icons::Icon::Warning, text, theme.c("error.fg"));
     }
 }
 
@@ -774,8 +772,8 @@ impl Studio {
             .filter(|m| m.recommended && !m.chosen)
             .collect();
         if wanted.is_empty() {
-            let text = RichText::new(format!("✓ {}", plain(texts, "vision.ready")));
-            ui.label(text.color(theme.c("success.fg")));
+            let text = RichText::new(plain(texts, "vision.ready"));
+            crate::widgets::note(ui, crate::icons::Icon::Check, text, theme.c("success.fg"));
             return None;
         }
         let missing = wanted.iter().filter(|m| !m.installed);
@@ -844,8 +842,9 @@ fn row(ui: &mut Ui, theme: &Theme, texts: &Texts, model: &ModelInfo, free: bool)
                         pick = Some(Pick::Remove(model.id));
                     }
                     if model.chosen {
-                        let text = format!("✓ {}", plain(texts, "vision.in_use"));
-                        ui.label(RichText::new(text).color(theme.c("success.fg")));
+                        let text = RichText::new(plain(texts, "vision.in_use"));
+                        let ink = theme.c("success.fg");
+                        crate::widgets::note(ui, crate::icons::Icon::Check, text, ink);
                     } else if button(ui, "vision.use") {
                         pick = Some(Pick::Use(model.id));
                     }

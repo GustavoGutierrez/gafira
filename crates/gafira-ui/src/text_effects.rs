@@ -451,7 +451,7 @@ fn swatch(ui: &mut Ui, theme: &Theme, name: String, color: &mut Color) -> bool {
         ui.label(RichText::new(name).font(theme.font("body-sm")));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let mut rgba = canvas::picker_rgba(Some(*color));
-            if ui.color_edit_button_srgba_unmultiplied(&mut rgba).changed() {
+            if crate::eyedropper::color_edit(ui, &mut rgba).changed() {
                 *color = canvas::picked_color(Some(*color), rgba);
                 changed = true;
             }

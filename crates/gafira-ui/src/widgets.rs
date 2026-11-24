@@ -355,6 +355,7 @@ pub(crate) fn topbar_menu(
         let label = RichText::new(text).font(theme.font("ui-label"));
         ui.menu_button(label, |ui| {
             *ui.style_mut() = (*ui.ctx().style()).clone();
+            menu_style(ui, theme);
             add(ui);
         })
         .response
@@ -400,6 +401,79 @@ pub(crate) fn pointing_hand(ctx: &egui::Context) {
 }
 
 /// The graphite top bar of every screen (03 §7.1: 48 px).
+/// The horizontal logo for dark backgrounds (brand manual), `height`
+/// points tall, on the graphite top bar.
+pub(crate) fn topbar_logo(ui: &mut Ui, height: f32) -> Response {
+    const LOGO: &str = include_str!("../../../assets/gafira-logo-dark-background.svg");
+    // The logo's own proportions: 1325 × 425.
+    let size = Vec2::new(height * 1325.0 / 425.0, height);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let side = (size.x * ui.ctx().pixels_per_point()).round() as u32;
+    if let Some(texture) =
+        crate::design_art::texture(ui.ctx(), "logo/dark", side, || LOGO.to_owned())
+    {
+        ui.painter().image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    response
+}
+
+/// A place of the top bar of the start screens: its icon and name, lit
+/// with a soft fill and a coral line under it when it is the one open.
+pub(crate) fn nav_item(
+    ui: &mut Ui,
+    theme: &Theme,
+    icon: Icon,
+    text: &str,
+    active: bool,
+) -> Response {
+    let font = theme.font("ui-label");
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, theme.c("topbar.fg"));
+    let size = Vec2::new(galley.size().x + 18.0 + 8.0 + 24.0, 34.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let hover = response.hovered();
+    if active || hover {
+        ui.painter().rect_filled(rect, 8.0, theme.c("topbar.hover"));
+    }
+    let color = if active || hover {
+        theme.c("topbar.fg")
+    } else {
+        theme.c("topbar.fg.muted")
+    };
+    let weight = if active {
+        Weight::Fill
+    } else {
+        Weight::Regular
+    };
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + 12.0 + 9.0, rect.center().y),
+        Vec2::splat(18.0),
+    );
+    icons::paint(ui.painter(), icon_rect, icon, weight, color);
+    ui.painter().galley(
+        egui::pos2(
+            icon_rect.right() + 8.0,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        color,
+    );
+    if active {
+        let line = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + 10.0, rect.bottom() + 5.0),
+            Vec2::new(rect.width() - 20.0, 3.0),
+        );
+        ui.painter().rect_filled(line, 1.5, theme.c("primary.bg"));
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 pub(crate) fn topbar(ctx: &egui::Context, theme: &Theme, id: &str, add: impl FnOnce(&mut Ui)) {
     egui::TopBottomPanel::top(id.to_owned())
         .exact_height(px(theme.tokens.size.topbar))
@@ -597,5 +671,151 @@ mod pointing_hand_tests {
                 assert!(w <= room, "{label}: {w} > {room}");
             }
         });
+    }
+}
+
+/// The arrow of an item that opens a submenu (spec 098): an icon, as the
+/// interface font has no «⏵» or «›».
+pub(crate) fn submenu_arrow(ui: &Ui) -> egui::Image<'static> {
+    icons::image(
+        ui.ctx(),
+        Icon::Submenu,
+        Weight::Regular,
+        12.0,
+        ui.visuals().text_color(),
+    )
+}
+
+/// A frameless «Volver» arrow, drawn as an icon (spec 098).
+pub(crate) fn back_arrow(ui: &mut Ui) -> Response {
+    let image = icons::image(
+        ui.ctx(),
+        Icon::Back,
+        Weight::Regular,
+        16.0,
+        ui.visuals().text_color(),
+    );
+    ui.add(egui::Button::image(image).frame(false))
+}
+
+/// `text` after the icon of a state (ready, in use, an error), in `color`;
+/// the words wrap beside it.
+pub(crate) fn note(ui: &mut Ui, icon: Icon, text: egui::RichText, color: egui::Color32) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.add(icons::image(ui.ctx(), icon, Weight::Regular, 14.0, color));
+        ui.add(egui::Label::new(text.color(color)).wrap());
+    });
+}
+
+/// The look of a menu (spec 098): its items have no fill at rest, a soft
+/// one under the pointer, and room to be hit, like a list and not a column
+/// of buttons. Its submenus inherit it.
+pub(crate) fn menu_style(ui: &mut Ui, theme: &Theme) {
+    let style = ui.style_mut();
+    style.spacing.button_padding = egui::Vec2::new(10.0, 7.0);
+    style.spacing.item_spacing.y = 2.0;
+    style.spacing.icon_spacing = 10.0;
+    let widgets = &mut style.visuals.widgets;
+    // The separators keep the stroke of `noninteractive`.
+    widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+    widgets.inactive.bg_stroke = Stroke::NONE;
+    for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        state.weak_bg_fill = theme.c("secondary.bg");
+        state.bg_stroke = Stroke::NONE;
+        state.expansion = 0.0;
+    }
+}
+
+/// An item of a menu that is on or off (Reglas, Guías, Modo oscuro): a tick
+/// on its left while on, no fill, its shortcut on the right (spec 098).
+pub(crate) fn check_item(ui: &mut Ui, on: bool, text: String, keys: Option<String>) -> Response {
+    let ink = if on {
+        ui.visuals().text_color()
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let tick = icons::image(ui.ctx(), Icon::Check, Weight::Regular, 16.0, ink);
+    let mut item = egui::Button::image_and_text(tick, text.clone());
+    if let Some(keys) = keys {
+        item = item.shortcut_text(keys);
+    }
+    let response = ui.add(item);
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &text));
+    response
+}
+
+#[cfg(test)]
+mod glyph_tests {
+    use std::path::Path;
+
+    /// The characters of `text` the interface font cannot draw.
+    fn missing(ctx: &egui::Context, text: &str) -> Vec<char> {
+        let font = egui::FontId::proportional(14.0);
+        text.chars()
+            .filter(|c| !c.is_ascii())
+            .filter(|c| !ctx.fonts_mut(|f| f.has_glyph(&font, *c)))
+            .collect()
+    }
+
+    /// The string literals of `source` outside its tests.
+    fn literals(source: &str) -> Vec<String> {
+        let code = source.split("#[cfg(test)]").next().unwrap_or_default();
+        let mut out = Vec::new();
+        for line in code.lines() {
+            let line = line.split("//").next().unwrap_or_default();
+            let mut rest = line;
+            while let Some(start) = rest.find('"') {
+                let after = &rest[start + 1..];
+                let Some(end) = after.find('"') else { break };
+                out.push(after[..end].to_owned());
+                rest = &after[end + 1..];
+            }
+        }
+        out
+    }
+
+    // Spec 098: the interface font is a subset (spec 014); a sign it lacks
+    // shows as «?». Every text of the catalogs and of the interface code
+    // has a glyph.
+    #[test]
+    fn s98_09_every_character_the_interface_writes_has_a_glyph() {
+        let ctx = egui::Context::default();
+        crate::style::Theme::new(gafira_theme::ThemeTokens::embedded().expect("tokens"))
+            .apply(&ctx);
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut bad = Vec::new();
+        for lang in ["es", "en"] {
+            let path = root.join(format!("../../assets/i18n/{lang}.toml"));
+            let catalog = std::fs::read_to_string(&path).expect("catalog");
+            for (n, line) in catalog.lines().enumerate() {
+                let lost = missing(&ctx, line);
+                if !lost.is_empty() {
+                    bad.push(format!("{lang}.toml:{}: {lost:?}", n + 1));
+                }
+            }
+        }
+        let mut files = vec![root.join("src")];
+        while let Some(dir) = files.pop() {
+            for entry in std::fs::read_dir(&dir).expect("source dir").flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if path.file_name().is_some_and(|n| n != "tests") {
+                        files.push(path);
+                    }
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let source = std::fs::read_to_string(&path).expect("source");
+                    for text in literals(&source) {
+                        let lost = missing(&ctx, &text);
+                        if !lost.is_empty() {
+                            bad.push(format!("{}: {lost:?}", path.display()));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:#?}");
     }
 }

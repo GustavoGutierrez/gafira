@@ -1044,3 +1044,57 @@ Fecha: 22 de noviembre de 2026.
 
 - **Decisión** (titular): cada versión se publica con binarios de Linux y Windows, con instalador de Windows que registra `.gaf` y su icono; macOS cuando se pueda. Actions gasta lo mínimo.
 - **Consecuencia**: una etiqueta compila y publica sin repetir pruebas; CI corre en el PR a `main`, con pruebas en Linux y solo clippy en Windows; las de Windows y macOS, a petición. Se aplica en la spec 090.
+
+## D-122 Inicio nuevo y plantillas
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): Inicio pasa a ser una portada con título, pestañas Inicio y Plantillas, un buscador de tipos de diseño y plantillas, accesos a las categorías de «Crear un diseño», recientes y plantillas por tipo. «Crear un diseño» se conserva, se abre desde esos accesos en su categoría y tiene vuelta a Inicio y a Plantillas. Plantillas es una pantalla propia, filtrable y con carga progresiva; una plantilla abre un diseño nuevo, editable por completo, que se guarda sin la marca de plantilla.
+- **Formato**: una plantilla es un `.gaf` con el `template` de D-81 y su miniatura; no hay extensión aparte. Las plantillas van en `assets/templates/<categoría>/`, con nombres de archivo en inglés (`corner-coffee.es.gaf`); su nombre visible es la etiqueta `title:` y su idioma la etiqueta `lang:`. La búsqueda encuentra una plantilla con palabras de cualquiera de los dos idiomas. Las plantillas incluidas no tienen que usar los colores de la marca: cada diseño puede llevar su propia paleta (cambio pedido por el titular el 23 de noviembre).
+- **Editor**: la pestaña Plantillas del riel ofrece las plantillas de proporción parecida a la página activa; una plantilla reemplaza el contenido de esa página y añade sus demás páginas detrás, en un paso que se deshace.
+- **Fotos, pliegues e impresión**: los espacios de foto de una plantilla son marcos (spec 066), para reemplazar la foto sin romper el diseño; varias fotos juntas, varios marcos a modo de collage. Cada plantilla lleva las guías de su tamaño en «Crear un diseño» (los pliegues del tríptico, bloqueados, y los márgenes de seguridad), y las de impresión una sangría de 3 mm.
+- **Detalle**: pulsar una plantilla en Inicio o en Plantillas abre un modal con su imagen, nombre, tipo y tamaño, «Personalizar esta plantilla» y plantillas similares; pulsar una similar la muestra en el mismo modal. Sin opciones de papel.
+- **Consecuencia**: se activan la pestaña Plantillas de la barra superior y la del riel (cambia lo dicho de Plantillas en D-119). Se aplica en la spec 091.
+
+## D-123 Barra superior y Ajustes
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular): la barra superior de las pantallas de inicio muestra el logo horizontal de fondo oscuro en lugar del texto «Gafira», sin Proyectos, y con iconos en Inicio, Plantillas y Ajustes. Ajustes se rediseña: cada sección y opción mejora en diseño y uso, y el tema se elige con una miniatura de cada uno. Ajustes debe reflejar lo que Gafira hace hoy.
+- **Consecuencia**: se aplica en la spec 092; el texto de Privacidad deja de decir que Gafira no se conecta a internet.
+
+## D-124 Marca: kits y plantillas de marca
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas y una investigación de referencia): Gafira tiene kits de marca (varios, cada uno con nombre) con logos, paletas con HEX y CMYK, estilos de texto configurables, fuentes subidas, fotos, elementos gráficos e iconos, y plantillas de marca (guardar un diseño como plantilla de marca o subir una). Se gestionan en una pantalla Marca junto a Inicio y Plantillas, y se usan en el panel Marca del editor (insertar, arrastrar, aplicar estilo o color) y en los selectores de color. Sin voz de la marca, sin equipos ni controles de marca.
+- **Consecuencia**: se activa la pestaña Marca del riel (cambia D-119). Los kits viven fuera de los documentos, como Biblioteca; 03 §7.7 queda como referencia. Se aplica en la spec 093.
+
+## D-125 Kits de marca en archivos .gafkit
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular): un kit de marca se exporta a un archivo `.gafkit` (ZIP con `kit.json` y sus logos, fotos, gráficos, iconos, fuentes subidas y plantillas) y se importa en otro Gafira; si ya hay un kit con el mismo nombre, se pregunta si reemplazarlo. `.gafkit` es un tipo de archivo del sistema (`application/vnd.gafira.brandkit+zip`) con su propio icono, derivado del de `.gaf`.
+- **Consecuencia**: el puerto `BrandStore` exporta, lee e importa paquetes; los instaladores registran el tipo. Se aplica en la spec 094.
+
+## D-126 Cajas de texto que siguen a sus palabras
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas): un texto nuevo es tan ancho como su línea más larga y crece o se encoge a lo ancho al escribir o borrar; Enter abre otra línea. Arrastrar un lado fija el ancho y desde entonces las líneas se parten en él. La caja de un texto curvo siempre contiene todo su arco. Mover un elemento muestra el puntero de mover de Gafira.
+- **Consecuencia**: los textos nuevos usan `TextSizing::AutoWidth` (ya en el modelo, 02 §3.1) y la edición gana la propiedad `TextSizing`. Se aplica en la spec 095.
+
+## D-127 Más formas, filas con flechas y «Ver todo»
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): el panel Formas muestra cinco formas por sección; si hay más, la sección tiene «Ver todo» (todas, de tres en tres) y flechas a los lados de la fila para recorrerla. Se añaden formas a todas las secciones, entre ellas más líneas (discontinuas, punteadas, con extremos rellenos y de barra), y dos secciones nuevas: «Formas abstractas» y «Colgantes».
+- **Consecuencia**: la línea del documento gana el trazo (`LineDash`) y los extremos círculo relleno, cuadrado relleno y barra, aditivos al esquema 1. Se aplica en la spec 096.
+
+## D-128 Paquetes de recursos .gafpack
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, spec 097): Gafira instala paquetes de recursos `.gafpack` (ZIP con `manifest.json` 1.1 y `thumb.webp`). Un paquete se muestra y se valida antes de instalarlo —desde Inicio → Instalar paquete o con doble clic en el archivo— y sus recursos aparecen en la sección que les toca, por paquete y filtrables. Nada de un paquete se ejecuta.
+- **Consecuencia**: nuevo puerto `PackStore`, carpeta `packages/` en los datos, categoría Iconos en Elementos, sección Paquetes en Ajustes y el tipo `application/vnd.gafira.gafpack+zip` con su icono. La fase 1 admite clip art, ilustraciones, iconos y formas; los recursos compuestos quedan para la fase 2.
+

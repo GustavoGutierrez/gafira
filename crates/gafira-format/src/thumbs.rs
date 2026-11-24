@@ -6,7 +6,7 @@
 use std::io::{Cursor, Read, Seek};
 
 use gafira_doc::PageId;
-use gafira_ports::repository::{RepositoryError, THUMBNAIL_SIDE, Thumbnail};
+use gafira_ports::repository::{RepositoryError, THUMBNAIL_SIDE, TemplateMeta, Thumbnail};
 use gafira_raster::straight_srgb8;
 use image_webp::{ColorType, WebPDecoder, WebPEncoder};
 use serde_json::Value;
@@ -14,7 +14,7 @@ use zip::ZipArchive;
 use zip::result::ZipError;
 
 use crate::read::{check_mimetype, corrupt, json, zip_error};
-use crate::{FORMAT, Limits};
+use crate::{FORMAT, Limits, manifest};
 
 /// The folder of the thumbnails.
 pub(crate) const FOLDER: &str = "thumbs/";
@@ -122,6 +122,42 @@ pub fn read_thumbnail<R: Read + Seek>(
     source: R,
     limits: Limits,
 ) -> Result<Option<ThumbnailImage>, RepositoryError> {
+    let (mut zip, manifest) = open(source, limits)?;
+    first_thumbnail(&mut zip, &manifest, limits)
+}
+
+/// A template as a catalogue lists it (spec 091): its `template` and the
+/// thumbnail of its first page, if it has one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TemplateInfo {
+    pub meta: TemplateMeta,
+    pub thumbnail: Option<ThumbnailImage>,
+}
+
+/// The template the `.gaf` in `source` is, read without the rest of the
+/// project, as [`read_thumbnail`] reads: `None` when its manifest has no
+/// well-formed `template` (D-81), so it is an ordinary project.
+///
+/// # Errors
+/// Those of [`read_thumbnail`].
+pub fn read_template_info<R: Read + Seek>(
+    source: R,
+    limits: Limits,
+) -> Result<Option<TemplateInfo>, RepositoryError> {
+    let (mut zip, manifest) = open(source, limits)?;
+    let Some(meta) = manifest::template(&manifest) else {
+        return Ok(None);
+    };
+    let thumbnail = first_thumbnail(&mut zip, &manifest, limits)?;
+    Ok(Some(TemplateInfo { meta, thumbnail }))
+}
+
+/// The archive in `source` and its manifest, checked as a `.gaf` within
+/// `limits`.
+fn open<R: Read + Seek>(
+    source: R,
+    limits: Limits,
+) -> Result<(ZipArchive<R>, Value), RepositoryError> {
     let mut zip = ZipArchive::new(source).map_err(zip_error)?;
     if zip.len() > limits.max_entries {
         return Err(corrupt(format!(
@@ -135,6 +171,15 @@ pub fn read_thumbnail<R: Read + Seek>(
     if manifest.get("format").and_then(Value::as_str) != Some(FORMAT) {
         return Err(corrupt("the manifest is not a gafira-project"));
     }
+    Ok((zip, manifest))
+}
+
+/// The thumbnail of the first page the manifest lists, if the file has it.
+fn first_thumbnail<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+    manifest: &Value,
+    limits: Limits,
+) -> Result<Option<ThumbnailImage>, RepositoryError> {
     let pages = manifest
         .get("pages")
         .and_then(Value::as_array)

@@ -595,7 +595,8 @@ impl Panel {
         if let Some(group) = self.open {
             ui.horizontal(|ui| {
                 let back = ui
-                    .add(egui::Button::new("←").frame(false))
+                    .add_enabled_ui(true, crate::widgets::back_arrow)
+                    .inner
                     .on_hover_text(plain(texts, "table.back"));
                 if back.clicked() {
                     self.open = None;

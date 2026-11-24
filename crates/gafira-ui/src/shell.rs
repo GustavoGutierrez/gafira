@@ -14,17 +14,20 @@ use crate::app_icon;
 use crate::settings::{self, Change, SettingsView};
 use gafira_theme::ThemeTokens;
 
+use crate::create::{Create, Tab, Thumbs};
+use crate::design_sizes::Category;
 use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
 use crate::editor::Editor;
 use crate::export;
 use crate::files::{self, FileAction, Outcome};
 #[cfg(test)]
 use crate::format::StartFormat;
-use crate::home::{Home, Thumbs};
+use crate::home::Home;
 use crate::recent::{self, RecentStore};
 use crate::saving::{self, Ended, Saving};
 use crate::splash;
 use crate::style::Theme;
+use crate::templates::Catalogue;
 use crate::text::Texts;
 
 /// Builds the engine once the window exists, with the waker that repaints
@@ -70,6 +73,12 @@ pub struct UiConfig {
     /// px: the one under the pointer (spec 078). The splash is centred on
     /// it; `None` leaves the centring to the windowing library.
     pub start_monitor: Option<(i32, i32, u32, u32)>,
+    /// The templates of Inicio and Plantillas (spec 091); none without them.
+    pub templates: Option<Arc<dyn crate::TemplateStore>>,
+    /// The brand kits of Marca (spec 093).
+    pub brand: Box<dyn crate::BrandStore>,
+    /// The installed asset packages (spec 097).
+    pub packs: Box<dyn crate::PackStore>,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -102,7 +111,12 @@ fn grow_into_main_window(ctx: &egui::Context) {
 /// The screen on display.
 enum Screen {
     Splash,
+    /// Inicio and Plantillas (spec 091).
     Home(Home),
+    /// «Crear un diseño» (spec 076), from a shortcut of Inicio.
+    Create(Create),
+    /// Marca (spec 093). Boxed: it holds its kits and thumbnails.
+    Brand(Box<crate::brand_screen::BrandScreen>),
     /// Boxed: the editor holds the canvas state and its textures.
     Editor(Box<Editor>),
 }
@@ -113,6 +127,18 @@ pub(crate) enum Go {
     Home,
     /// A new document on this page: its size and guides (spec 076).
     Create(Box<gafira_doc::Page>),
+    /// «Crear un diseño» on a category (spec 091).
+    CreateIn(Category),
+    /// Plantillas, on the templates of one kind if given (spec 091).
+    Templates(Option<&'static str>),
+    /// A new document with the content of the template at this path.
+    FromTemplate(PathBuf),
+    /// Marca, on the page of a kit if given (spec 093).
+    Brand(Option<String>),
+    /// Marca, importing this `.gafkit` (spec 094).
+    ImportKit(PathBuf),
+    /// Choose a `.gafpack` and show it before installing it (spec 097).
+    InstallPack,
     File(FileAction),
     /// Open a project of «Recientes».
     OpenRecent(PathBuf),
@@ -188,6 +214,17 @@ struct Shell {
     waker: egui::Context,
     /// The textures of the thumbnails of «Recientes» (spec 033).
     thumbs: Thumbs,
+    /// The templates of Inicio and Plantillas (spec 091).
+    catalogue: std::rc::Rc<std::cell::RefCell<Catalogue>>,
+    /// The brand kits (spec 093).
+    brand: std::rc::Rc<dyn crate::BrandStore>,
+    /// The installed asset packages (spec 097).
+    packs: Arc<dyn crate::PackStore>,
+    /// Where the templates come from, to read them again when a package
+    /// adds or takes some (spec 097).
+    template_store: Option<Arc<dyn crate::TemplateStore>>,
+    /// The package shown before it is installed, over any screen.
+    pack_dialog: Option<crate::pack_dialog::PackDialog>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -284,6 +321,14 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 saving: None,
                 waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
+                brand: std::rc::Rc::from(config.brand),
+                packs: Arc::from(config.packs),
+                pack_dialog: None,
+                template_store: config.templates.clone(),
+                catalogue: std::rc::Rc::new(std::cell::RefCell::new(Catalogue::new(
+                    config.templates,
+                    &cc.egui_ctx,
+                ))),
             }))
         }),
     )
@@ -302,6 +347,9 @@ impl Shell {
     fn new_editor(&self) -> Box<Editor> {
         let mut editor = Box::<Editor>::default();
         editor.library = Some(std::rc::Rc::clone(&self.library));
+        editor.templates = Some(std::rc::Rc::clone(&self.catalogue));
+        editor.brand = Some(std::rc::Rc::clone(&self.brand));
+        editor.packs = Some(Arc::clone(&self.packs));
         editor
             .photo_panel
             .get_mut()
@@ -350,12 +398,12 @@ impl Shell {
     }
 
     /// Leave the editor for `to`, closing the session (its slots go with it).
-    fn proceed(&mut self, to: Leave) {
+    fn proceed(&mut self, to: Leave, window: Option<&eframe::Frame>) {
         self.engine.projects().close();
         self.screen = self.home();
         match to {
             Leave::Home => {}
-            Leave::Open => self.file(FileAction::Open, None),
+            Leave::Open => self.file(FileAction::Open, None, window),
             Leave::Recent(path) => self.open_recent(&path),
         }
     }
@@ -363,6 +411,17 @@ impl Shell {
     /// Inicio with the recent projects as they are now, and the thumbnails
     /// of the ones it shows (spec 033).
     fn home(&self) -> Screen {
+        let (list, thumbs) = self.recents();
+        Screen::Home(Home::new(list, thumbs, Tab::Home, None))
+    }
+
+    /// The recent projects and the thumbnails of the ones Inicio shows.
+    fn recents(
+        &self,
+    ) -> (
+        Vec<recent::RecentProject>,
+        std::collections::BTreeMap<PathBuf, recent::RecentThumbnail>,
+    ) {
         let list = self.recent.list();
         let thumbs = recent::shown(&list)
             .iter()
@@ -371,7 +430,7 @@ impl Shell {
                 Some((project.path.clone(), thumb))
             })
             .collect();
-        Screen::Home(Home::new(list, thumbs))
+        (list, thumbs)
     }
 
     /// Put the open project in «Recientes» (spec 025).
@@ -399,13 +458,13 @@ impl Shell {
 
     /// Run `action` of the Archivo menu; a save goes to its thread and
     /// `then` follows it once it succeeded.
-    fn file(&mut self, action: FileAction, then: Option<Leave>) {
+    fn file(&mut self, action: FileAction, then: Option<Leave>, window: Option<&eframe::Frame>) {
         self.notice = None;
         if action != FileAction::Open && self.saving.is_some() {
             self.notice = Some(self.texts.t(&gafira_doc::msg!("file.busy")));
             return;
         }
-        match files::plan(&self.engine, action) {
+        match files::plan(&self.engine, action, window) {
             files::Plan::Cancelled | files::Plan::Opened(Outcome::Cancelled) => {}
             files::Plan::Opened(Outcome::Done) => {
                 self.remember();
@@ -428,7 +487,7 @@ impl Shell {
 
     /// «Guardar versión» with `name`; a project never saved asks for its
     /// file first, because a version lives inside the file (spec 031).
-    fn save_version(&mut self, name: String) {
+    fn save_version(&mut self, name: String, window: Option<&eframe::Frame>) {
         self.notice = None;
         if self.saving.is_some() {
             self.notice = Some(self.texts.t(&gafira_doc::msg!("file.busy")));
@@ -437,7 +496,7 @@ impl Shell {
         let at = if self.engine.projects().path().is_some() {
             None
         } else {
-            let Some(path) = files::pick_new(&self.engine) else {
+            let Some(path) = files::pick_new(&self.engine, window) else {
                 return;
             };
             Some(path)
@@ -469,7 +528,7 @@ impl Shell {
 
     /// The save on its thread (spec 036): its card while it runs; when it
     /// ends the engine accounts for it, and what waited for it follows.
-    fn pump_save(&mut self, ctx: &egui::Context) {
+    fn pump_save(&mut self, ctx: &egui::Context, window: Option<&eframe::Frame>) {
         let Some((running, _)) = self.saving.as_mut() else {
             return;
         };
@@ -478,13 +537,13 @@ impl Shell {
             return;
         };
         if let Some((_, after)) = self.saving.take() {
-            self.save_ended(ended, after);
+            self.save_ended(ended, after, window);
         }
         ctx.request_repaint();
     }
 
     /// Account for a save that ended, then do what waited for it.
-    fn save_ended(&mut self, ended: Ended, after: AfterSave) {
+    fn save_ended(&mut self, ended: Ended, after: AfterSave, window: Option<&eframe::Frame>) {
         let result = match ended {
             Ended::Ran(outcome) => self
                 .engine
@@ -499,7 +558,7 @@ impl Shell {
                     self.remember();
                 }
                 if let Some(to) = after.then {
-                    self.proceed(to);
+                    self.proceed(to, window);
                 }
             }
             Err(detail) => {
@@ -605,12 +664,12 @@ impl Shell {
                 LeaveChoice::Cancel => self.leaving = None,
                 LeaveChoice::Discard => {
                     self.leaving = None;
-                    self.proceed(to);
+                    self.proceed(to, Some(window));
                 }
                 LeaveChoice::Save => {
                     self.leaving = None;
                     // The way on follows the save, once it succeeded.
-                    self.file(FileAction::Save, Some(to));
+                    self.file(FileAction::Save, Some(to), Some(window));
                 }
             }
             return true;
@@ -676,12 +735,47 @@ impl Shell {
 impl Shell {
     /// Ajustes over the whole window; a change applies at once and persists
     /// through `SettingsService` (03 §7.8, §16.1).
-    fn show_settings(&mut self, ctx: &egui::Context) {
+    /// «Instalar paquete»: a `.gafpack` chosen, shown before it is
+    /// installed (spec 097).
+    fn pick_pack(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let chosen = crate::files::picker(Some(frame))
+            .add_filter("Gafira", &[crate::PACK_EXTENSION])
+            .pick_file();
+        if let Some(path) = chosen {
+            self.pack_dialog = Some(crate::pack_dialog::PackDialog::open(&self.packs, path, ctx));
+        }
+    }
+
+    /// The packages changed: the panels and the templates read them again.
+    fn packs_changed(&mut self, ctx: &egui::Context) {
+        if let Screen::Editor(editor) = &mut self.screen {
+            editor.packs_changed();
+        }
+        *self.catalogue.borrow_mut() = Catalogue::new(self.template_store.clone(), ctx);
+    }
+
+    /// The package window over whatever is on display (spec 097).
+    fn show_pack(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = self.pack_dialog.as_mut() else {
+            return;
+        };
+        match dialog.show(ctx, &self.theme, &self.texts, &self.packs) {
+            crate::pack_dialog::PackAsk::Stay => {}
+            crate::pack_dialog::PackAsk::Close => self.pack_dialog = None,
+            crate::pack_dialog::PackAsk::Installed => {
+                self.pack_dialog = None;
+                self.packs_changed(ctx);
+            }
+        }
+    }
+
+    fn show_settings(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
         let Some(view) = self.settings.as_mut() else {
             return;
         };
         let current = self.engine.settings().get();
         let system = self.engine.settings().preview(LanguagePreference::System);
+        let packs = self.packs.installed();
         let change = settings::show(
             ctx,
             &self.theme,
@@ -689,9 +783,16 @@ impl Shell {
             view,
             current,
             &system,
-            self.version,
+            (self.version, &packs),
         );
         match change {
+            Change::InstallPack => self.pick_pack(ctx, frame),
+            Change::Uninstall(id) => {
+                if let Err(problem) = self.packs.uninstall(&id) {
+                    eprintln!("uninstall {id}: {}", problem.key);
+                }
+                self.packs_changed(ctx);
+            }
             Change::None => {}
             Change::Back => {
                 self.settings = None;
@@ -733,6 +834,7 @@ impl eframe::App for Shell {
                     then: None,
                     ..after
                 },
+                None,
             );
         }
     }
@@ -742,8 +844,15 @@ impl eframe::App for Shell {
         // only wake it (02 §5.2), so the queue is drained and dropped.
         while self.engine.events().try_recv().is_ok() {}
         self.pump_autosave(ctx);
+        // «Tomar un color» (spec 098), on every screen with a colour picker.
+        crate::eyedropper::frame(
+            ctx,
+            self.texts.t(&gafira_doc::msg!("eyedropper.name")),
+            (self.theme.c("text"), self.theme.c("selection.bg")),
+        );
         if self.settings.is_some() {
-            self.show_settings(ctx);
+            self.show_settings(ctx, frame);
+            self.show_pack(ctx);
             return;
         }
         let go = match &mut self.screen {
@@ -754,6 +863,20 @@ impl eframe::App for Shell {
                 if progress >= 1.0 {
                     grow_into_main_window(ctx);
                     match self.open_at_start.take() {
+                        Some(path)
+                            if path.extension().is_some_and(|e| {
+                                e.eq_ignore_ascii_case(crate::brand::KIT_EXTENSION)
+                            }) =>
+                        {
+                            Go::ImportKit(path)
+                        }
+                        // A package opened from the system: Inicio, with
+                        // the package shown over it (spec 097).
+                        Some(path) if is_pack(&path) => {
+                            self.pack_dialog =
+                                Some(crate::pack_dialog::PackDialog::open(&self.packs, path, ctx));
+                            Go::Home
+                        }
                         Some(path) => Go::OpenRecent(path),
                         None => Go::Home,
                     }
@@ -762,21 +885,50 @@ impl eframe::App for Shell {
                     Go::Stay
                 }
             }
-            Screen::Home(home) => {
-                home.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)
+            Screen::Home(home) => home.show(
+                ctx,
+                &self.theme,
+                &self.texts,
+                unix_now(),
+                &mut self.thumbs,
+                &mut self.catalogue.borrow_mut(),
+            ),
+            Screen::Create(create) => {
+                create.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)
             }
+            Screen::Brand(screen) => screen.show(
+                ctx,
+                &self.theme,
+                &self.texts,
+                self.brand.as_ref(),
+                Some(frame),
+            ),
             Screen::Editor(editor) => editor.show(
                 ctx,
                 &mut self.engine,
                 &self.theme,
                 &self.texts,
-                self.notice.as_deref(),
                 &mut self.clipboard,
+                (self.notice.as_deref(), Some(frame)),
             ),
         };
+        // A package dropped on the window, on any screen (spec 097).
+        let dropped = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .find(|p| is_pack(p))
+        });
+        if let Some(path) = dropped
+            && !matches!(self.screen, Screen::Splash)
+        {
+            self.pack_dialog = Some(crate::pack_dialog::PackDialog::open(&self.packs, path, ctx));
+        }
+        self.show_pack(ctx);
         let blocked = self.dialogs(ctx, frame);
         self.pump_export(ctx);
-        self.pump_save(ctx);
+        self.pump_save(ctx, Some(frame));
         let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request
@@ -788,7 +940,7 @@ impl eframe::App for Shell {
         match go {
             Go::Stay => {}
             Go::Home if in_editor && modified => self.leaving = Some(Leave::Home),
-            Go::Home if in_editor => self.proceed(Leave::Home),
+            Go::Home if in_editor => self.proceed(Leave::Home, Some(frame)),
             Go::Home => {
                 self.screen = self.home();
                 // Once, as Inicio first appears (03 §6.1).
@@ -801,8 +953,8 @@ impl eframe::App for Shell {
                 }
             }
             Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
-            Go::File(action) => self.file(action, None),
-            Go::SaveVersion(name) => self.save_version(name),
+            Go::File(action) => self.file(action, None, Some(frame)),
+            Go::SaveVersion(name) => self.save_version(name, Some(frame)),
             Go::OpenRecent(path) if in_editor && modified => {
                 self.leaving = Some(Leave::Recent(path));
             }
@@ -832,6 +984,37 @@ impl eframe::App for Shell {
                 Ok(()) => self.screen = Screen::Editor(self.new_editor()),
                 Err(error) => eprintln!("new document: {error}"),
             },
+            Go::CreateIn(category) => {
+                let (list, thumbs) = self.recents();
+                self.screen = Screen::Create(Create::new(list, thumbs, category));
+            }
+            Go::Templates(kind) => {
+                let (list, thumbs) = self.recents();
+                self.screen = Screen::Home(Home::new(list, thumbs, Tab::Templates, kind));
+            }
+            Go::ImportKit(path) => {
+                self.screen = Screen::Brand(Box::new(crate::brand_screen::BrandScreen::importing(
+                    self.brand.as_ref(),
+                    path,
+                )));
+            }
+            Go::InstallPack => self.pick_pack(ctx, frame),
+            Go::Brand(kit) => {
+                self.screen = Screen::Brand(Box::new(crate::brand_screen::BrandScreen::new(
+                    self.brand.as_ref(),
+                    kit,
+                )));
+            }
+            Go::FromTemplate(path) => {
+                self.notice = None;
+                match self.engine.projects().new_document_from_template(&path) {
+                    Ok(()) => self.screen = Screen::Editor(self.new_editor()),
+                    Err(error) => {
+                        eprintln!("template {}: {error}", path.display());
+                        self.notice = Some(self.texts.t(&gafira_doc::msg!("templates.failed")));
+                    }
+                }
+            }
         }
     }
 }
@@ -850,4 +1033,10 @@ fn unix_now() -> i64 {
         .ok()
         .and_then(|elapsed| i64::try_from(elapsed.as_secs()).ok())
         .unwrap_or(0)
+}
+
+/// Whether `path` is a `.gafpack` (spec 097).
+fn is_pack(path: &std::path::Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(crate::PACK_EXTENSION))
 }

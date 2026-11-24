@@ -20,15 +20,21 @@ icons=$data/icons/hicolor
 sizes="16 24 32 48 64 128 256 512"
 app=gafira
 doc=application-vnd.gafira.project+zip
+kit=application-vnd.gafira.brandkit+zip
+pack=application-vnd.gafira.gafpack+zip
 
 # The icon files, relative to assets/app-icon/hicolor and to $icons alike.
 icon_files() {
     for size in $sizes; do
         echo "${size}x${size}/apps/$app.png"
         echo "${size}x${size}/mimetypes/$doc.png"
+        echo "${size}x${size}/mimetypes/$kit.png"
+        echo "${size}x${size}/mimetypes/$pack.png"
     done
     echo "scalable/apps/$app.svg"
     echo "scalable/mimetypes/$doc.svg"
+    echo "scalable/mimetypes/$kit.svg"
+    echo "scalable/mimetypes/$pack.svg"
 }
 
 refresh() {

@@ -25,6 +25,7 @@ fn line(width: f64, attached: Option<Attachment>) -> LineNode {
         end,
         color: black(),
         width,
+        dash: Default::default(),
     }
 }
 
@@ -144,4 +145,30 @@ fn s58_02_line_ends() {
     );
     let ends = quarter.ends(&page(0.0, quarter.clone()), &box_);
     assert!(near(ends[1], Point::new(150.0, 50.0)), "{:?}", ends[1]);
+}
+
+// S96-03: a line can be dashed or dotted and have filled circles, filled
+// squares or bars at its ends; a line saved before has a solid stroke.
+#[test]
+fn s96_03_dashes_and_new_caps_round_trip() {
+    use gafira_doc::LineDash;
+    let mut dashed = line(2.0, None);
+    dashed.dash = LineDash::Dotted;
+    dashed.start.cap = LineCap::CircleFilled;
+    dashed.end.cap = LineCap::Bar;
+    let json = serde_json::to_value(&dashed).expect("json");
+    assert_eq!(json["dash"], "dotted");
+    assert_eq!(json["start"]["cap"], "circle_filled");
+    assert_eq!(json["end"]["cap"], "bar");
+    let back: LineNode = serde_json::from_value(json).expect("read");
+    assert_eq!(back, dashed);
+    let mut filled = line(2.0, None);
+    filled.end.cap = LineCap::SquareFilled;
+    let json = serde_json::to_value(&filled).expect("json");
+    assert_eq!(json["end"]["cap"], "square_filled");
+    assert!(json.get("dash").is_none(), "a solid line writes no dash");
+    let mut old = json.clone();
+    old.as_object_mut().expect("object").remove("dash");
+    let read: LineNode = serde_json::from_value(old).expect("read");
+    assert_eq!(read.dash, LineDash::Solid);
 }

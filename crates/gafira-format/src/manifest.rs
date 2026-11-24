@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
+use gafira_ports::repository::{TEMPLATE_PAGE_FORMATS, TemplateMeta};
+
 use crate::{FORMAT, FORMAT_VERSION};
 
 /// The manifest of a document with `pages`, `sequences` and `assets`
@@ -54,6 +56,45 @@ pub(crate) fn build(
         "sequences": sequences,
         "assets": names,
         "versions": versions,
+    })
+}
+
+/// The `template` object of the manifest (D-81, spec 091).
+pub(crate) fn template_value(meta: &TemplateMeta) -> Value {
+    json!({
+        "tags": meta.tags,
+        "pageFormat": meta.page_format,
+        "style": meta.style,
+        "color": meta.color,
+    })
+}
+
+/// The template a manifest describes, when its `template` is well formed:
+/// a list of words, a known page format, a style and a `#RRGGBB` colour.
+/// Anything else is no template, and the file is an ordinary project.
+pub(crate) fn template(manifest: &Value) -> Option<TemplateMeta> {
+    let value = manifest.get("template")?.as_object()?;
+    let tags = value
+        .get("tags")?
+        .as_array()?
+        .iter()
+        .map(|tag| tag.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()?;
+    let page_format = value.get("pageFormat")?.as_str()?;
+    if !TEMPLATE_PAGE_FORMATS.contains(&page_format) {
+        return None;
+    }
+    let style = value.get("style")?.as_str()?;
+    let color = value.get("color")?.as_str()?;
+    let hex = color.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(TemplateMeta {
+        tags,
+        page_format: page_format.to_owned(),
+        style: style.to_owned(),
+        color: color.to_owned(),
     })
 }
 

@@ -96,6 +96,12 @@ pub(crate) fn dropped(from: usize, siblings: usize, gap: usize) -> Option<usize>
 }
 
 /// The ancestors of `id`, nearest first, for a tree that may be broken.
+/// `name` on one line, as a row of Capas shows it (spec 098): its runs of
+/// spaces, tabs and line breaks become one space.
+pub(crate) fn one_line(name: &str) -> String {
+    name.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn ancestors(page: &Page, id: NodeId) -> Vec<NodeId> {
     let parents = group::parents(page);
     let mut seen = BTreeSet::new();
@@ -313,6 +319,16 @@ mod tests {
     // S48-06: rows list four siblings front first; the back one (index 0)
     // dropped above the frontmost lands on 3 and below it on 2; dropped
     // next to itself it does not move; nothing lands out of range.
+    #[test]
+    fn s98_08_a_name_shows_on_one_line() {
+        assert_eq!(
+            one_line("HECHO\nES MEJOR\r\n  QUE\tPERFECTO "),
+            "HECHO ES MEJOR QUE PERFECTO"
+        );
+        assert_eq!(one_line("Forma"), "Forma");
+        assert_eq!(one_line(" \n "), "");
+    }
+
     #[test]
     fn s48_06_drop_index() {
         assert_eq!(dropped(0, 4, 0), Some(3));

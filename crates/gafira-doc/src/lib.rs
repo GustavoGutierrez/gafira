@@ -64,7 +64,7 @@ pub use layout::{
     GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,
     check_bleed,
 };
-pub use line::{Anchor, Attachment, LineCap, LineEnd, LineNode};
+pub use line::{Anchor, Attachment, LineCap, LineDash, LineEnd, LineNode, line_pieces};
 pub use node::{
     ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, PathCommand, ShapeGeometry,
     ShapeNode, ShapePath, ShapeStroke, ShapeText, VerticalAlign,

@@ -298,6 +298,7 @@ mod tests {
             end: LineEnd::new([1.0, 1.0], LineCap::Arrow),
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             width: 2.0,
+            dash: Default::default(),
         }
     }
 

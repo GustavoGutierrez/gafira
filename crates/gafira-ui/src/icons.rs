@@ -96,11 +96,38 @@ pub(crate) enum Icon {
     Streak,
     SunRays,
     Bokeh,
+    /// Ajustes and its sections (spec 092).
+    Settings,
+    Language,
+    Privacy,
+    About,
+    Light,
+    Dark,
+    System,
+    /// Bold and italic of a text style (spec 093).
+    Bold,
+    Italic,
+    /// «Seleccionar» in Dibujo: Gafira's own cursor (`assets/icons/gafira`).
+    Cursor,
+    /// The pointer while an element is moved on the canvas (spec 095).
+    Move,
+    /// «Instalar paquete» (spec 097): Gafira's own box.
+    Package,
+    /// «Tomar un color» beside every colour picker (spec 098).
+    Eyedropper,
+    /// The menu of a row of Capas (spec 098): Copiar, Pegar and Capa.
+    CopySimple,
+    Paste,
+    Stack,
+    /// In place of «›», «✓» and «⚠», which the interface font lacks (spec 098).
+    Submenu,
+    Check,
+    Warning,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 56] = [
+    pub(crate) const ALL: [Self; 75] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -157,6 +184,25 @@ impl Icon {
         Self::SunRays,
         Self::Crop,
         Self::Bokeh,
+        Self::Settings,
+        Self::Language,
+        Self::Privacy,
+        Self::About,
+        Self::Light,
+        Self::Dark,
+        Self::System,
+        Self::Bold,
+        Self::Italic,
+        Self::Cursor,
+        Self::Move,
+        Self::Package,
+        Self::Eyedropper,
+        Self::CopySimple,
+        Self::Paste,
+        Self::Stack,
+        Self::Submenu,
+        Self::Check,
+        Self::Warning,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -218,6 +264,25 @@ impl Icon {
             Self::SunRays => "sun-horizon",
             Self::Crop => "crop",
             Self::Bokeh => "circles-three",
+            Self::Settings => "gear-six",
+            Self::Language => "globe",
+            Self::Privacy => "shield-check",
+            Self::About => "info",
+            Self::Light => "sun",
+            Self::Dark => "moon",
+            Self::System => "monitor",
+            Self::Bold => "text-b",
+            Self::Italic => "text-italic",
+            Self::Cursor => "cursor",
+            Self::Move => "move",
+            Self::Package => "package",
+            Self::Eyedropper => "eyedropper",
+            Self::CopySimple => "copy-simple",
+            Self::Paste => "clipboard-text",
+            Self::Stack => "stack",
+            Self::Submenu => "caret-right",
+            Self::Check => "check",
+            Self::Warning => "warning",
         }
     }
 
@@ -232,11 +297,27 @@ impl Icon {
                 | Self::Identity
                 | Self::Library
                 | Self::Drawing
+                | Self::Settings
+                | Self::Language
+                | Self::Privacy
+                | Self::About
+                | Self::Light
+                | Self::Dark
+                | Self::System
         )
+    }
+
+    /// Whether the icon is one of Gafira's own (`assets/icons/gafira`),
+    /// drawn in a single weight.
+    fn is_own(self) -> bool {
+        matches!(self, Self::Cursor | Self::Move | Self::Package)
     }
 
     /// The table key of the icon in `weight`.
     fn key(self, weight: Weight) -> String {
+        if self.is_own() {
+            return format!("gafira/{}", self.name());
+        }
         match weight {
             Weight::Fill if self.has_fill() => format!("fill/{}-fill", self.name()),
             _ => format!("regular/{}", self.name()),
@@ -457,8 +538,29 @@ mod tests {
                 }
             }
         }
+        for entry in fs::read_dir(own_assets())
+            .expect("own icon folder")
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(stem) = name.strip_suffix(".svg") {
+                found.push(format!("gafira/{stem}"));
+            }
+        }
         found.sort();
         found
+    }
+
+    fn own_assets() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/icons/gafira")
+    }
+
+    /// The file of the icon stored under `key`.
+    fn file_of(key: &str) -> PathBuf {
+        match key.strip_prefix("gafira/") {
+            Some(stem) => own_assets().join(format!("{stem}.svg")),
+            None => assets().join(format!("{key}.svg")),
+        }
     }
 
     fn used() -> BTreeSet<String> {
@@ -504,7 +606,7 @@ mod tests {
     #[test]
     fn s37_02_the_embedded_table_is_the_parse_of_the_files() {
         for key in vendored() {
-            let svg = fs::read_to_string(assets().join(format!("{key}.svg"))).expect("svg");
+            let svg = fs::read_to_string(file_of(&key)).expect("svg");
             let parsed = path_data::svg_contours(&svg).expect("every icon parses");
             let embedded = GEOMETRY
                 .iter()
@@ -598,7 +700,7 @@ mod tests {
         // ARQ-75: each icon file has its own entry; the hash is BLAKE3 of the file.
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let entries = licence_entries();
-        for key in vendored() {
+        for key in vendored().into_iter().filter(|k| !k.starts_with("gafira/")) {
             let path = format!("assets/icons/phosphor/{key}.svg");
             let entry = entries
                 .iter()
@@ -613,6 +715,33 @@ mod tests {
             assert_eq!(get("license"), "MIT", "{path}");
             assert_eq!(get("version"), "2.1.1", "{path}");
             assert!(root.join(get("license_file")).is_file(), "{path}");
+            let bytes = fs::read(root.join(&path)).expect("icon file");
+            assert_eq!(
+                get("hash"),
+                blake3::hash(&bytes).to_hex().as_str(),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn s37_04_every_own_icon_is_registered_with_its_origin_and_hash() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let entries = licence_entries();
+        for key in vendored().into_iter().filter(|k| k.starts_with("gafira/")) {
+            let path = format!("assets/icons/{key}.svg");
+            let entry = entries
+                .iter()
+                .find(|e| e.iter().any(|(k, v)| k == "path" && *v == path))
+                .unwrap_or_else(|| panic!("{path} has no entry in assets/LICENSES.toml"));
+            let get = |name: &str| {
+                entry
+                    .iter()
+                    .find(|(k, _)| k == name)
+                    .map_or("", |(_, v)| v.as_str())
+            };
+            assert!(!get("origin").is_empty(), "{path}");
+            assert!(!get("license").is_empty(), "{path}");
             let bytes = fs::read(root.join(&path)).expect("icon file");
             assert_eq!(
                 get("hash"),

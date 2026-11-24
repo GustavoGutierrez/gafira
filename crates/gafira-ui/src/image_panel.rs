@@ -248,32 +248,7 @@ struct Control {
     field: Field,
 }
 
-/// The colours along a track.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Track {
-    Plain,
-    Temperature,
-    Tint,
-    Hue,
-    Saturation,
-}
-
-impl Track {
-    fn colors(self) -> Vec<Color32> {
-        let rgb = Color32::from_rgb;
-        match self {
-            Self::Plain => Vec::new(),
-            Self::Temperature => vec![rgb(47, 128, 237), rgb(221, 226, 230), rgb(242, 153, 74)],
-            Self::Tint => vec![rgb(39, 174, 96), rgb(221, 226, 230), rgb(214, 70, 160)],
-            Self::Saturation => vec![rgb(150, 150, 150), rgb(235, 87, 87)],
-            // Once around, from the opposite of red.
-            Self::Hue => (0..=12)
-                .map(|n| egui::ecolor::Hsva::new((n as f32 / 12.0 + 0.5).fract(), 0.75, 0.9, 1.0))
-                .map(Color32::from)
-                .collect(),
-        }
-    }
-}
+pub(crate) use crate::slider::Track;
 
 const fn control(key: &'static str, range: (f64, f64), track: Track, field: Field) -> Control {
     Control {
@@ -326,8 +301,8 @@ const TEXTURE: [Control; 3] = [
     control("image.vignette", BOTH, Track::Plain, |a| &mut a.vignette),
 ];
 
-/// A slider with its name and its number; a double click on it goes back to
-/// `rest`.
+/// A slider with its name and its number, in whole steps; a double click on
+/// it goes back to `rest` (spec 098: [`crate::slider::Slider`]).
 pub(crate) fn slider(
     ui: &mut Ui,
     theme: &Theme,
@@ -335,74 +310,10 @@ pub(crate) fn slider(
     (value, range, rest): (&mut f64, (f64, f64), f64),
     track: Track,
 ) -> bool {
-    let before = *value;
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(name).font(theme.font("body-sm")));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_sized(
-                Vec2::new(56.0, 26.0),
-                egui::DragValue::new(value)
-                    .range(range.0..=range.1)
-                    .max_decimals(0)
-                    .speed(0.5),
-            );
-        });
-    });
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), 22.0),
-        Sense::click_and_drag(),
-    );
-    // The knob stays whole inside.
-    let room = rect.shrink2(Vec2::new(9.0, 0.0));
-    let span = (range.1 - range.0).max(f64::EPSILON);
-    if response.double_clicked() {
-        *value = rest;
-    } else if (response.dragged() || response.clicked())
-        && let Some(at) = response.interact_pointer_pos()
-    {
-        let share = f64::from((at.x - room.left()) / room.width().max(1.0)).clamp(0.0, 1.0);
-        *value = (range.0 + share * span).round();
-    }
-    let x_of = |v: f64| {
-        let share = ((v - range.0) / span).clamp(0.0, 1.0);
-        room.left() + room.width() * share as f32
-    };
-    let line = Rect::from_center_size(rect.center(), Vec2::new(room.width(), 5.0));
-    let painter = ui.painter();
-    let colors = track.colors();
-    if colors.len() < 2 {
-        painter.rect_filled(line, 2.5, theme.c("border"));
-        let (a, b) = (x_of(rest), x_of(*value));
-        let done = Rect::from_x_y_ranges(a.min(b)..=a.max(b), line.y_range());
-        painter.rect_filled(done, 2.5, theme.c("accent"));
-    } else {
-        let mut mesh = egui::Mesh::default();
-        // A handful of colours: the casts are exact.
-        let last = (colors.len() - 1) as f32;
-        for (n, color) in colors.iter().enumerate() {
-            let x = line.left() + line.width() * n as f32 / last;
-            mesh.colored_vertex(Pos2::new(x, line.top()), *color);
-            mesh.colored_vertex(Pos2::new(x, line.bottom()), *color);
-            if n > 0 {
-                let at = n as u32 * 2;
-                mesh.add_triangle(at - 2, at - 1, at);
-                mesh.add_triangle(at - 1, at, at + 1);
-            }
-        }
-        painter.add(mesh);
-    }
-    let knob = Pos2::new(x_of(*value), rect.center().y);
-    painter.circle(
-        knob,
-        8.0,
-        theme.c("surface"),
-        Stroke::new(1.5, theme.c("text.secondary")),
-    );
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
-    }
-    ui.add_space(4.0);
-    *value != before
+    crate::slider::Slider::new(name, value, range)
+        .rest(rest)
+        .track(track)
+        .show(ui, theme)
 }
 
 /// A choice in a row of them.
@@ -976,8 +887,8 @@ impl Editing {
         if let Some(note) = self.note {
             ui.add_space(8.0);
             let color = theme.c("error.fg");
-            let text = RichText::new(format!("⚠ {}", with.t(note)));
-            ui.label(text.font(theme.font("body-sm")).color(color));
+            let text = RichText::new(with.t(note)).font(theme.font("body-sm"));
+            widgets::note(ui, Icon::Warning, text, color);
             if note == "image.no_model" && ui.button(with.t("vision.models")).clicked() {
                 asks.vision = Some(Ask::Models);
             }
@@ -2039,7 +1950,7 @@ fn shadows(ui: &mut Ui, with: &mut With<'_>, image: &ImageNode, asks: &mut Asks)
         ui.label(RichText::new(with.t("image.shadow_color")).font(theme.font("body-sm")));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let mut rgba = canvas::picker_rgba(Some(next.color));
-            if ui.color_edit_button_srgba_unmultiplied(&mut rgba).changed() {
+            if crate::eyedropper::color_edit(ui, &mut rgba).changed() {
                 next.color = canvas::picked_color(Some(next.color), rgba);
             }
         });

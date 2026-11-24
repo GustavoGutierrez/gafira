@@ -12,6 +12,7 @@ use egui::{Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use gafira_doc::msg::{Message, MessageKey};
 use gafira_doc::{BlendMode, NodeId, PageId, PathCommand, ShapePath};
 
+use crate::icons::{self, Icon, Weight};
 use crate::style::Theme;
 use crate::text::Texts;
 
@@ -774,12 +775,8 @@ pub(crate) fn panel(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, state: &mut
                         setting.colour = colour;
                     }
                 }
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut setting.colour,
-                    egui::color_picker::Alpha::Opaque,
-                )
-                .on_hover_text(t(texts, "draw.custom_colour"));
+                crate::eyedropper::color_edit_opaque(ui, &mut setting.colour)
+                    .on_hover_text(t(texts, "draw.custom_colour"));
             });
             ui.add_space(12.0);
             let (lo, hi) = brush.sizes;
@@ -855,27 +852,16 @@ fn number_row(
     range: std::ops::RangeInclusive<f32>,
     step: f64,
 ) {
-    ui.label(
-        RichText::new(t(texts, key))
-            .font(theme.font("body-sm"))
-            .color(theme.c("text.secondary")),
-    );
-    ui.horizontal(|ui| {
-        let width = ui.available_width() - 64.0;
-        ui.spacing_mut().slider_width = width.max(60.0);
-        ui.add(
-            egui::Slider::new(value, range.clone())
-                .show_value(false)
-                .step_by(step),
-        );
-        ui.add(
-            egui::DragValue::new(value)
-                .range(range)
-                .speed(step)
-                .max_decimals(1),
-        );
-    });
-    ui.add_space(4.0);
+    let mut number = f64::from(*value);
+    let (lo, hi) = (f64::from(*range.start()), f64::from(*range.end()));
+    if crate::slider::Slider::new(t(texts, key), &mut number, (lo, hi))
+        .rest(lo)
+        .step(step, if step < 1.0 { 1 } else { 0 })
+        .show(ui, theme)
+    {
+        // Within the range: the cast loses nothing seen.
+        *value = number as f32;
+    }
 }
 
 /// One card of the brushes: the brush drawing its own sample stroke in its
@@ -926,24 +912,15 @@ fn brush_card(
             t(texts, brush.key)
         }
         Tool::Select => {
-            // The arrow of the pointer.
-            let c = art.center() + Vec2::new(-4.0, -2.0);
-            let ink = theme.c("text");
-            let head = vec![
-                c + Vec2::new(-8.0, -14.0),
-                c + Vec2::new(10.0, 4.0),
-                c + Vec2::new(-8.0, 6.0),
-            ];
-            ui.painter()
-                .add(egui::Shape::convex_polygon(head, ink, Stroke::NONE));
-            let stem = vec![
-                c + Vec2::new(-1.0, 3.0),
-                c + Vec2::new(3.0, 1.0),
-                c + Vec2::new(9.0, 13.0),
-                c + Vec2::new(5.0, 15.0),
-            ];
-            ui.painter()
-                .add(egui::Shape::convex_polygon(stem, ink, Stroke::NONE));
+            // Gafira's cursor, the pointer of «Seleccionar».
+            let icon = Rect::from_center_size(art.center(), Vec2::splat(34.0));
+            icons::paint(
+                ui.painter(),
+                icon,
+                Icon::Cursor,
+                Weight::Regular,
+                theme.c("text"),
+            );
             t(texts, "draw.select")
         }
         Tool::Eraser => {

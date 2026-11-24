@@ -1,5 +1,6 @@
 //! `InsertPage` and `RemovePage`: pages in and out of the page list (Q4);
-//! `ReorderPage` and `DuplicatePage` (spec 056, FD-02).
+//! `ReorderPage` and `DuplicatePage` (spec 056, FD-02); `ApplyTemplate`
+//! (spec 091).
 
 use std::sync::Arc;
 
@@ -327,6 +328,188 @@ impl Command for DuplicatePage {
         if let Some(record) = &self.record {
             dirty.pages.insert(record.page.id);
             dirty.nodes.extend(record.page.nodes.keys().copied());
+        }
+        dirty
+    }
+}
+
+/// The nodes of `source` with new ids from the counter, in the order of the
+/// old ones, so a redo gives the same ids; children, roots and the shapes a
+/// line sticks to follow. The roots and the nodes, by new id.
+#[allow(clippy::type_complexity)]
+fn renumbered(
+    doc: &mut DocMut<'_>,
+    source: &Page,
+) -> Result<
+    (
+        Vec<gafira_doc::NodeId>,
+        std::collections::BTreeMap<gafira_doc::NodeId, Arc<gafira_doc::Node>>,
+    ),
+    CommandError,
+> {
+    let mut ids = std::collections::BTreeMap::new();
+    for old in source.nodes.keys() {
+        let new = doc
+            .alloc_node_id()
+            .map_err(|_| CommandError::IdSpaceExhausted)?;
+        ids.insert(*old, new);
+    }
+    let map = |old: &gafira_doc::NodeId| ids.get(old).copied().unwrap_or(*old);
+    let roots = source.roots.iter().map(map).collect();
+    let nodes = source
+        .nodes
+        .iter()
+        .map(|(old, node)| {
+            let mut node = (**node).clone();
+            node.base.id = map(old);
+            node.children = node.children.iter().map(map).collect();
+            if let gafira_doc::NodeKind::Line(line) = &mut node.kind {
+                for end in [&mut line.start, &mut line.end] {
+                    if let Some(attached) = &mut end.attached {
+                        attached.node = map(&attached.node);
+                    }
+                }
+            }
+            (map(old), Arc::new(node))
+        })
+        .collect();
+    Ok((roots, nodes))
+}
+
+/// What one successful `ApplyTemplate::apply` did.
+#[derive(Clone, Debug)]
+struct Templated {
+    counter: u64,
+    at: usize,
+    old: Arc<Page>,
+    new: Arc<Page>,
+    added: Vec<Arc<Page>>,
+}
+
+/// Puts a template on a page (spec 091): the content and background of
+/// the first template page replace the page's, and every other template
+/// page follows it as a new page of the same size, guides, margins and
+/// bleed. The page keeps its id,
+/// name, size, guides and margins; every node and new page gets a new id.
+///
+/// The template pages come already fitted to the page; their ids are
+/// only names inside each one. The ids are allocated by `apply` and given
+/// back by `revert`, so a redo rebuilds an identical document.
+#[derive(Clone, Debug)]
+pub struct ApplyTemplate {
+    page: PageId,
+    pages: Vec<Page>,
+    record: Option<Templated>,
+}
+
+impl ApplyTemplate {
+    /// Puts `pages` on `page`.
+    pub fn new(page: PageId, pages: Vec<Page>) -> Self {
+        Self {
+            page,
+            pages,
+            record: None,
+        }
+    }
+}
+
+impl Command for ApplyTemplate {
+    fn label(&self) -> CommandLabel {
+        MessageKey("edit.apply_template")
+    }
+
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        let view = doc.as_doc();
+        let at = view
+            .pages()
+            .iter()
+            .position(|p| p.id == self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        let Some((first, rest)) = self.pages.split_first() else {
+            return Err(CommandError::InvalidValue("a template without pages"));
+        };
+        let old = Arc::clone(&view.pages()[at]);
+        let counter = view.next_id();
+        let (roots, nodes) = renumbered(doc, first)?;
+        let mut page = (*old).clone();
+        page.roots = roots;
+        page.nodes = nodes;
+        page.background.clone_from(&first.background);
+        let new = Arc::new(page);
+        let mut added = Vec::new();
+        for source in rest {
+            let id = doc
+                .alloc_page_id()
+                .map_err(|_| CommandError::IdSpaceExhausted)?;
+            let (roots, nodes) = renumbered(doc, source)?;
+            // A page like the one the template went on: its size, guides,
+            // margins and bleed.
+            let mut page = Page::new(id, source.name.clone(), old.size);
+            page.guides.clone_from(&old.guides);
+            page.margins = old.margins;
+            page.bleed = old.bleed;
+            page.roots = roots;
+            page.nodes = nodes;
+            page.background.clone_from(&source.background);
+            added.push(Arc::new(page));
+        }
+        doc.pages_mut()[at] = Arc::clone(&new);
+        for (k, page) in added.iter().enumerate() {
+            doc.pages_mut().insert(at + 1 + k, Arc::clone(page));
+        }
+        self.record = Some(Templated {
+            counter,
+            at,
+            old,
+            new,
+            added,
+        });
+        Ok(Applied::Changed)
+    }
+
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+        let record = self.record.as_ref().ok_or(CommandError::NotApplied)?;
+        let pages = doc.as_doc().pages();
+        let end = record.at + 1 + record.added.len();
+        let same = pages.len() >= end
+            && *pages[record.at] == *record.new
+            && pages[record.at + 1..end]
+                .iter()
+                .zip(&record.added)
+                .all(|(a, b)| **a == **b);
+        if !same {
+            return Err(CommandError::InvalidValue(
+                "the template's pages were changed",
+            ));
+        }
+        // Restoring the counter must not hand out an id a later command took.
+        let taken = record.new.nodes.len() as u64
+            + record
+                .added
+                .iter()
+                .map(|p| 1 + p.nodes.len() as u64)
+                .sum::<u64>();
+        if doc.as_doc().next_id().checked_sub(taken) != Some(record.counter) {
+            return Err(CommandError::InvalidValue(
+                "ids were allocated after the template was applied",
+            ));
+        }
+        doc.pages_mut().drain(record.at + 1..end);
+        doc.pages_mut()[record.at] = Arc::clone(&record.old);
+        doc.restore_next_id(record.counter);
+        Ok(())
+    }
+
+    fn touches(&self) -> DirtySet {
+        let mut dirty = DirtySet::default();
+        dirty.pages.insert(self.page);
+        if let Some(record) = &self.record {
+            dirty.nodes.extend(record.old.nodes.keys().copied());
+            dirty.nodes.extend(record.new.nodes.keys().copied());
+            for page in &record.added {
+                dirty.pages.insert(page.id);
+                dirty.nodes.extend(page.nodes.keys().copied());
+            }
         }
         dirty
     }
