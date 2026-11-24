@@ -1090,3 +1090,11 @@ Fecha: 23 de noviembre de 2026.
 
 - **Decisión** (titular, con capturas de referencia): el panel Formas muestra cinco formas por sección; si hay más, la sección tiene «Ver todo» (todas, de tres en tres) y flechas a los lados de la fila para recorrerla. Se añaden formas a todas las secciones, entre ellas más líneas (discontinuas, punteadas, con extremos rellenos y de barra), y dos secciones nuevas: «Formas abstractas» y «Colgantes».
 - **Consecuencia**: la línea del documento gana el trazo (`LineDash`) y los extremos círculo relleno, cuadrado relleno y barra, aditivos al esquema 1. Se aplica en la spec 096.
+
+## D-128 Paquetes de recursos .gafpack
+
+Fecha: 23 de noviembre de 2026.
+
+- **Decisión** (titular, spec 097): Gafira instala paquetes de recursos `.gafpack` (ZIP con `manifest.json` 1.1 y `thumb.webp`). Un paquete se muestra y se valida antes de instalarlo —desde Inicio → Instalar paquete o con doble clic en el archivo— y sus recursos aparecen en la sección que les toca, por paquete y filtrables. Nada de un paquete se ejecuta.
+- **Consecuencia**: nuevo puerto `PackStore`, carpeta `packages/` en los datos, categoría Iconos en Elementos, sección Paquetes en Ajustes y el tipo `application/vnd.gafira.gafpack+zip` con su icono. La fase 1 admite clip art, ilustraciones, iconos y formas; los recursos compuestos quedan para la fase 2.
+
