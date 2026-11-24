@@ -88,11 +88,32 @@ impl<'a> ColorField<'a> {
             );
             ui.add_space(4.0);
         };
-        ui.label(
-            RichText::new(self.title.as_str())
-                .font(theme.font("ui-label"))
-                .color(theme.c("text")),
-        );
+        // The title, and at its right «Sin …» when there is a colour to take
+        // away.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(clear) = &self.clear
+                    && self.current.is_some()
+                {
+                    let link = RichText::new(clear.as_str())
+                        .font(theme.font("body-sm"))
+                        .color(theme.c("text.secondary"));
+                    if ui.add(egui::Button::new(link).frame(false)).clicked() {
+                        picked = Some(Picked::Clear);
+                    }
+                }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(self.title.as_str())
+                                .font(theme.font("ui-label"))
+                                .color(theme.c("text")),
+                        )
+                        .truncate(),
+                    );
+                });
+            });
+        });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             // The picker shows the colour in use, or the first of its
@@ -107,18 +128,6 @@ impl<'a> ColorField<'a> {
                 picked = Some(Picked::Fill(Fill::Solid(canvas::picked_color(shown, rgba))));
             }
             ui.label(plain(texts, "inspector.custom_color"));
-            if let Some(clear) = &self.clear
-                && self.current.is_some()
-            {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let link = RichText::new(clear.as_str())
-                        .font(theme.font("body-sm"))
-                        .color(theme.c("text.secondary"));
-                    if ui.add(egui::Button::new(link).frame(false)).clicked() {
-                        picked = Some(Picked::Clear);
-                    }
-                });
-            }
         });
         let brand: Vec<Fill> = crate::brand_panel::colors(ui.ctx())
             .into_iter()

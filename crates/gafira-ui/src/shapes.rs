@@ -105,6 +105,18 @@ pub(crate) enum Piece {
     SpeechRounded,
     SpeechOval,
     SpeechThought,
+    SpeechCloudWide,
+    SpeechCloudFlat,
+    SpeechCloudRound,
+    SpeechCloudThink,
+    SpeechCloudThinkRight,
+    SpeechCloudSoft,
+    SpeechCloudCurl,
+    SpeechHand,
+    SpeechHandThink,
+    SpeechHandWide,
+    SpeechOvalCurved,
+    SpeechDouble,
     Cloud,
     CloudFlat,
     CloudPuffy,
@@ -224,7 +236,7 @@ pub(crate) enum Piece {
 
 impl Piece {
     /// Every shape, in the order of the panel.
-    pub(crate) const ALL: [Self; 203] = [
+    pub(crate) const ALL: [Self; 215] = [
         Self::LineCircles,
         Self::LineDiamonds,
         Self::LineDiamondsFilled,
@@ -314,6 +326,18 @@ impl Piece {
         Self::SpeechRounded,
         Self::SpeechOval,
         Self::SpeechThought,
+        Self::SpeechCloudWide,
+        Self::SpeechCloudFlat,
+        Self::SpeechCloudRound,
+        Self::SpeechCloudThink,
+        Self::SpeechCloudThinkRight,
+        Self::SpeechCloudSoft,
+        Self::SpeechCloudCurl,
+        Self::SpeechHand,
+        Self::SpeechHandThink,
+        Self::SpeechHandWide,
+        Self::SpeechOvalCurved,
+        Self::SpeechDouble,
         Self::Cloud,
         Self::CloudFlat,
         Self::CloudPuffy,
@@ -575,6 +599,18 @@ impl Piece {
             Self::SpeechRounded => "pieces.speech_rounded",
             Self::SpeechOval => "pieces.speech_oval",
             Self::SpeechThought => "pieces.speech_thought",
+            Self::SpeechCloudWide => "pieces.speech_cloud_wide",
+            Self::SpeechCloudFlat => "pieces.speech_cloud_flat",
+            Self::SpeechCloudRound => "pieces.speech_cloud_round",
+            Self::SpeechCloudThink => "pieces.speech_cloud_think",
+            Self::SpeechCloudThinkRight => "pieces.speech_cloud_think_right",
+            Self::SpeechCloudSoft => "pieces.speech_cloud_soft",
+            Self::SpeechCloudCurl => "pieces.speech_cloud_curl",
+            Self::SpeechHand => "pieces.speech_hand",
+            Self::SpeechHandThink => "pieces.speech_hand_think",
+            Self::SpeechHandWide => "pieces.speech_hand_wide",
+            Self::SpeechOvalCurved => "pieces.speech_oval_curved",
+            Self::SpeechDouble => "pieces.speech_double",
             Self::Cloud => "pieces.cloud",
             Self::CloudFlat => "pieces.cloud_flat",
             Self::CloudPuffy => "pieces.cloud_puffy",
@@ -818,6 +854,18 @@ pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[
             Piece::SpeechRounded,
             Piece::SpeechOval,
             Piece::SpeechThought,
+            Piece::SpeechCloudWide,
+            Piece::SpeechCloudFlat,
+            Piece::SpeechCloudRound,
+            Piece::SpeechCloudThink,
+            Piece::SpeechCloudThinkRight,
+            Piece::SpeechCloudSoft,
+            Piece::SpeechCloudCurl,
+            Piece::SpeechHand,
+            Piece::SpeechHandThink,
+            Piece::SpeechHandWide,
+            Piece::SpeechOvalCurved,
+            Piece::SpeechDouble,
         ],
     ),
     (
@@ -1279,7 +1327,8 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
                 .collect();
             let ((cx, cy), radii) = CLOUD_CORE;
             parts.push(Ellipse::new((cx, cy), radii, 0.0).to_path(TOLERANCE));
-            parts.push(poly(&CLOUD_TAIL));
+            let [from, tip, to] = CLOUD_TAIL;
+            parts.push(curved_tail(from, tip, to, -0.1));
             union(parts)
         }
         Piece::SpeechOval => union(vec![
@@ -1290,6 +1339,72 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
             Ellipse::new((0.68, 0.38), (0.6, 0.38), 0.0).to_path(TOLERANCE),
             circle(0.3, 0.86, 0.09),
             circle(0.13, 1.0, 0.05),
+        ]),
+        Piece::SpeechCloudWide => {
+            let mut parts = cloud(((1.0, 0.6), (0.95, 0.48)), 9, (0.42, 0.28));
+            parts.push(curved_tail((0.5, 0.95), (0.3, 1.4), (0.72, 1.0), -0.15));
+            union(parts)
+        }
+        Piece::SpeechCloudFlat => {
+            let mut parts = cloud(((1.0, 0.5), (1.0, 0.36)), 9, (0.34, 0.22));
+            parts.push(curved_tail((0.45, 0.78), (0.25, 1.2), (0.65, 0.82), -0.12));
+            union(parts)
+        }
+        Piece::SpeechCloudRound => {
+            let mut parts = cloud(((0.85, 0.75), (0.78, 0.62)), 9, (0.42, 0.3));
+            parts.push(curved_tail((0.55, 1.2), (0.4, 1.65), (0.78, 1.25), -0.1));
+            union(parts)
+        }
+        Piece::SpeechCloudThink => {
+            let mut parts = cloud(((0.95, 0.7), (0.85, 0.55)), 10, (0.4, 0.26));
+            parts.extend([
+                circle(0.45, 1.38, 0.09),
+                circle(0.28, 1.52, 0.06),
+                circle(0.16, 1.62, 0.04),
+            ]);
+            union(parts)
+        }
+        Piece::SpeechCloudThinkRight => {
+            let mut parts = cloud(((0.95, 0.7), (0.85, 0.55)), 10, (0.4, 0.26));
+            parts.extend([
+                circle(1.35, 1.38, 0.09),
+                circle(1.52, 1.52, 0.06),
+                circle(1.64, 1.62, 0.04),
+            ]);
+            union(parts)
+        }
+        Piece::SpeechCloudSoft => {
+            let mut parts = cloud(((0.9, 0.7), (0.8, 0.55)), 7, (0.46, 0.32));
+            parts.push(curved_tail((0.7, 1.12), (0.6, 1.6), (0.95, 1.15), 0.1));
+            union(parts)
+        }
+        Piece::SpeechCloudCurl => {
+            let mut parts = cloud(((0.9, 0.72), (0.85, 0.6)), 10, (0.4, 0.28));
+            parts.push(curved_tail((0.3, 1.1), (0.0, 1.62), (0.55, 1.22), -0.3));
+            union(parts)
+        }
+        Piece::SpeechHand => union(vec![
+            soft_poly(&[(0.04, 0.1), (1.55, 0.0), (1.6, 0.86), (0.0, 0.95)], 0.12),
+            curved_tail((0.25, 0.9), (0.12, 1.3), (0.48, 0.92), -0.08),
+        ]),
+        Piece::SpeechHandThink => union(vec![
+            soft_poly(&[(0.0, 0.06), (1.5, 0.0), (1.58, 0.9), (0.06, 0.96)], 0.12),
+            circle(1.3, 1.06, 0.07),
+            circle(1.42, 1.17, 0.05),
+            circle(1.52, 1.25, 0.035),
+        ]),
+        Piece::SpeechHandWide => union(vec![
+            soft_poly(&[(0.0, 0.12), (2.2, 0.0), (2.16, 0.7), (0.06, 0.78)], 0.1),
+            curved_tail((1.75, 0.72), (2.05, 1.05), (1.95, 0.7), 0.1),
+        ]),
+        Piece::SpeechOvalCurved => union(vec![
+            Ellipse::new((0.85, 0.45), (0.85, 0.42), 0.0).to_path(TOLERANCE),
+            curved_tail((0.35, 0.72), (0.12, 1.1), (0.55, 0.82), -0.15),
+        ]),
+        Piece::SpeechDouble => union(vec![
+            Ellipse::new((0.72, 0.36), (0.72, 0.34), 0.0).to_path(TOLERANCE),
+            Ellipse::new((0.95, 0.78), (0.6, 0.3), 0.0).to_path(TOLERANCE),
+            curved_tail((0.6, 0.98), (0.4, 1.32), (0.82, 1.02), -0.1),
         ]),
         Piece::CloudPuffy => union(cloud_ring(0.75, 0.42, (0.62, 0.3), 11, 0.2)),
         Piece::CloudSmall => union(vec![
@@ -2165,7 +2280,78 @@ const CLOUD_PUFFS: [(f64, f64, f64); 9] = [
 const CLOUD_CORE: ((f64, f64), (f64, f64)) = ((0.9, 0.72), (0.55, 0.25));
 /// Its tail: the two corners of its base inside the puffs, then the point,
 /// so only the point leaves the cloud.
-const CLOUD_TAIL: [(f64, f64); 3] = [(0.55, 0.95), (0.42, 1.3), (0.78, 1.02)];
+const CLOUD_TAIL: [(f64, f64); 3] = [(0.52, 0.85), (0.4, 1.32), (0.86, 0.88)];
+
+/// A cloud about an ellipse of `centre` and `radii`: `n` puffs round it,
+/// `big` on top shrinking to `small` along a flatter bottom, over a core that
+/// fills the gaps; the puffs vary a little in size, as a drawn cloud does.
+fn cloud(
+    (centre, radii): ((f64, f64), (f64, f64)),
+    n: usize,
+    (big, small): (f64, f64),
+) -> Vec<BezPath> {
+    let (cx, cy) = centre;
+    let (rx, ry) = radii;
+    let mut parts: Vec<BezPath> = (0..n)
+        .map(|k| {
+            let a = std::f64::consts::TAU * k as f64 / n as f64 - std::f64::consts::FRAC_PI_2;
+            let (sin, cos) = a.sin_cos();
+            // Up is −1: the top gets the big puffs; the bottom is flatter.
+            let up = (1.0 - sin) / 2.0;
+            let wobble = [1.0, 0.86, 1.08, 0.92, 1.0, 0.9, 1.05][k % 7];
+            let r = (small + (big - small) * up) * wobble;
+            // Each puff sits half inside the ellipse: soft, round bumps.
+            let (px, py) = (rx - 0.55 * r, ry - 0.55 * r);
+            let y = if sin > 0.0 {
+                cy + py * 0.8 * sin
+            } else {
+                cy + py * sin
+            };
+            circle(cx + px * cos, y, r)
+        })
+        .collect();
+    parts.push(Ellipse::new(centre, (rx * 0.9, ry * 0.85), 0.0).to_path(TOLERANCE));
+    parts
+}
+
+/// A tail from `from` to its point `tip` and back to `to`, its sides
+/// bowed by `bend` (a share of its length, signed), as drawn bubbles have.
+fn curved_tail(from: (f64, f64), tip: (f64, f64), to: (f64, f64), bend: f64) -> BezPath {
+    let bow = |a: (f64, f64), b: (f64, f64)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        ((a.0 + b.0) / 2.0 - dy * bend, (a.1 + b.1) / 2.0 + dx * bend)
+    };
+    let mut p = BezPath::new();
+    p.move_to(from);
+    p.quad_to(bow(from, tip), tip);
+    p.quad_to(bow(tip, to), to);
+    p.close_path();
+    p
+}
+
+/// A closed outline through `points` with its corners rounded by `r`.
+fn soft_poly(points: &[(f64, f64)], r: f64) -> BezPath {
+    let n = points.len();
+    let toward = |a: (f64, f64), b: (f64, f64)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let len = dx.hypot(dy).max(f64::EPSILON);
+        let k = (r / len).min(0.5);
+        (a.0 + dx * k, a.1 + dy * k)
+    };
+    let mut p = BezPath::new();
+    for i in 0..n {
+        let (prev, here, next) = (points[(i + n - 1) % n], points[i], points[(i + 1) % n]);
+        let (a, b) = (toward(here, prev), toward(here, next));
+        if i == 0 {
+            p.move_to(a);
+        } else {
+            p.line_to(a);
+        }
+        p.quad_to(here, b);
+    }
+    p.close_path();
+    p
+}
 
 /// A square opening mark at `x`, `w` wide: a block from `foot` down, and
 /// above it a hook up to the right (the quotes of heavy grotesques). A
@@ -2482,13 +2668,20 @@ mod tests {
     // corners of its base are inside a puff.
     #[test]
     fn the_cloud_bubble_tail_starts_inside_the_body() {
-        let inside = |(x, y): (f64, f64)| {
+        // Inside the core, not merely a puff: a corner in the notch between
+        // two puffs would stick out.
+        let ((cx, cy), (rx, ry)) = CLOUD_CORE;
+        let core = |(x, y): (f64, f64)| ((x - cx) / rx).powi(2) + ((y - cy) / ry).powi(2);
+        assert!(core(CLOUD_TAIL[0]) < 1.0 && core(CLOUD_TAIL[2]) < 1.0);
+        let in_puff = |(x, y): (f64, f64)| {
             CLOUD_PUFFS
                 .iter()
-                .any(|&(cx, cy, r)| (x - cx).hypot(y - cy) < r)
+                .any(|&(px, py, r)| (x - px).hypot(y - py) < r)
         };
-        assert!(inside(CLOUD_TAIL[0]) && inside(CLOUD_TAIL[2]));
-        assert!(!inside(CLOUD_TAIL[1]), "the point is out");
+        assert!(
+            !in_puff(CLOUD_TAIL[1]) && core(CLOUD_TAIL[1]) > 1.0,
+            "the point is out"
+        );
     }
 
     #[test]
