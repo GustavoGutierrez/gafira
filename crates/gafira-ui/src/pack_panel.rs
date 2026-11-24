@@ -34,6 +34,14 @@ pub(crate) struct PackFilter {
     pub(crate) words: String,
 }
 
+/// Whether the packages of a panel show their assets without being opened
+/// (spec 098): while words are searched or one package is chosen, so the
+/// results are in sight; otherwise each package is closed until opened.
+#[must_use]
+pub(crate) fn open_by_filter(filter: &PackFilter) -> bool {
+    !filter.words.trim().is_empty() || filter.pack.is_some()
+}
+
 /// Whether `asset` matches the words searched: each word is in its name,
 /// its tags or its keywords, without case.
 #[must_use]
@@ -168,18 +176,22 @@ pub(crate) fn show(
             continue;
         }
         any = true;
-        ui.horizontal(|ui| {
-            if let Some(image) = crate::brand_screen::file_image(ui.ctx(), &pack.thumbnail()) {
-                let (rect, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
-                crate::brand_screen::paint_fitted(ui, image, rect);
-            }
-            ui.label(
-                RichText::new(pack.manifest.name.get(spanish))
-                    .font(theme.font("body-sm"))
-                    .color(theme.c("text")),
-            );
-        });
-        ui.add_space(4.0);
+        // Each package is a header that opens and closes (spec 098); closed
+        // by default, open while searching or filtering by a package.
+        let id = ui
+            .id()
+            .with(("packs.open", section.code(), &pack.manifest.id));
+        let opened = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+        let open = opened || open_by_filter(filter);
+        let header = pack_header(ui, theme, pack, (spanish, assets.len(), open));
+        if header.clicked() {
+            ui.data_mut(|d| d.insert_temp(id, !opened));
+        }
+        if !open {
+            ui.add_space(4.0);
+            continue;
+        }
+        ui.add_space(6.0);
         for line in assets.chunks(columns as usize) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::splat(gap);
@@ -204,6 +216,81 @@ pub(crate) fn show(
     ui.separator();
     ui.add_space(12.0);
     picked
+}
+
+/// The header of a package: the arrow, its picture, its name and how many
+/// assets it shows; the whole row opens and closes it.
+fn pack_header(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    pack: &InstalledPack,
+    (spanish, count, open): (bool, usize, bool),
+) -> egui::Response {
+    let width = ui.available_width() - 8.0;
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 40.0), Sense::click());
+    let painter = ui.painter();
+    let fill = if response.hovered() {
+        theme.c("secondary.bg.hover")
+    } else {
+        theme.c("secondary.bg")
+    };
+    painter.rect_filled(rect, theme.radius_sm(), fill);
+    let arrow = if open {
+        crate::icons::Icon::Expand
+    } else {
+        crate::icons::Icon::Submenu
+    };
+    let arrow_rect = egui::Rect::from_center_size(
+        Pos2::new(rect.left() + 16.0, rect.center().y),
+        Vec2::splat(14.0),
+    );
+    crate::icons::paint(
+        painter,
+        arrow_rect,
+        arrow,
+        crate::icons::Weight::Regular,
+        theme.c("text.secondary"),
+    );
+    let mut x = rect.left() + 30.0;
+    if let Some(image) = crate::brand_screen::file_image(ui.ctx(), &pack.thumbnail()) {
+        let picture =
+            egui::Rect::from_min_size(Pos2::new(x, rect.center().y - 12.0), Vec2::splat(24.0));
+        crate::brand_screen::paint_fitted(ui, image, picture);
+        x += 32.0;
+    }
+    let count_text = count.to_string();
+    let painter = ui.painter();
+    let count_galley =
+        painter.layout_no_wrap(count_text, theme.font("body-sm"), theme.c("text.secondary"));
+    let count_at = Pos2::new(
+        rect.right() - 12.0 - count_galley.size().x,
+        rect.center().y - count_galley.size().y / 2.0,
+    );
+    let name_width = (count_at.x - 8.0 - x).max(0.0);
+    let name = painter.layout(
+        pack.manifest.name.get(spanish).to_owned(),
+        theme.font("ui-label"),
+        theme.c("text"),
+        f32::INFINITY,
+    );
+    let clip = egui::Rect::from_min_max(
+        Pos2::new(x, rect.top()),
+        Pos2::new(x + name_width, rect.bottom()),
+    );
+    painter.with_clip_rect(clip).galley(
+        Pos2::new(x, rect.center().y - name.size().y / 2.0),
+        name,
+        theme.c("text"),
+    );
+    painter.galley(count_at, count_galley, theme.c("text.secondary"));
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let label = pack.manifest.name.get(spanish).to_owned();
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, &label)
+    });
+    response
 }
 
 /// One asset: its preview on a soft tile, its name on hover.
@@ -298,6 +385,22 @@ fn tile(
 
 #[cfg(test)]
 mod tests {
+
+    // Spec 098: packages are closed until opened, but searching or choosing
+    // one shows its assets.
+    #[test]
+    fn s98_14_packages_open_only_while_searching_or_filtering() {
+        let mut filter = PackFilter::default();
+        assert!(!open_by_filter(&filter));
+        filter.words = "  ".to_owned();
+        assert!(!open_by_filter(&filter));
+        filter.words = "flor".to_owned();
+        assert!(open_by_filter(&filter));
+        filter.words.clear();
+        filter.pack = Some("acme.flowers".to_owned());
+        assert!(open_by_filter(&filter));
+    }
+
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 

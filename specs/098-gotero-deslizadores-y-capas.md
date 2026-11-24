@@ -33,6 +33,8 @@
 - **S98-12 Campo de color único** (`color_field::ColorField`): título, «Sin …» cuando se puede quitar, selector con gotero y «Color personalizado», colores de la marca y del diseño (círculos) y los predeterminados con «Ver todo». Lo usan el color del texto, el relleno y el contorno de una forma (este solo con colores sólidos) y el fondo de la página; con varias formas, sin «Ver todo».
 - **S98-13 Comillas.** Sección «Comillas» en Formas con 30 diseños propios: redondas, gruesas, rectas, suaves, inclinadas, cuñas, finas, verticales, angulares y cuadradas (normal, cierre, simple, ancha, estrecha, gancho largo), dobles y simples, de apertura y cierre, e insignias redonda y cuadrada con las comillas caladas. Las plantillas «Frase en grande» y «Frase del día» usan estas formas (`gafira_ui::piece_geometry`) en lugar de la letra «“».
 
+- **S98-14 Paquetes plegables.** En los paneles con «Paquetes instalados» (Ilustraciones, Iconos, Formas…), cada paquete es una cabecera con flecha, miniatura, nombre y número de recursos que se abre y se cierra con un clic; cerrados por defecto, se abren solos al buscar o al elegir un paquete en el filtro.
+
 ## Fuera de alcance
 
 - La pantalla Marca conserva su editor de color propio.
