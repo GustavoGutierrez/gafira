@@ -18,6 +18,7 @@ One way to choose colours everywhere, a new Layers panel, and quotes and speech 
 - Capas: each element is a card with a grip, a preview, its name on one line, eye, lock and a «⋮» menu (copy, paste, duplicate, delete, layer order, align to page, rename, lock, hide, image as background); rows are dragged with a floating copy and an insertion line, and the list scrolls.
 - Formas: a Quotes section of 30 quote marks (round, heavy, block, soft, slanted, wedge, thin, straight, angle and square, double and single, opening and closing, and round and square badges), and 12 more speech bubbles: clouds with soft puffs, curved tails and thought dots, hand-drawn bubbles, an oval with a curved tail and a double bubble.
 - The quote templates use the quote shapes instead of a letter.
+- A package can be uninstalled from its panel: «⋮» or a right click on its header, then confirm.
 
 ### Changed
 

@@ -912,6 +912,12 @@ impl eframe::App for Shell {
                 (self.notice.as_deref(), Some(frame)),
             ),
         };
+        // A package uninstalled from a panel of the editor (spec 098).
+        if let Screen::Editor(editor) = &mut self.screen
+            && std::mem::take(&mut editor.packs_touched)
+        {
+            self.packs_changed(ctx);
+        }
         // A package dropped on the window, on any screen (spec 097).
         let dropped = ctx.input(|i| {
             i.raw
