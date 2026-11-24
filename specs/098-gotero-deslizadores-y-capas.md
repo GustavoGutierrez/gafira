@@ -1,6 +1,6 @@
 # 098 — Gotero, deslizadores del editor y panel Capas
 
-> **Estado:** in-progress — 2026-11-24 — fases 1 y 2 implementadas y probadas en la app; pendiente la prueba del titular. Tomar color fuera de la ventana, pendiente de decisión (dependencia de captura).
+> **Estado:** in-progress — 2026-11-24 — fases 1 y 2 implementadas y probadas en la app (S98-01 a S98-13); pendiente la prueba del titular. Tomar color fuera de la ventana, pendiente de decisión (dependencia de captura).
 
 ## Problema y resultado esperado
 
@@ -29,6 +29,9 @@
 - **S98-09 Glifos.** La fuente de interfaz es un subconjunto (spec 014): los símbolos que no tiene («⏵», «›», «✓», «✔», «⚠», «←», «−») se cambian por iconos Phosphor (`caret-right`, `check`, `warning`, `arrow-left`) o por «–». Un test recorre los catálogos y los literales de la UI y falla si algún carácter no tiene glifo.
 - **S98-10 Menús.** Los menús de la barra superior y sus submenús son listas sin relleno en reposo, con resalte al pasar y filas holgadas; Ver muestra «✓» (icono) en lo activo en lugar de botones seleccionados. «Tamaño» y «Notas» se ocultan hasta que funcionen (`SHOW_UNFINISHED`).
 - **S98-11 Colores predeterminados.** En texto, forma y fondo de página: muestras circulares en filas de siete, «Colores sólidos predeterminados» (4 filas) y «Colores degradados predeterminados» (3 filas), cada una con «Ver todo», que muestra en el panel la paleta completa (grises y 18 tonos de oscuro a claro, 133 colores) o los degradados por grupos (Tonos fríos, Tonos cálidos, Monocromático, Todos los degradados); «←» vuelve.
+
+- **S98-12 Campo de color único** (`color_field::ColorField`): título, «Sin …» cuando se puede quitar, selector con gotero y «Color personalizado», colores de la marca y del diseño (círculos) y los predeterminados con «Ver todo». Lo usan el color del texto, el relleno y el contorno de una forma (este solo con colores sólidos) y el fondo de la página; con varias formas, sin «Ver todo».
+- **S98-13 Comillas.** Sección «Comillas» en Formas con 30 diseños propios: redondas, gruesas, rectas, suaves, inclinadas, cuñas, finas, verticales, angulares y cuadradas (normal, cierre, simple, ancha, estrecha, gancho largo), dobles y simples, de apertura y cierre, e insignias redonda y cuadrada con las comillas caladas. Las plantillas «Frase en grande» y «Frase del día» usan estas formas (`gafira_ui::piece_geometry`) en lugar de la letra «“».
 
 ## Fuera de alcance
 
