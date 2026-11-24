@@ -1274,7 +1274,9 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
         Piece::Card => poly(&[(0.3, 0.0), (1.5, 0.0), (1.5, 1.0), (0.0, 1.0), (0.0, 0.3)]),
         Piece::SpeechCloud => {
             let mut parts = cloud_ring(0.62, 0.4, (0.5, 0.3), 9, 0.17);
-            parts.push(poly(&[(0.85, 1.1), (0.6, 1.45), (1.1, 1.18)]));
+            // The base of the tail well inside the body, so only the tail
+            // shows: a corner between two puffs would stick out.
+            parts.push(poly(&[(0.8, 0.95), (0.6, 1.45), (1.05, 1.0)]));
             union(parts)
         }
         Piece::SpeechOval => union(vec![
@@ -2455,6 +2457,16 @@ mod tests {
 
     // S96-02: every section the reference asks to grow has more than five
     // shapes, so it has «Ver todo».
+    // The tail of the cloud bubble leaves its body only at its point: its
+    // base corners are inside the body ellipse.
+    #[test]
+    fn the_cloud_bubble_tail_starts_inside_the_body() {
+        let body = Ellipse::new((0.5 + 0.62, 0.3 + 0.4), (0.62, 0.4), 0.0);
+        for corner in [(0.8, 0.95), (1.05, 1.0)] {
+            assert!(body.contains(Point::new(corner.0, corner.1)), "{corner:?}");
+        }
+    }
+
     #[test]
     fn s96_02_the_grown_sections_have_more_than_five() {
         for key in [
