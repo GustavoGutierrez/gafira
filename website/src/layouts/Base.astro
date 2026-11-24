@@ -30,7 +30,8 @@ const pageTitle = title ?? t.meta.title;
 const pageDescription = description ?? t.meta.description;
 const site = Astro.site ?? new URL('https://gafira.com');
 const canonical = new URL(Astro.url.pathname, site).href;
-const og = await getImage({ src: screens[locale].editor, width: 1200, format: 'png' });
+// JPEG keeps the preview far under the ~300 KB some apps (WhatsApp) accept.
+const og = await getImage({ src: screens[locale].editor, width: 1200, format: 'jpg', quality: 82 });
 const ogUrl = new URL(og.src, site).href;
 const ogHeight = Math.round((1200 * screens[locale].editor.height) / screens[locale].editor.width);
 const home = new URL(homePath(locale), site).href;
@@ -156,7 +157,7 @@ const rootVars =
     <meta property="og:description" content={pageDescription} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogUrl} />
-    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content={String(ogHeight)} />
     <meta property="og:image:alt" content={t.meta.ogAlt} />
