@@ -77,8 +77,12 @@ jobs:
             usr/share/icons/hicolor/256x256/mimetypes/application-vnd.gafira.project+zip.png; do
             grep -qF "./$path" deb.txt || { echo "::error::the .deb has no $path"; exit 1; }
           done
-          # The releases of GitHub turn a ~ of a name into a dot.
-          for deb in dist/*~*.deb; do mv "$deb" "${deb/\~/-}"; done
+          # The releases of GitHub turn a ~ of a name into a dot. Only a
+          # pre-release (0.1.0~beta.4) has one.
+          for deb in dist/*~*.deb; do
+            [ -e "$deb" ] || continue
+            mv "$deb" "${deb/\~/-}"
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-linux
