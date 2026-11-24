@@ -10,10 +10,10 @@ const t = copy[Astro.props.locale];
 const tones = ['ink', 'coral', 'mint'];
 ---
 
-<section class="section section--white" id="features">
+<section class="section section--white" id="features" aria-labelledby="features-title">
   <div class="container">
     <div class="section-head">
-      <h2>{t.features.title}</h2>
+      <h2 id="features-title">{t.features.title}</h2>
       <p>{t.features.lead}</p>
     </div>
     <ul class="features">

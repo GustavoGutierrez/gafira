@@ -5,6 +5,9 @@ import '../styles/global.css';
 import { screens } from '../lib/screens';
 import { getImage } from 'astro:assets';
 import { copy, homePath, type Locale } from '../i18n/ui';
+import { downloads, type Release } from '../lib/release';
+import manrope from '@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2?url';
+import inter from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
 // The brand colours and radii, from the same token file the app loads.
 import tokens from '../../../assets/theme/gafira.tokens.json';
 
@@ -14,9 +17,13 @@ interface Props {
   description?: string;
   /** The same page in the other language, for hreflang and the switcher. */
   alternate?: boolean;
+  /** Not for search engines (the 404 page). */
+  noindex?: boolean;
+  /** The latest release, for the structured data of the landing page. */
+  release?: Release;
 }
 
-const { locale, title, description, alternate = true } = Astro.props;
+const { locale, title, description, alternate = true, noindex = false, release } = Astro.props;
 const t = copy[locale];
 const pageTitle = title ?? t.meta.title;
 const pageDescription = description ?? t.meta.description;
@@ -24,6 +31,50 @@ const site = Astro.site ?? new URL('https://gafira.com');
 const canonical = new URL(Astro.url.pathname, site).href;
 const og = await getImage({ src: screens[locale].editor, width: 1200, format: 'png' });
 const ogUrl = new URL(og.src, site).href;
+const ogHeight = Math.round((1200 * screens[locale].editor.height) / screens[locale].editor.width);
+const home = new URL(homePath(locale), site).href;
+const files = release ? downloads(release) : undefined;
+// Structured data: the organisation, the site and the app (no price or
+// rating: none is published, and none is invented).
+const structured = release && {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${site.href}#organization`,
+      name: 'Gafira',
+      url: site.href,
+      logo: new URL('/icon-512.png', site).href,
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${site.href}#website`,
+      name: 'Gafira',
+      url: site.href,
+      inLanguage: ['es', 'en'],
+      publisher: { '@id': `${site.href}#organization` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${site.href}#app`,
+      name: 'Gafira',
+      description: pageDescription,
+      url: home,
+      applicationCategory: 'DesignApplication',
+      operatingSystem: 'Windows, macOS, Linux',
+      softwareVersion: release.version,
+      datePublished: release.published,
+      inLanguage: ['es', 'en'],
+      downloadUrl: release.url,
+      installUrl: `${home}#download`,
+      releaseNotes: release.url,
+      screenshot: ogUrl,
+      image: new URL('/icon-512.png', site).href,
+      fileSize: files?.windowsInstaller ? `${Math.round(files.windowsInstaller.size / 1_000_000)}MB` : undefined,
+      publisher: { '@id': `${site.href}#organization` },
+    },
+  ],
+};
 const light = tokens.modes.light as Record<string, string>;
 const dark = tokens.modes.dark as Record<string, string>;
 // Semantic colours per mode; the brand colours stay fixed in both.
@@ -71,7 +122,11 @@ const rootVars =
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{pageTitle}</title>
     <meta name="description" content={pageDescription} />
-    <link rel="canonical" href={canonical} />
+    <meta
+      name="robots"
+      content={noindex ? 'noindex, follow' : 'index, follow, max-image-preview:large, max-snippet:-1'}
+    />
+    {!noindex && <link rel="canonical" href={canonical} />}
     {
       alternate && (
         <>
@@ -81,12 +136,18 @@ const rootVars =
         </>
       )
     }
+    <link rel="preload" href={manrope} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={inter} as="font" type="font/woff2" crossorigin />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content={light.bg} media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content={dark.bg} media="(prefers-color-scheme: dark)" />
+    <meta name="application-name" content="Gafira" />
+    <meta name="apple-mobile-web-app-title" content="Gafira" />
     <style is:inline set:html={rootVars} />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Gafira" />
@@ -94,19 +155,18 @@ const rootVars =
     <meta property="og:description" content={pageDescription} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogUrl} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content={String(ogHeight)} />
     <meta property="og:image:alt" content={t.meta.ogAlt} />
     <meta property="og:locale" content={locale === 'es' ? 'es_ES' : 'en_US'} />
+    <meta property="og:locale:alternate" content={locale === 'es' ? 'en_US' : 'es_ES'} />
     <meta name="twitter:card" content="summary_large_image" />
-    <script type="application/ld+json" set:html={JSON.stringify({
-      '@context': 'https://schema.org',
-      '@type': 'SoftwareApplication',
-      name: 'Gafira',
-      applicationCategory: 'DesignApplication',
-      operatingSystem: 'Windows, macOS, Linux',
-      description: pageDescription,
-      url: new URL(homePath(locale), site).href,
-      image: ogUrl,
-    })} />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:image" content={ogUrl} />
+    <meta name="twitter:image:alt" content={t.meta.ogAlt} />
+    {structured && <script type="application/ld+json" set:html={JSON.stringify(structured)} />}
   </head>
   <body>
     <a class="skip" href="#main">{t.nav.skip}</a>

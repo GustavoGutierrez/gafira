@@ -20,7 +20,7 @@ const { locale } = Astro.props;
 const release = await latestRelease();
 ---
 
-<Base locale={locale}>
+<Base locale={locale} release={release}>
   <Header locale={locale} />
   <main id="main">
     <Hero locale={locale} release={release} />

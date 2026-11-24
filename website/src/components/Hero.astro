@@ -24,10 +24,10 @@ const targets = {
 const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
 ---
 
-<section class="hero">
+<section class="hero" aria-labelledby="hero-title">
   <div class="hero__glow" aria-hidden="true"></div>
   <div class="container hero__inner">
-    <h1 class="hero__title">{t.hero.title}</h1>
+    <h1 class="hero__title" id="hero-title">{t.hero.title}</h1>
     <p class="hero__lead">{t.hero.lead}</p>
     <div class="hero__actions">
       <a
