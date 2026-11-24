@@ -1640,12 +1640,12 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
         Piece::QuoteCircleOpen => badge(true, true),
         Piece::QuoteSquare => badge(false, false),
         Piece::QuoteSquareOpen => badge(true, false),
-        Piece::QuoteCut => pair(|x| cut_mark(x, 0.42, 0.45)),
-        Piece::QuoteCutClose => opening(pair(|x| cut_mark(x, 0.42, 0.45))),
-        Piece::QuoteCutSingle => cut_mark(0.0, 0.42, 0.45),
-        Piece::QuoteCutWide => pair(|x| cut_mark(x, 0.54, 0.42)),
-        Piece::QuoteCutSlim => pair(|x| cut_mark(x, 0.32, 0.5)),
-        Piece::QuoteCutDeep => pair(|x| cut_mark(x, 0.42, 0.62)),
+        Piece::QuoteCut => pair(|x| cut_mark(x, 0.42, 0.45, true)),
+        Piece::QuoteCutClose => opening(pair(|x| cut_mark(x, 0.42, 0.45, true))),
+        Piece::QuoteCutSingle => cut_mark(0.0, 0.42, 0.45, true),
+        Piece::QuoteCutWide => pair(|x| cut_mark(x, 0.54, 0.42, true)),
+        Piece::QuoteCutSlim => pair(|x| cut_mark(x, 0.32, 0.5, false)),
+        Piece::QuoteCutDeep => pair(|x| cut_mark(x, 0.42, 0.62, true)),
         Piece::LabelClassic => label(1.6, 1.0),
         Piece::LabelTall => label(1.0, 1.4),
         Piece::LabelScalloped => {
@@ -2145,14 +2145,17 @@ fn comma(x: f64, heavy: f64) -> BezPath {
 }
 
 /// A square opening mark at `x`, `w` wide: a block from `foot` down, and
-/// above it a slanted hook up to the right (the quotes of heavy grotesques).
-fn cut_mark(x: f64, w: f64, foot: f64) -> BezPath {
+/// above it a hook up to the right (the quotes of heavy grotesques). A
+/// `straight` hook is a band of even width, its two edges parallel; else it
+/// narrows to the block.
+fn cut_mark(x: f64, w: f64, foot: f64, straight: bool) -> BezPath {
     let hook = w * 0.42;
+    let inner = if straight { hook } else { w - hook * 0.55 };
     poly(&[
         (x, foot),
         (x + w - hook, 0.0),
         (x + w, 0.0),
-        (x + w - hook * 0.55, foot),
+        (x + inner, foot),
         (x + w, foot),
         (x + w, 1.0),
         (x, 1.0),
