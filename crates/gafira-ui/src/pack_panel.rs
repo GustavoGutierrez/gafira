@@ -24,6 +24,8 @@ pub(crate) enum PackPick {
     Insert(PackUse),
     /// Dropped at this screen point.
     Drop(PackUse, Pos2),
+    /// Uninstall this package, once confirmed (spec 098).
+    Uninstall(String),
 }
 
 /// The filter of one panel: the package shown (all when `None`) and the
@@ -32,6 +34,13 @@ pub(crate) enum PackPick {
 pub(crate) struct PackFilter {
     pub(crate) pack: Option<String>,
     pub(crate) words: String,
+}
+
+/// The package `id` was uninstalled: the filter no longer shows it.
+pub(crate) fn forget(filter: &mut PackFilter, id: &str) {
+    if filter.pack.as_deref() == Some(id) {
+        filter.pack = None;
+    }
 }
 
 /// Whether the packages of a panel show their assets without being opened
@@ -183,9 +192,59 @@ pub(crate) fn show(
             .with(("packs.open", section.code(), &pack.manifest.id));
         let opened = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
         let open = opened || open_by_filter(filter);
-        let header = pack_header(ui, theme, pack, (spanish, assets.len(), open));
+        let (header, more) = pack_header(ui, theme, texts, pack, (spanish, assets.len(), open));
         if header.clicked() {
             ui.data_mut(|d| d.insert_temp(id, !opened));
+        }
+        // «⋮» and a right click offer to uninstall it, asked first under
+        // the header.
+        let asking = ui
+            .id()
+            .with(("packs.uninstall", section.code(), &pack.manifest.id));
+        let mut ask = false;
+        let menu = |ui: &mut egui::Ui| {
+            crate::widgets::menu_style(ui, theme);
+            let image = crate::icons::image(
+                ui.ctx(),
+                crate::icons::Icon::Delete,
+                crate::icons::Weight::Regular,
+                16.0,
+                theme.c("text"),
+            );
+            let item = egui::Button::image_and_text(image, t(texts, "packs.uninstall_pack"));
+            if ui.add(item).clicked() {
+                ui.close();
+                return true;
+            }
+            false
+        };
+        if let Some(inner) = egui::Popup::menu(&more).show(menu) {
+            ask |= inner.inner;
+        }
+        if let Some(inner) = egui::Popup::context_menu(&header).show(menu) {
+            ask |= inner.inner;
+        }
+        if ask {
+            ui.data_mut(|d| d.insert_temp(asking, true));
+        }
+        if ui.data(|d| d.get_temp::<bool>(asking)).unwrap_or(false) {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(t(texts, "packs.uninstall_ask"))
+                    .font(theme.font("body-sm"))
+                    .color(theme.c("text")),
+            );
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if crate::widgets::primary(ui, theme, t(texts, "packs.uninstall")).clicked() {
+                    ui.data_mut(|d| d.remove::<bool>(asking));
+                    picked = Some(PackPick::Uninstall(pack.manifest.id.clone()));
+                }
+                if crate::widgets::secondary(ui, theme, t(texts, "packs.cancel")).clicked() {
+                    ui.data_mut(|d| d.remove::<bool>(asking));
+                }
+            });
+            ui.add_space(6.0);
         }
         if !open {
             ui.add_space(4.0);
@@ -218,16 +277,22 @@ pub(crate) fn show(
     picked
 }
 
-/// The header of a package: the arrow, its picture, its name and how many
-/// assets it shows; the whole row opens and closes it.
+/// The header of a package: the arrow, its picture, its name, how many
+/// assets it shows and its «⋮»; the whole row opens and closes it. The row
+/// and the «⋮».
 fn pack_header(
     ui: &mut egui::Ui,
     theme: &Theme,
+    texts: &Texts,
     pack: &InstalledPack,
     (spanish, count, open): (bool, usize, bool),
-) -> egui::Response {
+) -> (egui::Response, egui::Response) {
     let width = ui.available_width() - 8.0;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 40.0), Sense::click());
+    let more_rect = egui::Rect::from_center_size(
+        Pos2::new(rect.right() - 16.0, rect.center().y),
+        Vec2::new(24.0, 28.0),
+    );
     let painter = ui.painter();
     let fill = if response.hovered() {
         theme.c("secondary.bg.hover")
@@ -235,6 +300,12 @@ fn pack_header(
         theme.c("secondary.bg")
     };
     painter.rect_filled(rect, theme.radius_sm(), fill);
+    let more = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(more_rect), |ui| {
+            crate::layer_rows::menu_button(ui, theme, &t(texts, "packs.more"), false)
+        })
+        .inner;
+    let painter = ui.painter();
     let arrow = if open {
         crate::icons::Icon::Expand
     } else {
@@ -263,7 +334,7 @@ fn pack_header(
     let count_galley =
         painter.layout_no_wrap(count_text, theme.font("body-sm"), theme.c("text.secondary"));
     let count_at = Pos2::new(
-        rect.right() - 12.0 - count_galley.size().x,
+        more_rect.left() - 6.0 - count_galley.size().x,
         rect.center().y - count_galley.size().y / 2.0,
     );
     let name_width = (count_at.x - 8.0 - x).max(0.0);
@@ -290,7 +361,7 @@ fn pack_header(
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, &label)
     });
-    response
+    (response, more)
 }
 
 /// One asset: its preview on a soft tile, its name on hover.
@@ -399,6 +470,20 @@ mod tests {
         filter.words.clear();
         filter.pack = Some("acme.flowers".to_owned());
         assert!(open_by_filter(&filter));
+    }
+
+    // Spec 098: a package uninstalled from its panel no longer filters it.
+    #[test]
+    fn s98_15_an_uninstalled_package_leaves_the_filter() {
+        let mut filter = PackFilter {
+            pack: Some("acme.flowers".to_owned()),
+            words: "flor".to_owned(),
+        };
+        forget(&mut filter, "acme.other");
+        assert_eq!(filter.pack.as_deref(), Some("acme.flowers"));
+        forget(&mut filter, "acme.flowers");
+        assert_eq!(filter.pack, None);
+        assert_eq!(filter.words, "flor");
     }
 
     use std::collections::BTreeSet;

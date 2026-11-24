@@ -34,6 +34,7 @@
 - **S98-13 Comillas.** Sección «Comillas» en Formas con 30 diseños propios: redondas, gruesas, rectas, suaves, inclinadas, cuñas, finas, verticales, angulares y cuadradas (normal, cierre, simple, ancha, estrecha, gancho largo), dobles y simples, de apertura y cierre, e insignias redonda y cuadrada con las comillas caladas. Las plantillas «Frase en grande» y «Frase del día» usan estas formas (`gafira_ui::piece_geometry`) en lugar de la letra «“».
 
 - **S98-14 Paquetes plegables.** En los paneles con «Paquetes instalados» (Ilustraciones, Iconos, Formas…), cada paquete es una cabecera con flecha, miniatura, nombre y número de recursos que se abre y se cierra con un clic; cerrados por defecto, se abren solos al buscar o al elegir un paquete en el filtro.
+- **S98-15 Desinstalar desde el panel.** Cada cabecera de paquete tiene un botón «⋮» (y clic derecho) con «Desinstalar paquete»; pide confirmación bajo la cabecera y desinstala con el mismo almacén que Ajustes → Paquetes. Los paneles y Plantillas se vuelven a leer sin reiniciar; si el filtro mostraba ese paquete, vuelve a «Todos los paquetes». Los diseños que usan sus recursos los conservan (spec 097).
 
 ## Fuera de alcance
 
