@@ -33,6 +33,15 @@ pub(crate) enum Target {
     Shape(PageId, NodeId),
     /// The background of a page.
     Page(PageId),
+    /// The outline of a shape: solid colours only.
+    Outline(PageId, NodeId),
+}
+
+/// What the preset sections of a field offer.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Options {
+    pub gradients: bool,
+    pub see_all: bool,
 }
 
 /// Which full view.
@@ -323,7 +332,13 @@ fn gradient_icon(ui: &mut Ui, theme: &Theme) {
 
 /// A section title with its icon and «Ver todo»; whether «Ver todo» was
 /// pressed.
-fn header(ui: &mut Ui, theme: &Theme, texts: &Texts, title: &'static str, full: Full) -> bool {
+fn header(
+    ui: &mut Ui,
+    theme: &Theme,
+    texts: &Texts,
+    (title, see_all): (&'static str, bool),
+    full: Full,
+) -> bool {
     ui.add_space(10.0);
     ui.horizontal(|ui| {
         // «Ver todo» first, at the right; the title takes what is left.
@@ -331,7 +346,7 @@ fn header(ui: &mut Ui, theme: &Theme, texts: &Texts, title: &'static str, full: 
             let link = RichText::new(plain(texts, "presets.see_all"))
                 .font(theme.font("body-sm"))
                 .color(theme.c("text.secondary"));
-            let pressed = ui.add(egui::Button::new(link).frame(false)).clicked();
+            let pressed = see_all && ui.add(egui::Button::new(link).frame(false)).clicked();
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 match full {
                     Full::Solids => {
@@ -369,20 +384,25 @@ pub(crate) fn sections(
     ui: &mut Ui,
     theme: &Theme,
     texts: &Texts,
-    target: Target,
+    (target, options): (Target, Options),
     in_use: &dyn Fn(&Fill) -> bool,
 ) -> Option<Fill> {
     let mut chosen = None;
-    if header(ui, theme, texts, "inspector.solid_presets", Full::Solids) {
+    let solids = "inspector.solid_presets";
+    if header(ui, theme, texts, (solids, options.see_all), Full::Solids) {
         set_open(ui.ctx(), Some((target, Full::Solids)));
     }
     ui.add_space(4.0);
     chosen = grid(ui, theme, &solid_fills(&TEXT_PALETTE), in_use).or(chosen);
+    if !options.gradients {
+        return chosen;
+    }
+    let gradients = "inspector.gradient_presets";
     if header(
         ui,
         theme,
         texts,
-        "inspector.gradient_presets",
+        (gradients, options.see_all),
         Full::Gradients,
     ) {
         set_open(ui.ctx(), Some((target, Full::Gradients)));

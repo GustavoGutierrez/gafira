@@ -93,44 +93,6 @@ pub(crate) fn colors(ctx: &egui::Context) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// «Colores de la marca» under a colour picker: the colours of the kit in
-/// use as swatches; the one clicked.
-pub(crate) fn swatches(ui: &mut egui::Ui, texts: &Texts) -> Option<gafira_color::Color> {
-    let colors = colors(ui.ctx());
-    if colors.is_empty() {
-        return None;
-    }
-    let mut picked = None;
-    ui.add_space(4.0);
-    ui.label(
-        RichText::new(t(texts, "brand.colors_of_brand"))
-            .small()
-            .weak(),
-    );
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::splat(6.0);
-        for c in colors {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
-            ui.painter().rect_filled(rect, 6.0, rgb(c));
-            let border = ui.visuals().widgets.noninteractive.bg_stroke.color;
-            ui.painter().rect_stroke(
-                rect,
-                6.0,
-                Stroke::new(1.0, border),
-                egui::StrokeKind::Inside,
-            );
-            if response
-                .on_hover_text(format!("#{c:06X}"))
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .clicked()
-            {
-                picked = Some(crate::colors::hex(c));
-            }
-        }
-    });
-    picked
-}
-
 /// The panel; what a click asked for, if anything.
 pub(crate) fn show(
     ui: &mut egui::Ui,

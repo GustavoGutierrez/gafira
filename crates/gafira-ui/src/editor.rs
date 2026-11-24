@@ -89,6 +89,8 @@ const SHOW_UNFINISHED: bool = false;
 /// gradient over the box (specs 070, 098).
 use crate::presets::Fill as TextFill;
 
+use crate::color_field::{ColorField, Picked};
+
 const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::X);
 const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
 const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
@@ -3147,7 +3149,8 @@ impl Editor {
                         } else if let Some(effect) = &shape.effect {
                             effect_fields(ui, theme, texts, effect, asked);
                         } else if shape.text.is_none() && !shape.group && shape.line.is_none() {
-                            fill_field(ui, (theme, texts), shape, true, asked);
+                            let design = design_fills(document, shape.page);
+                            fill_field(ui, (theme, texts), (shape, &design), true, asked);
                             // Any shape can become a light (spec 065, S65-06).
                             if plain_shape {
                                 ui.add_space(8.0);
@@ -3161,7 +3164,8 @@ impl Editor {
                             && shape.line.is_none()
                         {
                             ui.add_space(8.0);
-                            outline_fields(ui, texts, shape, asked);
+                            let design = design_fills(document, shape.page);
+                            outline_fields(ui, (theme, texts), (shape, &design), asked);
                             shape_text_fields(ui, theme, texts, shape, asked);
                             if let Some(inner) = &shape.inner {
                                 font_button(ui, theme, texts, inner.content.first_style(), asked);
@@ -4094,28 +4098,16 @@ impl Editor {
                 }
             });
         }
-        heading(ui, "background.color");
-        ui.horizontal(|ui| {
-            ui.label(plain(texts, "background.custom"));
-            let solid = match &current {
-                Some(PageBackground::Solid(c)) => Some(*c),
-                _ => None,
-            };
-            if let Some(color) = color_button(ui, solid.or(Some(crate::colors::hex(0xFFFFFF)))) {
-                asked.page_background = Some(Some(PageBackground::Solid(color)));
-            }
-        });
-        if let Some(color) = crate::brand_panel::swatches(ui, texts) {
-            asked.page_background = Some(Some(PageBackground::Solid(color)));
-        }
+        ui.add_space(12.0);
         let now = match &current {
             Some(PageBackground::Solid(c)) => Some(TextFill::Solid(*c)),
             Some(PageBackground::Gradient(g)) => Some(TextFill::Gradient(g.clone())),
             _ => None,
         };
-        let in_use = |f: &TextFill| now.as_ref() == Some(f);
+        // The colour field of the editor (spec 098).
         let target = crate::presets::Target::Page(page.id);
-        if let Some(fill) = crate::presets::sections(ui, theme, texts, target, &in_use) {
+        let field = ColorField::new(plain(texts, "background.color"), target, now);
+        if let Some(Picked::Fill(fill)) = field.show(ui, theme, texts) {
             apply_preset(target, fill, &[], asked);
         }
         heading(ui, "background.patterns");
@@ -12697,8 +12689,8 @@ fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorI
 fn fill_field(
     ui: &mut egui::Ui,
     (theme, texts): (&Theme, &Texts),
-    shape: &Shape,
-    presets: bool,
+    (shape, design): (&Shape, &[TextFill]),
+    single: bool,
     asked: &mut Asked,
 ) {
     if shape.image.is_none() {
@@ -12722,33 +12714,27 @@ fn fill_field(
         });
         if let Some(gradient) = &shape.gradient {
             gradient_fields(ui, texts, gradient, asked);
-            return;
+            ui.add_space(8.0);
         }
     }
-    ui.horizontal(|ui| {
-        ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
-        if let Some(color) = color_button(ui, shape.fill) {
-            asked.fill = Some(Some(color));
-        }
-        if shape.fill.is_some()
-            && ui
-                .small_button(texts.t(&gafira_doc::msg!("inspector.no_fill")))
-                .clicked()
-        {
+    // The colour field of the editor (spec 098); for several shapes at
+    // once, without «Ver todo».
+    let target = crate::presets::Target::Shape(shape.page, shape.node);
+    let mut field = ColorField::new(plain(texts, "inspector.fill"), target, shape_fill(shape))
+        .design(design)
+        .clear(plain(texts, "inspector.no_fill"));
+    if !single {
+        field = field.without_see_all();
+    }
+    match field.show(ui, theme, texts) {
+        Some(Picked::Fill(fill)) => apply_preset(target, fill, std::slice::from_ref(shape), asked),
+        Some(Picked::Clear) => {
             asked.fill = Some(None);
+            if shape.gradient.is_some() {
+                asked.gradient = Some(None);
+            }
         }
-    });
-    // Spec 093: the colours of the brand kit in use.
-    if let Some(color) = crate::brand_panel::swatches(ui, texts) {
-        asked.fill = Some(Some(color));
-    }
-    if presets {
-        let now = shape_fill(shape);
-        let in_use = |f: &TextFill| now.as_ref() == Some(f);
-        let target = crate::presets::Target::Shape(shape.page, shape.node);
-        if let Some(fill) = crate::presets::sections(ui, theme, texts, target, &in_use) {
-            apply_preset(target, fill, std::slice::from_ref(shape), asked);
-        }
+        None => {}
     }
 }
 
@@ -12777,6 +12763,9 @@ fn preset_now(
             })
         }
         (Target::Shape(_, node), [shape]) if shape.node == node => Some(shape_fill(shape)),
+        (Target::Outline(_, node), [shape]) if shape.node == node => {
+            Some(shape.stroke.map(|stroke| TextFill::Solid(stroke.color)))
+        }
         (Target::Page(page), []) => {
             let page = document?.page(page)?;
             Some(match &page.background {
@@ -12814,6 +12803,15 @@ fn apply_preset(
         (Target::Page(_), TextFill::Gradient(g)) => {
             asked.page_background = Some(Some(gafira_doc::PageBackground::Gradient(g)));
         }
+        (Target::Outline(..), TextFill::Solid(color)) => {
+            let width = selection
+                .first()
+                .and_then(|s| s.stroke)
+                .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
+            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(color, width)));
+        }
+        // An outline takes no gradient: its full view shows none.
+        (Target::Outline(..), TextFill::Gradient(_)) => {}
     }
 }
 
@@ -13042,7 +13040,7 @@ fn many_fields(
             && shape.table.is_none()
             && !shape.group
     }) {
-        fill_field(ui, (theme, texts), primary, false, asked);
+        fill_field(ui, (theme, texts), (primary, &[]), false, asked);
         ui.add_space(8.0);
     }
     opacity_field(ui, theme, texts, primary, asked);
@@ -13880,34 +13878,29 @@ fn effect_fields(
     ui.add_space(12.0);
 }
 
-fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+fn outline_fields(
+    ui: &mut egui::Ui,
+    (theme, texts): (&Theme, &Texts),
+    (shape, design): (&Shape, &[TextFill]),
+    asked: &mut Asked,
+) {
     let px = |value: f64| {
         texts.t(&gafira_doc::msg!(
             "unit.px",
             value = Text(format!("{value:.1}"))
         ))
     };
-    ui.horizontal(|ui| {
-        ui.label(texts.t(&gafira_doc::msg!("inspector.outline")));
-        if let Some(color) = color_button(ui, shape.stroke.map(|stroke| stroke.color)) {
-            let width = shape
-                .stroke
-                .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
-            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(color, width)));
-        }
-        if shape.stroke.is_some()
-            && ui
-                .small_button(texts.t(&gafira_doc::msg!("inspector.no_outline")))
-                .clicked()
-        {
-            asked.stroke = Some(None);
-        }
-    });
-    if let Some(color) = crate::brand_panel::swatches(ui, texts) {
-        let width = shape
-            .stroke
-            .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
-        asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(color, width)));
+    // The colour field of the editor, solid colours only (spec 098).
+    let target = crate::presets::Target::Outline(shape.page, shape.node);
+    let now = shape.stroke.map(|stroke| TextFill::Solid(stroke.color));
+    let field = ColorField::new(plain(texts, "inspector.outline"), target, now)
+        .solid_only()
+        .design(design)
+        .clear(plain(texts, "inspector.no_outline"));
+    match field.show(ui, theme, texts) {
+        Some(Picked::Fill(fill)) => apply_preset(target, fill, std::slice::from_ref(shape), asked),
+        Some(Picked::Clear) => asked.stroke = Some(None),
+        None => {}
     }
     if let Some(stroke) = shape.stroke {
         ui.horizontal(|ui| {
@@ -14182,6 +14175,28 @@ struct DesignColors {
     gradients: Vec<gafira_doc::Gradient>,
 }
 
+impl DesignColors {
+    /// Every one as a colour of a colour field: the solid ones, then the
+    /// gradients.
+    fn fills(&self) -> Vec<TextFill> {
+        self.solid
+            .iter()
+            .copied()
+            .map(TextFill::Solid)
+            .chain(self.gradients.iter().cloned().map(TextFill::Gradient))
+            .collect()
+    }
+}
+
+/// The colours the design on `page` uses, as a colour field offers them.
+fn design_fills(document: Option<&Document>, page: PageId) -> Vec<TextFill> {
+    document
+        .and_then(|d| d.page(page))
+        .map(design_colors)
+        .unwrap_or_default()
+        .fills()
+}
+
 /// The colours of the design on `page`, at most twelve of each.
 fn design_colors(page: &gafira_doc::Page) -> DesignColors {
     let mut out = DesignColors::default();
@@ -14246,63 +14261,16 @@ fn text_color_fields(
     ),
     asked: &mut Asked,
 ) {
-    let section = |ui: &mut egui::Ui, key: &'static str| {
-        ui.add_space(8.0);
-        ui.label(
-            RichText::new(plain(texts, key))
-                .font(theme.font("body-sm"))
-                .color(theme.c("text.secondary")),
-        );
-        ui.add_space(4.0);
+    let now = match &text.gradient {
+        Some(g) => TextFill::Gradient(g.clone()),
+        None => TextFill::Solid(style.color),
     };
-    ui.label(
-        RichText::new(plain(texts, "inspector.text_color"))
-            .font(theme.font("ui-label"))
-            .color(theme.c("text")),
-    );
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        if let Some(picked) = color_button(ui, Some(style.color)) {
-            asked.text_fill = Some(TextFill::Solid(picked));
-        }
-        ui.label(plain(texts, "inspector.custom_color"));
-    });
-    if let Some(color) = crate::brand_panel::swatches(ui, texts) {
-        asked.text_fill = Some(TextFill::Solid(color));
-    }
-    let in_use = |fill: &TextFill| match fill {
-        TextFill::Solid(c) => text.gradient.is_none() && *c == style.color,
-        TextFill::Gradient(g) => text.gradient.as_ref() == Some(g),
-    };
-    let row = |ui: &mut egui::Ui, fills: Vec<TextFill>, asked: &mut Asked| {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::splat(6.0);
-            for fill in fills {
-                if dot(ui, theme, in_use(&fill), &fill).clicked() {
-                    asked.text_fill = Some(fill);
-                }
-            }
-        });
-    };
-    if !design.solid.is_empty() || !design.gradients.is_empty() {
-        section(ui, "inspector.design_colors");
-        let fills = design
-            .solid
-            .iter()
-            .copied()
-            .map(TextFill::Solid)
-            .chain(design.gradients.iter().cloned().map(TextFill::Gradient))
-            .collect();
-        row(ui, fills, asked);
-    }
-    if let Some(fill) = crate::presets::sections(ui, theme, texts, target, &in_use) {
+    let fills = design.fills();
+    let field =
+        ColorField::new(plain(texts, "inspector.text_color"), target, Some(now)).design(&fills);
+    if let Some(Picked::Fill(fill)) = field.show(ui, theme, texts) {
         asked.text_fill = Some(fill);
     }
-}
-
-/// A round swatch of a colour of the design (spec 070).
-fn dot(ui: &mut egui::Ui, theme: &Theme, on: bool, fill: &TextFill) -> egui::Response {
-    crate::presets::dot(ui, theme, (fill, on), 28.0)
 }
 
 /// A square button of the text formats, drawn by `paint` in the text colour

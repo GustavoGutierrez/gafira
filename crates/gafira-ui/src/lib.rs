@@ -21,6 +21,7 @@ mod chart_templates;
 mod charts;
 mod clipboard;
 mod collage;
+mod color_field;
 mod colors;
 mod create;
 mod crop;
