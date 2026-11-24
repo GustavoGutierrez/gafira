@@ -1,8 +1,6 @@
 ---
 import { Picture } from 'astro:assets';
-import editor from '../assets/screens/editor-es.png';
-import home from '../assets/screens/home-es.png';
-import exporting from '../assets/screens/export-es.png';
+import { screens as shots } from '../lib/screens';
 import Icon from './Icon.astro';
 import { copy, type Locale } from '../i18n/ui';
 
@@ -10,7 +8,9 @@ interface Props {
   locale: Locale;
 }
 
-const t = copy[Astro.props.locale];
+const { locale } = Astro.props;
+const t = copy[locale];
+const { editor, home, exporting } = shots[locale];
 const screens = [editor, home, exporting];
 ---
 

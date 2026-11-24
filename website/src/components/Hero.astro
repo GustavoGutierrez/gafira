@@ -1,6 +1,6 @@
 ---
 import { Picture } from 'astro:assets';
-import editor from '../assets/screens/editor-es.png';
+import { screens } from '../lib/screens';
 import Icon from './Icon.astro';
 import { copy, homePath, type Locale } from '../i18n/ui';
 import { downloads, type Release } from '../lib/release';
@@ -73,7 +73,7 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
         <span></span><span></span><span></span>
       </div>
       <Picture
-        src={editor}
+        src={screens[locale].editor}
         formats={['avif', 'webp']}
         widths={[720, 1080, 1440]}
         sizes="(max-width: 1240px) calc(100vw - 48px), 1100px"
