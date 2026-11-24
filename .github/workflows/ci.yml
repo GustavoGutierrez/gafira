@@ -85,7 +85,7 @@ jobs:
   macos:
     name: macos (aarch64-apple-darwin)
     if: github.event_name == 'workflow_dispatch' && inputs.macos
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       TARGET: aarch64-apple-darwin
