@@ -69,7 +69,7 @@ const es: Copy = {
     title: 'Gafira: programa de diseño gráfico para Windows, Mac y Linux',
     description:
       'Programa de diseño gráfico para todas las personas y creadores de contenido: elige una plantilla, personalízala y compártela. Windows, macOS y Linux.',
-    ogAlt: 'El editor de Gafira con una plantilla abierta',
+    ogAlt: 'Gafira, haz visibles tus ideas: programa de diseño gráfico para Windows, macOS y Linux, junto al editor con una plantilla abierta',
   },
   nav: {
     features: 'Funciones',
@@ -280,7 +280,7 @@ const en: Copy = {
     title: 'Gafira: graphic design software for Windows, macOS and Linux',
     description:
       'Graphic design software for everyone and for content creators: pick a template, make it yours and share it. For Windows, macOS and Linux.',
-    ogAlt: 'The Gafira editor with a template open',
+    ogAlt: 'Gafira, bring your ideas to life: graphic design software for Windows, macOS and Linux, next to the editor with a template open',
   },
   nav: {
     features: 'Features',

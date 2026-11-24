@@ -3,6 +3,8 @@ import '@fontsource-variable/manrope';
 import '@fontsource-variable/inter';
 import '../styles/global.css';
 import { screens } from '../lib/screens';
+import ogEs from '../assets/og/og-es.png';
+import ogEn from '../assets/og/og-en.png';
 import { getImage } from 'astro:assets';
 import { copy, homePath, type Locale } from '../i18n/ui';
 import { downloads, type Release } from '../lib/release';
@@ -30,10 +32,13 @@ const pageTitle = title ?? t.meta.title;
 const pageDescription = description ?? t.meta.description;
 const site = Astro.site ?? new URL('https://gafira.com');
 const canonical = new URL(Astro.url.pathname, site).href;
-// JPEG keeps the preview far under the ~300 KB some apps (WhatsApp) accept.
-const og = await getImage({ src: screens[locale].editor, width: 1200, format: 'jpg', quality: 82 });
+// The share image (1200 × 630, made with scripts/og-image.html), as a JPEG
+// far under the ~300 KB some apps (WhatsApp) accept.
+const og = await getImage({ src: locale === 'es' ? ogEs : ogEn, width: 1200, format: 'jpg', quality: 85 });
 const ogUrl = new URL(og.src, site).href;
-const ogHeight = Math.round((1200 * screens[locale].editor.height) / screens[locale].editor.width);
+const ogHeight = 630;
+const shot = await getImage({ src: screens[locale].editor, width: 1440, format: 'jpg', quality: 82 });
+const shotUrl = new URL(shot.src, site).href;
 const home = new URL(homePath(locale), site).href;
 const files = release ? downloads(release) : undefined;
 // Structured data: the organisation, the site and the app (no price or
@@ -70,7 +75,7 @@ const structured = release && {
       downloadUrl: release.url,
       installUrl: `${home}#download`,
       releaseNotes: release.url,
-      screenshot: ogUrl,
+      screenshot: shotUrl,
       image: new URL('/icon-512.png', site).href,
       fileSize: files?.windowsInstaller ? `${Math.round(files.windowsInstaller.size / 1_000_000)}MB` : undefined,
       publisher: { '@id': `${site.href}#organization` },
