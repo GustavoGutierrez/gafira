@@ -255,6 +255,7 @@ La metáfora no es un pincel ni un lienzo literal: son **fragmentos visuales que
 | <span class="logo-preview"><img src="assets/gafira-favicon.svg" alt="gafira-favicon.svg" /></span> | Favicon | `gafira-favicon.svg` | Pestañas del navegador; también PNG de 16–512 px |
 | <span class="logo-preview"><img src="assets/gafira-gaf-icon.svg" alt="gafira-gaf-icon.svg" /></span> | Icono de archivo de proyecto | `gafira-gaf-icon.svg` | Archivos `.gaf` en el sistema y en el producto (ver 7.12) |
 | <span class="logo-preview"><img src="assets/gafira-gafkit-icon.svg" alt="gafira-gafkit-icon.svg" /></span> | Icono de archivo de kit de marca | `gafira-gafkit-icon.svg` | Archivos `.gafkit` en el sistema y en el producto (ver 7.13) |
+| <span class="logo-preview"><img src="assets/gafira-gafpack-icon.svg" alt="gafira-gafpack-icon.svg" /></span> | Icono de archivo de paquete de recursos | `gafira-gafpack-icon.svg` | Archivos `.gafpack` en el sistema y en el producto (ver 7.14) |
 
 Las variantes vectoriales conservan el contorno del símbolo y la tipografía vistos en el PNG, simplificando la antialiasing y normalizando los rellenos a los colores HEX de esta guía. Son **vectorizaciones aproximadas**, no trazados originales recuperados.
 
@@ -366,7 +367,7 @@ El SVG es el original: **no recrear el icono en otro editor**. El PNG es una exp
 3. Conservar el fondo transparente y colocarlo sobre superficies claras o neutras.
 4. Respetar el área de protección: **X = 1/5 del ancho visible**, igual que el logotipo.
 5. Aportarlo a la aplicación en la asociación de archivos `.gaf` de Windows, macOS y Linux.
-6. No confundirlo con el icono de kit de marca `.gafkit` (ver 7.13): cada extensión lleva el suyo.
+6. No confundirlo con el icono de kit de marca `.gafkit` (ver 7.13) ni con el de paquete `.gafpack` (ver 7.14): cada extensión lleva el suyo.
 
 **Tamaños**
 
@@ -425,6 +426,44 @@ El SVG se deriva del de `.gaf`: comparte sus trazados y solo cambia lo descrito 
 - ❌ Cambiar los colores de la paleta por los de un kit concreto: el icono es de Gafira, no de la marca que contiene.
 - ❌ Recolorear la esquina coral, el pliego o la barra; añadir sombras, contornos, degradados o texturas.
 - ❌ Retirar la paleta o la extensión `.gafkit` de la barra inferior.
+
+### 7.14. Icono de archivo de paquete de recursos (.gafpack)
+
+![Icono de archivo de paquete de recursos Gafira (.gafpack)](assets/gafira-gafpack-icon.svg)
+
+El icono de paquete identifica un **paquete de recursos de Gafira** (extensión `.gafpack`): el archivo que reúne ilustraciones, clip art, iconos y formas para instalarlos en Gafira. Al abrirlo, Gafira muestra el paquete, lo comprueba y ofrece instalarlo. Es otro hermano del icono de proyecto (7.12) y del de kit de marca (7.13): mismo pliego, otro tipo de archivo.
+
+**Anatomía del icono**
+
+1. **Pliego de documento** en azul grafito `#18243B` con interior blanco `#FFFFFF`, igual que el de `.gaf`, con la **esquina superior derecha doblada en grafito** `#18243B`: lo distingue del proyecto (verde agua) y del kit (coral).
+2. **Denominación «Gafira»** en la parte superior, en grafito.
+3. **Símbolo de tres paneles** (grafito, coral y verde agua), del mismo tamaño y posición que en `.gafkit`.
+4. **Tres recursos** bajo el símbolo, cada uno en una tesela niebla `#E7EAF2`: un círculo coral `#FF6B57`, un triángulo verde agua `#3FBFA9` y una estrella grafito `#18243B`. Dicen «paquete de recursos».
+5. **Filete coral** sobre la **barra inferior grafito**, que lleva la extensión `.gafpack` en blanco (Manrope ExtraBold, convertida a trazos).
+
+**Archivos**
+
+| Formato | Archivo | Uso |
+|---|---|---|
+| Vectorial | [`assets/gafira-gafpack-icon.svg`](assets/gafira-gafpack-icon.svg) | Archivo maestro; escala sin pérdida |
+| Rasterizado | [`assets/gafira-gafpack-icon.png`](assets/gafira-gafpack-icon.png) | 512 × 512 px, para donde el SVG no esté disponible |
+
+El SVG se deriva del de `.gaf` como el de `.gafkit`. La aplicación genera desde él los iconos del sistema con `cargo xtask gen-icons`; **no se exportan a mano**.
+
+**Uso correcto**
+
+1. Mostrarlo como icono de tipo de archivo de `.gafpack` en el explorador del sistema y en el diálogo de instalar paquetes.
+2. Mantener su proporción, su fondo transparente y el área de protección de 7.12.
+3. Aportarlo a la aplicación en la asociación de archivos `.gafpack` (`application/vnd.gafira.gafpack+zip`) de Windows, macOS y Linux.
+
+**Tamaños**: los mismos de 7.12. A 16 × 16 px las teselas se reducen a tres puntos de color; la esquina grafito sigue distinguiéndolo del proyecto y del kit.
+
+**Uso incorrecto**
+
+- ❌ Usarlo para proyectos `.gaf` o kits `.gafkit`, o los de ellos para paquetes.
+- ❌ Poner en las teselas recursos de un paquete concreto: el icono es de Gafira, no del contenido.
+- ❌ Recolorear la esquina, el pliego o la barra; añadir sombras, contornos, degradados o texturas.
+- ❌ Retirar las teselas o la extensión `.gafpack` de la barra inferior.
 
 ---
 
@@ -533,7 +572,7 @@ Usar rectángulos de esquinas moderadas, recortes rectos, capas, formas que se a
 
 Iconos de trazo simple, grosor consistente y geometría contenida. Las acciones frecuentes deben reconocerse sin una etiqueta compleja; acompañar con texto o tooltip cuando el significado no sea inequívoco.
 
-Los iconos de archivo `.gaf` (ver 7.12) y `.gafkit` (ver 7.13) son la única excepción a este sistema: son iconos **de marca**, no de trazo, y se usan sin variantes monocromas.
+Los iconos de archivo `.gaf` (ver 7.12), `.gafkit` (ver 7.13) y `.gafpack` (ver 7.14) son la única excepción a este sistema: son iconos **de marca**, no de trazo, y se usan sin variantes monocromas.
 
 ### 10.3. Ilustraciones e imágenes
 
@@ -599,6 +638,7 @@ Incluir navegación por teclado, foco visible, contraste suficiente, alternativa
 | Marca de agua discreta | Monocromo, opacidad controlada | Superficie que garantice legibilidad |
 | Archivo de proyecto `.gaf` | Icono de archivo Gafira (7.12) | Transparente o superficie clara |
 | Kit de marca `.gafkit` | Icono de archivo de kit de marca (7.13) | Transparente o superficie clara |
+| Paquete de recursos `.gafpack` | Icono de archivo de paquete de recursos (7.14) | Transparente o superficie clara |
 
 ### 12.1. Landing page
 
@@ -698,7 +738,8 @@ No publicar páginas para capacidades aún no disponibles, ni repetir palabras c
 6. Copia del PNG original utilizado como referencia.
 7. Icono de archivo de proyecto `.gaf` (**SVG + PNG 512 × 512**).
 8. Icono de archivo de kit de marca `.gafkit` (**SVG + PNG 512 × 512**).
-9. Tokens iniciales en **CSS y JSON**, además del manual en **Markdown y PDF**.
+9. Icono de archivo de paquete de recursos `.gafpack` (**SVG + PNG 512 × 512**).
+10. Tokens iniciales en **CSS y JSON**, además del manual en **Markdown y PDF**.
 
 ### 14.3. Siguientes validaciones
 

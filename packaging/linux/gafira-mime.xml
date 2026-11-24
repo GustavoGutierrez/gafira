@@ -16,4 +16,12 @@
     <icon name="application-vnd.gafira.brandkit+zip"/>
     <glob pattern="*.gafkit" weight="60"/>
   </mime-type>
+  <!-- The .gafpack asset package (spec 097) with its icon. -->
+  <mime-type type="application/vnd.gafira.gafpack+zip">
+    <comment>Gafira asset package</comment>
+    <comment xml:lang="es">Paquete de recursos de Gafira</comment>
+    <sub-class-of type="application/zip"/>
+    <icon name="application-vnd.gafira.gafpack+zip"/>
+    <glob pattern="*.gafpack" weight="60"/>
+  </mime-type>
 </mime-info>
