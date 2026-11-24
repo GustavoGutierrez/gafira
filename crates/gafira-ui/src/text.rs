@@ -1697,6 +1697,7 @@ mod tests {
         "export.show_in_folder",
         "export.close",
         "export.folder_failed",
+        "eyedropper.name",
     ];
 
     #[test]

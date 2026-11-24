@@ -9,12 +9,6 @@ pub(crate) fn hex(code: u32) -> Color {
     Color::Srgb(Rgba::new(channel(16), channel(8), channel(0), 1.0))
 }
 
-/// The palette of «Fondo de la página».
-pub(crate) const PALETTE: [u32; 18] = [
-    0x000000, 0xFFFFFF, 0x7B61FF, 0xDCD6F7, 0x1C1C1E, 0x6E6262, 0x18243B, 0xFF5A7A, 0x2B1D14,
-    0xCBC3FF, 0xFFAAB8, 0xFFC9D4, 0xFFE6A7, 0xC4E9DA, 0xE84545, 0xF57A1F, 0xF4A21B, 0xE8B90C,
-];
-
 /// The gradient presets of «Fondo de la página»: two colours and an angle.
 pub(crate) const GRADIENTS: [(u32, u32, f64); 6] = [
     (0xF5576C, 0xF39C12, 45.0),

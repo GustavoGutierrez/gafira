@@ -254,6 +254,15 @@ impl Doc {
         self.add(page, "Forma", at, kind, opacity);
     }
 
+    /// The shape of the Formas panel named `key` (spec 098), `h` high from
+    /// `(x, y)` and as wide as its proportions ask.
+    fn piece(&mut self, page: &mut Page, (x, y, h): (f64, f64, f64), key: &str, fill: &str) {
+        let (geometry, aspect) = gafira_ui::piece_geometry(key).expect("a shape of the panel");
+        let geometry = serde_json::to_value(geometry).expect("geometry as JSON");
+        let kind = json!({ "type": "shape", "geometry": geometry, "fill": rgb(fill) });
+        self.add(page, "Comillas", (x, y, h * aspect, h), kind, 1.0);
+    }
+
     /// An outlined ellipse.
     fn ring(&mut self, page: &mut Page, at: (f64, f64, f64, f64), color: &str, width: f64) {
         let kind = json!({
@@ -506,12 +515,8 @@ fn quote(l: Lang) -> Document {
         |d, p| {
             d.rect(p, (110.0, 160.0, 860.0, 1030.0), WHITE, 28.0);
             d.frame(p, (140.0, 190.0, 800.0, 970.0), MINT, 3.0, 20.0);
-            d.text(
-                p,
-                (180.0, 260.0, 720.0),
-                "“",
-                font("DM Serif Display", 220.0, MINT).center(),
-            );
+            // The quotes are a shape of the panel, not a letter (spec 098).
+            d.piece(p, (488.0, 300.0, 92.0), "pieces.quote_round_open", MINT);
             d.text(
                 p,
                 (190.0, 500.0, 700.0),
@@ -3412,12 +3417,8 @@ fn new_product(l: Lang) -> Document {
 fn bold_quote(l: Lang) -> Document {
     let mut d = Doc::new();
     d.page(SQUARE, solid(CORAL), |d, p| {
-        d.text(
-            p,
-            (60.0, 40.0, 300.0),
-            "“",
-            font("Archivo Black", 300.0, INK),
-        );
+        // The quotes are a shape of the panel, not a letter (spec 098).
+        d.piece(p, (72.0, 130.0, 106.0), "pieces.quote_cut", INK);
         d.text(
             p,
             (90.0, 340.0, 900.0),

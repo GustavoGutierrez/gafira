@@ -844,6 +844,12 @@ impl eframe::App for Shell {
         // only wake it (02 §5.2), so the queue is drained and dropped.
         while self.engine.events().try_recv().is_ok() {}
         self.pump_autosave(ctx);
+        // «Tomar un color» (spec 098), on every screen with a colour picker.
+        crate::eyedropper::frame(
+            ctx,
+            self.texts.t(&gafira_doc::msg!("eyedropper.name")),
+            (self.theme.c("text"), self.theme.c("selection.bg")),
+        );
         if self.settings.is_some() {
             self.show_settings(ctx, frame);
             self.show_pack(ctx);

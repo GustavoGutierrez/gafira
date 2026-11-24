@@ -775,12 +775,8 @@ pub(crate) fn panel(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, state: &mut
                         setting.colour = colour;
                     }
                 }
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut setting.colour,
-                    egui::color_picker::Alpha::Opaque,
-                )
-                .on_hover_text(t(texts, "draw.custom_colour"));
+                crate::eyedropper::color_edit_opaque(ui, &mut setting.colour)
+                    .on_hover_text(t(texts, "draw.custom_colour"));
             });
             ui.add_space(12.0);
             let (lo, hi) = brush.sizes;
@@ -856,27 +852,16 @@ fn number_row(
     range: std::ops::RangeInclusive<f32>,
     step: f64,
 ) {
-    ui.label(
-        RichText::new(t(texts, key))
-            .font(theme.font("body-sm"))
-            .color(theme.c("text.secondary")),
-    );
-    ui.horizontal(|ui| {
-        let width = ui.available_width() - 64.0;
-        ui.spacing_mut().slider_width = width.max(60.0);
-        ui.add(
-            egui::Slider::new(value, range.clone())
-                .show_value(false)
-                .step_by(step),
-        );
-        ui.add(
-            egui::DragValue::new(value)
-                .range(range)
-                .speed(step)
-                .max_decimals(1),
-        );
-    });
-    ui.add_space(4.0);
+    let mut number = f64::from(*value);
+    let (lo, hi) = (f64::from(*range.start()), f64::from(*range.end()));
+    if crate::slider::Slider::new(t(texts, key), &mut number, (lo, hi))
+        .rest(lo)
+        .step(step, if step < 1.0 { 1 } else { 0 })
+        .show(ui, theme)
+    {
+        // Within the range: the cast loses nothing seen.
+        *value = number as f32;
+    }
 }
 
 /// One card of the brushes: the brush drawing its own sample stroke in its

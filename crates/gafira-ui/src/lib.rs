@@ -21,6 +21,7 @@ mod chart_templates;
 mod charts;
 mod clipboard;
 mod collage;
+mod color_field;
 mod colors;
 mod create;
 mod crop;
@@ -32,6 +33,7 @@ mod editor;
 mod elements;
 mod eraser;
 mod export;
+mod eyedropper;
 mod files;
 mod format;
 mod frames;
@@ -41,6 +43,7 @@ mod home;
 mod icons;
 mod illustrations;
 mod image_panel;
+mod layer_rows;
 mod layers;
 mod library;
 mod lines;
@@ -51,6 +54,7 @@ mod pack_panel;
 mod packs;
 mod pairings;
 mod photos;
+mod presets;
 mod qr;
 mod recent;
 mod recolor;
@@ -63,6 +67,7 @@ mod settings;
 mod shapes;
 mod sheets;
 mod shell;
+mod slider;
 mod splash;
 mod style;
 mod system_fonts;
@@ -106,4 +111,15 @@ pub use templates::{TemplateListing, TemplateStore};
 #[must_use]
 pub fn size_guides(key: &str) -> Option<gafira_doc::GuideSet> {
     design_sizes::by_key(key).map(design_sizes::DesignSize::guides)
+}
+
+/// The geometry of the shape of the Formas panel whose catalog key is `key`
+/// (`pieces.quote_cut`) and its width over its height, for designs built
+/// outside the editor, as the templates (spec 098).
+#[must_use]
+pub fn piece_geometry(key: &str) -> Option<(gafira_doc::ShapeGeometry, f64)> {
+    shapes::Piece::ALL
+        .iter()
+        .find(|piece| piece.key() == key)
+        .map(|piece| (piece.geometry(), piece.aspect()))
 }
