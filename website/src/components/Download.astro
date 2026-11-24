@@ -50,14 +50,14 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
 ];
 ---
 
-<section class="section section--white" id="download">
+<section class="section section--white" id="download" aria-labelledby="download-title">
   <div class="container">
     <div class="section-head section-head--center">
-      <h2>{d.title}</h2>
+      <h2 id="download-title">{d.title}</h2>
       <p>{d.lead}</p>
       <p class="release">
         <span class="release__tag">{d.version} {release.version}</span>
-        <span>{d.published} {longDate(release.published, locale)}</span>
+        <span>{d.published} <time datetime={release.published}>{longDate(release.published, locale)}</time></span>
       </p>
     </div>
     <div class="systems">

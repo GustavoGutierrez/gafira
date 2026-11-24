@@ -15,6 +15,7 @@ export default defineConfig({
   },
   integrations: [
     sitemap({
+      lastmod: new Date(),
       i18n: { defaultLocale: 'es', locales: { es: 'es', en: 'en' } },
     }),
   ],

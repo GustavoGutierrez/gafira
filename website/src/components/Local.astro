@@ -9,10 +9,10 @@ interface Props {
 const t = copy[Astro.props.locale];
 ---
 
-<section class="section local">
+<section class="section local" aria-labelledby="local-title">
   <div class="container local__inner">
     <div class="local__head">
-      <h2>{t.local.title}</h2>
+      <h2 id="local-title">{t.local.title}</h2>
       <p>{t.local.text}</p>
     </div>
     <ul class="local__points">

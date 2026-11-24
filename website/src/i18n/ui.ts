@@ -65,9 +65,9 @@ export interface Copy {
 
 const es: Copy = {
   meta: {
-    title: 'Gafira · Haz visibles tus ideas',
+    title: 'Gafira: programa de diseño gráfico para Windows, Mac y Linux',
     description:
-      'Gafira es un programa de diseño gráfico para todas las personas y creadores de contenido. Elige una plantilla, personalízala y compártela. Para Windows, macOS y Linux.',
+      'Programa de diseño gráfico para todas las personas y creadores de contenido: elige una plantilla, personalízala y compártela. Windows, macOS y Linux.',
     ogAlt: 'El editor de Gafira con una plantilla abierta',
   },
   nav: {
@@ -275,9 +275,9 @@ const es: Copy = {
 
 const en: Copy = {
   meta: {
-    title: 'Gafira · Bring your ideas to life',
+    title: 'Gafira: graphic design software for Windows, macOS and Linux',
     description:
-      'Gafira is graphic design software for everyone and for content creators. Pick a template, make it yours and share it. For Windows, macOS and Linux.',
+      'Graphic design software for everyone and for content creators: pick a template, make it yours and share it. For Windows, macOS and Linux.',
     ogAlt: 'The Gafira editor with a template open',
   },
   nav: {
