@@ -189,12 +189,37 @@ pub(crate) enum Piece {
     AbstractWindow,
     AbstractSteps,
     AbstractBean,
+    /// «Comillas» (spec 098): double and single quotes in many styles.
+    QuoteRound,
+    QuoteRoundOpen,
+    QuoteRoundSingle,
+    QuoteHeavy,
+    QuoteHeavyOpen,
+    QuoteBlock,
+    QuoteBlockOpen,
+    QuoteBlockSingle,
+    QuoteSoft,
+    QuoteSoftOpen,
+    QuoteSlant,
+    QuoteWedge,
+    QuoteWedgeOpen,
+    QuoteThin,
+    QuoteThinOpen,
+    QuoteStraight,
+    QuoteStraightSingle,
+    QuoteAngle,
+    QuoteAngleClose,
+    QuoteAngleSingle,
+    QuoteCircle,
+    QuoteCircleOpen,
+    QuoteSquare,
+    QuoteSquareOpen,
 }
 
 impl Piece {
     /// Every shape, in the order of the panel.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 173] = [
+    pub(crate) const ALL: [Self; 197] = [
         Self::LineCircles,
         Self::LineDiamonds,
         Self::LineDiamondsFilled,
@@ -368,6 +393,30 @@ impl Piece {
         Self::AbstractWindow,
         Self::AbstractSteps,
         Self::AbstractBean,
+        Self::QuoteRound,
+        Self::QuoteRoundOpen,
+        Self::QuoteRoundSingle,
+        Self::QuoteHeavy,
+        Self::QuoteHeavyOpen,
+        Self::QuoteBlock,
+        Self::QuoteBlockOpen,
+        Self::QuoteBlockSingle,
+        Self::QuoteSoft,
+        Self::QuoteSoftOpen,
+        Self::QuoteSlant,
+        Self::QuoteWedge,
+        Self::QuoteWedgeOpen,
+        Self::QuoteThin,
+        Self::QuoteThinOpen,
+        Self::QuoteStraight,
+        Self::QuoteStraightSingle,
+        Self::QuoteAngle,
+        Self::QuoteAngleClose,
+        Self::QuoteAngleSingle,
+        Self::QuoteCircle,
+        Self::QuoteCircleOpen,
+        Self::QuoteSquare,
+        Self::QuoteSquareOpen,
     ];
 
     /// Its geometry in the document: a rectangle, an ellipse or a path.
@@ -599,6 +648,30 @@ impl Piece {
             Self::AbstractWindow => "pieces.abstract_window",
             Self::AbstractSteps => "pieces.abstract_steps",
             Self::AbstractBean => "pieces.abstract_bean",
+            Self::QuoteRound => "pieces.quote_round",
+            Self::QuoteRoundOpen => "pieces.quote_round_open",
+            Self::QuoteRoundSingle => "pieces.quote_round_single",
+            Self::QuoteHeavy => "pieces.quote_heavy",
+            Self::QuoteHeavyOpen => "pieces.quote_heavy_open",
+            Self::QuoteBlock => "pieces.quote_block",
+            Self::QuoteBlockOpen => "pieces.quote_block_open",
+            Self::QuoteBlockSingle => "pieces.quote_block_single",
+            Self::QuoteSoft => "pieces.quote_soft",
+            Self::QuoteSoftOpen => "pieces.quote_soft_open",
+            Self::QuoteSlant => "pieces.quote_slant",
+            Self::QuoteWedge => "pieces.quote_wedge",
+            Self::QuoteWedgeOpen => "pieces.quote_wedge_open",
+            Self::QuoteThin => "pieces.quote_thin",
+            Self::QuoteThinOpen => "pieces.quote_thin_open",
+            Self::QuoteStraight => "pieces.quote_straight",
+            Self::QuoteStraightSingle => "pieces.quote_straight_single",
+            Self::QuoteAngle => "pieces.quote_angle",
+            Self::QuoteAngleClose => "pieces.quote_angle_close",
+            Self::QuoteAngleSingle => "pieces.quote_angle_single",
+            Self::QuoteCircle => "pieces.quote_circle",
+            Self::QuoteCircleOpen => "pieces.quote_circle_open",
+            Self::QuoteSquare => "pieces.quote_square",
+            Self::QuoteSquareOpen => "pieces.quote_square_open",
         }
     }
 }
@@ -857,6 +930,35 @@ pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[
             Piece::AbstractWindow,
             Piece::AbstractSteps,
             Piece::AbstractBean,
+        ],
+    ),
+    (
+        "pieces.quotes",
+        &[
+            Piece::QuoteRound,
+            Piece::QuoteRoundOpen,
+            Piece::QuoteRoundSingle,
+            Piece::QuoteHeavy,
+            Piece::QuoteHeavyOpen,
+            Piece::QuoteBlock,
+            Piece::QuoteBlockOpen,
+            Piece::QuoteBlockSingle,
+            Piece::QuoteSoft,
+            Piece::QuoteSoftOpen,
+            Piece::QuoteSlant,
+            Piece::QuoteWedge,
+            Piece::QuoteWedgeOpen,
+            Piece::QuoteThin,
+            Piece::QuoteThinOpen,
+            Piece::QuoteStraight,
+            Piece::QuoteStraightSingle,
+            Piece::QuoteAngle,
+            Piece::QuoteAngleClose,
+            Piece::QuoteAngleSingle,
+            Piece::QuoteCircle,
+            Piece::QuoteCircleOpen,
+            Piece::QuoteSquare,
+            Piece::QuoteSquareOpen,
         ],
     ),
 ];
@@ -1485,6 +1587,38 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
             (1.0, 1.0),
         ]),
         Piece::AbstractBean => polar(|t| 1.0 + 0.28 * (2.0 * t).cos() - 0.18 * t.sin(), 1.3),
+        Piece::QuoteRound => pair(|x| comma(x, 0.0)),
+        Piece::QuoteRoundOpen => opening(pair(|x| comma(x, 0.0))),
+        Piece::QuoteRoundSingle => comma(0.0, 0.0),
+        Piece::QuoteHeavy => pair(|x| comma(x, 0.08)),
+        Piece::QuoteHeavyOpen => opening(pair(|x| comma(x, 0.08))),
+        Piece::QuoteBlock => pair(block_mark),
+        Piece::QuoteBlockOpen => opening(pair(block_mark)),
+        Piece::QuoteBlockSingle => block_mark(0.0),
+        Piece::QuoteSoft => pair(soft_mark),
+        Piece::QuoteSoftOpen => opening(pair(soft_mark)),
+        Piece::QuoteSlant => {
+            pair(|x| poly(&[(x + 0.2, 0.0), (x + 0.5, 0.0), (x + 0.3, 1.0), (x, 1.0)]))
+        }
+        Piece::QuoteWedge => pair(|x| poly(&[(x, 0.0), (x + 0.42, 0.0), (x + 0.1, 1.0)])),
+        Piece::QuoteWedgeOpen => {
+            opening(pair(|x| poly(&[(x, 0.0), (x + 0.42, 0.0), (x + 0.1, 1.0)])))
+        }
+        Piece::QuoteThin => pair(crescent),
+        Piece::QuoteThinOpen => opening(pair(crescent)),
+        Piece::QuoteStraight => {
+            pair(|x| RoundedRect::new(x, 0.0, x + 0.2, 1.0, 0.1).to_path(TOLERANCE))
+        }
+        Piece::QuoteStraightSingle => {
+            RoundedRect::new(0.0, 0.0, 0.3, 1.0, 0.15).to_path(TOLERANCE)
+        }
+        Piece::QuoteAngle => union(vec![chevron(0.0), chevron(0.42)]),
+        Piece::QuoteAngleClose => opening(union(vec![chevron(0.0), chevron(0.42)])),
+        Piece::QuoteAngleSingle => chevron(0.0),
+        Piece::QuoteCircle => badge(false, true),
+        Piece::QuoteCircleOpen => badge(true, true),
+        Piece::QuoteSquare => badge(false, false),
+        Piece::QuoteSquareOpen => badge(true, false),
         Piece::LabelClassic => label(1.6, 1.0),
         Piece::LabelTall => label(1.0, 1.4),
         Piece::LabelScalloped => {
@@ -1957,6 +2091,126 @@ fn tag(body: BezPath, w: f64) -> BezPath {
 fn oval(path: &mut BezPath, centre: (f64, f64), radii: (f64, f64), start: f64, sweep: f64) {
     let arc = kurbo::Arc::new(centre, radii, start.to_radians(), sweep.to_radians(), 0.0);
     arc.append_iter(TOLERANCE).for_each(|el| path.push(el));
+}
+
+/// A closing quote mark («9») at `x`, one outline: a round head and a tail
+/// down to the left; `heavy` thickens both.
+fn comma(x: f64, heavy: f64) -> BezPath {
+    let (r, w) = (0.25 + heavy / 2.0, 0.06 + heavy);
+    let mut p = BezPath::new();
+    p.move_to((x + r, 0.0));
+    p.curve_to(
+        (x + r * 1.55, 0.0),
+        (x + 2.0 * r, r * 0.45),
+        (x + 2.0 * r, r * 1.1),
+    );
+    p.curve_to((x + 2.0 * r, 0.6), (x + 1.3 * r, 0.86), (x + w, 1.0));
+    p.line_to((x + w * 0.4, 0.93));
+    p.curve_to(
+        (x + 0.7 * r, 0.82),
+        (x + 1.05 * r, 0.68),
+        (x + 1.05 * r, 2.05 * r),
+    );
+    p.curve_to((x + 0.45 * r, 2.05 * r), (x, 1.6 * r), (x, r));
+    p.curve_to((x, 0.45 * r), (x + 0.45 * r, 0.0), (x + r, 0.0));
+    p.close_path();
+    p
+}
+
+/// A square closing mark at `x`: a block with a slanted tail.
+fn block_mark(x: f64) -> BezPath {
+    poly(&[
+        (x, 0.0),
+        (x + 0.46, 0.0),
+        (x + 0.46, 0.58),
+        (x + 0.16, 1.0),
+        (x + 0.16, 0.52),
+        (x, 0.52),
+    ])
+}
+
+/// [`block_mark`] with soft corners.
+fn soft_mark(x: f64) -> BezPath {
+    let mut p = BezPath::new();
+    p.move_to((x + 0.08, 0.0));
+    p.line_to((x + 0.38, 0.0));
+    p.quad_to((x + 0.46, 0.0), (x + 0.46, 0.08));
+    p.line_to((x + 0.46, 0.56));
+    p.quad_to((x + 0.46, 0.64), (x + 0.41, 0.7));
+    p.line_to((x + 0.24, 0.96));
+    p.quad_to((x + 0.16, 1.04), (x + 0.16, 0.92));
+    p.line_to((x + 0.16, 0.52));
+    p.line_to((x + 0.08, 0.52));
+    p.quad_to((x, 0.52), (x, 0.44));
+    p.line_to((x, 0.08));
+    p.quad_to((x, 0.0), (x + 0.08, 0.0));
+    p.close_path();
+    p
+}
+
+/// A thin closing mark at `x`: a crescent bending right.
+fn crescent(x: f64) -> BezPath {
+    let mut p = BezPath::new();
+    p.move_to((x + 0.12, 0.0));
+    p.curve_to((x + 0.52, 0.18), (x + 0.52, 0.78), (x + 0.04, 1.0));
+    p.curve_to((x + 0.3, 0.72), (x + 0.3, 0.3), (x + 0.12, 0.0));
+    p.close_path();
+    p
+}
+
+/// An opening angle mark «‹» at `x`.
+fn chevron(x: f64) -> BezPath {
+    poly(&[
+        (x + 0.36, 0.1),
+        (x + 0.5, 0.22),
+        (x + 0.24, 0.5),
+        (x + 0.5, 0.78),
+        (x + 0.36, 0.9),
+        (x, 0.5),
+    ])
+}
+
+/// Two marks side by side.
+fn pair(mark: impl Fn(f64) -> BezPath) -> BezPath {
+    union(vec![mark(0.0), mark(0.62)])
+}
+
+/// `path` turned half round about its middle: a closing mark opens.
+fn opening(mut path: BezPath) -> BezPath {
+    let middle = path.bounding_box().center();
+    path.apply_affine(Affine::rotate_about(std::f64::consts::PI, middle));
+    path
+}
+
+/// A circle or a rounded square with round quotes cut through it.
+fn badge(open: bool, round: bool) -> BezPath {
+    let body = if round {
+        circle(1.0, 1.0, 1.0)
+    } else {
+        RoundedRect::new(0.0, 0.0, 2.0, 2.0, 0.35).to_path(TOLERANCE)
+    };
+    let mut marks = pair(|x| comma(x, 0.04));
+    if open {
+        marks = opening(marks);
+    }
+    let b = marks.bounding_box();
+    let scale = 0.8 / b.height();
+    marks.apply_affine(
+        Affine::translate((1.0, 1.0))
+            * Affine::scale(scale)
+            * Affine::translate((-b.center().x, -b.center().y)),
+    );
+    let holes = marks
+        .elements()
+        .split(|el| matches!(el, PathEl::ClosePath))
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut hole = BezPath::from_vec(part.to_vec());
+            hole.close_path();
+            hole
+        })
+        .collect();
+    with_holes(body, holes)
 }
 
 /// `body` with `holes` cut out of it: each hole turned against it.
