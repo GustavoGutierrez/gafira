@@ -35,16 +35,19 @@ pub(crate) enum Category {
     Lights,
     /// «Fotos» from remote catalogues (spec 071, D-111).
     Photos,
+    /// The icons of the installed packages (spec 097).
+    Icons,
 }
 
 impl Category {
     /// The categories in the order of the grid: those that work first,
     /// those still to come last (owner request).
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::Shapes,
         Self::Collage,
         Self::Frames,
         Self::Illustrations,
+        Self::Icons,
         Self::Photos,
         Self::Lights,
         Self::QrCodes,
@@ -64,6 +67,7 @@ impl Category {
             Self::Illustrations => "elements.illustrations",
             Self::Lights => "elements.lights",
             Self::Photos => "elements.photos",
+            Self::Icons => "elements.icons",
         }
     }
 
@@ -78,6 +82,7 @@ impl Category {
             Self::Illustrations => Icon::CategoryIllustrations,
             Self::Lights => Icon::CategoryLights,
             Self::Photos => Icon::CategoryPhotos,
+            Self::Icons => Icon::Pages,
         }
     }
 }

@@ -566,7 +566,10 @@ mod tests {
     use super::*;
 
     fn temp() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("gafira-brand-{}", std::process::id()));
+        // One folder per call: the tests run side by side in one process.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("gafira-brand-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }

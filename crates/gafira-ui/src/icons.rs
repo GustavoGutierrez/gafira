@@ -111,11 +111,13 @@ pub(crate) enum Icon {
     Cursor,
     /// The pointer while an element is moved on the canvas (spec 095).
     Move,
+    /// «Instalar paquete» (spec 097): Gafira's own box.
+    Package,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 67] = [
+    pub(crate) const ALL: [Self; 68] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -183,6 +185,7 @@ impl Icon {
         Self::Italic,
         Self::Cursor,
         Self::Move,
+        Self::Package,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -255,6 +258,7 @@ impl Icon {
             Self::Italic => "text-italic",
             Self::Cursor => "cursor",
             Self::Move => "move",
+            Self::Package => "package",
         }
     }
 
@@ -282,7 +286,7 @@ impl Icon {
     /// Whether the icon is one of Gafira's own (`assets/icons/gafira`),
     /// drawn in a single weight.
     fn is_own(self) -> bool {
-        matches!(self, Self::Cursor | Self::Move)
+        matches!(self, Self::Cursor | Self::Move | Self::Package)
     }
 
     /// The table key of the icon in `weight`.

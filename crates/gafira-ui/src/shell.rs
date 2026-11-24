@@ -77,6 +77,8 @@ pub struct UiConfig {
     pub templates: Option<Arc<dyn crate::TemplateStore>>,
     /// The brand kits of Marca (spec 093).
     pub brand: Box<dyn crate::BrandStore>,
+    /// The installed asset packages (spec 097).
+    pub packs: Box<dyn crate::PackStore>,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -135,6 +137,8 @@ pub(crate) enum Go {
     Brand(Option<String>),
     /// Marca, importing this `.gafkit` (spec 094).
     ImportKit(PathBuf),
+    /// Choose a `.gafpack` and show it before installing it (spec 097).
+    InstallPack,
     File(FileAction),
     /// Open a project of «Recientes».
     OpenRecent(PathBuf),
@@ -214,6 +218,13 @@ struct Shell {
     catalogue: std::rc::Rc<std::cell::RefCell<Catalogue>>,
     /// The brand kits (spec 093).
     brand: std::rc::Rc<dyn crate::BrandStore>,
+    /// The installed asset packages (spec 097).
+    packs: Arc<dyn crate::PackStore>,
+    /// Where the templates come from, to read them again when a package
+    /// adds or takes some (spec 097).
+    template_store: Option<Arc<dyn crate::TemplateStore>>,
+    /// The package shown before it is installed, over any screen.
+    pack_dialog: Option<crate::pack_dialog::PackDialog>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -311,6 +322,9 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
                 brand: std::rc::Rc::from(config.brand),
+                packs: Arc::from(config.packs),
+                pack_dialog: None,
+                template_store: config.templates.clone(),
                 catalogue: std::rc::Rc::new(std::cell::RefCell::new(Catalogue::new(
                     config.templates,
                     &cc.egui_ctx,
@@ -335,6 +349,7 @@ impl Shell {
         editor.library = Some(std::rc::Rc::clone(&self.library));
         editor.templates = Some(std::rc::Rc::clone(&self.catalogue));
         editor.brand = Some(std::rc::Rc::clone(&self.brand));
+        editor.packs = Some(Arc::clone(&self.packs));
         editor
             .photo_panel
             .get_mut()
@@ -720,12 +735,47 @@ impl Shell {
 impl Shell {
     /// Ajustes over the whole window; a change applies at once and persists
     /// through `SettingsService` (03 §7.8, §16.1).
-    fn show_settings(&mut self, ctx: &egui::Context) {
+    /// «Instalar paquete»: a `.gafpack` chosen, shown before it is
+    /// installed (spec 097).
+    fn pick_pack(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let chosen = crate::files::picker(Some(frame))
+            .add_filter("Gafira", &[crate::PACK_EXTENSION])
+            .pick_file();
+        if let Some(path) = chosen {
+            self.pack_dialog = Some(crate::pack_dialog::PackDialog::open(&self.packs, path, ctx));
+        }
+    }
+
+    /// The packages changed: the panels and the templates read them again.
+    fn packs_changed(&mut self, ctx: &egui::Context) {
+        if let Screen::Editor(editor) = &mut self.screen {
+            editor.packs_changed();
+        }
+        *self.catalogue.borrow_mut() = Catalogue::new(self.template_store.clone(), ctx);
+    }
+
+    /// The package window over whatever is on display (spec 097).
+    fn show_pack(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = self.pack_dialog.as_mut() else {
+            return;
+        };
+        match dialog.show(ctx, &self.theme, &self.texts, &self.packs) {
+            crate::pack_dialog::PackAsk::Stay => {}
+            crate::pack_dialog::PackAsk::Close => self.pack_dialog = None,
+            crate::pack_dialog::PackAsk::Installed => {
+                self.pack_dialog = None;
+                self.packs_changed(ctx);
+            }
+        }
+    }
+
+    fn show_settings(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
         let Some(view) = self.settings.as_mut() else {
             return;
         };
         let current = self.engine.settings().get();
         let system = self.engine.settings().preview(LanguagePreference::System);
+        let packs = self.packs.installed();
         let change = settings::show(
             ctx,
             &self.theme,
@@ -733,9 +783,16 @@ impl Shell {
             view,
             current,
             &system,
-            self.version,
+            (self.version, &packs),
         );
         match change {
+            Change::InstallPack => self.pick_pack(ctx, frame),
+            Change::Uninstall(id) => {
+                if let Err(problem) = self.packs.uninstall(&id) {
+                    eprintln!("uninstall {id}: {}", problem.key);
+                }
+                self.packs_changed(ctx);
+            }
             Change::None => {}
             Change::Back => {
                 self.settings = None;
@@ -788,7 +845,8 @@ impl eframe::App for Shell {
         while self.engine.events().try_recv().is_ok() {}
         self.pump_autosave(ctx);
         if self.settings.is_some() {
-            self.show_settings(ctx);
+            self.show_settings(ctx, frame);
+            self.show_pack(ctx);
             return;
         }
         let go = match &mut self.screen {
@@ -805,6 +863,13 @@ impl eframe::App for Shell {
                             }) =>
                         {
                             Go::ImportKit(path)
+                        }
+                        // A package opened from the system: Inicio, with
+                        // the package shown over it (spec 097).
+                        Some(path) if is_pack(&path) => {
+                            self.pack_dialog =
+                                Some(crate::pack_dialog::PackDialog::open(&self.packs, path, ctx));
+                            Go::Home
                         }
                         Some(path) => Go::OpenRecent(path),
                         None => Go::Home,
@@ -841,6 +906,20 @@ impl eframe::App for Shell {
                 (self.notice.as_deref(), Some(frame)),
             ),
         };
+        // A package dropped on the window, on any screen (spec 097).
+        let dropped = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .find(|p| is_pack(p))
+        });
+        if let Some(path) = dropped
+            && !matches!(self.screen, Screen::Splash)
+        {
+            self.pack_dialog = Some(crate::pack_dialog::PackDialog::open(&self.packs, path, ctx));
+        }
+        self.show_pack(ctx);
         let blocked = self.dialogs(ctx, frame);
         self.pump_export(ctx);
         self.pump_save(ctx, Some(frame));
@@ -913,6 +992,7 @@ impl eframe::App for Shell {
                     path,
                 )));
             }
+            Go::InstallPack => self.pick_pack(ctx, frame),
             Go::Brand(kit) => {
                 self.screen = Screen::Brand(Box::new(crate::brand_screen::BrandScreen::new(
                     self.brand.as_ref(),
@@ -947,4 +1027,10 @@ fn unix_now() -> i64 {
         .ok()
         .and_then(|elapsed| i64::try_from(elapsed.as_secs()).ok())
         .unwrap_or(0)
+}
+
+/// Whether `path` is a `.gafpack` (spec 097).
+fn is_pack(path: &std::path::Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(crate::PACK_EXTENSION))
 }

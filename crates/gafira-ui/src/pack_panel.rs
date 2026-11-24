@@ -1,0 +1,384 @@
+//! The assets of the installed packages in a panel of the editor (spec
+//! 097, §13.1): in Ilustraciones, Iconos and Formas, each package under its
+//! name, filtered by package and by a search on names, tags and keywords.
+//! A click inserts an asset, a drag carries it to a page.
+
+use egui::{Pos2, RichText, Sense, Vec2};
+use gafira_doc::msg::{Message, MessageKey};
+
+use crate::packs::{InstalledPack, PackAsset, PackSection, PackUse};
+use crate::style::Theme;
+use crate::text::Texts;
+
+fn t(texts: &Texts, key: &'static str) -> String {
+    texts.t(&Message {
+        key: MessageKey(key),
+        args: Vec::new(),
+    })
+}
+
+/// What the person did with an asset.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum PackPick {
+    /// Clicked: into the middle of the page.
+    Insert(PackUse),
+    /// Dropped at this screen point.
+    Drop(PackUse, Pos2),
+}
+
+/// The filter of one panel: the package shown (all when `None`) and the
+/// words searched.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PackFilter {
+    pub(crate) pack: Option<String>,
+    pub(crate) words: String,
+}
+
+/// Whether `asset` matches the words searched: each word is in its name,
+/// its tags or its keywords, without case.
+#[must_use]
+pub(crate) fn matches(asset: &PackAsset, words: &str) -> bool {
+    let haystack: Vec<String> = std::iter::once(&asset.name)
+        .chain(&asset.tags)
+        .chain(&asset.keywords)
+        .map(|w| w.to_lowercase())
+        .collect();
+    words
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .all(|word| haystack.iter().any(|h| h.contains(&word)))
+}
+
+/// The assets of `pack` shown in `section` that pass `filter`.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn shown<'a>(
+    pack: &'a InstalledPack,
+    section: PackSection,
+    filter: &PackFilter,
+) -> Vec<&'a PackAsset> {
+    shown_in(pack, &[section], filter)
+}
+
+/// The assets of `pack` shown in any of `sections` that pass `filter`.
+#[must_use]
+pub(crate) fn shown_in<'a>(
+    pack: &'a InstalledPack,
+    sections: &[PackSection],
+    filter: &PackFilter,
+) -> Vec<&'a PackAsset> {
+    if filter
+        .pack
+        .as_ref()
+        .is_some_and(|id| *id != pack.manifest.id)
+    {
+        return Vec::new();
+    }
+    pack.manifest
+        .assets
+        .iter()
+        .filter(|a| a.section().is_some_and(|s| sections.contains(&s)) && matches(a, &filter.words))
+        .collect()
+}
+
+/// The packages that have assets for `section`.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn with_section(packs: &[InstalledPack], section: PackSection) -> Vec<&InstalledPack> {
+    with_any(packs, &[section])
+}
+
+/// The packages that have assets for any of `sections`.
+#[must_use]
+pub(crate) fn with_any<'a>(
+    packs: &'a [InstalledPack],
+    sections: &[PackSection],
+) -> Vec<&'a InstalledPack> {
+    packs
+        .iter()
+        .filter(|p| {
+            p.manifest
+                .assets
+                .iter()
+                .any(|a| a.section().is_some_and(|s| sections.contains(&s)))
+        })
+        .collect()
+}
+
+/// Draws the installed assets of `section`; what was picked. Nothing is
+/// drawn when no package has assets there.
+pub(crate) fn show(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    (sections, packs): (&[PackSection], &[InstalledPack]),
+    filter: &mut PackFilter,
+    can_drop: &dyn Fn(Pos2) -> bool,
+) -> Option<PackPick> {
+    let spanish = texts.locale == gafira_ports::i18n::Locale::Es;
+    let listed = with_any(packs, sections);
+    let &section = sections.first()?;
+    if listed.is_empty() {
+        return None;
+    }
+    let mut picked = None;
+    ui.label(
+        RichText::new(t(texts, "packs.installed_assets"))
+            .font(theme.font("ui-label"))
+            .color(theme.c("text")),
+    );
+    ui.add_space(6.0);
+    // The package filter and the search.
+    let all = t(texts, "packs.all_packs");
+    let current = filter
+        .pack
+        .as_ref()
+        .and_then(|id| listed.iter().find(|p| &p.manifest.id == id))
+        .map_or(all.clone(), |p| p.manifest.name.get(spanish).to_owned());
+    egui::ComboBox::from_id_salt(("packs.filter", section.code()))
+        .selected_text(current)
+        .width(ui.available_width() - 8.0)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut filter.pack, None, all);
+            for pack in &listed {
+                ui.selectable_value(
+                    &mut filter.pack,
+                    Some(pack.manifest.id.clone()),
+                    pack.manifest.name.get(spanish),
+                );
+            }
+        });
+    ui.add_space(6.0);
+    ui.add(crate::widgets::field(
+        &mut filter.words,
+        t(texts, "packs.search"),
+    ));
+    ui.add_space(10.0);
+    let columns = if section == PackSection::Icons {
+        5.0
+    } else {
+        4.0
+    };
+    let gap = 6.0;
+    let side = ((ui.available_width() - 8.0 - (columns - 1.0) * gap) / columns).max(36.0);
+    let mut any = false;
+    for pack in listed {
+        let assets = shown_in(pack, sections, filter);
+        if assets.is_empty() {
+            continue;
+        }
+        any = true;
+        ui.horizontal(|ui| {
+            if let Some(image) = crate::brand_screen::file_image(ui.ctx(), &pack.thumbnail()) {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
+                crate::brand_screen::paint_fitted(ui, image, rect);
+            }
+            ui.label(
+                RichText::new(pack.manifest.name.get(spanish))
+                    .font(theme.font("body-sm"))
+                    .color(theme.c("text")),
+            );
+        });
+        ui.add_space(4.0);
+        for line in assets.chunks(columns as usize) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::splat(gap);
+                for asset in line {
+                    if let Some(pick) = tile(ui, theme, pack, asset, side, can_drop) {
+                        picked = Some(pick);
+                    }
+                }
+            });
+            ui.add_space(gap);
+        }
+        ui.add_space(8.0);
+    }
+    if !any {
+        ui.label(
+            RichText::new(t(texts, "packs.no_results"))
+                .font(theme.font("body-sm"))
+                .color(theme.c("text.secondary")),
+        );
+    }
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(12.0);
+    picked
+}
+
+/// One asset: its preview on a soft tile, its name on hover.
+fn tile(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    pack: &InstalledPack,
+    asset: &PackAsset,
+    side: f32,
+    can_drop: &dyn Fn(Pos2) -> bool,
+) -> Option<PackPick> {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(side), Sense::click_and_drag());
+    let fill = if response.hovered() || response.dragged() {
+        theme.c("secondary.bg")
+    } else {
+        theme.c("surface.sunken")
+    };
+    ui.painter().rect_filled(rect, 8.0, fill);
+    let usage = pack.usage(asset)?;
+    // Its preview; else the file itself, the mask of a frame, or the cells
+    // of a collage drawn.
+    let preview = asset
+        .preview
+        .as_ref()
+        .map(|p| pack.dir.join(p))
+        .or(match &usage {
+            PackUse::File(file) => Some(file.clone()),
+            PackUse::Frame { mask, .. } => Some(mask.clone()),
+            PackUse::Collage { .. } | PackUse::Template(_) => None,
+        });
+    // Only a tile in view loads its picture: a large package never loads
+    // every preview at once.
+    let image = preview
+        .as_ref()
+        .filter(|_| ui.is_rect_visible(rect) || response.dragged())
+        .and_then(|p| crate::brand_screen::file_image(ui.ctx(), p));
+    if let Some(image) = image.clone() {
+        crate::brand_screen::paint_fitted(ui, image, rect.shrink(side / 10.0));
+    } else if let PackUse::Collage { cells, .. } = &usage {
+        let inner = rect.shrink(side / 8.0);
+        for &(x, y, w, h) in cells {
+            let cell = egui::Rect::from_min_size(
+                inner.min + Vec2::new(x as f32 * inner.width(), y as f32 * inner.height()),
+                Vec2::new(w as f32 * inner.width(), h as f32 * inner.height()),
+            )
+            .shrink(1.5);
+            ui.painter().rect_filled(cell, 2.0, theme.c("text.muted"));
+        }
+    }
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+    let at = ui.input(|i| i.pointer.latest_pos());
+    if response.dragged()
+        && let Some(at) = at
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        // What follows the pointer: the asset's tile, see-through.
+        let ghost = egui::Rect::from_center_size(at, Vec2::splat(side));
+        let painter = ui.ctx().layer_painter(egui::LayerId::new(
+            egui::Order::Tooltip,
+            egui::Id::new("pack.ghost"),
+        ));
+        painter.rect_filled(ghost, 8.0, theme.c("secondary.bg").gamma_multiply(0.7));
+        if let Some(texture) = image.and_then(|i| {
+            i.load_for_size(ui.ctx(), ghost.size())
+                .ok()
+                .and_then(|p| p.texture_id())
+        }) {
+            painter.image(
+                texture,
+                ghost.shrink(side / 10.0),
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::from_white_alpha(200),
+            );
+        }
+    }
+    let name = asset.name.clone();
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+    let response = response.on_hover_text(asset.name.clone());
+    if response.clicked() {
+        return Some(PackPick::Insert(usage));
+    }
+    if response.drag_stopped()
+        && let Some(at) = at
+        && can_drop(at)
+    {
+        return Some(PackPick::Drop(usage, at));
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::packs::{PackAsset, PackManifest};
+
+    fn pack(id: &str, assets: Vec<PackAsset>) -> InstalledPack {
+        InstalledPack {
+            manifest: PackManifest {
+                id: id.to_owned(),
+                assets,
+                ..PackManifest::default()
+            },
+            dir: PathBuf::from("/packs").join(id),
+            installed_at: 0,
+            size: 0,
+        }
+    }
+
+    fn asset(id: &str, kind: &str, tags: &[&str]) -> PackAsset {
+        PackAsset {
+            id: id.to_owned(),
+            kind: kind.to_owned(),
+            name: id.to_owned(),
+            file: Some(format!("assets/{id}.svg")),
+            tags: tags.iter().map(|s| (*s).to_owned()).collect(),
+            ..PackAsset::default()
+        }
+    }
+
+    // S97-11: each section lists only its assets; the package filter and
+    // the search (name, tags, keywords, any case) narrow them.
+    #[test]
+    fn s97_11_assets_are_filtered_by_section_pack_and_words() {
+        let a = pack(
+            "com.a.xmas",
+            vec![
+                asset("Santa", "clipart", &["navidad"]),
+                asset("gift", "icon", &["regalo"]),
+                asset("star", "shape", &[]),
+            ],
+        );
+        let b = pack("com.b.icons", vec![asset("home", "icon", &["casa"])]);
+        let packs = vec![a, b];
+        let ids = |section, filter: &PackFilter| -> BTreeSet<String> {
+            packs
+                .iter()
+                .flat_map(|p| shown(p, section, filter))
+                .map(|a| a.id.clone())
+                .collect()
+        };
+        let all = PackFilter::default();
+        assert_eq!(
+            ids(PackSection::Icons, &all),
+            ["gift", "home"].map(String::from).into()
+        );
+        assert_eq!(
+            ids(PackSection::Illustrations, &all),
+            ["Santa"].map(String::from).into()
+        );
+        assert_eq!(
+            ids(PackSection::Shapes, &all),
+            ["star"].map(String::from).into()
+        );
+        let only_b = PackFilter {
+            pack: Some("com.b.icons".to_owned()),
+            words: String::new(),
+        };
+        assert_eq!(
+            ids(PackSection::Icons, &only_b),
+            ["home"].map(String::from).into()
+        );
+        let search = PackFilter {
+            pack: None,
+            words: "REGA".to_owned(),
+        };
+        assert_eq!(
+            ids(PackSection::Icons, &search),
+            ["gift"].map(String::from).into()
+        );
+        assert_eq!(with_section(&packs, PackSection::Shapes).len(), 1);
+        assert!(with_section(&packs, PackSection::Templates).is_empty());
+    }
+}

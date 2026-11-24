@@ -37,6 +37,11 @@ egui.workspace = true
 eframe.workspace = true
 egui_extras.workspace = true
 image.workspace = true
+# Spec 097: package manifests, SVG checks and asset hashes.
+roxmltree.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 arboard.workspace = true
 # Spec 066, S66-10: custom frames from SVG and PDF outlines.
 gafira-io-vector.workspace = true

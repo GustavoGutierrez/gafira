@@ -148,6 +148,11 @@ fn matching_end(text: &str) -> Option<usize> {
 /// The cells of `layout` on a page of `(w, h)` px, `gap` px apart where two
 /// cells meet and touching the page's edges.
 pub(crate) fn placements(layout: &str, (w, h): (f64, f64), gap: f64) -> Option<Vec<Placement>> {
+    Some(placements_of(&cells(layout)?, (w, h), gap))
+}
+
+/// [`placements`] of `cells` given as shares of the page (spec 097).
+pub(crate) fn placements_of(cells: &[Cell], (w, h): (f64, f64), gap: f64) -> Vec<Placement> {
     let half = gap / 2.0;
     let inset = |edge: f64| {
         if edge <= 1e-9 || edge >= 1.0 - 1e-9 {
@@ -156,10 +161,10 @@ pub(crate) fn placements(layout: &str, (w, h): (f64, f64), gap: f64) -> Option<V
             half
         }
     };
-    Some(
-        cells(layout)?
-            .into_iter()
-            .map(|(x, y, cw, ch)| {
+    {
+        cells
+            .iter()
+            .map(|&(x, y, cw, ch)| {
                 let (left, top) = (inset(x), inset(y));
                 let (right, bottom) = (inset(x + cw), inset(y + ch));
                 Placement::new(
@@ -169,15 +174,21 @@ pub(crate) fn placements(layout: &str, (w, h): (f64, f64), gap: f64) -> Option<V
                     (ch * h - top - bottom).max(1.0),
                 )
             })
-            .collect(),
-    )
+            .collect()
+    }
 }
 
 /// `layout` as one group of empty square frames filling a page of `(w, h)`
 /// px (owner request), each showing the sample photo until it has one.
 pub(crate) fn spec(layout: &str, (w, h): (f64, f64)) -> Option<NodeSpec> {
-    let gap = GAP * w.min(h);
-    let children = placements(layout, (w, h), gap)?
+    Some(spec_of(&cells(layout)?, (w, h), GAP))
+}
+
+/// [`spec`] of `cells` (shares of the page), `gap` apart as a share of
+/// the page's shorter side: a collage of a package (spec 097).
+pub(crate) fn spec_of(cells: &[Cell], (w, h): (f64, f64), gap: f64) -> NodeSpec {
+    let gap = gap * w.min(h);
+    let children = placements_of(cells, (w, h), gap)
         .into_iter()
         .map(|placement| {
             NodeSpec::new(
@@ -186,13 +197,11 @@ pub(crate) fn spec(layout: &str, (w, h): (f64, f64)) -> Option<NodeSpec> {
             )
         })
         .collect();
-    Some(
-        NodeSpec::new(
-            NodeKind::Group(GroupNode {}),
-            Placement::new(0.0, 0.0, w, h),
-        )
-        .with_children(children),
+    NodeSpec::new(
+        NodeKind::Group(GroupNode {}),
+        Placement::new(0.0, 0.0, w, h),
     )
+    .with_children(children)
 }
 
 /// The preview of `layout` in `rect`: each cell shows the sample photo of
