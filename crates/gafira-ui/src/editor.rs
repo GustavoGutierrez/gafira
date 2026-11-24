@@ -315,6 +315,9 @@ pub(crate) struct Editor {
     pub(crate) brand: Option<std::rc::Rc<dyn crate::BrandStore>>,
     /// The installed asset packages (spec 097).
     pub(crate) packs: Option<std::sync::Arc<dyn crate::PackStore>>,
+    /// A package was uninstalled here; the shell reads the templates again
+    /// and clears it.
+    pub(crate) packs_touched: bool,
     /// The installed packages, read once until they change.
     pack_list: std::cell::RefCell<Option<Vec<crate::InstalledPack>>>,
     /// The package filter and search of each panel (spec 097).
@@ -558,6 +561,7 @@ impl Default for Editor {
             template_panel: std::cell::RefCell::default(),
             brand: None,
             packs: None,
+            packs_touched: false,
             pack_list: std::cell::RefCell::new(None),
             pack_filters: std::cell::RefCell::new(BTreeMap::new()),
             quiet: std::cell::Cell::new(false),
@@ -725,6 +729,8 @@ struct Asked {
     /// An asset of an installed package to place, at a screen point when
     /// dropped (spec 097).
     pack_insert: Option<(crate::packs::PackUse, Option<Pos2>)>,
+    /// Uninstall this package from its panel (spec 098).
+    pack_uninstall: Option<String>,
     /// Files taken out of Biblioteca's list (path and tab); they stay on
     /// the disk (spec 068).
     library_remove: Vec<(std::path::PathBuf, bool)>,
@@ -4697,6 +4703,23 @@ impl Editor {
         *self.pack_list.get_mut() = None;
     }
 
+    /// Uninstalls the package `id` from its panel (spec 098); the designs
+    /// that use its assets keep them (spec 097). The shell then reads the
+    /// templates again ([`Self::packs_touched`]).
+    fn uninstall_pack(&mut self, id: &str) {
+        let Some(store) = self.packs.clone() else {
+            return;
+        };
+        if let Err(problem) = store.uninstall(id) {
+            eprintln!("uninstall {id}: {}", problem.key);
+        }
+        for filter in self.pack_filters.get_mut().values_mut() {
+            crate::pack_panel::forget(filter, id);
+        }
+        self.packs_changed();
+        self.packs_touched = true;
+    }
+
     /// The assets of the installed packages for `section`, with their
     /// filter; whether any package has some (spec 097).
     fn pack_assets(
@@ -4737,6 +4760,9 @@ impl Editor {
             }
             Some(crate::pack_panel::PackPick::Drop(usage, at)) => {
                 asked.pack_insert = Some((usage, Some(at)));
+            }
+            Some(crate::pack_panel::PackPick::Uninstall(id)) => {
+                asked.pack_uninstall = Some(id);
             }
             None => {}
         }
@@ -7424,6 +7450,9 @@ impl Editor {
         // without being added to it (spec 097).
         if let Some((usage, at)) = asked.pack_insert.clone() {
             self.place_pack_asset(engine, usage, at);
+        }
+        if let Some(id) = asked.pack_uninstall.clone() {
+            self.uninstall_pack(&id);
         }
         if let Some((file, design, at)) = asked.library_add.clone() {
             // An SVG of Biblioteca comes in the way it came in before: no

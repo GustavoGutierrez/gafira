@@ -1393,6 +1393,8 @@ mod tests {
         "packs.assets_count",
         "packs.uninstall",
         "packs.uninstall_ask",
+        "packs.uninstall_pack",
+        "packs.more",
         "packs.section_illustrations_one",
         "packs.section_icons_one",
         "packs.section_shapes_one",
