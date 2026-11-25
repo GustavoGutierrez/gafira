@@ -19,6 +19,7 @@ export interface Copy {
     features: string;
     how: string;
     download: string;
+    packs: string;
     skip: string;
     language: string;
     menu: string;
@@ -33,6 +34,7 @@ export interface Copy {
     features: string;
     platforms: string;
     screenAlt: string;
+    slides: { label: string; editor: string; packs: string; packsAlt: string; pause: string; play: string };
     chips: { background: string; colors: string; exported: string };
   };
   how: {
@@ -88,6 +90,7 @@ const es: Copy = {
     features: 'Funciones',
     how: 'Cómo funciona',
     download: 'Descargar',
+    packs: 'Gratis',
     skip: 'Saltar al contenido',
     language: 'Idioma',
     menu: 'Menú',
@@ -102,6 +105,15 @@ const es: Copy = {
     features: 'Ver funciones',
     platforms: 'Windows · macOS · Linux',
     screenAlt: 'El editor de Gafira: una publicación de cafetería abierta, con el panel Elementos y los colores del diseño',
+    slides: {
+      label: 'Capturas de Gafira',
+      editor: 'Editor',
+      packs: 'Ilustraciones',
+      packsAlt:
+        'Gafira con los tres paquetes de ilustraciones instalados y una página llena de ellas: lazos, esquineros, un farol, un pastel, rosas, globos y un osito',
+      pause: 'Pausar las capturas',
+      play: 'Reanudar las capturas',
+    },
     chips: { background: 'Fondo quitado', colors: 'Colores del diseño', exported: 'Exportado en PDF' },
   },
   how: {
@@ -336,6 +348,7 @@ const en: Copy = {
     features: 'Features',
     how: 'How it works',
     download: 'Download',
+    packs: 'Free packs',
     skip: 'Skip to content',
     language: 'Language',
     menu: 'Menu',
@@ -350,6 +363,15 @@ const en: Copy = {
     features: 'See features',
     platforms: 'Windows · macOS · Linux',
     screenAlt: 'The Gafira editor: a coffee shop post open, with the Elements panel and the design colours',
+    slides: {
+      label: 'Gafira screenshots',
+      editor: 'Editor',
+      packs: 'Illustrations',
+      packsAlt:
+        'Gafira with the three illustration packs installed and a page full of them: bows, corners, a lantern, a cake, roses, balloons and a teddy bear',
+      pause: 'Pause the screenshots',
+      play: 'Play the screenshots',
+    },
     chips: { background: 'Background removed', colors: 'Design colours', exported: 'Exported to PDF' },
   },
   how: {
