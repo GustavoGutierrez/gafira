@@ -59,6 +59,19 @@ export interface Copy {
     notes: string;
     all: string;
   };
+  packs: {
+    title: string;
+    lead: string;
+    free: string;
+    soon: string;
+    count: string;
+    download: string;
+    started: string;
+    upcoming: string;
+    items: { name: string; text: string; alt: string }[];
+    install: { title: string; steps: { title: string; text: string }[] };
+    license: string;
+  };
   cta: { title: string; text: string; button: string };
   footer: { tagline: string; product: string; releases: string; rights: string; language: string };
   notFound: { title: string; text: string; home: string };
@@ -255,6 +268,43 @@ const es: Copy = {
     checksums: 'Sumas SHA-256',
     notes: 'Notas de la versión',
     all: 'Todas las versiones',
+  },
+  packs: {
+    title: 'Paquetes de ilustraciones gratis',
+    lead: 'Descarga paquetes de clip art con fondo transparente, instálalos en Gafira y úsalos en tus diseños.',
+    free: 'Gratis',
+    soon: 'Muy pronto',
+    count: '30 ilustraciones',
+    download: 'Descargar gratis',
+    started: 'Descarga iniciada',
+    upcoming: 'Disponible muy pronto',
+    items: [
+      {
+        name: 'Clip art navideño',
+        text: 'Personajes, animales, dulces y objetos de Navidad para tarjetas, invitaciones y publicaciones.',
+        alt: 'Un panda rojo, un reno con luces, una osa pastelera, un búho nival y Papá Noel',
+      },
+      {
+        name: 'Ornamentos navideños',
+        text: 'Esquineros, marcos, divisores, coronas, lazos y filigranas para decorar tus diseños de Navidad.',
+        alt: 'Campanas con lazo, una corona con piñas, un esquinero con flor de Pascua, un marco ovalado y velas',
+      },
+      {
+        name: 'Ornamentos para toda ocasión',
+        text: 'Bodas, grados, cumpleaños y decoraciones para cualquier celebración.',
+        alt: 'Un pastel de boda, un birrete de grado, un osito con globos, anillos de boda y un esquinero de girasoles',
+      },
+    ],
+    install: {
+      title: 'Cómo usarlos',
+      steps: [
+        { title: 'Descarga', text: 'Guarda el archivo .gafpack en tu equipo.' },
+        { title: 'Instala', text: 'Ábrelo con doble clic o desde Inicio → Instalar paquete en Gafira.' },
+        { title: 'Diseña', text: 'Encuéntralas en Elementos → Ilustraciones y arrástralas a tu página.' },
+      ],
+    },
+    license:
+      'Puedes usarlas en diseños hechos con Gafira, también comerciales. No se pueden revender ni redistribuir como ilustraciones sueltas.',
   },
   cta: {
     title: 'Empieza a crear',
@@ -466,6 +516,43 @@ const en: Copy = {
     checksums: 'SHA-256 checksums',
     notes: 'Release notes',
     all: 'All releases',
+  },
+  packs: {
+    title: 'Free illustration packs',
+    lead: 'Download clip art packs with transparent backgrounds, install them in Gafira and use them in your designs.',
+    free: 'Free',
+    soon: 'Coming soon',
+    count: '30 illustrations',
+    download: 'Download free',
+    started: 'Download started',
+    upcoming: 'Available very soon',
+    items: [
+      {
+        name: 'Christmas clip art',
+        text: 'Christmas characters, animals, sweets and objects for cards, invitations and posts.',
+        alt: 'A red panda, a reindeer with lights, a baker bear, a snowy owl and Santa Claus',
+      },
+      {
+        name: 'Christmas ornaments',
+        text: 'Corners, frames, dividers, wreaths, bows and filigree to decorate your Christmas designs.',
+        alt: 'Bells with a bow, a wreath with pine cones, a poinsettia corner, an oval frame and candles',
+      },
+      {
+        name: 'Ornaments for every occasion',
+        text: 'Weddings, graduations, birthdays and decorations for any celebration.',
+        alt: 'A wedding cake, a graduation cap, a teddy bear with balloons, wedding rings and a sunflower corner',
+      },
+    ],
+    install: {
+      title: 'How to use them',
+      steps: [
+        { title: 'Download', text: 'Save the .gafpack file on your computer.' },
+        { title: 'Install', text: 'Open it with a double click or from Home → Install package in Gafira.' },
+        { title: 'Design', text: 'Find them in Elements → Illustrations and drag them onto your page.' },
+      ],
+    },
+    license:
+      'You can use them in designs made with Gafira, including commercial ones. They may not be resold or redistributed as standalone illustrations.',
   },
   cta: {
     title: 'Start creating',
