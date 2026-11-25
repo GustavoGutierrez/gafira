@@ -1491,6 +1491,7 @@ text_color = "Color"
 count = { one = "{count} elemento", many = "{count} de elementos", other = "{count} elementos" }
 
 [bottom]
+present = "Presentar en pantalla completa"
 notes = "Notas"
 pages = "Páginas"
 
@@ -2072,3 +2073,16 @@ error_large = "Este modelo es demasiado grande para Gafira. Prueba con una versi
 error_extension = "Este modelo usa una compresión que Gafira aún no admite. Expórtalo sin comprimir."
 error_external = "Este modelo depende de archivos externos. Usa un GLB con todo incluido."
 dismiss = "Cerrar"
+
+[present]
+laser = "Puntero láser (L)"
+draw = "Dibujar (D)"
+pen = "Bolígrafo"
+marker = "Rotulador"
+highlighter = "Resaltador"
+eraser = "Borrador (E)"
+clear = "Borrar los dibujos (C)"
+color = "Color"
+previous = "Anterior"
+next = "Siguiente"
+exit = "Salir de la pantalla completa"

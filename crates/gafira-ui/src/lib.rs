@@ -55,6 +55,7 @@ mod pack_panel;
 mod packs;
 mod pairings;
 mod photos;
+mod present;
 mod presets;
 mod qr;
 mod recent;

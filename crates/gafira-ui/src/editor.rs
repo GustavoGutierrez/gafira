@@ -110,6 +110,9 @@ const ALIGN_BOTTOM: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key
 const RULERS: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::R);
 const GUIDES: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Semicolon);
+/// Presentar en pantalla completa (spec 101).
+const PRESENT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::P);
 const MAGNET: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Quote);
 /// Orden de apilado (03 §9.2 «Capas», spec 042).
@@ -383,6 +386,8 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// The presentation on the whole screen, while it is open (spec 101).
+    presenting: Option<crate::present::Presenting>,
     /// The pictures of 3D models, drawn on a worker (spec 100, D-130).
     model3d_studio: std::cell::RefCell<crate::model3d::Studio>,
     /// The open 3D editing session (spec 100 §3.3).
@@ -598,6 +603,7 @@ impl Default for Editor {
             renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            presenting: None,
             model3d_studio: std::cell::RefCell::default(),
             model3d_session: None,
             model3d_tab: crate::model3d::Tab::default(),
@@ -638,6 +644,8 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// Present the design on the whole screen (spec 101).
+    present: bool,
     /// Open the 3D editor of a model (spec 100: double click or «Editar 3D»).
     model3d_open: Option<(PageId, NodeId)>,
     /// A 3D model changed from its properties; `true` closes the undo step.
@@ -1521,6 +1529,11 @@ impl Editor {
         self.images_arrived(ctx, engine);
         self.looks.pump(ctx);
         self.model3d_studio.get_mut().pump(ctx);
+        // A presentation takes the whole screen and its keys (spec 101).
+        if self.presenting.is_some() {
+            self.present_frame(ctx, engine, theme, texts);
+            return Go::Stay;
+        }
         // «Borrador de píxeles» takes the whole window and its keys: Ctrl+Z
         // is of its strokes (S84-08).
         if let Some(eraser) = self.eraser.as_mut() {
@@ -1569,6 +1582,9 @@ impl Editor {
                 }
             }
         });
+        // Presentar en pantalla completa (spec 101): the event's own modifiers count, so a
+        // quick Ctrl+Alt+P is not lost.
+        asked.present |= ctx.input_mut(|i| i.consume_shortcut(&PRESENT));
         // A turned text maps its glyphs with the atlas size of the last
         // frame; if the atlas grew after that, draw once more (spec 041).
         if let Some(used) = self.font_atlas.take()
@@ -2251,6 +2267,18 @@ impl Editor {
                         );
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // Presentar en pantalla completa (spec 101).
+                        let name = plain(texts, "bottom.present");
+                        let tooltip = with_keys(ui.ctx(), texts, name.clone(), PRESENT);
+                        if IconButton::new(Icon::FitView, name)
+                            .tooltip(tooltip)
+                            .small()
+                            .show(ui, theme)
+                            .clicked()
+                        {
+                            asked.present = true;
+                        }
+                        ui.add_space(4.0);
                         let ids: Vec<PageId> = document
                             .as_ref()
                             .map(|d| d.pages().iter().map(|page| page.id).collect())
@@ -7752,6 +7780,9 @@ impl Editor {
         self.images(engine, asked);
         self.image_looks(engine, asked);
         self.model3d_asks(engine, asked);
+        if asked.present {
+            self.start_presenting(engine);
+        }
         self.text_looks(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine, window);
@@ -11194,6 +11225,66 @@ impl Editor {
                 asked.effects_close = asks.close;
             });
         true
+    }
+
+    /// Opens the presentation from the current page, the window on the whole screen
+    /// (spec 101). A 3D session is applied first, as on any other change of view.
+    fn start_presenting(&mut self, engine: &mut Gafira) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let pages: Vec<PageId> = document
+            .pages()
+            .iter()
+            .filter(|p| !p.hidden)
+            .map(|p| p.id)
+            .collect();
+        if pages.is_empty() {
+            return;
+        }
+        self.apply_model3d(engine);
+        self.editing = None;
+        let current = self.current_page(&document).map(|p| p.id);
+        self.presenting = Some(crate::present::Presenting::new(pages, current, true));
+    }
+
+    /// One frame of the presentation; on leaving it, the window goes back as it was and
+    /// the editor shows the page that was presented last.
+    fn present_frame(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &Gafira,
+        theme: &Theme,
+        texts: &Texts,
+    ) {
+        let Some(presenting) = self.presenting.as_mut() else {
+            return;
+        };
+        // The first frame puts the window on the whole screen, minding how it was.
+        if !presenting.opened {
+            presenting.opened = true;
+            presenting.was_windowed = !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        }
+        let mut draw = |page: PageId, fit: (u32, u32)| {
+            engine
+                .export()
+                .present(page, fit)
+                .ok()
+                .map(|p| (p.width, p.height, p.rgba))
+        };
+        let asks = presenting.show(ctx, theme, texts, &mut draw);
+        if asks.exit {
+            let last = presenting.current();
+            let windowed = presenting.was_windowed;
+            self.presenting = None;
+            if windowed {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            }
+            if let Some(page) = last {
+                self.active = Some(page);
+            }
+        }
     }
 
     /// The open undo step of a 3D property control is over.

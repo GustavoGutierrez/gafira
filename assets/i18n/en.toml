@@ -1491,6 +1491,7 @@ text_color = "Colour"
 count = { one = "{count} element", other = "{count} elements" }
 
 [bottom]
+present = "Present full screen"
 notes = "Notes"
 pages = "Pages"
 
@@ -2072,3 +2073,16 @@ error_large = "This model is too large for Gafira. Try a lighter version."
 error_extension = "This model uses a compression Gafira does not support yet. Export it uncompressed."
 error_external = "This model depends on outside files. Use a GLB with everything included."
 dismiss = "Close"
+
+[present]
+laser = "Laser pointer (L)"
+draw = "Draw (D)"
+pen = "Pen"
+marker = "Marker"
+highlighter = "Highlighter"
+eraser = "Eraser (E)"
+clear = "Clear drawings (C)"
+color = "Colour"
+previous = "Previous"
+next = "Next"
+exit = "Exit full screen"
