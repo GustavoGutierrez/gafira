@@ -12,6 +12,7 @@ Present your designs full screen, see all the pages in a grid, and six lights fo
 
 ### Added
 
+- Icons (spec 103): Elementos → Iconos now includes about 5,100 Tabler icons (MIT) in line and filled styles, grouped in 40 categories with a search in Spanish and English; an icon is added as vector shapes that scale and take any colour. Icons from installed packs stay under «De tus paquetes».
 - Biblioteca: the details of a 3D model show its preview, and the file menu has the list style of the other menus.
 - 3D lighting: six presets — Studio (brighter, now the default), Warm, Cool, Dark (formerly Dramatic; older files open with it), Soft and Natural — each shown as a small picture of the model under that light.
 - Grid view (spec 102): a button in the bottom bar shows every page as a thumbnail; pages are picked, reordered by dragging (the others make room and a gap shows where it lands), added with a «+» between two pages, duplicated, deleted and hidden; each page has a «⋯» menu with its title, size and these actions plus lock. Closing the grid shows the page chosen.

@@ -386,6 +386,8 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// Elementos → Iconos (spec 103).
+    icon_panel: std::cell::RefCell<crate::icon_library::IconPanel>,
     /// The grid of pages, while it is open (spec 102).
     grid: Option<crate::page_grid::Grid>,
     /// Scroll the canvas to this page in the next frame (spec 102, leaving the grid).
@@ -607,6 +609,7 @@ impl Default for Editor {
             renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            icon_panel: std::cell::RefCell::default(),
             grid: None,
             scroll_to: None,
             presenting: None,
@@ -650,6 +653,8 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// An icon of the set to add (spec 103).
+    icon_insert: Option<crate::icon_library::Picked>,
     /// Open or close the grid of pages (spec 102).
     grid_toggle: bool,
     /// What the grid of pages asks (spec 102).
@@ -2794,26 +2799,35 @@ impl Editor {
                         return;
                     }
                     if category == Category::Icons {
-                        // Spec 097: the icons of the installed packages.
-                        egui::ScrollArea::vertical()
-                            .id_salt("editor.icons")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                let shown = self.pack_assets(
-                                    ui,
-                                    theme,
-                                    texts,
-                                    crate::packs::PackSection::Icons,
-                                    asked,
-                                );
-                                if !shown {
-                                    ui.label(
-                                        RichText::new(plain(texts, "packs.no_icons"))
-                                            .font(theme.font("body-sm"))
-                                            .color(theme.c("text.secondary")),
+                        // Spec 103: the icon set of Gafira; the icons of the installed
+                        // packages (spec 097) are under it.
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let can_drop =
+                            move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        let has_packs = !crate::pack_panel::with_any(
+                            &self.installed_packs(),
+                            &[crate::packs::PackSection::Icons],
+                        )
+                        .is_empty();
+                        if has_packs {
+                            egui::CollapsingHeader::new(plain(texts, "icons.from_packs"))
+                                .id_salt("editor.icons.packs")
+                                .show(ui, |ui| {
+                                    self.pack_assets(
+                                        ui,
+                                        theme,
+                                        texts,
+                                        crate::packs::PackSection::Icons,
+                                        asked,
                                     );
-                                }
-                            });
+                                });
+                            ui.add_space(6.0);
+                        }
+                        asked.icon_insert = self
+                            .icon_panel
+                            .borrow_mut()
+                            .show(ui, theme, texts, &can_drop);
                         return;
                     }
                     if category != Category::Shapes {
@@ -7818,6 +7832,15 @@ impl Editor {
         self.model3d_asks(engine, asked);
         if asked.present {
             self.start_presenting(engine);
+        }
+        // An icon of the set: vector shapes, a quarter of the page (spec 103).
+        if let Some(icon) = &asked.icon_insert {
+            match gafira_io_vector::svg_drawing_outlined(icon.svg.as_bytes()) {
+                Ok(drawing) => {
+                    self.place_drawing(engine, &drawing, icon.at, Some((0.25, icon.name.clone())));
+                }
+                Err(error) => eprintln!("icon: {error}"),
+            }
         }
         if asked.grid_toggle {
             self.apply_model3d(engine);
