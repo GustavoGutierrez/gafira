@@ -116,7 +116,7 @@ const es: Copy = {
     features: 'Funciones',
     how: 'Cómo funciona',
     download: 'Descargar',
-    packs: 'Gratis',
+    packs: 'Paquetes gratis',
     support: 'Apóyanos',
     skip: 'Saltar al contenido',
     language: 'Idioma',

@@ -324,23 +324,22 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
   /* The invitation to support Gafira: one quiet line under the downloads, a
      text link, never a second button next to Download. */
   .support {
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 10px;
-    max-width: 760px;
+    width: fit-content;
+    max-width: 740px;
     margin: 36px auto 0;
-    padding: 14px 20px;
+    padding: 14px 22px;
     border-radius: var(--radius-lg);
     color: var(--text-secondary);
-    text-align: left;
+    text-align: center;
+    text-wrap: pretty;
     transition: background-color 300ms var(--ease);
   }
 
+  /* The link sits on its own line under the sentence. */
   .support a {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    display: block;
+    width: fit-content;
+    margin: 6px auto 0;
     font-weight: 600;
     color: var(--text);
     text-decoration: underline;
@@ -350,6 +349,9 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
   }
 
   .support a :global(svg) {
+    display: inline-block;
+    margin-left: 4px;
+    vertical-align: -3px;
     transition: transform 220ms var(--ease);
   }
 
@@ -359,10 +361,11 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
 
   .support__icon {
     position: relative;
-    flex: none;
+    display: inline-block;
     width: 20px;
     height: 20px;
-    margin-top: 3px;
+    margin-right: 8px;
+    vertical-align: -4px;
   }
 
   .support__heart,
