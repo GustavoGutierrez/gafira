@@ -45,6 +45,8 @@ gafira-vision = { path = "crates/gafira-vision" }
 gafira-io-xlsx = { path = "crates/gafira-io-xlsx" }
 gafira-qr = { path = "crates/gafira-qr" }
 gafira-photos = { path = "crates/gafira-photos" }
+gafira-model3d = { path = "crates/gafira-model3d" }
+gafira-io-model3d = { path = "crates/gafira-io-model3d" }
 blake3 = "1"
 crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
@@ -77,6 +79,10 @@ x11rb = { version = "0.13", default-features = false, features = ["randr"] }
 roxmltree = "0.20"
 sha2 = "0.11"
 # D-115: inference for the image models (spec 084).
+# Spec 100: 3D math for the model pose and camera; glTF and OBJ readers (D-130).
+glam = { version = "0.34", default-features = false, features = ["std"] }
+gltf = { version = "1.4", default-features = false, features = ["utils", "names"] }
+tobj = { version = "4", default-features = false }
 tract-onnx = { version = "0.23", default-features = false }
 tract-linalg = { version = "0.23", default-features = false, features = ["multithread-mm"] }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std", "webgpu", "api-22"] }

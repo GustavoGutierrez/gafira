@@ -493,8 +493,18 @@ impl<'a> Prepared<'a> {
             }
         }
         let albedo = Vec3::new(base[0], base[1], base[2]);
-        let metallic = mat.metallic.clamp(0.0, 1.0);
-        let rough = mat.roughness.clamp(0.04, 1.0);
+        let (mut metallic, mut rough) = (mat.metallic, mat.roughness);
+        if let Some(ti) = mat.metal_rough_texture {
+            // Stored as data, not colour: undo the sRGB lookup.
+            let s = self.sample(&self.scene.textures[ti], uv);
+            rough *= linear_to_srgb(s[1]);
+            metallic *= linear_to_srgb(s[2]);
+        }
+        let occlusion = mat.occlusion_texture.map_or(1.0, |ti| {
+            linear_to_srgb(self.sample(&self.scene.textures[ti], uv)[0])
+        });
+        let metallic = metallic.clamp(0.0, 1.0);
+        let rough = rough.clamp(0.04, 1.0);
         let f0 = Vec3::splat(0.04).lerp(albedo, metallic);
         let diffuse_albedo = albedo * (1.0 - metallic);
         let rig = &self.rig;
@@ -502,7 +512,7 @@ impl<'a> Prepared<'a> {
         let ambient = Vec3::from_array(rig.ground).lerp(Vec3::from_array(rig.sky), hemi);
         let shininess = (2.0 / (rough.powi(4) + 1e-4) - 2.0).clamp(2.0, 2048.0);
         let norm = (shininess + 8.0) / (8.0 * std::f32::consts::PI);
-        let mut col = diffuse_albedo * ambient + f0 * ambient * (1.0 - rough * 0.7);
+        let mut col = (diffuse_albedo * ambient + f0 * ambient * (1.0 - rough * 0.7)) * occlusion;
         for l in &rig.lights {
             let ldir = Vec3::from_array(l.dir).normalize_or(Vec3::Z);
             let ndl = n.dot(ldir);
@@ -515,7 +525,12 @@ impl<'a> Prepared<'a> {
             let fresnel = f0 + (Vec3::ONE - f0) * (1.0 - view_dir.dot(h).clamp(0.0, 1.0)).powi(5);
             col += (diffuse_albedo * ndl + fresnel * spec * ndl) * lc;
         }
-        col += Vec3::from_array(mat.emissive);
+        let mut emissive = Vec3::from_array(mat.emissive);
+        if let Some(ti) = mat.emissive_texture {
+            let s = self.sample(&self.scene.textures[ti], uv);
+            emissive *= Vec3::new(s[0], s[1], s[2]);
+        }
+        col += emissive;
         let mapped = aces(col);
         [mapped.x, mapped.y, mapped.z, base[3].clamp(0.0, 1.0)]
     }

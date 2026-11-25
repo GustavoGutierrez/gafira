@@ -26,6 +26,12 @@ pub struct Material {
     /// Linear RGBA factor.
     pub base_color: [f32; 4],
     pub base_texture: Option<usize>,
+    /// glTF metallic-roughness texture: green scales roughness, blue scales metallic.
+    pub metal_rough_texture: Option<usize>,
+    /// Ambient occlusion in the red channel.
+    pub occlusion_texture: Option<usize>,
+    /// sRGB emissive colour, multiplied by `emissive`.
+    pub emissive_texture: Option<usize>,
     pub metallic: f32,
     pub roughness: f32,
     /// Linear RGB.
@@ -40,6 +46,9 @@ impl Material {
         Self {
             base_color: [0.72, 0.72, 0.74, 1.0],
             base_texture: None,
+            metal_rough_texture: None,
+            occlusion_texture: None,
+            emissive_texture: None,
             metallic: 0.0,
             roughness: 0.6,
             emissive: [0.0; 3],
@@ -196,7 +205,15 @@ impl Scene {
                 .all(|v| v.is_finite())
                 && m.metallic.is_finite()
                 && m.roughness.is_finite();
-            if !finite || m.base_texture.is_some_and(|t| t >= self.textures.len()) {
+            let bad_texture = [
+                m.base_texture,
+                m.metal_rough_texture,
+                m.occlusion_texture,
+                m.emissive_texture,
+            ]
+            .iter()
+            .any(|t| t.is_some_and(|t| t >= self.textures.len()));
+            if !finite || bad_texture {
                 return Err(SceneError::BadMaterial);
             }
         }
