@@ -53,6 +53,7 @@ mod model3d;
 mod pack_dialog;
 mod pack_panel;
 mod packs;
+mod page_grid;
 mod pairings;
 mod photos;
 mod present;
