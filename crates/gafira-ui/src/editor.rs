@@ -9874,11 +9874,42 @@ impl Editor {
             );
         });
         ui.add_space(12.0);
-        let preview = self.library_preview(ui.ctx(), file, entry.design);
+        // A 3D model shows a picture of itself, drawn like its tile's (spec 100).
+        let model = crate::model3d::is_model_path(file);
+        let preview = if model {
+            None
+        } else {
+            self.library_preview(ui.ctx(), file, entry.design)
+        };
         let width = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, width * 0.7), egui::Sense::hover());
         ui.painter()
             .rect_filled(rect, theme.radius_md(), theme.c("surface.sunken"));
+        if model {
+            let side = rect.height() - 16.0;
+            let at = Rect::from_center_size(rect.center(), Vec2::splat(side));
+            match self
+                .model3d_studio
+                .borrow_mut()
+                .file_picture(ui.ctx(), file, 512)
+            {
+                Some(texture) => {
+                    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    ui.painter().image(texture, at, uv, Color32::WHITE);
+                }
+                None => {
+                    crate::icons::paint(
+                        ui.painter(),
+                        Rect::from_center_size(at.center(), Vec2::splat(side * 0.25)),
+                        Icon::Cube,
+                        crate::icons::Weight::Regular,
+                        theme.c("text.muted"),
+                    );
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                }
+            }
+        }
         if let Some((texture, _)) = &preview {
             let fit = rect.shrink(16.0);
             let tex = texture.size_vec2();
@@ -9934,7 +9965,8 @@ impl Editor {
             .num_columns(2)
             .spacing([16.0, 8.0])
             .show(ui, |ui| {
-                for (key, value) in rows {
+                // A row with nothing to say (the size in px of a 3D model) is left out.
+                for (key, value) in rows.into_iter().filter(|(_, v)| !v.is_empty()) {
                     ui.label(RichText::new(plain(texts, key)).color(theme.c("text.secondary")));
                     ui.label(value);
                     ui.end_row();
