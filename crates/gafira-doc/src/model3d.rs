@@ -24,14 +24,32 @@ pub enum Model3dProjection {
     Orthographic,
 }
 
-/// The lighting presets of the 3D panel.
+/// The lighting presets of the 3D panel (spec 100).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Model3dLighting {
+    /// Bright and neutral, the default.
     #[default]
-    Soft,
     Studio,
-    Dramatic,
+    Warm,
+    Cool,
+    /// Low key with a strong side light; files of 0.3.0 call it `dramatic`.
+    #[serde(alias = "dramatic")]
+    Dark,
+    Soft,
+    /// Daylight: a warm sun and a blue sky.
+    Natural,
+}
+
+impl Model3dLighting {
+    pub const ALL: [Self; 6] = [
+        Self::Studio,
+        Self::Warm,
+        Self::Cool,
+        Self::Dark,
+        Self::Soft,
+        Self::Natural,
+    ];
 }
 
 /// The orbit camera aimed at the centre of the model's frame.
@@ -105,7 +123,7 @@ impl Model3dNode {
             position: [0.0; 3],
             scale: [1.0; 3],
             camera: Model3dCamera::INITIAL,
-            lighting: Model3dLighting::Soft,
+            lighting: Model3dLighting::Studio,
         }
     }
 
@@ -174,7 +192,7 @@ mod tests {
         assert_eq!(json["format"], "glb");
         assert_eq!(json["rotation"], serde_json::json!([0.0, 0.0, 0.0, 1.0]));
         assert_eq!(json["camera"]["projection"], "perspective");
-        assert_eq!(json["lighting"], "soft");
+        assert_eq!(json["lighting"], "studio");
         let back: Model3dNode = serde_json::from_value(json).expect("reads");
         assert_eq!(back, n);
     }
@@ -208,9 +226,27 @@ mod tests {
         b.camera.yaw = 10.0;
         assert_ne!(a.shown(), b.shown());
         let mut c = node();
-        c.lighting = Model3dLighting::Dramatic;
+        c.lighting = Model3dLighting::Dark;
         assert_ne!(a.shown(), c.shown());
         assert_ne!(a.shown(), a.asset);
+    }
+
+    // Spec 100: the six lighting presets keep their names; a 0.3.0 file's `dramatic` opens
+    // as the dark preset.
+    #[test]
+    fn s100_lighting_presets_read_and_write() {
+        for (light, id) in Model3dLighting::ALL
+            .into_iter()
+            .zip(["studio", "warm", "cool", "dark", "soft", "natural"])
+        {
+            assert_eq!(serde_json::to_value(light).expect("writes"), id);
+            assert_eq!(
+                serde_json::from_value::<Model3dLighting>(id.into()).expect("reads"),
+                light
+            );
+        }
+        let old: Model3dLighting = serde_json::from_value("dramatic".into()).expect("reads");
+        assert_eq!(old, Model3dLighting::Dark);
     }
 
     // Spec 100 «Restablecer»: reset keeps the asset and drops the pose.

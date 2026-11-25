@@ -180,11 +180,12 @@ fn s100_mask_textures_cut_holes() {
     assert!(opaque.iter().all(|px| px[0] > px[1] && px[0] > px[2]));
 }
 
-// Spec 100 §7 / lighting presets: they give different pictures; dramatic is darker overall.
+// Spec 100 §7 / lighting presets: six different pictures; Dark is the darkest and Studio is
+// brighter than Soft; Warm is redder and Cool bluer than Studio.
 #[test]
 fn s100_lighting_presets_differ() {
     let scene = cube(Material::neutral());
-    let lum = |l: Lighting| {
+    let sums = |l: Lighting| {
         let img = render(
             &scene,
             &RenderParams {
@@ -192,13 +193,32 @@ fn s100_lighting_presets_differ() {
                 ..params(64, 64)
             },
         );
-        img.chunks_exact(4)
-            .filter(|p| p[3] == 255)
-            .map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64)
-            .sum::<u64>()
+        let mut rgb = [0u64; 3];
+        for p in img.chunks_exact(4).filter(|p| p[3] == 255) {
+            for k in 0..3 {
+                rgb[k] += u64::from(p[k]);
+            }
+        }
+        rgb
     };
-    assert!(lum(Lighting::Dramatic) < lum(Lighting::Soft));
-    assert_ne!(lum(Lighting::Studio), lum(Lighting::Soft));
+    let lum = |l: Lighting| sums(l).iter().sum::<u64>();
+    let all: Vec<u64> = Lighting::ALL.iter().map(|l| lum(*l)).collect();
+    for (i, a) in all.iter().enumerate() {
+        for b in &all[i + 1..] {
+            assert_ne!(a, b, "two presets give the same picture");
+        }
+    }
+    let darkest = Lighting::ALL.iter().min_by_key(|l| lum(**l)).copied();
+    assert_eq!(darkest, Some(Lighting::Dark));
+    assert!(lum(Lighting::Studio) > lum(Lighting::Soft));
+    let (studio, warm, cool) = (
+        sums(Lighting::Studio),
+        sums(Lighting::Warm),
+        sums(Lighting::Cool),
+    );
+    let ratio = |s: [u64; 3]| s[0] as f64 / s[2] as f64;
+    assert!(ratio(warm) > ratio(studio) && ratio(cool) < ratio(studio));
+    assert_eq!(Lighting::from_id("dramatic"), Lighting::Dark);
 }
 
 // Spec 100 §9: damaged or empty scenes are refused, not drawn.
