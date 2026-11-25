@@ -4,6 +4,7 @@ import Header from './Header.astro';
 import Hero from './Hero.astro';
 import How from './How.astro';
 import Features from './Features.astro';
+import Model3d from './Model3d.astro';
 import Showcase from './Showcase.astro';
 import Local from './Local.astro';
 import Download from './Download.astro';
@@ -28,6 +29,7 @@ const release = await latestRelease();
     <Hero locale={locale} release={release} />
     <How locale={locale} />
     <Features locale={locale} />
+    <Model3d locale={locale} />
     <Showcase locale={locale} />
     <Local locale={locale} />
     <Download locale={locale} release={release} />

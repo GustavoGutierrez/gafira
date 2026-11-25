@@ -44,6 +44,16 @@ export interface Copy {
     motion: { alt: string; title: string; subtitle: string; cta: string };
   };
   features: { title: string; lead: string; items: Feature[] };
+  model3d: {
+    title: string;
+    lead: string;
+    points: Feature[];
+    alt: string;
+    detailAlt: string;
+    cta: string;
+    zoom: string;
+    close: string;
+  };
   showcase: {
     title: string;
     items: { title: string; text: string; points: string[]; alt: string }[];
@@ -231,6 +241,37 @@ const es: Copy = {
         text: 'Instala paquetes .gafpack con ilustraciones, iconos, formas, marcos y plantillas, y desinstálalos cuando quieras.',
       },
     ],
+  },
+  model3d: {
+    title: 'Objetos 3D en tus diseños',
+    lead: 'Nuevo en Gafira 0.3.0: importa un modelo 3D (.glb u .obj) y colócalo como cualquier imagen. Con doble clic lo giras, lo mueves y eliges desde dónde se ve, con controles pensados para quien nunca ha usado un programa 3D.',
+    points: [
+      {
+        icon: 'upload-simple',
+        title: 'Importa y arrastra',
+        text: 'Desde «Importar archivo…», arrastrándolo al lienzo o desde Biblioteca, que guarda una vista previa de cada modelo.',
+      },
+      {
+        icon: 'arrows-clockwise',
+        title: 'Gira, mueve y escala',
+        text: 'Aros y flechas de colores sobre el propio modelo, un cubo de orientación y vistas rápidas: frente, lados, arriba e isométrica.',
+      },
+      {
+        icon: 'sun',
+        title: 'Luz y cámara',
+        text: 'Iluminación suave, de estudio o dramática, y una cámara que rodea el modelo, se acerca y cambia la perspectiva.',
+      },
+      {
+        icon: 'download-simple',
+        title: 'Exporta con transparencia',
+        text: 'Se guarda dentro del archivo .gaf y se exporta tal como lo ve su cámara, con fondo transparente.',
+      },
+    ],
+    alt: 'El editor de Gafira con un tiranosaurio 3D, los aros de colores para girarlo y el panel Objeto 3D abierto',
+    detailAlt: 'Detalle del lienzo: los aros para girar el modelo, el cubo de orientación y la barra Girar, Mover, Escalar y Cámara',
+    cta: 'Descargar Gafira',
+    zoom: 'Ampliar el detalle del lienzo',
+    close: 'Cerrar',
   },
   showcase: {
     title: 'Así se ve Gafira',
@@ -538,6 +579,37 @@ const en: Copy = {
         text: 'Install .gafpack packages with illustrations, icons, shapes, frames and templates, and uninstall them whenever you like.',
       },
     ],
+  },
+  model3d: {
+    title: '3D objects in your designs',
+    lead: 'New in Gafira 0.3.0: import a 3D model (.glb or .obj) and place it like any image. Double-click it to rotate it, move it and choose the angle it is seen from, with controls made for people who have never used a 3D app.',
+    points: [
+      {
+        icon: 'upload-simple',
+        title: 'Import and drag',
+        text: 'From “Import file…”, by dragging it onto the canvas or from Library, which keeps a preview of every model.',
+      },
+      {
+        icon: 'arrows-clockwise',
+        title: 'Rotate, move and scale',
+        text: 'Coloured rings and arrows on the model itself, an orientation cube and quick views: front, sides, top and isometric.',
+      },
+      {
+        icon: 'sun',
+        title: 'Light and camera',
+        text: 'Soft, studio or dramatic lighting, and a camera that orbits the model, zooms in and changes the perspective.',
+      },
+      {
+        icon: 'download-simple',
+        title: 'Export with transparency',
+        text: 'It is saved inside the .gaf file and exported just as its camera sees it, on a transparent background.',
+      },
+    ],
+    alt: 'The Gafira editor with a 3D tyrannosaur, the coloured rings to rotate it and the 3D object panel open',
+    detailAlt: 'Canvas detail: the rings to rotate the model, the orientation cube and the Rotate, Move, Scale and Camera bar',
+    cta: 'Download Gafira',
+    zoom: 'Enlarge the canvas detail',
+    close: 'Close',
   },
   showcase: {
     title: 'See Gafira in action',

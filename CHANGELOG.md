@@ -6,9 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
+3D objects in your designs, and Gafira becomes free and open source software.
+
 ### Added
 
-- 3D objects (spec 100): import `.glb` and `.obj` models from «Importar archivo…», by dragging them onto the canvas or from Biblioteca, where a new 3D tab shows a rendered preview of each imported model. A model is an element like any other; double-click it or choose «Editar 3D» to rotate, move, scale and orbit it with gizmos on the canvas, an orientation cube, quick views (front, sides, top, bottom, back, isometric) and Soft, Studio and Dramatic lighting, then apply it as one undo step or cancel. The «Objeto 3D» panel has the same controls as numbers. Models are drawn by a CPU renderer (D-130), kept inside the `.gaf` and exported as the view their camera sees, with a transparent background.
+- 3D objects (spec 100): import `.glb` and `.obj` models from «Importar archivo…», by dragging them onto the canvas or from Biblioteca, where a new 3D tab shows a rendered preview of each imported model. A model is an element like any other; double-click it or choose «Editar 3D» to rotate, move and orbit it with gizmos with volume on the canvas, resize it in the design with its frame handles without distorting it, an orientation cube, quick views (front, sides, top, bottom, back, isometric) and Soft, Studio and Dramatic lighting, then apply it as one undo step or cancel. The «Objeto 3D» panel has the same controls as numbers. Models are drawn by a CPU renderer (D-130), kept inside the `.gaf` and exported as the view their camera sees, with a transparent background.
 
 ### Changed
 

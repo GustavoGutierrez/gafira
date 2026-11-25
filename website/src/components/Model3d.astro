@@ -1,0 +1,321 @@
+---
+// Spec 099 / spec 100: the 3D objects of Gafira 0.3.0, on a band of their own. The whole
+// editor sits behind; the canvas close-up stands over its corner and opens larger in a
+// viewer, so the gizmos can be seen up close.
+import { Picture, getImage } from 'astro:assets';
+import { screens } from '../lib/screens';
+import Icon from './Icon.astro';
+import { copy, homePath, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].model3d;
+const { model3d, model3dDetail } = screens[locale];
+// The close-up at its full size for the viewer.
+const large = await getImage({ src: model3dDetail, format: 'webp', width: model3dDetail.width });
+---
+
+<section class="section model" id="model3d" aria-labelledby="model3d-title">
+  <div class="container model__inner">
+    <div class="model__text reveal">
+      <h2 id="model3d-title">{t.title}</h2>
+      <p class="model__lead">{t.lead}</p>
+      <ul class="model__points">
+        {
+          t.points.map((point) => (
+            <li>
+              <span class="model__icon">
+                <Icon name={point.icon} size={22} />
+              </span>
+              <div>
+                <h3>{point.title}</h3>
+                <p>{point.text}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+      <a class="button button--primary model__cta" href={`${homePath(locale)}#download`}>
+        <Icon name="download-simple" size={20} />
+        {t.cta}
+      </a>
+    </div>
+    <div class="model__shots">
+      <figure class="model__editor reveal reveal--zoom" style="--delay:120ms">
+        <Picture
+          src={model3d}
+          formats={['avif', 'webp']}
+          fallbackFormat="webp"
+          widths={[640, 960, 1437]}
+          sizes="(max-width: 1040px) calc(100vw - 48px), 680px"
+          alt={t.alt}
+        />
+      </figure>
+      <button class="model__close reveal reveal--zoom" style="--delay:260ms" type="button" data-zoom aria-label={t.zoom}>
+        <Picture
+          src={model3dDetail}
+          formats={['avif', 'webp']}
+          fallbackFormat="webp"
+          widths={[320, 480, 708]}
+          sizes="(max-width: 600px) 56vw, 300px"
+          alt={t.detailAlt}
+        />
+        <span class="model__zoom" aria-hidden="true">
+          <Icon name="magnifying-glass-plus" size={20} />
+        </span>
+      </button>
+    </div>
+  </div>
+  <dialog class="model__viewer" data-viewer aria-label={t.detailAlt}>
+    <img src={large.src} width={model3dDetail.width} height={model3dDetail.height} alt={t.detailAlt} loading="lazy" decoding="async" />
+    <button class="model__shut" type="button" data-shut aria-label={t.close}>
+      <Icon name="x" size={22} />
+    </button>
+  </dialog>
+</section>
+
+<script>
+  for (const section of document.querySelectorAll<HTMLElement>('#model3d')) {
+    const viewer = section.querySelector<HTMLDialogElement>('[data-viewer]');
+    const open = section.querySelector<HTMLButtonElement>('[data-zoom]');
+    if (!viewer || !open) continue;
+    open.addEventListener('click', () => viewer.showModal());
+    section.querySelector('[data-shut]')?.addEventListener('click', () => viewer.close());
+    // A click on the backdrop, outside the picture, closes it.
+    viewer.addEventListener('click', (event) => {
+      if (event.target === viewer) viewer.close();
+    });
+    viewer.addEventListener('close', () => open.focus());
+  }
+</script>
+
+<style>
+  /* A band of its own: the release's headline, set apart from the white Features above. */
+  .model {
+    background: var(--deep);
+    color: #fff;
+  }
+
+  .model__inner {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    align-items: center;
+    gap: clamp(40px, 6vw, 80px);
+  }
+
+  h2 {
+    margin-top: 0;
+    font-size: clamp(30px, 4vw, 40px);
+    line-height: 1.2;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+
+  .model__lead {
+    margin-top: 16px;
+    font-size: 18px;
+    line-height: 29px;
+    color: var(--mist);
+    text-wrap: pretty;
+  }
+
+  .model__points {
+    display: grid;
+    gap: 20px;
+    margin: 32px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .model__points li {
+    display: flex;
+    gap: 16px;
+  }
+
+  .model__icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    background: var(--mint);
+    color: var(--ink);
+  }
+
+  .model__points h3 {
+    font-size: 17px;
+    line-height: 26px;
+    font-weight: 700;
+  }
+
+  .model__points p {
+    margin-top: 2px;
+    font-size: 15px;
+    line-height: 24px;
+    color: var(--mist);
+    text-wrap: pretty;
+  }
+
+  /* On the dark band the button's coral shadow would glow: a neutral one lifts it. */
+  .model__cta,
+  .model__cta:hover {
+    margin-top: 36px;
+    box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+  }
+
+  /* The editor behind; the close-up over its lower left corner. */
+  .model__shots {
+    position: relative;
+    padding-bottom: clamp(88px, 11vw, 150px);
+  }
+
+  .model__editor {
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: #fff;
+    box-shadow: 0 24px 64px rgb(0 0 0 / 0.38);
+  }
+
+  .model__close {
+    position: absolute;
+    left: clamp(-40px, -3vw, 0px);
+    bottom: 0;
+    width: clamp(180px, 44%, 300px);
+    padding: 0;
+    overflow: hidden;
+    border: 3px solid #fff;
+    border-radius: var(--radius-lg);
+    background: #fff;
+    box-shadow: 0 20px 48px rgb(0 0 0 / 0.45);
+    cursor: zoom-in;
+    transition:
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .model__close:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 28px 60px rgb(0 0 0 / 0.5);
+  }
+
+  .model__close:focus-visible {
+    outline: 3px solid var(--coral);
+    outline-offset: 3px;
+  }
+
+  .model__zoom {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+  }
+
+  .model__editor :global(img),
+  .model__close :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .model__viewer {
+    width: min(92vw, 760px);
+    max-height: 92vh;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: #fff;
+    box-shadow: 0 32px 80px rgb(0 0 0 / 0.5);
+  }
+
+  .model__viewer::backdrop {
+    background: rgb(15 23 38 / 0.78);
+  }
+
+  .model__viewer img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 92vh;
+    object-fit: contain;
+    border-radius: var(--radius-lg);
+  }
+
+  .model__shut {
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgb(0 0 0 / 0.35);
+  }
+
+  .model__shut:focus-visible {
+    outline: 3px solid var(--coral);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .model__viewer[open] {
+      animation: model-open 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+
+  @keyframes model-open {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .model__close {
+      transition: none;
+    }
+
+    .model__close:hover {
+      transform: none;
+    }
+  }
+
+  @media (max-width: 1040px) {
+    .model__inner {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .model__shots {
+      padding-bottom: 72px;
+    }
+
+    .model__close {
+      left: 0;
+      width: 56%;
+    }
+
+    .model__shut {
+      top: 8px;
+      right: 8px;
+    }
+  }
+</style>
