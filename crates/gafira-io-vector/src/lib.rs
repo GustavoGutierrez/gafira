@@ -94,11 +94,24 @@ pub const MAX_SHAPES: usize = 2000;
 /// [`VectorError::Unreadable`], or [`VectorError::NoShape`] when it has
 /// no path.
 pub fn svg_drawing(bytes: &[u8]) -> Result<Drawing, VectorError> {
+    drawing_of(bytes, false)
+}
+
+/// [`svg_drawing`] with every stroke turned into the filled outline it paints, its caps
+/// and joins kept (spec 103, the icons): the shapes then scale as one drawing.
+///
+/// # Errors
+/// As [`svg_drawing`].
+pub fn svg_drawing_outlined(bytes: &[u8]) -> Result<Drawing, VectorError> {
+    drawing_of(bytes, true)
+}
+
+fn drawing_of(bytes: &[u8], outlined: bool) -> Result<Drawing, VectorError> {
     use resvg::usvg;
     let tree = usvg::Tree::from_data(bytes, &usvg::Options::default())
         .map_err(|_| VectorError::Unreadable)?;
     let mut shapes = Vec::new();
-    collect(tree.root(), &mut shapes);
+    collect(tree.root(), &mut shapes, outlined);
     if shapes.is_empty() {
         return Err(VectorError::NoShape);
     }
@@ -186,19 +199,35 @@ fn fill_of(paint: &resvg::usvg::Paint, opacity: f32, at: Affine) -> Fill {
     }
 }
 
-fn collect(group: &resvg::usvg::Group, out: &mut Vec<VectorShape>) {
+fn collect(group: &resvg::usvg::Group, out: &mut Vec<VectorShape>, outlined: bool) {
     use resvg::usvg::Node;
     for node in group.children() {
         if out.len() >= MAX_SHAPES {
             return;
         }
         match node {
-            Node::Group(group) => collect(group, out),
+            Node::Group(group) => collect(group, out, outlined),
             Node::Path(path) if path.is_visible() => {
                 let at = affine(path.abs_transform());
                 let mut drawn = bez(path.data());
                 drawn.apply_affine(at);
                 let scale = at.determinant().abs().sqrt();
+                if outlined && let Some(s) = path.stroke() {
+                    if let Some(fill) = path.fill() {
+                        push_shape(
+                            out,
+                            bez(path.data()),
+                            at,
+                            Some(fill_of(fill.paint(), fill.opacity().get(), at)),
+                            None,
+                        );
+                    }
+                    if let Some(painted) = stroke_outline(path.data(), s) {
+                        let paint = fill_of(s.paint(), s.opacity().get(), at);
+                        push_shape(out, bez(&painted), at, Some(paint), None);
+                    }
+                    continue;
+                }
                 let stroke = path.stroke().and_then(|s| match s.paint() {
                     resvg::usvg::Paint::Color(c) => Some((
                         colour(*c, s.opacity().get()),
@@ -232,6 +261,56 @@ fn collect(group: &resvg::usvg::Group, out: &mut Vec<VectorShape>) {
             }
             _ => {}
         }
+    }
+}
+
+/// The area a stroke paints, as a path to fill: its width, caps, joins and dashes.
+fn stroke_outline(
+    data: &resvg::tiny_skia::Path,
+    s: &resvg::usvg::Stroke,
+) -> Option<resvg::tiny_skia::Path> {
+    use resvg::tiny_skia;
+    use resvg::usvg::{LineCap, LineJoin};
+    let stroke = tiny_skia::Stroke {
+        width: s.width().get(),
+        miter_limit: s.miterlimit().get(),
+        line_cap: match s.linecap() {
+            LineCap::Butt => tiny_skia::LineCap::Butt,
+            LineCap::Round => tiny_skia::LineCap::Round,
+            LineCap::Square => tiny_skia::LineCap::Square,
+        },
+        line_join: match s.linejoin() {
+            LineJoin::Miter | LineJoin::MiterClip => tiny_skia::LineJoin::Miter,
+            LineJoin::Round => tiny_skia::LineJoin::Round,
+            LineJoin::Bevel => tiny_skia::LineJoin::Bevel,
+        },
+        dash: s
+            .dasharray()
+            .and_then(|d| tiny_skia::StrokeDash::new(d.to_vec(), s.dashoffset())),
+    };
+    data.stroke(&stroke, 4.0)
+}
+
+/// One filled shape of `drawn` (in its own coordinates) moved by `at`.
+fn push_shape(
+    out: &mut Vec<VectorShape>,
+    mut drawn: BezPath,
+    at: Affine,
+    fill: Option<Fill>,
+    stroke: Option<(gafira_color::Color, f64)>,
+) {
+    drawn.apply_affine(at);
+    let b = drawn.bounding_box();
+    if !(b.width() > 0.0 && b.height() > 0.0) {
+        return;
+    }
+    if let Ok(outline) = outline(drawn, (b.width(), b.height())) {
+        out.push(VectorShape {
+            bounds: (b.x0, b.y0, b.width(), b.height()),
+            path: outline.path,
+            fill,
+            stroke,
+        });
     }
 }
 

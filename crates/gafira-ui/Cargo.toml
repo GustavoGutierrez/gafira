@@ -41,6 +41,8 @@ image.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Spec 103: the icon set ships gzipped.
+flate2.workspace = true
 sha2.workspace = true
 arboard.workspace = true
 # Spec 066, S66-10: custom frames from SVG and PDF outlines.

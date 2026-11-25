@@ -2440,6 +2440,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
+ "flate2",
  "gafira-assets",
  "gafira-chart",
  "gafira-color",

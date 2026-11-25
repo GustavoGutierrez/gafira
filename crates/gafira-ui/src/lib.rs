@@ -40,6 +40,7 @@ mod frames;
 mod gradients;
 mod group;
 mod home;
+mod icon_library;
 mod icons;
 mod illustrations;
 mod image_panel;
