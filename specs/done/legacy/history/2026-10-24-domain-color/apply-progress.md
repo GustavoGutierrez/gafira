@@ -59,7 +59,7 @@ Test summary: 154 workspace tests pass (gafira-color: 63 lib + 10 api + 21 prope
 
 ## Manual negatives (task 2.3, `bash --noprofile --norc -eo pipefail`, each reverted, `git status` clean)
 
-Scripts extracted from `ci.yml` itself (`$SCRATCH/extract.sh`), so the tested text is the committed text. `$SCRATCH` = `/tmp/claude-1000/-home-meridian-Documentos-Proyectos-Personal-gafira/371ee89f-c0f3-49a8-8923-69292dd5bafd/scratchpad`.
+Scripts extracted from `ci.yml` itself (`$SCRATCH/extract.sh`), so the tested text is the committed text. `$SCRATCH` = the session's scratch directory, outside the repository.
 
 | Case | Mutation | Result |
 |---|---|---|
