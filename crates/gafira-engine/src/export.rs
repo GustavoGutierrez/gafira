@@ -163,6 +163,25 @@ impl ExportService {
     /// [`EngineError::Export`] when the document has no such page, its size
     /// has no pixels or the render fails.
     pub fn preview(&self, page: PageId, transparent: bool) -> Result<PagePreview, EngineError> {
+        self.picture(page, transparent, None)
+    }
+
+    /// `page` drawn as large as fits in `fit` pixels, keeping its proportions and
+    /// enlarging a small page (spec 101, presenting on a full screen); its long side is at
+    /// most [`PRESENT_MAX_SIDE`].
+    ///
+    /// # Errors
+    /// As [`Self::preview`].
+    pub fn present(&self, page: PageId, fit: (u32, u32)) -> Result<PagePreview, EngineError> {
+        self.picture(page, false, Some(fit))
+    }
+
+    fn picture(
+        &self,
+        page: PageId,
+        transparent: bool,
+        fit: Option<(u32, u32)>,
+    ) -> Result<PagePreview, EngineError> {
         let document = self
             .shared
             .lock()
@@ -182,8 +201,11 @@ impl ExportService {
             .size
             .to_px(document.dpi())
             .map_err(|_| invalid("the page size is not finite"))?;
-        let (width, height, scale) = crate::thumbnail::size(px.width(), px.height())
-            .ok_or_else(|| invalid("the page has no pixels"))?;
+        let sized = match fit {
+            None => crate::thumbnail::size(px.width(), px.height()),
+            Some(fit) => present_size(px.width(), px.height(), fit),
+        };
+        let (width, height, scale) = sized.ok_or_else(|| invalid("the page has no pixels"))?;
         let images =
             decode_images(&document, &[page], &*self.store, &*self.images).unwrap_or_default();
         let image = self
@@ -206,6 +228,50 @@ impl ExportService {
             height: image.height(),
             rgba,
         })
+    }
+}
+
+/// The longest side of a page drawn to present it (spec 101).
+pub const PRESENT_MAX_SIDE: u32 = 4096;
+
+/// The pixel size and scale of a `width` × `height` px page drawn as large as fits in
+/// `fit`, its long side at most [`PRESENT_MAX_SIDE`]; `None` with no size.
+fn present_size(width: f64, height: f64, fit: (u32, u32)) -> Option<(u32, u32, f64)> {
+    let valid = |side: f64| side.is_finite() && side > 0.0;
+    let (fw, fh) = (f64::from(fit.0.max(1)), f64::from(fit.1.max(1)));
+    if !valid(width) || !valid(height) {
+        return None;
+    }
+    let most = f64::from(PRESENT_MAX_SIDE);
+    let scale = (fw / width).min(fh / height).min(most / width.max(height));
+    // In range: each side is at most `most`, which fits a `u32`.
+    let px = |length: f64| (length * scale).round().clamp(1.0, most) as u32;
+    Some((px(width), px(height), scale))
+}
+
+#[cfg(test)]
+mod present_tests {
+    use super::present_size;
+
+    // S101-02: a page fills the screen keeping its proportions, small ones enlarged,
+    // never past the limit.
+    #[test]
+    fn s101_02_a_page_fits_the_screen() {
+        assert_eq!(
+            present_size(1920.0, 1080.0, (1920, 1080)),
+            Some((1920, 1080, 1.0))
+        );
+        assert_eq!(
+            present_size(1080.0, 1080.0, (1920, 1080)),
+            Some((1080, 1080, 1.0))
+        );
+        assert_eq!(
+            present_size(960.0, 540.0, (1920, 1200)),
+            Some((1920, 1080, 2.0))
+        );
+        let (w, h, _) = present_size(100.0, 50.0, (100_000, 100_000)).expect("size");
+        assert_eq!((w, h), (4096, 2048));
+        assert_eq!(present_size(0.0, 10.0, (100, 100)), None);
     }
 }
 

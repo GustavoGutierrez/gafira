@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- Present full screen (spec 101): a button in the bottom bar and Ctrl+Alt+P show the pages one at a time on the whole screen. The arrow keys, Space and a click move between them, Esc leaves, and the bar with the page number and the arrows hides when the pointer leaves the bottom edge. Pages change with a cross-fade, and a laser pointer (L) and drawing tools (pen, marker, highlighter, eraser, six colours) work over the slides.
+
 ## [0.3.0] - 2026-11-25
 
 3D objects in your designs, and Gafira becomes free and open source software.
