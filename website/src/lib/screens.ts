@@ -1,5 +1,5 @@
 // The screenshots of Gafira in each language (the app's own UI, captured from
-// version 0.2.0).
+// version 0.2.0; the 3D screens from 0.3.0).
 import type { ImageMetadata } from 'astro';
 import editorEs from '../assets/screens/editor-es.png';
 import homeEs from '../assets/screens/home-es.png';
