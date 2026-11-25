@@ -390,7 +390,61 @@ Los controles visuales se implementan en el sistema UI **ya existente** de Gafir
 7. **Exportación fiel al diseño.** Solo la proyección visible del modelo; guías y UI excluidas.
 8. **El rendimiento escala con los elementos.** No abrir un renderizador 3D nativo independiente y continuo por cada objeto.
 
-## 15. Referencias técnicas
+## 15. Implementación (fase 1)
+
+Decisión del titular: render 3D propio por CPU en lugar de `wgpu` (D-130). Lo que sigue describe lo construido en la rama `feat/100-objetos-3d`.
+
+### 15.1. Crates y capas
+
+| Crate | Capa | Qué hace |
+|---|---|---|
+| `gafira-model3d` | dominio (fila V5 sin dependencias internas, `clippy.toml` canónico) | Escena (primitivas, materiales, texturas), límites y validación; normalización a la esfera unidad (centro de la caja, radio del vértice más lejano); pose (cuaternión, posición, escala) y ángulos X/Y/Z solo para la interfaz; cámara orbital (giro, elevación, zoom, campo de visión, perspectiva u ortográfica) y vistas rápidas; iluminación Suave, Estudio y Dramática; rasterizador determinista por bandas con supersampling, z-buffer, recorte en el plano cercano, materiales opacos, con máscara y mezclados, texturas de color, metal/rugosidad, oclusión y emisión. Sin hilos ni E/S. |
+| `gafira-io-model3d` | adaptador | Lectura de GLB (`gltf`, sin la función `import`: nada fuera del archivo) y OBJ (`tobj`) como datos no confiables: cabecera y longitudes, rangos de cada accesor y vista comprobados antes de leer, extensiones requeridas rechazadas con su nombre (Draco, Meshopt, KTX2…), búferes o imágenes con URI rechazados, límites de vértices, triángulos, materiales, texturas, nodos y profundidad, protección ante pánicos del lector. `ModelDecoder` implementa el método nuevo `ImageDecoder::render_model` del puerto y pinta en paralelo por bandas (`rayon`). |
+| `gafira-doc` | dominio | `NodeKind::Model3d(Box<Model3dNode>)` (etiqueta `model3d`): asset del archivo original, formato, pose, cámara e iluminación; validación (valores finitos y en rango, asset presente) y clave de caché `shown()` independiente del tamaño. |
+| `gafira-edit` | dominio | `Property::Model3d`: aplicar una edición 3D es un solo paso de deshacer. |
+| `gafira-ports`, `gafira-engine`, `gafira-render`, `gafira-io-pptx` | | `model_pixels` y `render_model` en el puerto de exportación; el motor dibuja cada modelo a 4 veces su caja (máx. 4096 px) para exportar y a su caja para vistas previas y miniaturas; el grafo lo compone como una imagen; PowerPoint lo inserta como PNG. |
+| `gafira-ui` | adaptador | Módulo `model3d.rs`: servicio de render en un hilo (la petición más reciente de cada elemento gana; el lienzo muestra la última imagen hasta que llega la nueva), sesión de edición, gizmos, cubo de orientación, barra de herramientas, panel «Objeto 3D» y miniaturas de Biblioteca. |
+
+### 15.2. Experiencia
+
+- Importar: «Importar archivo…» (filtro con GLB y OBJ), arrastrar al lienzo, pegar la ruta o desde Biblioteca → pestaña **3D**, que muestra cada modelo importado con una vista previa renderizada, su nombre y su formato. Un archivo inválido no cambia el diseño y muestra la causa; un OBJ sin su MTL entra con material neutro y un aviso.
+- En el lienzo el modelo es un elemento más (mover, tamaño, giro 2D, capas, opacidad, duplicar, alinear). Doble clic o «Editar 3D» (barra contextual o panel) abre el editor sobre el propio elemento, sin tiradores 2D:
+  - **Girar**: arrastre libre tipo trackball; el aro azul solo gira a los lados y el verde solo arriba o abajo; etiqueta con X/Y/Z durante el arrastre.
+  - **Mover**: flechas X (rojo), Y (verde), Z (azul) del marco del modelo para mover en un eje; fuera de ellas, en el plano de la pantalla.
+  - **Escalar**: arrastre desde el centro hacia fuera o hacia dentro, con flechas en las esquinas y el porcentaje.
+  - **Cámara**: arrastre para rodear e inclinar, con etiquetas «Giro» y «Elevación»; la rueda o el pellizco acercan la cámara en cualquier herramienta, nunca la página.
+  - Cubo de orientación arriba a la derecha del lienzo: ejes del modelo vistos por la cámara, nombre de la vista y clic en un extremo de eje para ir a esa vista.
+  - Barra inferior: Girar, Mover, Escalar, Cámara, Vista (menú de vistas rápidas), Encuadrar, Restablecer, Cancelar y Aplicar. Tarjeta de ayuda con lo que hace la herramienta y «Intro aplica · Esc cancela».
+  - Deshacer y rehacer dentro del editor son de sus propios pasos; Aplicar deja un solo paso en el historial; Cancelar o Esc no cambian nada; elegir otro elemento aplica lo hecho sin preguntar.
+- Panel «Objeto 3D» con pestañas **Transformar** (rotación X/Y/Z, tamaño del modelo con tamaños rápidos 50–200 %, posición en el recuadro, restablecer), **Cámara** (vistas rápidas con miniaturas del propio modelo, giro, elevación, distancia, perspectiva u ortográfica, campo de visión, restablecer vista) y **Luz** (Suave, Estudio, Dramática). Fuera del editor los cambios del panel van directos al documento, un paso por gesto.
+- Colores de los ejes: tokens nuevos `gizmo.x`, `gizmo.y`, `gizmo.z` en los modos claro y oscuro. Iconos Phosphor nuevos registrados en `assets/LICENSES.toml`.
+
+### 15.3. Criterios de aceptación
+
+| ID | Estado | Evidencia |
+|---|---|---|
+| AC-01 | cumplido | `DamagedHelmet.glb`, `Avocado.glb`, `capybara.glb`, `phoenix.glb` con sus texturas (revisión visual); `s100_glb_imports_with_its_material` |
+| AC-02 | cumplido | `s100_obj_without_mtl_uses_the_neutral_material`; aviso en el lienzo |
+| AC-03, AC-04 | cumplido | un clic selecciona en 2D; doble clic abre el editor (revisión en la app) |
+| AC-05, AC-06, AC-07 | cumplido | gizmos probados en la app; `s100_view_turns_are_reversible`, `s100_zoom_scales_the_projection`, `s100_quick_views_are_deterministic` |
+| AC-08, AC-09 | cumplido | `s100_models_import_edit_and_export`, `s100_the_model3d_is_changed_and_undone`, `s100_the_session_undoes_its_own_steps` |
+| AC-10, AC-11 | cumplido | `s100_models_travel_inside_the_gaf_and_share_their_file`; recuperación tras cierre forzado con el modelo |
+| AC-12 | cumplido | `s100_render_has_a_transparent_background`, `s100_the_decoder_draws_a_model_on_transparency`, vista previa de exportación en `s100_models_import_edit_and_export` |
+| AC-13 | cumplido por diseño | PNG, JPEG, WebP, AVIF, PDF y SVG usan los mismos píxeles del modelo que la vista previa; PowerPoint lo inserta como PNG |
+| AC-14 | cumplido | la exportación dibuja a 4 veces la caja (máx. 4096 px) desde el modelo, no desde la miniatura |
+| AC-15 | cumplido | `s100_bad_inputs_fail_cleanly`, `s100_external_buffers_are_refused`, `s100_invalid_scenes_are_refused` |
+| AC-16 | cumplido | un solo hilo de render para todo el editor; sin contexto gráfico por elemento |
+| AC-17 | cumplido | sin GPU que perder (D-130); el lienzo conserva la última imagen válida |
+| AC-18 | cumplido | el modelo se compone como una imagen: capas, opacidad, giro 2D y recorte de la página |
+
+### 15.4. Pendiente
+
+- Importación en segundo plano con progreso y cancelación: hoy se lee al importar (el fénix OBJ de 82 MB tarda menos de medio segundo; el GLB de 800 000 triángulos se dibuja en unos 130 ms).
+- Fase 2: MTL y texturas de OBJ (sus dependencias dentro del `.gaf`), mapas normales, extensiones GLB con decodificadores empaquetados.
+- Vista previa persistida en el `.gaf` para versiones sin 3D: una versión anterior de Gafira no abre un documento con modelos 3D (tipo de nodo desconocido).
+- Gestos táctiles propios del editor 3D (pellizco ya acerca la cámara).
+
+## 16. Referencias técnicas
 
 - [glTF 2.0 — Khronos](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html)
 - [wgpu — renderizado GPU nativo Rust](https://wgpu.rs/doc/wgpu/)
