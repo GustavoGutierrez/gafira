@@ -7321,7 +7321,8 @@ impl Editor {
                     .inner_margin(egui::Margin::symmetric(12, 10))
                     .show(ui, |ui| {
                         ui.set_width(width - 24.0);
-                        ui.horizontal(|ui| {
+                        // The words wrap beside the icon; «Cerrar» goes under them.
+                        ui.horizontal_top(|ui| {
                             ui.add(crate::icons::image(
                                 ctx,
                                 Icon::Warning,
@@ -7333,23 +7334,17 @@ impl Editor {
                                 egui::Label::new(RichText::new(plain(texts, key)).color(ink))
                                     .wrap(),
                             );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new(plain(texts, "model3d.dismiss"))
-                                                    .color(ink),
-                                            )
-                                            .frame(false),
-                                        )
-                                        .clicked()
-                                    {
-                                        close = true;
-                                    }
-                                },
-                            );
+                        });
+                        let row = Vec2::new(ui.available_width(), 20.0);
+                        let right = egui::Layout::right_to_left(egui::Align::Center);
+                        ui.allocate_ui_with_layout(row, right, |ui| {
+                            let dismiss = egui::Button::new(
+                                RichText::new(plain(texts, "model3d.dismiss")).color(ink),
+                            )
+                            .frame(false);
+                            if ui.add(dismiss).clicked() {
+                                close = true;
+                            }
                         });
                     });
             });
@@ -9529,15 +9524,17 @@ impl Editor {
     ) {
         let file = entry.path.as_path();
         let design = entry.design;
-        let picture_h = if design { width } else { width * 0.75 };
-        let label_h = if design { 36.0 } else { 0.0 };
+        // A 3D model shows a picture of itself at its first view, square and
+        // named like a design (spec 100).
+        let model = crate::model3d::is_model_path(file);
+        let named = design || model;
+        let picture_h = if named { width } else { width * 0.75 };
+        let label_h = if named { 36.0 } else { 0.0 };
         let (rect, response) = ui.allocate_exact_size(
             Vec2::new(width, picture_h + label_h),
             egui::Sense::click_and_drag(),
         );
         let picture = Rect::from_min_size(rect.min, Vec2::new(width, picture_h));
-        // A 3D model shows a picture of itself at its first view (spec 100).
-        let model = crate::model3d::is_model_path(file);
         let model_picture = if model {
             self.model3d_studio
                 .borrow_mut()
@@ -9570,6 +9567,29 @@ impl Editor {
                         theme.c("text.muted"),
                     ),
                 }
+                let name = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default();
+                let kind = file
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(str::to_ascii_uppercase)
+                    .unwrap_or_default();
+                painter.text(
+                    Pos2::new(rect.min.x, picture.max.y + 4.0),
+                    Align2::LEFT_TOP,
+                    name,
+                    theme.font("ui-label"),
+                    theme.c("text"),
+                );
+                painter.text(
+                    Pos2::new(rect.min.x, picture.max.y + 20.0),
+                    Align2::LEFT_TOP,
+                    format!("{} · {kind}", plain(texts, "library.kind_model")),
+                    theme.font("caption"),
+                    theme.c("text.secondary"),
+                );
             }
             if let Some((texture, size)) = &preview {
                 let fit = picture.shrink(if design { 12.0 } else { 0.0 });
