@@ -3,6 +3,20 @@
   <img src="docs/manuals/marca/assets/gafira-logo-dark-background.png" alt="Gafira" width="240">
 </p>
 
+<p align="center">
+  <a href="https://github.com/GustavoGutierrez/gafira/releases"><img src="https://img.shields.io/github/v/release/GustavoGutierrez/gafira?include_prereleases&sort=semver&label=release&color=3FBFA9" alt="Latest release"></a>
+  <a href="https://github.com/GustavoGutierrez/gafira/releases"><img src="https://img.shields.io/github/downloads/GustavoGutierrez/gafira/total?color=3FBFA9" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-18243B" alt="License: GPL-3.0-or-later"></a>
+  <a href="rust-toolchain.toml"><img src="https://img.shields.io/badge/Rust-1.93.1-18243B?logo=rust" alt="Rust 1.93.1"></a>
+  <br>
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-18243B" alt="Platforms: Windows, macOS, Linux">
+  <img src="https://img.shields.io/badge/languages-Espa%C3%B1ol%20%7C%20English-18243B" alt="Languages: Spanish, English">
+  <a href="https://gafira.com/en/"><img src="https://img.shields.io/badge/website-gafira.com-FF6B57" alt="Website: gafira.com"></a>
+  <a href="https://gafira.com/en/#support"><img src="https://img.shields.io/badge/support-full%20illustration%20packs-FF6B57?logo=gumroad&logoColor=white" alt="Support Gafira: full illustration packs"></a>
+</p>
+
+<p align="center"><b>English</b> · <a href="README.es.md">Español</a></p>
+
 # Gafira
 
 **Haz visibles tus ideas. Bring your ideas to life.**
@@ -31,7 +45,11 @@ Website: <https://gafira.com> (Spanish) · <https://gafira.com/en/> (English). I
 
 ## Download
 
-Installers of each version are on the [GitHub releases](https://github.com/GustavoGutierrez/gafira/releases): Windows installer and portable `.zip`, macOS `.dmg` (Apple Silicon, not notarised), Linux `.deb` and AppImage.
+Installers of each version are on the [GitHub releases](https://github.com/GustavoGutierrez/gafira/releases) and at <https://gafira.com/en/#download>: Windows installer and portable `.zip`, macOS `.dmg` (Apple Silicon, not notarised), Linux `.deb` and AppImage.
+
+## Support the project
+
+Gafira is free. If you would like to support its development, buy one of the [full illustration packs](https://gafira.com/en/#support): you get every illustration in it, and you help us keep building Gafira. You can also contribute code, translations or bug reports (see `CONTRIBUTING.md`).
 
 ## Requirements
 
