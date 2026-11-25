@@ -1,6 +1,6 @@
 ---
 import Icon from './Icon.astro';
-import { copy, longDate, type Locale } from '../i18n/ui';
+import { copy, homePath, longDate, type Locale } from '../i18n/ui';
 import { downloads, megabytes, type Asset, type Release } from '../lib/release';
 
 interface Props {
@@ -100,6 +100,20 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
         ))
       }
     </div>
+    <p class="support" aria-live="polite" data-download-support>
+      <span class="support__icon" aria-hidden="true">
+        <span class="support__heart"><Icon name="heart" size={20} /></span>
+        <span class="support__check"><Icon name="check-circle" size={20} /></span>
+      </span>
+      <span>
+        <span class="support__text">{d.support.text}</span>
+        <span class="support__done">{d.support.done}</span>{' '}
+        <a href={`${homePath(locale)}#support`}>
+          {d.support.link}
+          <Icon name="arrow-down" size={16} />
+        </a>
+      </span>
+    </p>
     <p class="links">
       <a href={release.url}>
         <Icon name="article" size={18} />
@@ -120,6 +134,17 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
     </p>
   </div>
 </section>
+
+<script>
+  // After a download starts, the support line thanks the visitor and keeps
+  // its invitation; it is the one moment the page asks for something more.
+  const support = document.querySelector<HTMLElement>('[data-download-support]');
+  if (support) {
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('#download .option')) {
+      link.addEventListener('click', () => support.classList.add('is-done'));
+    }
+  }
+</script>
 
 <style>
   .release {
@@ -293,6 +318,112 @@ const systems: { id: string; icon: string; name: string; note: string; options: 
       grid-template-columns: 1fr;
       max-width: 520px;
       margin-inline: auto;
+    }
+  }
+
+  /* The invitation to support Gafira: one quiet line under the downloads, a
+     text link, never a second button next to Download. */
+  .support {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 10px;
+    max-width: 760px;
+    margin: 36px auto 0;
+    padding: 14px 20px;
+    border-radius: var(--radius-lg);
+    color: var(--text-secondary);
+    text-align: left;
+    transition: background-color 300ms var(--ease);
+  }
+
+  .support a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-color: var(--coral);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .support a :global(svg) {
+    transition: transform 220ms var(--ease);
+  }
+
+  .support a:hover :global(svg) {
+    transform: translateY(2px);
+  }
+
+  .support__icon {
+    position: relative;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin-top: 3px;
+  }
+
+  .support__heart,
+  .support__check {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    transition:
+      opacity 220ms var(--ease),
+      transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .support__heart {
+    color: var(--coral);
+  }
+
+  .support__check {
+    color: var(--mint);
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .support__done {
+    display: none;
+    color: var(--text);
+  }
+
+  /* After a download: the check replaces the heart, the line thanks the
+     visitor, and a mint tint marks the change. */
+  .support.is-done {
+    background: color-mix(in srgb, var(--mint) 14%, transparent);
+  }
+
+  .support.is-done .support__heart {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .support.is-done .support__check {
+    opacity: 1;
+    transform: none;
+  }
+
+  .support.is-done .support__text {
+    display: none;
+  }
+
+  .support.is-done .support__done {
+    display: inline;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .support,
+    .support__heart,
+    .support__check,
+    .support a :global(svg) {
+      transition: none;
+    }
+
+    .support a:hover :global(svg) {
+      transform: none;
     }
   }
 </style>

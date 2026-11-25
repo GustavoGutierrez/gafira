@@ -30,6 +30,10 @@ const home = homePath(locale);
       <a href={`${home}#features`} data-spy="features">{t.nav.features}</a>
       <a href={`${home}#download`} data-spy="download">{t.nav.download}</a>
       <a href={`${home}#packs`} data-spy="packs">{t.nav.packs}</a>
+      <a class="header__support" href={`${home}#support`} data-spy="support">
+        <Icon name="heart" size={16} />
+        {t.nav.support}
+      </a>
     </nav>
     <div class="header__actions">
       <button class="header__theme" type="button" data-theme-toggle aria-label={t.nav.theme} title={t.nav.theme}>
@@ -141,6 +145,7 @@ const home = homePath(locale);
   .header__nav a {
     position: relative;
     padding-block: 6px;
+    white-space: nowrap;
     font-size: 15px;
     font-weight: 500;
     text-decoration: none;
@@ -171,6 +176,30 @@ const home = homePath(locale);
   .header__nav a:hover::after,
   .header__nav a[aria-current]::after {
     transform: none;
+  }
+
+  /* The way to support the project: a text link like the rest of the menu,
+     marked only by a coral heart, so it never competes with Download. */
+  .header__support {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .header__support :global(svg) {
+    flex: none;
+    color: var(--coral);
+    transition: transform 220ms var(--ease);
+  }
+
+  .header__support:hover :global(svg) {
+    transform: scale(1.15);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .header__support:hover :global(svg) {
+      transform: none;
+    }
   }
 
   .header__actions {
@@ -269,7 +298,9 @@ const home = homePath(locale);
     }
   }
 
-  @media (max-width: 1024px) {
+  /* Five links plus the actions need about 1120 px; below that the menu
+     hides and the page sections stay one scroll away. */
+  @media (max-width: 1120px) {
     .header__nav {
       display: none;
     }
