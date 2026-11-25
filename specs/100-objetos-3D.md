@@ -409,9 +409,9 @@ Decisión del titular: render 3D propio por CPU en lugar de `wgpu` (D-130). Lo q
 
 - Importar: «Importar archivo…» (filtro con GLB y OBJ), arrastrar al lienzo, pegar la ruta o desde Biblioteca → pestaña **3D**, que muestra cada modelo importado con una vista previa renderizada, su nombre y su formato. Un archivo inválido no cambia el diseño y muestra la causa; un OBJ sin su MTL entra con material neutro y un aviso.
 - En el lienzo el modelo es un elemento más (mover, tamaño, giro 2D, capas, opacidad, duplicar, alinear). Doble clic o «Editar 3D» (barra contextual o panel) abre el editor sobre el propio elemento, sin tiradores 2D:
-  - **Girar**: arrastre libre tipo trackball; el aro azul solo gira a los lados y el verde solo arriba o abajo; etiqueta con X/Y/Z durante el arrastre.
+  - **Girar**: arrastre libre tipo trackball; el aro azul solo gira a los lados y el verde solo arriba o abajo; etiqueta con X/Y/Z durante el arrastre. Gizmos con volumen: tubos cilíndricos sombreados, puntas cónicas, esfera de pivote y una esfera translúcida en Girar (aro azul cerrado, aro verde en «C» con su punta).
   - **Mover**: flechas X (rojo), Y (verde), Z (azul) del marco del modelo para mover en un eje; fuera de ellas, en el plano de la pantalla.
-  - **Escalar**: arrastre desde el centro hacia fuera o hacia dentro, con flechas en las esquinas y el porcentaje.
+  - **Escalar**: marco del elemento con 8 tiradores; las esquinas y los lados cambian el tamaño del elemento en el diseño conservando la proporción (Mayús libera un lado), con el recuadro original en discontinua y una etiqueta con el porcentaje y el tamaño; el modelo se vuelve a dibujar a la nueva resolución. Aplicar guarda modelo y recuadro en un solo paso. El tamaño del modelo dentro del recuadro se ajusta en el panel.
   - **Cámara**: arrastre para rodear e inclinar, con etiquetas «Giro» y «Elevación»; la rueda o el pellizco acercan la cámara en cualquier herramienta, nunca la página.
   - Cubo de orientación arriba a la derecha del lienzo: ejes del modelo vistos por la cámara, nombre de la vista y clic en un extremo de eje para ir a esa vista.
   - Barra inferior: Girar, Mover, Escalar, Cámara, Vista (menú de vistas rápidas), Encuadrar, Restablecer, Cancelar y Aplicar. Tarjeta de ayuda con lo que hace la herramienta y «Intro aplica · Esc cancela».

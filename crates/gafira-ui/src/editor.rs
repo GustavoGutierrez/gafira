@@ -6437,13 +6437,14 @@ impl Editor {
                                             .as_ref()
                                             .filter(|s| s.node == shape.node && s.page == page_doc.id);
                                         let model = session.map_or(doc_model.as_ref(), |s| &s.current);
+                                        let placement = session.map_or(shape.placement, |s| s.placement);
                                         let ppp = ctx.pixels_per_point();
                                         let side = |v: f64| {
                                             // In steps of 32 px, so a zoom does not redraw on every frame.
                                             let px = (v as f32 * zoom * ppp).clamp(16.0, 2048.0);
                                             ((px / 32.0).ceil() * 32.0) as u32
                                         };
-                                        let size = (side(shape.placement.w), side(shape.placement.h));
+                                        let size = (side(placement.w), side(placement.h));
                                         let samples = if session.is_some_and(crate::model3d::Session::dragging) { 1 } else { 2 };
                                         let read = |hash: gafira_doc::ContentHash| -> Option<Vec<u8>> {
                                             let mut bytes = Vec::new();
@@ -6463,15 +6464,15 @@ impl Editor {
                                             Some(texture) => {
                                                 clip.add(canvas::image_mesh(
                                                     texture,
-                                                    rotation::to_screen(page, zoom, &shape.placement),
-                                                    &shape.placement,
+                                                    rotation::to_screen(page, zoom, &placement),
+                                                    &placement,
                                                     Color32::WHITE.gamma_multiply(shape.alpha()),
                                                 ));
                                             }
                                             None => {
                                                 // Until the first picture arrives: its box, quietly.
-                                                let t = rotation::to_screen(page, zoom, &shape.placement);
-                                                let (w, h) = (shape.placement.w, shape.placement.h);
+                                                let t = rotation::to_screen(page, zoom, &placement);
+                                                let (w, h) = (placement.w, placement.h);
                                                 let corners = vec![
                                                     rotation::screen(t, 0.0, 0.0),
                                                     rotation::screen(t, w, 0.0),
@@ -7379,7 +7380,9 @@ impl Editor {
         else {
             return;
         };
-        let placement = node.base.placement;
+        // The session's box: Escalar changes it before Apply.
+        let placement = session.placement;
+        let _ = &node;
         let t = rotation::to_screen(page_rect, self.zoom, &placement);
         let corners = [
             rotation::screen(t, 0.0, 0.0),
@@ -7391,7 +7394,7 @@ impl Editor {
         let Some(session) = self.model3d_session.as_mut() else {
             return;
         };
-        let asks = crate::model3d::overlay(ctx, theme, texts, session, rect, viewport);
+        let asks = crate::model3d::overlay(ctx, theme, texts, session, (rect, self.zoom), viewport);
         asked.model3d_apply |= asks.apply;
         asked.model3d_cancel |= asks.cancel;
     }
@@ -11211,9 +11214,24 @@ impl Editor {
         if !session.modified() {
             return;
         }
-        let property = Property::Model3d(Box::new(session.current));
-        let command = SetProperty::new(session.page, vec![session.node], property, None);
-        if let Err(error) = engine.edit().execute(Box::new(command)) {
+        // The model and, when Escalar changed it, the element's box: one undo step.
+        let set = |property| {
+            Box::new(SetProperty::new(
+                session.page,
+                vec![session.node],
+                property,
+                None,
+            )) as Box<dyn Command>
+        };
+        let mut commands = vec![set(Property::Model3d(Box::new(session.current.clone())))];
+        if session.resized() {
+            commands.push(set(Property::Placement(session.placement)));
+        }
+        let label = MessageKey("edit.set_property");
+        if let Err(error) = engine
+            .edit()
+            .execute(Box::new(Transaction::new(label, commands)))
+        {
             eprintln!("3D apply: {error}");
         }
     }
@@ -11233,12 +11251,12 @@ impl Editor {
             self.apply_model3d(engine);
         }
         if let Some((page, node)) = asked.model3d_open {
-            let model = engine.edit().document().and_then(|d| {
+            let found = engine.edit().document().and_then(|d| {
                 d.page(page)
                     .and_then(|p| p.node(node))
-                    .map(|n| n.kind.clone())
+                    .map(|n| (n.kind.clone(), n.base.placement))
             });
-            if let Some(gafira_doc::NodeKind::Model3d(model)) = model {
+            if let Some((gafira_doc::NodeKind::Model3d(model), placement)) = found {
                 if self
                     .model3d_session
                     .as_ref()
@@ -11251,7 +11269,8 @@ impl Editor {
                 self.image_edit = None;
                 self.selected = Selection::one(page, node);
                 if self.model3d_session.is_none() {
-                    self.model3d_session = Some(crate::model3d::Session::new(page, node, *model));
+                    self.model3d_session =
+                        Some(crate::model3d::Session::new(page, node, *model, placement));
                 }
             }
         }

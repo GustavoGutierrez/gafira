@@ -12,7 +12,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use egui::{Align2, Color32, Pos2, Rect, RichText, Stroke, Vec2};
-use gafira_doc::{ContentHash, Model3dLighting, Model3dNode, Model3dProjection, NodeId, PageId};
+use gafira_doc::{
+    ContentHash, Model3dLighting, Model3dNode, Model3dProjection, NodeId, PageId, Placement,
+};
 use gafira_io_model3d::{
     ImportError, ImportLimits, ImportWarning, ModelDecoder, ModelFormat, camera_of, detect_format,
     params_of, pose_of, render_parallel,
@@ -22,6 +24,7 @@ use gafira_ports::export::ImageDecoder;
 use gafira_ports::media::MediaError;
 use gafira_raster::ImageBuf;
 
+use crate::canvas::{HANDLES, Handle};
 use crate::charts::plain;
 use crate::icons::{self, Icon, Weight};
 use crate::slider::{self, Slider};
@@ -412,10 +415,10 @@ enum Grip {
     Axis(usize, Vec2),
     /// Move in the plane of the screen.
     Plane,
-    Scale {
-        centre: Pos2,
-        from: f32,
-    },
+    /// A handle of the element's frame: its box changes size, the model with it.
+    Frame(Handle),
+    /// Nothing under the pointer to take (inside the frame with Escalar).
+    Nothing,
     Orbit,
 }
 
@@ -424,6 +427,8 @@ struct Drag {
     start: Pos2,
     grip: Grip,
     before: Model3dNode,
+    /// The element's box when the drag started.
+    box_before: Placement,
 }
 
 /// An open 3D editing session of one element (spec 100 §3.3, §3.5): its changes stay here
@@ -434,9 +439,13 @@ pub(crate) struct Session {
     pub(crate) node: NodeId,
     pub(crate) original: Model3dNode,
     pub(crate) current: Model3dNode,
+    /// The element's box on the page when the session opened, and now: Escalar changes
+    /// the size the model takes on the page (spec 100, `canvas_scale`).
+    pub(crate) original_placement: Placement,
+    pub(crate) placement: Placement,
     pub(crate) tool: Tool,
-    undo: Vec<Model3dNode>,
-    redo: Vec<Model3dNode>,
+    undo: Vec<(Model3dNode, Placement)>,
+    redo: Vec<(Model3dNode, Placement)>,
     drag: Option<Drag>,
     /// Where the element was on the screen in the last frame, for the wheel.
     pub(crate) rect: Option<Rect>,
@@ -445,12 +454,19 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    pub(crate) fn new(page: PageId, node: NodeId, model: Model3dNode) -> Self {
+    pub(crate) fn new(
+        page: PageId,
+        node: NodeId,
+        model: Model3dNode,
+        placement: Placement,
+    ) -> Self {
         Self {
             page,
             node,
             original: model.clone(),
             current: model,
+            original_placement: placement,
+            placement,
             tool: Tool::Rotate,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -461,7 +477,20 @@ impl Session {
     }
 
     pub(crate) fn modified(&self) -> bool {
-        self.current != self.original
+        self.current != self.original || self.placement != self.original_placement
+    }
+
+    /// Whether the element's box changed in this session.
+    pub(crate) fn resized(&self) -> bool {
+        self.placement != self.original_placement
+    }
+
+    pub(crate) fn push_undo(&mut self) {
+        self.undo.push((self.current.clone(), self.placement));
+        self.redo.clear();
+        if self.undo.len() > 200 {
+            self.undo.remove(0);
+        }
     }
 
     pub(crate) fn dragging(&self) -> bool {
@@ -472,11 +501,8 @@ impl Session {
     pub(crate) fn set(&mut self, model: Model3dNode) {
         self.merging = false;
         if model != self.current && model.is_valid() {
-            self.undo.push(std::mem::replace(&mut self.current, model));
-            self.redo.clear();
-            if self.undo.len() > 200 {
-                self.undo.remove(0);
-            }
+            self.push_undo();
+            self.current = model;
         }
     }
 
@@ -495,15 +521,18 @@ impl Session {
     }
 
     pub(crate) fn undo(&mut self) {
-        if let Some(previous) = self.undo.pop() {
-            self.redo
-                .push(std::mem::replace(&mut self.current, previous));
+        if let Some((model, placement)) = self.undo.pop() {
+            self.redo.push((self.current.clone(), self.placement));
+            self.current = model;
+            self.placement = placement;
         }
     }
 
     pub(crate) fn redo(&mut self) {
-        if let Some(next) = self.redo.pop() {
-            self.undo.push(std::mem::replace(&mut self.current, next));
+        if let Some((model, placement)) = self.redo.pop() {
+            self.undo.push((self.current.clone(), self.placement));
+            self.current = model;
+            self.placement = placement;
         }
     }
 
@@ -624,23 +653,215 @@ fn near_ellipse(p: Pos2, centre: Pos2, rx: f32, ry: f32, tolerance: f32) -> bool
     (r - 1.0).abs() * scale < tolerance
 }
 
-fn arrow(painter: &egui::Painter, from: Pos2, to: Pos2, color: Color32, width: f32) {
-    painter.line_segment([from, to], Stroke::new(width, color));
-    let dir = (to - from).normalized();
+fn mix(c: Color32, to: Color32, t: f32) -> Color32 {
+    let l = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
+    Color32::from_rgba_unmultiplied(l(c.r(), to.r()), l(c.g(), to.g()), l(c.b(), to.b()), c.a())
+}
+
+fn lighter(c: Color32, t: f32) -> Color32 {
+    mix(c, Color32::WHITE, t)
+}
+
+fn darker(c: Color32, t: f32) -> Color32 {
+    mix(c, Color32::BLACK, t)
+}
+
+/// The side of a stroke the light comes from (top left): a unit normal of `dir`.
+fn lit_side(dir: Vec2) -> Vec2 {
+    let n = Vec2::new(-dir.y, dir.x);
+    if n.dot(Vec2::new(-1.0, -1.0)) >= 0.0 {
+        n
+    } else {
+        -n
+    }
+}
+
+/// The layers of a cylinder seen from the side, outside in: width share, shade (negative
+/// darker, positive lighter) and the shift toward the light, so the stroke reads as a round
+/// tube with no hard line inside it.
+const CYLINDER: [(f32, f32, f32); 6] = [
+    (1.0, -0.2, 0.0),
+    (0.86, -0.08, 0.02),
+    (0.7, 0.0, 0.05),
+    (0.52, 0.12, 0.1),
+    (0.34, 0.26, 0.15),
+    (0.16, 0.45, 0.2),
+];
+
+fn shade(c: Color32, k: f32) -> Color32 {
+    if k < 0.0 {
+        darker(c, -k)
+    } else {
+        lighter(c, k)
+    }
+}
+
+/// A cylinder along `points`, lit from the top left.
+fn tube(painter: &egui::Painter, points: &[Pos2], color: Color32, width: f32) {
+    if points.len() < 2 {
+        return;
+    }
+    let dir = (points[points.len() - 1] - points[0]).normalized();
+    let lit = if dir.is_finite() {
+        lit_side(dir)
+    } else {
+        Vec2::new(0.0, -1.0)
+    };
+    for (share, k, shift) in CYLINDER {
+        let pts: Vec<Pos2> = points.iter().map(|p| *p + lit * width * shift).collect();
+        painter.add(egui::Shape::line(
+            pts,
+            Stroke::new(width * share, shade(color, k)),
+        ));
+    }
+}
+
+/// A curved cylinder: like [`tube`], with the light toward the top left of each piece.
+fn curved_tube(painter: &egui::Painter, points: &[Pos2], color: Color32, width: f32) {
+    if points.len() < 2 {
+        return;
+    }
+    let lits: Vec<Vec2> = (0..points.len())
+        .map(|i| {
+            let (a, b) = if i + 1 < points.len() {
+                (points[i], points[i + 1])
+            } else {
+                (points[i - 1], points[i])
+            };
+            let d = (b - a).normalized();
+            if d.is_finite() {
+                lit_side(d)
+            } else {
+                Vec2::ZERO
+            }
+        })
+        .collect();
+    for (share, k, shift) in CYLINDER {
+        let pts: Vec<Pos2> = points
+            .iter()
+            .zip(&lits)
+            .map(|(p, l)| *p + *l * width * shift)
+            .collect();
+        painter.add(egui::Shape::line(
+            pts,
+            Stroke::new(width * share, shade(color, k)),
+        ));
+    }
+}
+
+/// A cone from its base to its tip: a lit and a shaded face meeting along its axis, so the
+/// head of an arrow has volume.
+fn cone(painter: &egui::Painter, base: Pos2, tip: Pos2, half: f32, color: Color32) {
+    let dir = (tip - base).normalized();
     if !dir.is_finite() {
         return;
     }
-    let side = Vec2::new(-dir.y, dir.x);
-    let head = 4.0 * width;
+    let lit = lit_side(dir);
+    let (a, b) = (base + lit * half, base - lit * half);
     painter.add(egui::Shape::convex_polygon(
-        vec![
-            to + dir * head * 0.6,
-            to - dir * head * 0.6 + side * head * 0.55,
-            to - dir * head * 0.6 - side * head * 0.55,
-        ],
-        color,
+        vec![tip, a, base],
+        lighter(color, 0.2),
         Stroke::NONE,
     ));
+    painter.add(egui::Shape::convex_polygon(
+        vec![tip, base, b],
+        darker(color, 0.15),
+        Stroke::NONE,
+    ));
+}
+
+/// An arrow with volume: a tube and a cone at `to`.
+fn arrow(painter: &egui::Painter, from: Pos2, to: Pos2, color: Color32, width: f32) {
+    let d = to - from;
+    let dir = d.normalized();
+    if !dir.is_finite() {
+        return;
+    }
+    let head = (width * 3.4).min(d.length() * 0.6);
+    let base = to - dir * head;
+    tube(painter, &[from, base + dir * 1.0], color, width);
+    cone(painter, base, to, width * 1.6, color);
+}
+
+/// An arrow head with volume at the end of a curve, pointing along its last piece.
+fn curve_head(painter: &egui::Painter, points: &[Pos2], color: Color32, width: f32) {
+    let n = points.len();
+    if n < 2 {
+        return;
+    }
+    let end = points[n - 1];
+    let dir = (end - points[n - 2]).normalized();
+    if !dir.is_finite() {
+        return;
+    }
+    // The cone sits on the end of the tube, covering it, and points along it.
+    let head = width * 3.0;
+    cone(
+        painter,
+        end - dir * head * 0.35,
+        end + dir * head * 0.65,
+        width * 1.5,
+        color,
+    );
+}
+
+/// A shaded white ball: the pivot of the gizmos.
+fn ball(painter: &egui::Painter, centre: Pos2, r: f32) {
+    painter.circle_filled(
+        centre + Vec2::new(0.8, 1.6),
+        r + 0.5,
+        Color32::from_black_alpha(45),
+    );
+    let steps = 7;
+    for i in 0..steps {
+        let t = i as f32 / steps as f32;
+        let rr = r * (1.0 - t * 0.85);
+        let c = centre + Vec2::new(-0.32 * r, -0.36 * r) * t;
+        painter.circle_filled(
+            c,
+            rr,
+            mix(Color32::from_gray(178), Color32::WHITE, (0.25 + t).min(1.0)),
+        );
+    }
+}
+
+/// The points of an ellipse arc split by depth: the far half (`sin < 0`, top of a lying
+/// ring) and the near half.
+fn split_arc(
+    centre: Pos2,
+    rx: f32,
+    ry: f32,
+    from: f32,
+    to: f32,
+) -> (Vec<Vec<Pos2>>, Vec<Vec<Pos2>>) {
+    let steps = 120;
+    let mut far = Vec::new();
+    let mut near = Vec::new();
+    let mut run: Vec<Pos2> = Vec::new();
+    let mut run_far = None;
+    for i in 0..=steps {
+        let a = from + (to - from) * i as f32 / steps as f32;
+        let p = centre + Vec2::new(rx * a.cos(), ry * a.sin());
+        let is_far = a.sin() < 0.0;
+        if run_far.is_some_and(|f| f != is_far) {
+            let last = run.last().copied();
+            let done = std::mem::take(&mut run);
+            if run_far == Some(true) {
+                far.push(done)
+            } else {
+                near.push(done)
+            }
+            run.extend(last);
+        }
+        run_far = Some(is_far);
+        run.push(p);
+    }
+    if run_far == Some(true) {
+        far.push(run)
+    } else {
+        near.push(run)
+    }
+    (far, near)
 }
 
 fn badge(painter: &egui::Painter, theme: &Theme, at: Pos2, text: &str, fill: Color32) {
@@ -654,19 +875,75 @@ fn degrees_text(texts: &Texts, v: f64) -> String {
     format!("{v:.0}{}", slider::degrees(texts))
 }
 
+/// The box of `origin` after dragging the frame handle `handle` by `offset` screen px at
+/// `zoom` (spec 100 «Escalar»): a corner keeps the proportions unless `free`; an edge keeps
+/// them too, the opposite edge staying and the box centred across, or with `free` moves
+/// only its own side.
+pub(crate) fn framed(
+    origin: &Placement,
+    handle: Handle,
+    offset: Vec2,
+    zoom: f32,
+    free: bool,
+) -> Placement {
+    if crate::resize::is_corner(handle) || free || !crate::rotation::upright(origin) {
+        return crate::resize::resized(origin, handle, offset, zoom, !free);
+    }
+    let (dx, dy) = (f64::from(offset.x / zoom), f64::from(offset.y / zoom));
+    let k = if handle.x != 0 {
+        (origin.w + f64::from(handle.x) * dx) / origin.w
+    } else {
+        (origin.h + f64::from(handle.y) * dy) / origin.h
+    };
+    let least = (crate::canvas::MIN_SIDE / origin.w).max(crate::canvas::MIN_SIDE / origin.h);
+    let k = k.max(least);
+    if !k.is_finite() {
+        return *origin;
+    }
+    let (w, h) = (origin.w * k, origin.h * k);
+    let mut to = *origin;
+    to.w = w;
+    to.h = h;
+    if handle.x != 0 {
+        to.x = if handle.x == 1 {
+            origin.x
+        } else {
+            origin.x + origin.w - w
+        };
+        to.y = origin.y + (origin.h - h) / 2.0;
+    } else {
+        to.y = if handle.y == 1 {
+            origin.y
+        } else {
+            origin.y + origin.h - h
+        };
+        to.x = origin.x + (origin.w - w) / 2.0;
+    }
+    to
+}
+
+fn handle_pos(rect: Rect, h: Handle) -> Pos2 {
+    Pos2::new(
+        rect.center().x + f32::from(h.x) * rect.width() / 2.0,
+        rect.center().y + f32::from(h.y) * rect.height() / 2.0,
+    )
+}
+
 /// The gizmos, the orientation cube, the hint and the tool bar of the session, over the
-/// element at `rect` (screen) on a canvas whose visible area is `viewport`.
+/// element at `rect` (screen; the session's box at `zoom`) on a canvas whose visible area
+/// is `viewport`.
 pub(crate) fn overlay(
     ctx: &egui::Context,
     theme: &Theme,
     texts: &Texts,
     session: &mut Session,
-    rect: Rect,
+    (rect, zoom): (Rect, f32),
     viewport: Rect,
 ) -> Asks {
     let mut asks = Asks::default();
     session.rect = Some(rect);
-    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("model3d.gizmos"));
+    // Under the tool bar and the cube, over the canvas.
+    let layer = egui::LayerId::new(egui::Order::Middle, egui::Id::new("model3d.gizmos"));
     let painter = ctx.layer_painter(layer).with_clip_rect(viewport);
     let accent = rgb(theme, "primary.bg");
     let (gx, gy, gz) = (
@@ -675,37 +952,41 @@ pub(crate) fn overlay(
         rgb(theme, "gizmo.z"),
     );
 
-    // The surface that takes the gestures: nothing behind it moves (spec 100 §3.4).
+    // The surface that takes the gestures, a little larger than the element so its frame
+    // handles are in reach: nothing behind it moves (spec 100 §3.4).
+    let reach = rect.expand(14.0);
     let area = egui::Area::new(egui::Id::new("model3d.surface"))
         .order(egui::Order::Middle)
-        .fixed_pos(rect.min)
+        .fixed_pos(reach.min)
         .show(ctx, |ui| {
-            ui.allocate_exact_size(rect.size(), egui::Sense::click_and_drag())
+            ui.allocate_exact_size(reach.size(), egui::Sense::click_and_drag())
                 .1
         });
     let response = area.inner;
     let pointer = ctx.input(|i| i.pointer.interact_pos());
+    let free = ctx.input(|i| i.modifiers.shift);
 
     let model = session.current.clone();
     let centre = project(&model, rect, model.position.map(|v| v as f32)).unwrap_or(rect.center());
     let radius = rect.width().min(rect.height()) * 0.42;
     let (ring_rx, ring_ry) = (radius, radius * 0.3);
-
-    painter.rect_stroke(
-        rect,
-        0.0,
-        Stroke::new(1.5, accent),
-        egui::StrokeKind::Outside,
-    );
+    // The blue ring runs from just past its arrow head round to it; the green one ends at
+    // its top, heading right (spec 100 reference).
+    use std::f32::consts::{PI, TAU};
+    // The blue ring is whole, its head riding on its near right side; the green one is an
+    // arc on the left, from the bottom up to its head at the top (spec 100 reference).
+    let (blue_from, blue_to) = (0.0, TAU);
+    let blue_head = (0.18, 0.34);
+    let (green_from, green_to) = (PI / 2.0 - 0.3, 1.5 * PI + 0.3);
 
     // What a press grabs, by tool and place.
     let tool = session.tool;
     let grip_at = |p: Pos2| -> Grip {
         match tool {
             Tool::Rotate => {
-                if near_ellipse(p, centre, ring_rx, ring_ry, 10.0) {
+                if near_ellipse(p, centre, ring_rx, ring_ry, 12.0) {
                     Grip::Yaw
-                } else if near_ellipse(p, centre, ring_ry, ring_rx, 10.0) {
+                } else if near_ellipse(p, centre, ring_ry, ring_rx, 12.0) {
                     Grip::Pitch
                 } else {
                     Grip::Free
@@ -729,17 +1010,19 @@ pub(crate) fn overlay(
                             centre,
                             centre + d.normalized() * axis_length(len, radius),
                         );
-                        if ends < 10.0 && best.is_none_or(|(b, _)| ends < b) {
+                        if ends < 12.0 && best.is_none_or(|(b, _)| ends < b) {
                             best = Some((ends, Grip::Axis(axis, d * 2.0)));
                         }
                     }
                 }
                 best.map_or(Grip::Plane, |(_, g)| g)
             }
-            Tool::Scale => Grip::Scale {
-                centre,
-                from: (p - centre).length().max(8.0),
-            },
+            Tool::Scale => HANDLES
+                .into_iter()
+                .map(|h| (h, (handle_pos(rect, h) - p).length()))
+                .filter(|(_, d)| *d < 14.0)
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map_or(Grip::Nothing, |(h, _)| Grip::Frame(h)),
             Tool::Camera => Grip::Orbit,
         }
     };
@@ -751,6 +1034,7 @@ pub(crate) fn overlay(
             start: p,
             grip: grip_at(p),
             before: session.current.clone(),
+            box_before: session.placement,
         });
     }
     if response.dragged()
@@ -779,12 +1063,11 @@ pub(crate) fn overlay(
                 moved.position[axis] += t;
                 to_doc_pose(&mut next, moved);
             }
-            Grip::Scale { centre, from } => {
-                let factor = ((p - centre).length() / from).clamp(0.05, 20.0);
-                let mut scaled = pose;
-                scaled.scale = pose.scale.map(|s| s * factor);
-                to_doc_pose(&mut next, scaled);
+            Grip::Frame(handle) => {
+                // The box on the page grows or shrinks; the model fills it at the new size.
+                session.placement = framed(&drag.box_before, handle, d, zoom, free);
             }
+            Grip::Nothing => {}
             Grip::Orbit => {
                 next.camera.yaw = f64::from(gafira_model3d::normalize_degrees(
                     (drag.before.camera.yaw + f64::from(d.x) * 0.4) as f32,
@@ -799,56 +1082,107 @@ pub(crate) fn overlay(
     }
     if response.drag_stopped()
         && let Some(drag) = session.drag.take()
-        && drag.before != session.current
+        && (drag.before != session.current || drag.box_before != session.placement)
     {
         // The whole drag is one step of the session's undo.
-        let done = std::mem::replace(&mut session.current, drag.before);
-        session.set(done);
-    }
-    if response.hovered() {
-        ctx.set_cursor_icon(if session.drag.is_some() {
-            egui::CursorIcon::Grabbing
-        } else {
-            egui::CursorIcon::Grab
-        });
+        let (model, placement) = (session.current.clone(), session.placement);
+        session.current = drag.before;
+        session.placement = drag.box_before;
+        session.push_undo();
+        session.current = model;
+        session.placement = placement;
     }
 
-    // The gizmo of the tool.
-    let hover = pointer.filter(|p| rect.contains(*p));
+    let hover = pointer.filter(|p| reach.contains(*p));
     let hovered_grip = if session.drag.is_none() {
         hover.map(grip_at)
     } else {
         session.drag.as_ref().map(|d| d.grip)
     };
+    if response.hovered() {
+        let icon = match hovered_grip {
+            Some(Grip::Frame(h)) => {
+                if h.x != 0 && h.y != 0 {
+                    if h.x == h.y {
+                        egui::CursorIcon::ResizeNwSe
+                    } else {
+                        egui::CursorIcon::ResizeNeSw
+                    }
+                } else if h.x != 0 {
+                    egui::CursorIcon::ResizeHorizontal
+                } else {
+                    egui::CursorIcon::ResizeVertical
+                }
+            }
+            Some(Grip::Nothing) => egui::CursorIcon::Default,
+            _ if session.drag.is_some() => egui::CursorIcon::Grabbing,
+            _ => egui::CursorIcon::Grab,
+        };
+        ctx.set_cursor_icon(icon);
+    }
+
+    if session.tool != Tool::Scale {
+        painter.rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.5, accent),
+            egui::StrokeKind::Outside,
+        );
+    }
+
+    // The gizmo of the tool.
     let model = session.current.clone();
     match session.tool {
         Tool::Rotate => {
-            let yaw_on = matches!(hovered_grip, Some(Grip::Yaw));
-            let pitch_on = matches!(hovered_grip, Some(Grip::Pitch));
-            painter.add(egui::Shape::line(
-                ellipse_points(centre, ring_ry, ring_rx, 0.0, std::f32::consts::TAU),
-                Stroke::new(if pitch_on { 5.0 } else { 3.0 }, gy),
-            ));
-            painter.add(egui::Shape::line(
-                ellipse_points(centre, ring_rx, ring_ry, 0.0, std::f32::consts::TAU),
-                Stroke::new(if yaw_on { 5.0 } else { 3.0 }, gz),
-            ));
-            arrow(
-                &painter,
-                centre + Vec2::new(ring_rx * 0.7, ring_ry * 0.72),
-                centre + Vec2::new(ring_rx * 0.95, ring_ry * 0.3),
-                gz,
-                3.0,
+            let yaw_w = if matches!(hovered_grip, Some(Grip::Yaw)) {
+                9.0
+            } else {
+                7.0
+            };
+            let pitch_w = if matches!(hovered_grip, Some(Grip::Pitch)) {
+                9.0
+            } else {
+                7.0
+            };
+            // A glass sphere the rings turn on.
+            painter.circle_filled(centre, ring_rx, Color32::from_white_alpha(26));
+            painter.circle_stroke(
+                centre,
+                ring_rx,
+                Stroke::new(3.0, Color32::from_white_alpha(170)),
             );
-            arrow(
-                &painter,
-                centre + Vec2::new(ring_ry * 0.72, -ring_rx * 0.7),
-                centre + Vec2::new(ring_ry * 0.3, -ring_rx * 0.95),
-                gy,
-                3.0,
+            painter.circle_stroke(
+                centre,
+                ring_rx - 2.0,
+                Stroke::new(1.0, Color32::from_black_alpha(18)),
             );
-            painter.circle_filled(centre, 4.0, Color32::WHITE);
-            painter.circle_stroke(centre, 4.0, Stroke::new(1.5, accent));
+            let glow = |pts: &[Pos2], c: Color32, w: f32| {
+                painter.add(egui::Shape::line(
+                    pts.to_vec(),
+                    Stroke::new(w * 2.6, c.gamma_multiply(0.12)),
+                ));
+                painter.add(egui::Shape::line(
+                    pts.to_vec(),
+                    Stroke::new(w * 1.7, c.gamma_multiply(0.18)),
+                ));
+            };
+            let (blue_far, blue_near) = split_arc(centre, ring_rx, ring_ry, blue_from, blue_to);
+            let green = ellipse_points(centre, ring_ry, ring_rx, green_from, green_to);
+            // Far half of the blue ring, then the green ring, then the near half in front.
+            for run in &blue_far {
+                glow(run, gz, yaw_w);
+                curved_tube(&painter, run, mix(gz, Color32::WHITE, 0.25), yaw_w);
+            }
+            glow(&green, gy, pitch_w);
+            curved_tube(&painter, &green, gy, pitch_w);
+            curve_head(&painter, &green, gy, pitch_w);
+            for run in &blue_near {
+                glow(run, gz, yaw_w);
+                curved_tube(&painter, run, gz, yaw_w);
+            }
+            let head = ellipse_points(centre, ring_rx, ring_ry, blue_head.0, blue_head.1);
+            curve_head(&painter, &head, gz, yaw_w);
+            ball(&painter, centre, 9.0);
             if session.drag.is_some() {
                 let [x, y, z] = gafira_model3d::euler_degrees_from_quat(pose_of(&model).rotation);
                 let text = format!(
@@ -885,53 +1219,95 @@ pub(crate) fn overlay(
             }
             // The axes going away are drawn first, under the others.
             axes.sort_by(|a, b| a.2.total_cmp(&b.2));
-            for (axis, d, _) in axes {
+            let r = 11.0;
+            for (axis, d, depth) in axes {
                 if d.length() < 4.0 {
                     continue;
                 }
-                let color = [gx, gy, gz][axis];
                 let on = matches!(hovered_grip, Some(Grip::Axis(a, _)) if a == axis);
-                let tip = centre + d.normalized() * axis_length(d.length(), radius);
-                arrow(&painter, centre, tip, color, if on { 5.0 } else { 3.5 });
-            }
-            painter.circle_filled(centre, 7.0, Color32::WHITE);
-            painter.circle_stroke(centre, 7.0, Stroke::new(2.0, accent));
-        }
-        Tool::Scale => {
-            let dashed = rect.expand(10.0);
-            for (corner, dir) in [
-                (dashed.left_top(), Vec2::new(-1.0, -1.0)),
-                (dashed.right_top(), Vec2::new(1.0, -1.0)),
-                (dashed.left_bottom(), Vec2::new(-1.0, 1.0)),
-                (dashed.right_bottom(), Vec2::new(1.0, 1.0)),
-            ] {
+                let color = [gx, gy, gz][axis];
+                // An axis pointing away is a little paler, as it is farther.
+                let color = if depth < -0.2 {
+                    lighter(color, 0.07)
+                } else {
+                    color
+                };
+                let dir = d.normalized();
+                let tip = centre + dir * axis_length(d.length(), radius);
                 arrow(
                     &painter,
-                    corner - dir * 6.0,
-                    corner + dir * 18.0,
-                    accent,
-                    3.0,
+                    centre + dir * (r * 0.6),
+                    tip,
+                    color,
+                    if on { 9.0 } else { 7.0 },
                 );
             }
-            painter.add(egui::Shape::dashed_line(
-                &[
-                    dashed.left_top(),
-                    dashed.right_top(),
-                    dashed.right_bottom(),
-                    dashed.left_bottom(),
-                    dashed.left_top(),
-                ],
-                Stroke::new(1.0, accent),
-                6.0,
-                4.0,
-            ));
-            let pct = model.scale[0] * 100.0;
+            ball(&painter, centre, r);
+        }
+        Tool::Scale => {
+            // The element's frame with its eight handles: dragging one resizes the box on
+            // the page, the model filling it at the new size.
+            if let Some(drag) = &session.drag
+                && drag.box_before != session.placement
+            {
+                let s = zoom;
+                let before = Rect::from_min_size(
+                    rect.min
+                        - Vec2::new(
+                            ((session.placement.x - drag.box_before.x) as f32) * s,
+                            ((session.placement.y - drag.box_before.y) as f32) * s,
+                        ),
+                    Vec2::new(drag.box_before.w as f32 * s, drag.box_before.h as f32 * s),
+                );
+                painter.add(egui::Shape::dashed_line(
+                    &[
+                        before.left_top(),
+                        before.right_top(),
+                        before.right_bottom(),
+                        before.left_bottom(),
+                        before.left_top(),
+                    ],
+                    Stroke::new(1.0, accent),
+                    6.0,
+                    4.0,
+                ));
+            }
+            painter.rect_stroke(
+                rect,
+                0.0,
+                Stroke::new(2.0, accent),
+                egui::StrokeKind::Outside,
+            );
+            for h in HANDLES {
+                let at = handle_pos(rect, h);
+                let on = matches!(hovered_grip, Some(Grip::Frame(g)) if g == h);
+                let side = if on { 13.0 } else { 10.0 };
+                if h.x != 0 && h.y != 0 {
+                    let dir = Vec2::new(f32::from(h.x), f32::from(h.y)).normalized();
+                    arrow(
+                        &painter,
+                        at + dir * 10.0,
+                        at + dir * 34.0,
+                        accent,
+                        if on { 7.0 } else { 5.5 },
+                    );
+                }
+                painter.circle_filled(at, side / 2.0 + 1.0, Color32::WHITE);
+                painter.circle_stroke(at, side / 2.0 + 1.0, Stroke::new(2.0, accent));
+            }
             if session.drag.is_some() {
+                let pct = session.placement.w / session.original_placement.w.max(1e-6) * 100.0;
+                let text = format!(
+                    "{pct:.0}{} · {:.0} × {:.0} px",
+                    slider::percent(texts),
+                    session.placement.w,
+                    session.placement.h
+                );
                 badge(
                     &painter,
                     theme,
                     Pos2::new(rect.center().x, rect.min.y - 22.0),
-                    &format!("{pct:.0}{}", slider::percent(texts)),
+                    &text,
                     accent,
                 );
             }
@@ -940,23 +1316,15 @@ pub(crate) fn overlay(
             let c = rect.center();
             let (rx, ry) = (rect.width() * 0.5, rect.height() * 0.13);
             let base = Pos2::new(c.x, c.y + rect.height() * 0.22);
-            painter.add(egui::Shape::line(
-                ellipse_points(base, rx, ry, 0.2, std::f32::consts::PI - 0.2),
-                Stroke::new(3.0, gz),
-            ));
-            arrow(
-                &painter,
-                base + Vec2::new(rx * 0.55, ry * 0.83),
-                base + Vec2::new(rx * 0.8, ry * 0.6),
-                gz,
-                3.0,
-            );
+            let orbit = ellipse_points(base, rx, ry, 0.25, PI - 0.25);
+            let orbit: Vec<Pos2> = orbit.into_iter().rev().collect();
+            curved_tube(&painter, &orbit, gz, 7.0);
+            curve_head(&painter, &orbit, gz, 7.0);
             let arc_c = Pos2::new(c.x, c.y);
             let arc_r = rect.height().min(rect.width()) * 0.48;
-            painter.add(egui::Shape::line(
-                ellipse_points(arc_c, arc_r, arc_r, -1.35, -0.25),
-                Stroke::new(3.0, accent),
-            ));
+            let tilt = ellipse_points(arc_c, arc_r, arc_r, -1.35, -0.3);
+            curved_tube(&painter, &tilt, accent, 7.0);
+            curve_head(&painter, &tilt, accent, 7.0);
             let turn = format!(
                 "{} {}",
                 plain(texts, "model3d.turn_short"),
@@ -1034,7 +1402,9 @@ pub(crate) fn overlay(
 
 fn axis_length(projected: f32, radius: f32) -> f32 {
     // Long enough to grab, never past the element.
-    projected.clamp(radius * 0.35, radius * 0.9).max(28.0)
+    (projected * 1.4)
+        .clamp(radius * 0.5, radius * 0.95)
+        .max(48.0)
 }
 
 fn segment_distance(p: Pos2, a: Pos2, b: Pos2) -> f32 {
@@ -1713,7 +2083,12 @@ mod tests {
     // Spec 100 §3.5: the session keeps its own undo; nothing is modified until it changes.
     #[test]
     fn s100_the_session_undoes_its_own_steps() {
-        let mut s = Session::new(PageId::new(1), NodeId::new(2), model());
+        let mut s = Session::new(
+            PageId::new(1),
+            NodeId::new(2),
+            model(),
+            Placement::new(0.0, 0.0, 100.0, 100.0),
+        );
         assert!(!s.modified());
         s.set(with_preset(&s.current, ViewPreset::Top));
         s.set(fitted(&s.current));
@@ -1728,6 +2103,73 @@ mod tests {
         broken.scale = [0.0; 3];
         s.set(broken);
         assert_eq!(preset_of(&s.current), Some(ViewPreset::Top));
+    }
+
+    // Spec 100 «Escalar»: the frame handles resize the element's box on the page, keeping
+    // its proportions; Shift frees an edge; the drag is one step of the session's undo.
+    #[test]
+    fn s100_the_frame_scales_the_box_in_proportion() {
+        let origin = Placement::new(100.0, 100.0, 200.0, 100.0);
+        let corner = framed(
+            &origin,
+            Handle { x: 1, y: 1 },
+            Vec2::new(100.0, 0.0),
+            1.0,
+            false,
+        );
+        assert_eq!(
+            (corner.x, corner.y, corner.w, corner.h),
+            (100.0, 100.0, 300.0, 150.0)
+        );
+        // The right edge: the left stays, the box keeps its proportions, centred across.
+        let edge = framed(
+            &origin,
+            Handle { x: 1, y: 0 },
+            Vec2::new(200.0, 0.0),
+            2.0,
+            false,
+        );
+        assert_eq!(
+            (edge.x, edge.w, edge.h, edge.y),
+            (100.0, 300.0, 150.0, 75.0)
+        );
+        // The top edge pulled down shrinks it about its bottom.
+        let top = framed(
+            &origin,
+            Handle { x: 0, y: -1 },
+            Vec2::new(0.0, 50.0),
+            1.0,
+            false,
+        );
+        assert_eq!((top.w, top.h, top.y + top.h), (100.0, 50.0, 200.0));
+        // With Shift an edge moves only its own side.
+        let wide = framed(
+            &origin,
+            Handle { x: 1, y: 0 },
+            Vec2::new(50.0, 0.0),
+            1.0,
+            true,
+        );
+        assert_eq!((wide.w, wide.h), (250.0, 100.0));
+        // Never below the smallest box.
+        let tiny = framed(
+            &origin,
+            Handle { x: 1, y: 0 },
+            Vec2::new(-1000.0, 0.0),
+            1.0,
+            false,
+        );
+        assert!(tiny.w >= crate::canvas::MIN_SIDE && tiny.h >= crate::canvas::MIN_SIDE);
+
+        let mut s = Session::new(PageId::new(1), NodeId::new(2), model(), origin);
+        s.push_undo();
+        s.placement = corner;
+        assert!(s.modified() && s.resized());
+        s.undo();
+        assert_eq!(s.placement, origin);
+        assert!(!s.modified());
+        s.redo();
+        assert_eq!(s.placement, corner);
     }
 
     // Spec 100 AC-07: a quick view is found again from its angles; fitting recentres.
