@@ -3159,13 +3159,12 @@ impl Editor {
                             ui.set_max_width(ui.available_width() - 12.0);
                             // The quick view tiles show the model itself, from bytes the
                             // canvas already read.
-                            let mut thumb = |preset: gafira_model3d::ViewPreset| {
-                                let tile = crate::model3d::with_preset(&model, preset);
+                            let mut thumb = |tile: &gafira_doc::Model3dNode, slot: u8| {
                                 studio.borrow_mut().picture(
                                     &ctx,
                                     &|_| None,
-                                    crate::model3d::Slot::Preset(preset as u8),
-                                    &tile,
+                                    crate::model3d::Slot::Preset(slot),
+                                    tile,
                                     (96, 96),
                                     1,
                                 )
