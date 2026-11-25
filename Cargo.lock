@@ -2111,10 +2111,14 @@ dependencies = [
 name = "gafira-io-model3d"
 version = "0.2.0"
 dependencies = [
+ "gafira-doc",
  "gafira-model3d",
+ "gafira-ports",
+ "gafira-raster",
  "glam",
  "gltf",
  "image",
+ "rayon",
  "serde_json",
  "tobj",
 ]
@@ -2151,6 +2155,7 @@ dependencies = [
  "gafira-doc",
  "gafira-geom",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-ports",
  "gafira-qr",
  "gafira-raster",

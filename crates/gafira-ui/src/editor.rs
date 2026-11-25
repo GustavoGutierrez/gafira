@@ -1047,6 +1047,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         qr: None,
         table: None,
         chart: None,
+        model3d: None,
     })
 }
 
@@ -4030,6 +4031,7 @@ impl Editor {
                     qr: None,
                     table: None,
                     chart: None,
+                    model3d: None,
                 };
                 let cover = canvas::path_cover(&shape, 1.0);
                 let key = path_key(&shape, 1.0);

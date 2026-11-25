@@ -210,6 +210,12 @@ impl Document {
                 {
                     return Err(ValidationError::InvalidQr { node: *id });
                 }
+                // A 3D model's file is an asset of the table (spec 100 §5).
+                if let NodeKind::Model3d(model) = &node.kind
+                    && model.assets().any(|asset| self.asset(&asset).is_none())
+                {
+                    return Err(ValidationError::InvalidModel3d { node: *id });
+                }
                 // A frame's photo is an asset of the table too (spec 066).
                 if let NodeKind::Frame(frame) = &node.kind
                     && let Some(content) = frame.content
@@ -486,6 +492,11 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
         && !chart.is_valid()
     {
         return Err(ValidationError::InvalidChart { node: id });
+    }
+    if let NodeKind::Model3d(model) = &node.kind
+        && !model.is_valid()
+    {
+        return Err(ValidationError::InvalidModel3d { node: id });
     }
     if let NodeKind::Frame(frame) = &node.kind
         && !frame.is_valid()

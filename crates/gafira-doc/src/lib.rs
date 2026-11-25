@@ -27,6 +27,7 @@ mod image_look;
 mod json;
 mod layout;
 mod line;
+mod model3d;
 pub mod msg;
 mod node;
 mod page;
@@ -65,6 +66,7 @@ pub use layout::{
     check_bleed,
 };
 pub use line::{Anchor, Attachment, LineCap, LineDash, LineEnd, LineNode, line_pieces};
+pub use model3d::{Model3dCamera, Model3dFormat, Model3dLighting, Model3dNode, Model3dProjection};
 pub use node::{
     ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, PathCommand, ShapeGeometry,
     ShapeNode, ShapePath, ShapeStroke, ShapeText, VerticalAlign,

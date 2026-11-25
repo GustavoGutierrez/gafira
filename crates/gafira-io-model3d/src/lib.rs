@@ -4,8 +4,14 @@
 
 #![forbid(unsafe_code)]
 
+mod decoder;
 mod glb;
 mod obj;
+
+pub use decoder::{
+    ModelDecoder, camera_of, document_format, format_of, lighting_of, params_of, pose_of,
+    render_parallel,
+};
 
 use std::fmt;
 
