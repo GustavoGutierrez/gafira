@@ -1,0 +1,1198 @@
+---
+// The paid full packs, sold on Gumroad. Buying one supports Gafira's
+// development. Prices are the minimums set on Gumroad ("pay what you want");
+// keep them in sync with the Gumroad listings.
+//
+// Each card shows its pack: the cover, then eight illustrations only the full
+// version has, in a swipeable carousel. Any image opens the viewer, where it
+// can be seen large and zoomed in to look at the detail.
+//
+// Motion: when a card is revealed its pack "opens" (the cover grows from a
+// circle in the centre and comes into focus), then the "+N new" badge lands.
+// While the section is on screen the buy buttons catch a light sweep a few
+// times, and with a mouse a soft light follows the pointer while faint pack
+// illustrations drift in depth behind the cards. Reduced motion keeps the
+// content in place with no movement.
+import { Image, getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import Icon from './Icon.astro';
+import { copy, type Locale } from '../i18n/ui';
+import christmasCover from '../assets/packs/full-christmas-clip-art.webp';
+import ornamentsCover from '../assets/packs/full-christmas-ornaments.webp';
+import occasionsCover from '../assets/packs/full-ornaments-for-every-occasion.webp';
+
+interface Props {
+  locale: Locale;
+}
+
+interface FullPack {
+  id: string;
+  url: string;
+  /** Minimum price in USD on Gumroad. */
+  price: number;
+  count: number;
+  /** Illustrations beyond the 30 of the free version. */
+  added: number;
+  tint: string;
+  cover: ImageMetadata;
+  /** Sample files in `assets/packs/samples/<id>/`, in the order of their labels in `ui.ts`. */
+  samples: string[];
+}
+
+const { locale } = Astro.props;
+const t = copy[locale].support;
+
+const sampleFiles = import.meta.glob<ImageMetadata>('../assets/packs/samples/*/*.webp', {
+  import: 'default',
+  eager: true,
+});
+const sample = (pack: string, file: string): ImageMetadata => {
+  const image = sampleFiles[`../assets/packs/samples/${pack}/${file}.webp`];
+  if (!image) throw new Error(`Missing pack sample: ${pack}/${file}`);
+  return image;
+};
+
+const packs: FullPack[] = [
+  {
+    id: 'christmas',
+    url: 'https://gusdev.gumroad.com/l/christmas-clip-art-full',
+    price: 2,
+    count: 100,
+    added: 70,
+    tint: 'var(--coral)',
+    cover: christmasCover,
+    samples: [
+      'cuadricula_01_mama-noel-galletas',
+      'cuadricula_08_dragon-esfera',
+      'gouache_02_zorro-sueter',
+      'gouache_07_petirrojo-gorro',
+      'gouache_11_caballito-balancin',
+      'gouache-2_10_chimenea',
+      'kawaii-personajes_03_duende-navideno',
+      'kawaii-personajes_10_camioneta-arbol',
+    ],
+  },
+  {
+    id: 'ornaments',
+    url: 'https://gusdev.gumroad.com/l/christmas-ornaments-full',
+    price: 2,
+    count: 76,
+    added: 46,
+    tint: 'var(--mint)',
+    cover: ornamentsCover,
+    samples: [
+      'dorados-rojos_07_esquina-pina-nevada',
+      'dorados-rojos_08_esquina-farol',
+      'festivos_05_corona-campanas',
+      'festivos_11_etiqueta-nevada-pinos',
+      'hoja-dorada_03_bastones-caramelo',
+      'hoja-dorada_06_esferas-lazo',
+      'hoja-dorada_10_corona-cinta-dorada',
+      'lujo_04_esquinas-marco',
+    ],
+  },
+  {
+    id: 'occasions',
+    url: 'https://gusdev.gumroad.com/l/ornaments-for-every-occasion-full',
+    price: 3,
+    count: 147,
+    added: 117,
+    tint: 'var(--coral)',
+    cover: occasionsCover,
+    samples: [
+      'cumpleanos_03_cupcake',
+      'cumple-boda_08_insignia-feliz-cumpleanos',
+      'cumple-boda_19_arco-boda',
+      'emblemas_07_libro-pluma',
+      'emblemas_11_cafe',
+      'esquinas-vibrantes_11_esquina-luna-nube',
+      'festivos-elegantes_05_pareja-corazon',
+      'ocasiones_20_aniversario-50',
+    ],
+  },
+];
+
+interface Slide {
+  image: ImageMetadata;
+  alt: string;
+  cover: boolean;
+  /** The large file for the viewer. */
+  large: string;
+}
+
+const cards = await Promise.all(
+  packs.map(async (pack, index) => {
+    const item = t.items[index]!;
+    const sources = [
+      { image: pack.cover, alt: item.alt, cover: true },
+      ...pack.samples.map((file, i) => ({ image: sample(pack.id, file), alt: item.samples[i]!, cover: false })),
+    ];
+    const slides: Slide[] = await Promise.all(
+      sources.map(async (source) => {
+        const large = await getImage({
+          src: source.image,
+          width: Math.min(source.image.width, 1400),
+          format: 'webp',
+        });
+        return { ...source, large: large.src };
+      }),
+    );
+    const gallery = {
+      title: item.name,
+      url: pack.url,
+      slides: slides.map((slide) => ({ src: slide.large, alt: slide.alt })),
+    };
+    return { pack, item, slides, gallery };
+  }),
+);
+
+// Faint illustrations that drift behind the cards: x/y in % of the band,
+// size in px, depth (how far they follow the pointer) and a tilt.
+const drift = [
+  { image: sample('christmas', 'gouache_02_zorro-sueter'), x: 4, y: 12, size: 120, depth: 26, r: -10 },
+  { image: sample('occasions', 'cumple-boda_19_arco-boda'), x: 88, y: 8, size: 110, depth: 18, r: 8 },
+  { image: sample('ornaments', 'festivos_05_corona-campanas'), x: 92, y: 62, size: 140, depth: 32, r: 6 },
+  { image: sample('christmas', 'gouache_07_petirrojo-gorro'), x: 2, y: 70, size: 100, depth: 14, r: 10 },
+  { image: sample('occasions', 'cumpleanos_03_cupcake'), x: 20, y: 90, size: 84, depth: 22, r: -6 },
+  { image: sample('ornaments', 'hoja-dorada_03_bastones-caramelo'), x: 74, y: 92, size: 90, depth: 12, r: -12 },
+];
+
+const points = ['briefcase', 'image-square', 'lock-simple'];
+const g = t.gallery;
+---
+
+<section class="support" id="support" aria-labelledby="support-title" data-support>
+  <div class="ambient" aria-hidden="true">
+    <span class="spot"></span>
+    {
+      drift.map((d) => (
+        <span
+          class="drift"
+          style={`left:${d.x}%;top:${d.y}%;--size:${d.size}px;--depth:${d.depth};--r:${d.r}deg`}
+        >
+          <Image src={d.image} alt="" widths={[120, 240]} sizes={`${d.size}px`} loading="lazy" />
+        </span>
+      ))
+    }
+  </div>
+
+  <div class="container">
+    <div class="head reveal">
+      <h2 id="support-title">{t.title}</h2>
+      <p class="lead">{t.lead}</p>
+    </div>
+
+    <div class="grid">
+      {
+        cards.map(({ pack, item, slides, gallery }, index) => (
+          <article
+            class="card reveal"
+            style={`--delay:${index * 140}ms;--i:${index};--tint:${pack.tint}`}
+            aria-labelledby={`support-${pack.id}`}
+            data-card
+            data-gallery={JSON.stringify(gallery)}
+          >
+            <div class="media" data-carousel>
+              <div class="track" role="region" tabindex="0" aria-label={`${g.slides}: ${item.name}`} data-track>
+                {slides.map((slide, i) => (
+                  <button
+                    class:list={['slide', { 'slide--item': !slide.cover }]}
+                    type="button"
+                    data-open={i}
+                    aria-label={`${g.open}: ${slide.alt}`}
+                  >
+                    <Image
+                      src={slide.image}
+                      alt=""
+                      widths={slide.cover ? [400, 600, 800] : [300, 450, 600]}
+                      sizes={slide.cover ? '(max-width: 960px) 90vw, 360px' : '(max-width: 960px) 60vw, 260px'}
+                      loading={i === 0 ? 'eager' : 'lazy'}
+                    />
+                  </button>
+                ))}
+              </div>
+              <button class="nav nav--prev" type="button" data-step="-1" aria-label={g.prev} disabled>
+                <Icon name="caret-left" size={18} />
+              </button>
+              <button class="nav nav--next" type="button" data-step="1" aria-label={g.next}>
+                <Icon name="caret-right" size={18} />
+              </button>
+              <button class="expand" type="button" data-expand aria-label={g.open}>
+                <Icon name="arrows-out-simple" size={18} />
+              </button>
+              <span class="added">
+                +{pack.added} {t.added}
+              </span>
+              <span class="dots" aria-hidden="true">
+                {slides.map((_, i) => (
+                  <span class:list={['dot', { 'is-current': i === 0 }]} />
+                ))}
+              </span>
+            </div>
+            <div class="body">
+              <h3 id={`support-${pack.id}`}>{item.name}</h3>
+              <p class="count">
+                <strong>
+                  {pack.count} {t.illustrations}
+                </strong>
+                , {t.includes}
+              </p>
+              <p class="text">{item.text}</p>
+              <div class="buy">
+                <p class="price">
+                  <span class="price__amount">{pack.price}</span>
+                  <span class="price__unit">
+                    USD {t.minimum}
+                    <span class="price__pwyw">{t.pwyw}</span>
+                  </span>
+                </p>
+                <a class="button button--primary get" href={pack.url} target="_blank" rel="noopener">
+                  <Icon name="shopping-bag-open" size={20} />
+                  {t.buy}
+                  <Icon name="arrow-up-right" size={16} class="out" />
+                  <span class="sr-only">{t.newTab}</span>
+                </a>
+              </div>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+
+    <ul class="points reveal">
+      {
+        t.points.map((point, index) => (
+          <li>
+            <Icon name={points[index]!} size={20} />
+            {point}
+          </li>
+        ))
+      }
+    </ul>
+    <p class="note reveal">
+      <Icon name="heart" size={18} />
+      {t.note}
+    </p>
+  </div>
+
+  <dialog class="viewer" aria-labelledby="viewer-title" data-viewer data-of={g.of}>
+    <div class="viewer__bar">
+      <p class="viewer__title" id="viewer-title" data-title></p>
+      <p class="viewer__count" aria-live="polite" data-count></p>
+      <button class="viewer__close" type="button" aria-label={g.close} data-close>
+        <Icon name="x" size={22} />
+      </button>
+    </div>
+    <div class="viewer__stage" data-stage>
+      <img class="viewer__img" alt="" data-img />
+      <button class="viewer__nav viewer__nav--prev" type="button" aria-label={g.prev} data-vstep="-1">
+        <Icon name="caret-left" size={22} />
+      </button>
+      <button class="viewer__nav viewer__nav--next" type="button" aria-label={g.next} data-vstep="1">
+        <Icon name="caret-right" size={22} />
+      </button>
+    </div>
+    <div class="viewer__foot">
+      <p class="viewer__caption" data-caption></p>
+      <p class="viewer__hint" data-hint data-in={g.zoomIn} data-out={g.zoomOut}>
+        <Icon name="magnifying-glass-plus" size={16} />
+        <span data-hint-text>{g.zoomIn}</span>
+      </p>
+      <a class="button button--primary button--small" target="_blank" rel="noopener" data-buy>
+        <Icon name="shopping-bag-open" size={18} />
+        {t.buy}
+        <span class="sr-only">{t.newTab}</span>
+      </a>
+    </div>
+  </dialog>
+</section>
+
+<script>
+  interface Gallery {
+    title: string;
+    url: string;
+    slides: { src: string; alt: string }[];
+  }
+
+  const section = document.querySelector<HTMLElement>('[data-support]');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const scrollMode = (): ScrollBehavior => (reduced.matches ? 'auto' : 'smooth');
+
+  if (section) {
+    // ---------- While on screen: button sweep and pointer light ----------
+    let live = false;
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(
+        ([entry]) => {
+          live = entry!.isIntersecting;
+          section.classList.toggle('is-live', live);
+        },
+        { threshold: 0.2 },
+      ).observe(section);
+    }
+
+    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+    let frame = 0;
+    section.addEventListener('pointermove', (event) => {
+      if (!live || reduced.matches || !finePointer.matches || frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const box = section.getBoundingClientRect();
+        const x = event.clientX - box.left;
+        const y = event.clientY - box.top;
+        section.style.setProperty('--mx', `${x}px`);
+        section.style.setProperty('--my', `${y}px`);
+        section.style.setProperty('--px', ((x / box.width) * 2 - 1).toFixed(3));
+        section.style.setProperty('--py', ((y / box.height) * 2 - 1).toFixed(3));
+        section.classList.add('is-pointing');
+      });
+    });
+    section.addEventListener('pointerleave', () => section.classList.remove('is-pointing'));
+
+    // ---------- Card carousels ----------
+    const cards = [...section.querySelectorAll<HTMLElement>('[data-card]')];
+    const tracks = new Map<HTMLElement, HTMLElement>();
+
+    for (const card of cards) {
+      const track = card.querySelector<HTMLElement>('[data-track]')!;
+      const slides = track.children.length;
+      const prev = card.querySelector<HTMLButtonElement>('[data-step="-1"]')!;
+      const next = card.querySelector<HTMLButtonElement>('[data-step="1"]')!;
+      const dots = [...card.querySelectorAll<HTMLElement>('.dot')];
+      tracks.set(card, track);
+
+      const current = () => Math.round(track.scrollLeft / track.clientWidth);
+      const sync = () => {
+        const i = current();
+        prev.disabled = i <= 0;
+        next.disabled = i >= slides - 1;
+        dots.forEach((dot, d) => dot.classList.toggle('is-current', d === i));
+      };
+      let pending = 0;
+      track.addEventListener('scroll', () => {
+        if (pending) return;
+        pending = requestAnimationFrame(() => {
+          pending = 0;
+          sync();
+        });
+      });
+      const go = (step: number) =>
+        track.scrollTo({ left: (current() + step) * track.clientWidth, behavior: scrollMode() });
+      prev.addEventListener('click', () => go(-1));
+      next.addEventListener('click', () => go(1));
+      track.addEventListener('keydown', (event) => {
+        if (event.target !== track) return;
+        if (event.key === 'ArrowLeft') go(-1);
+        if (event.key === 'ArrowRight') go(1);
+      });
+
+      const gallery = JSON.parse(card.dataset.gallery!) as Gallery;
+      track.addEventListener('click', (event) => {
+        const slide = (event.target as HTMLElement).closest<HTMLElement>('[data-open]');
+        if (slide) openViewer(card, gallery, Number(slide.dataset.open));
+      });
+      card.querySelector('[data-expand]')!.addEventListener('click', () => openViewer(card, gallery, current()));
+    }
+
+    // ---------- Viewer ----------
+    const viewer = section.querySelector<HTMLDialogElement>('[data-viewer]')!;
+    const stage = viewer.querySelector<HTMLElement>('[data-stage]')!;
+    const img = viewer.querySelector<HTMLImageElement>('[data-img]')!;
+    const title = viewer.querySelector<HTMLElement>('[data-title]')!;
+    const count = viewer.querySelector<HTMLElement>('[data-count]')!;
+    const caption = viewer.querySelector<HTMLElement>('[data-caption]')!;
+    const buy = viewer.querySelector<HTMLAnchorElement>('[data-buy]')!;
+    const hint = viewer.querySelector<HTMLElement>('[data-hint]')!;
+    const hintText = viewer.querySelector<HTMLElement>('[data-hint-text]')!;
+    const of = viewer.dataset.of ?? '/';
+
+    let open: { card: HTMLElement; gallery: Gallery; index: number } | null = null;
+
+    const setZoom = (on: boolean) => {
+      stage.classList.toggle('is-zoomed', on);
+      hintText.textContent = on ? hint.dataset.out! : hint.dataset.in!;
+    };
+
+    const show = (index: number) => {
+      if (!open) return;
+      const total = open.gallery.slides.length;
+      open.index = (index + total) % total;
+      const slide = open.gallery.slides[open.index]!;
+      setZoom(false);
+      img.classList.add('is-changing');
+      const swap = () => {
+        img.src = slide.src;
+        img.alt = slide.alt;
+        img.decode().catch(() => {}).finally(() => img.classList.remove('is-changing'));
+      };
+      if (reduced.matches) swap();
+      else window.setTimeout(swap, 120);
+      caption.textContent = slide.alt;
+      count.textContent = `${open.index + 1} ${of} ${total}`;
+    };
+
+    function openViewer(card: HTMLElement, gallery: Gallery, index: number) {
+      open = { card, gallery, index };
+      title.textContent = gallery.title;
+      buy.href = gallery.url;
+      img.src = gallery.slides[index]!.src;
+      viewer.showModal();
+      document.documentElement.classList.add('viewer-open');
+      show(index);
+    }
+
+    viewer.addEventListener('close', () => {
+      document.documentElement.classList.remove('viewer-open');
+      if (!open) return;
+      // The card's carousel follows to the last image seen.
+      const track = tracks.get(open.card)!;
+      track.scrollTo({ left: open.index * track.clientWidth, behavior: 'auto' });
+      open = null;
+    });
+    viewer.querySelector('[data-close]')!.addEventListener('click', () => viewer.close());
+    viewer.addEventListener('click', (event) => {
+      if (event.target === viewer) viewer.close();
+    });
+    viewer.querySelectorAll<HTMLElement>('[data-vstep]').forEach((button) =>
+      button.addEventListener('click', () => open && show(open.index + Number(button.dataset.vstep))),
+    );
+    viewer.addEventListener('keydown', (event) => {
+      if (!open) return;
+      if (event.key === 'ArrowLeft') show(open.index - 1);
+      if (event.key === 'ArrowRight') show(open.index + 1);
+    });
+
+    // Zoom: a click (or tap) zooms in where it lands; moving the pointer pans.
+    const aim = (event: PointerEvent) => {
+      const box = img.getBoundingClientRect();
+      const x = Math.min(100, Math.max(0, ((event.clientX - box.left) / box.width) * 100));
+      const y = Math.min(100, Math.max(0, ((event.clientY - box.top) / box.height) * 100));
+      img.style.transformOrigin = `${x}% ${y}%`;
+    };
+    let down: { x: number; y: number } | null = null;
+    stage.addEventListener('pointerdown', (event) => {
+      if (event.target === img) down = { x: event.clientX, y: event.clientY };
+    });
+    stage.addEventListener('pointermove', (event) => {
+      if (stage.classList.contains('is-zoomed')) aim(event);
+    });
+    stage.addEventListener('pointerup', (event) => {
+      if (!down || !open) return;
+      const dx = event.clientX - down.x;
+      down = null;
+      const zoomed = stage.classList.contains('is-zoomed');
+      // A horizontal swipe changes the image; a tap toggles the zoom.
+      if (!zoomed && Math.abs(dx) > 48) {
+        show(open.index + (dx < 0 ? 1 : -1));
+        return;
+      }
+      if (Math.abs(dx) < 8) {
+        aim(event);
+        setZoom(!zoomed);
+      }
+    });
+  }
+</script>
+
+<style>
+  /* A full-width deep band: it separates the paid packs from the free ones
+     above without boxing the cards inside another card. */
+  .support {
+    --mx: 50%;
+    --my: 40%;
+    --px: 0;
+    --py: 0;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    padding-block: clamp(72px, 10vw, 120px);
+    background: var(--deep);
+    color: #fff;
+    border-block: 1px solid rgb(255 255 255 / 0.1);
+  }
+
+  /* ---------- Ambient: pointer light and drifting illustrations ---------- */
+
+  .ambient {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .spot {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background:
+      radial-gradient(520px circle at var(--mx) var(--my), rgb(255 107 87 / 0.16), transparent 70%),
+      radial-gradient(900px circle at var(--mx) var(--my), rgb(63 191 169 / 0.08), transparent 70%);
+    transition: opacity 400ms var(--ease);
+  }
+
+  .support.is-pointing .spot {
+    opacity: 1;
+  }
+
+  .drift {
+    position: absolute;
+    width: var(--size);
+    opacity: 0.16;
+    filter: blur(calc((32px - var(--depth) * 1px) / 10)) saturate(0.85);
+    transform: translate(-50%, -50%) rotate(var(--r));
+  }
+
+  .drift :global(img) {
+    width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 760px) {
+    .drift {
+      display: none;
+    }
+  }
+
+  /* ---------- Content ---------- */
+
+  .head {
+    max-width: 720px;
+    margin: 0 auto clamp(40px, 6vw, 64px);
+    text-align: center;
+  }
+
+  .head h2 {
+    text-wrap: balance;
+    font-size: clamp(30px, 4vw, 44px);
+    line-height: 1.15;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .lead {
+    margin-top: 16px;
+    font-size: 18px;
+    line-height: 29px;
+    text-wrap: pretty;
+    color: rgb(255 255 255 / 0.8);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 18px 40px rgb(0 0 0 / 0.28);
+    transition: box-shadow 220ms var(--ease);
+  }
+
+  /* Hover and focus: the card stays put; a ring in the pack's colour marks it. */
+  .card:hover,
+  .card:focus-within {
+    box-shadow:
+      0 18px 40px rgb(0 0 0 / 0.28),
+      0 0 0 3px color-mix(in srgb, var(--tint) 80%, transparent);
+  }
+
+  /* ---------- Carousel ---------- */
+
+  .media {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    background: #fafaf7;
+  }
+
+  .track {
+    display: flex;
+    height: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .track:focus-visible {
+    outline: 3px solid var(--tint);
+    outline-offset: -3px;
+  }
+
+  .slide {
+    flex: 0 0 100%;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: #fafaf7;
+    cursor: zoom-in;
+    scroll-snap-align: start;
+  }
+
+  .slide :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .slide--item :global(img) {
+    padding: 11% 14% 15%;
+    object-fit: contain;
+    filter: drop-shadow(0 10px 14px rgb(24 36 59 / 0.16));
+  }
+
+  .nav,
+  .expand {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    box-shadow: 0 4px 10px rgb(24 36 59 / 0.25);
+    cursor: pointer;
+    transition:
+      opacity 180ms var(--ease),
+      background 150ms var(--ease);
+  }
+
+  .nav:hover,
+  .expand:hover {
+    background: #2a3956;
+  }
+
+  .nav {
+    top: calc(50% - 18px);
+  }
+
+  .nav--prev {
+    left: 10px;
+  }
+
+  .nav--next {
+    right: 10px;
+  }
+
+  .nav:disabled {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .expand {
+    top: 14px;
+    left: 14px;
+  }
+
+  /* With a mouse, the controls appear when the card is pointed at or focused;
+     on touch they stay visible. */
+  @media (hover: hover) {
+    .card:not(:hover, :focus-within) .nav,
+    .card:not(:hover, :focus-within) .expand {
+      opacity: 0;
+    }
+  }
+
+  .dots {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    display: flex;
+    gap: 5px;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: rgb(250 250 247 / 0.85);
+    transform: translateX(-50%);
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgb(24 36 59 / 0.28);
+    transition:
+      width 220ms var(--ease),
+      background 220ms var(--ease);
+  }
+
+  .dot.is-current {
+    width: 16px;
+    background: var(--ink);
+  }
+
+  .added {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 14px;
+    line-height: 22px;
+    font-weight: 700;
+    box-shadow: 0 4px 10px rgb(24 36 59 / 0.25);
+    pointer-events: none;
+  }
+
+  /* ---------- Card body ---------- */
+
+  .body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+    padding: 22px 24px 24px;
+  }
+
+  h3 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+  }
+
+  .count {
+    font-size: 15px;
+    line-height: 24px;
+    color: var(--text-secondary);
+  }
+
+  .count strong {
+    color: var(--text);
+  }
+
+  .text {
+    color: var(--text-secondary);
+    text-wrap: pretty;
+  }
+
+  .buy {
+    display: grid;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 16px;
+  }
+
+  .price {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .price__amount {
+    font-family: var(--font-head);
+    font-size: 44px;
+    line-height: 44px;
+    font-weight: 800;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .price__unit {
+    display: grid;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .price__pwyw {
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .get {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .get :global(.out) {
+    transition: transform 180ms var(--ease);
+  }
+
+  .get:hover :global(.out),
+  .get:focus-visible :global(.out) {
+    transform: translate(2px, -2px);
+  }
+
+  /* The light sweep: a soft band of light crosses the button. */
+  .get::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.5) 50%, transparent 65%);
+    transform: translateX(-120%);
+    pointer-events: none;
+  }
+
+  .points {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px 32px;
+    margin: clamp(36px, 5vw, 48px) 0 0;
+    padding: 0;
+    list-style: none;
+    font-weight: 600;
+  }
+
+  .points li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .points :global(svg) {
+    flex: none;
+    color: var(--mint);
+  }
+
+  .note {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 15px;
+    line-height: 24px;
+    text-align: center;
+    color: rgb(255 255 255 / 0.75);
+  }
+
+  .note :global(svg) {
+    flex: none;
+    color: var(--coral);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ---------- Viewer ---------- */
+
+  .viewer {
+    width: min(1040px, 100vw - 32px);
+    max-width: none;
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 30px 80px rgb(0 0 0 / 0.45);
+  }
+
+  .viewer[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .viewer::backdrop {
+    background: rgb(10 17 32 / 0.82);
+  }
+
+  :global(html.viewer-open) {
+    overflow: hidden;
+  }
+
+  .viewer__bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 12px 12px 24px;
+  }
+
+  .viewer__title {
+    font-family: var(--font-head);
+    font-size: 18px;
+    line-height: 26px;
+    font-weight: 700;
+  }
+
+  .viewer__count {
+    margin-right: auto;
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .viewer__close {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .viewer__close:hover {
+    background: var(--muted);
+  }
+
+  .viewer__stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: min(68dvh, 680px);
+    overflow: hidden;
+    background: #fafaf7;
+    touch-action: pan-y;
+  }
+
+  .viewer__stage.is-zoomed {
+    touch-action: none;
+  }
+
+  .viewer__img {
+    position: absolute;
+    inset: 5% 8%;
+    width: 84%;
+    height: 90%;
+    object-fit: contain;
+    cursor: zoom-in;
+    user-select: none;
+    -webkit-user-drag: none;
+    transition:
+      transform 280ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 140ms var(--ease);
+  }
+
+  .viewer__img.is-changing {
+    opacity: 0;
+  }
+
+  .is-zoomed .viewer__img {
+    transform: scale(2.5);
+    cursor: zoom-out;
+  }
+
+  .viewer__nav {
+    position: absolute;
+    z-index: 1;
+    top: calc(50% - 24px);
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    box-shadow: 0 6px 16px rgb(24 36 59 / 0.3);
+    cursor: pointer;
+  }
+
+  .viewer__nav:hover {
+    background: #2a3956;
+  }
+
+  .viewer__nav--prev {
+    left: 16px;
+  }
+
+  .viewer__nav--next {
+    right: 16px;
+  }
+
+  .is-zoomed .viewer__nav {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .viewer__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 20px;
+    padding: 14px 16px 14px 24px;
+  }
+
+  .viewer__caption {
+    flex: 1;
+    min-width: 12ch;
+    font-weight: 600;
+  }
+
+  .viewer__hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  /* ---------- Motion ---------- */
+
+  @media (prefers-reduced-motion: no-preference) {
+    .drift {
+      transform: translate(-50%, -50%)
+        translate(calc(var(--px) * var(--depth) * -1px), calc(var(--py) * var(--depth) * -1px)) rotate(var(--r));
+      transition: transform 900ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* The pack opens: the cover grows from a circle and comes into focus.
+       Only with JS (the reveal adds .is-visible); without it, all is shown. */
+    :global(.js) .card .slide:first-child :global(img) {
+      clip-path: circle(14% at 50% 50%);
+      filter: blur(10px);
+      transform: scale(1.08);
+      transition:
+        clip-path 900ms cubic-bezier(0.16, 1, 0.3, 1),
+        filter 900ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 1200ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition-delay: var(--delay);
+    }
+
+    :global(.js) .card.is-visible .slide:first-child :global(img) {
+      clip-path: circle(75% at 50% 50%);
+      filter: blur(0);
+      transform: none;
+    }
+
+    /* Then the "+N new" badge lands. */
+    :global(.js) .card .added {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.85);
+      transition:
+        opacity 300ms var(--ease),
+        transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition-delay: calc(var(--delay) + 650ms);
+    }
+
+    :global(.js) .card.is-visible .added {
+      opacity: 1;
+      transform: none;
+    }
+
+    /* While the section is on screen, each button catches the light in turn,
+       a few times. */
+    .support.is-live .get::after {
+      animation: sweep 7s cubic-bezier(0.45, 0, 0.2, 1) 4;
+      animation-delay: calc(1.6s + var(--i) * 0.45s);
+    }
+
+    .support.is-live .card:hover .get::after {
+      animation: none;
+    }
+
+    .viewer[open] {
+      animation: viewer-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .viewer[open]::backdrop {
+      animation: fade-in 200ms var(--ease);
+    }
+  }
+
+  @keyframes sweep {
+    0% {
+      transform: translateX(-120%);
+    }
+    14%,
+    100% {
+      transform: translateX(120%);
+    }
+  }
+
+  @keyframes viewer-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 960px) {
+    .grid {
+      grid-template-columns: 1fr;
+      max-width: 520px;
+      margin-inline: auto;
+    }
+
+    /* On a phone the reassurance reads as a short left-aligned list. */
+    .points {
+      flex-direction: column;
+      align-items: flex-start;
+      width: fit-content;
+      margin-inline: auto;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .viewer {
+      width: 100vw;
+      max-height: 100dvh;
+      border-radius: 0;
+    }
+
+    .viewer {
+      height: 100dvh;
+    }
+
+    .viewer__stage {
+      height: auto;
+    }
+
+    .viewer__nav {
+      top: auto;
+      bottom: 12px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .body {
+      padding: 20px;
+    }
+
+    .get {
+      padding-inline: 14px;
+      white-space: nowrap;
+    }
+
+    .note {
+      align-items: flex-start;
+      text-align: left;
+    }
+
+    .note :global(svg) {
+      margin-top: 3px;
+    }
+
+    .viewer__foot .button {
+      width: 100%;
+    }
+  }
+</style>

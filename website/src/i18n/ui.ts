@@ -74,6 +74,30 @@ export interface Copy {
     install: { title: string; steps: { title: string; text: string }[] };
     license: string;
   };
+  support: {
+    title: string;
+    lead: string;
+    added: string;
+    illustrations: string;
+    includes: string;
+    minimum: string;
+    pwyw: string;
+    buy: string;
+    newTab: string;
+    gallery: {
+      open: string;
+      prev: string;
+      next: string;
+      close: string;
+      of: string;
+      zoomIn: string;
+      zoomOut: string;
+      slides: string;
+    };
+    items: { name: string; text: string; alt: string; samples: string[] }[];
+    points: string[];
+    note: string;
+  };
   cta: { title: string; text: string; button: string };
   footer: { tagline: string; product: string; releases: string; rights: string; language: string };
   notFound: { title: string; text: string; home: string };
@@ -317,6 +341,49 @@ const es: Copy = {
     },
     license:
       'Puedes usarlas en diseños hechos con Gafira, también comerciales. No se pueden revender ni redistribuir como ilustraciones sueltas.',
+  },
+  support: {
+    title: 'Llévate la colección completa y apoya a Gafira',
+    lead: 'Gafira es gratis. Si te resulta útil, compra un paquete oficial de ilustraciones: tú te llevas todas sus ilustraciones y nosotros podemos seguir desarrollándolo.',
+    added: 'nuevas',
+    illustrations: 'ilustraciones',
+    includes: 'incluidas las 30 gratis',
+    minimum: 'mínimo',
+    pwyw: 'Paga lo que quieras',
+    buy: 'Comprar en Gumroad',
+    newTab: '(se abre en una pestaña nueva)',
+    gallery: {
+      open: 'Ver en grande',
+      prev: 'Anterior',
+      next: 'Siguiente',
+      close: 'Cerrar',
+      of: 'de',
+      zoomIn: 'Haz clic para acercar',
+      zoomOut: 'Haz clic para alejar',
+      slides: 'Ilustraciones del paquete',
+    },
+    items: [
+      {
+        name: 'Clip art navideño',
+        text: 'Animales tiernos, personajes, dulces y decoraciones de Navidad en varios estilos.',
+        alt: 'Papá Noel con un árbol, un panda rojo, un reno con luces, un muñeco de nieve y una bola de nieve',
+        samples: ['Mamá Noel con galletas', 'Un dragoncito con una esfera', 'Un zorro con suéter', 'Un petirrojo con gorro', 'Un caballito de balancín', 'Una chimenea con botas', 'Un duende navideño', 'Una camioneta con un árbol'],
+      },
+      {
+        name: 'Ornamentos navideños',
+        text: 'Esquineros, marcos, divisores, coronas, campanas y lazos en seis estilos dorados y festivos.',
+        alt: 'Una corona con piñas y lazo, un esquinero con flor de Pascua, campanas, un marco y un farol',
+        samples: ['Esquinero con piña nevada', 'Esquinero con farol', 'Corona con campanas', 'Etiqueta nevada con pinos', 'Bastones de caramelo con lazo', 'Esferas con lazo', 'Corona con cinta dorada', 'Marco de esquinas doradas'],
+      },
+      {
+        name: 'Ornamentos para toda ocasión',
+        text: 'Cumpleaños, bodas, grados, 32 esquineros, 16 emblemas temáticos, florales y más.',
+        alt: 'Un pastel de cumpleaños, un osito con globos, un pastel de boda, un birrete y anillos de boda',
+        samples: ['Un cupcake', 'Insignia «Feliz Cumpleaños»', 'Un arco de boda', 'Un libro con pluma', 'Una taza de café', 'Esquinero con luna y nube', 'Una pareja en un corazón', 'Un 50 dorado de aniversario'],
+      },
+    ],
+    points: ['Uso personal y comercial', 'Fondo transparente, listas para Gafira', 'Pago a través de Gumroad'],
+    note: 'Cada compra financia nuevas funciones, correcciones y más paquetes para todos.',
   },
   cta: {
     title: 'Empieza a crear',
@@ -575,6 +642,49 @@ const en: Copy = {
     },
     license:
       'You can use them in designs made with Gafira, including commercial ones. They may not be resold or redistributed as standalone illustrations.',
+  },
+  support: {
+    title: 'Get the full collection and support Gafira',
+    lead: 'Gafira is free. If you find it useful, buy an official illustration pack: you get every illustration in it, and we can keep building Gafira.',
+    added: 'new',
+    illustrations: 'illustrations',
+    includes: 'including the 30 free ones',
+    minimum: 'minimum',
+    pwyw: 'Pay what you want',
+    buy: 'Buy on Gumroad',
+    newTab: '(opens in a new tab)',
+    gallery: {
+      open: 'View larger',
+      prev: 'Previous',
+      next: 'Next',
+      close: 'Close',
+      of: 'of',
+      zoomIn: 'Click to zoom in',
+      zoomOut: 'Click to zoom out',
+      slides: 'Illustrations in the pack',
+    },
+    items: [
+      {
+        name: 'Christmas clip art',
+        text: 'Cute animals, characters, sweets and Christmas decorations in several styles.',
+        alt: 'Santa Claus with a tree, a red panda, a reindeer with lights, a snowman and a snow globe',
+        samples: ['Mrs. Claus with cookies', 'A little dragon with an ornament', 'A fox in a sweater', 'A robin in a hat', 'A rocking horse', 'A fireplace with stockings', 'A Christmas elf', 'A truck with a tree'],
+      },
+      {
+        name: 'Christmas ornaments',
+        text: 'Corners, frames, dividers, wreaths, bells and bows in six golden, festive styles.',
+        alt: 'A wreath with pine cones and a bow, a poinsettia corner, bells, a frame and a lantern',
+        samples: ['Corner with a snowy pine cone', 'Corner with a lantern', 'Wreath with bells', 'Snowy label with pines', 'Candy canes with a bow', 'Ornaments with a bow', 'Wreath with a golden ribbon', 'Frame with golden corners'],
+      },
+      {
+        name: 'Ornaments for every occasion',
+        text: 'Birthdays, weddings, graduations, 32 corners, 16 theme emblems, florals and more.',
+        alt: 'A birthday cake, a teddy bear with balloons, a wedding cake, a graduation cap and wedding rings',
+        samples: ['A cupcake', '«Feliz Cumpleaños» badge', 'A wedding arch', 'A book with a quill', 'A cup of coffee', 'Corner with a moon and a cloud', 'A couple in a heart', 'A golden 50 for an anniversary'],
+      },
+    ],
+    points: ['Personal and commercial use', 'Transparent backgrounds, ready for Gafira', 'Checkout through Gumroad'],
+    note: 'Every purchase funds new features, fixes and more packs for everyone.',
   },
   cta: {
     title: 'Start creating',
