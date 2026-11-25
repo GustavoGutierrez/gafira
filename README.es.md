@@ -23,7 +23,7 @@
 
 Gafira es un programa de diseño gráfico local para todas las personas y creadores de contenido, escrito en Rust (egui). Elige una plantilla, personalízala y compártela. Funciona en Windows, macOS y Linux, en español e inglés. Es software libre y de código abierto bajo la GPL, versión 3 o posterior.
 
-Versión actual: `0.3.0` (ver `CHANGELOG.md`).
+Versión actual: `0.4.0` (ver `CHANGELOG.md`).
 
 Web: <https://gafira.com> (español) · <https://gafira.com/en/> (inglés). Su código está en `website/`.
 
