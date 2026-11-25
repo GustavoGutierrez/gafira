@@ -142,6 +142,7 @@ jobs:
           gafira-anim   gafira-time gafira-geom gafira-color
           gafira-text    gafira-geom gafira-color gafira-doc gafira-pathops gafira-time
           gafira-raster  gafira-geom gafira-color gafira-doc gafira-time
+          gafira-model3d -
           gafira-audio   gafira-geom gafira-color gafira-doc gafira-time
           gafira-segment gafira-geom gafira-color gafira-doc gafira-raster gafira-time
           gafira-qr      gafira-geom gafira-color gafira-doc gafira-time
