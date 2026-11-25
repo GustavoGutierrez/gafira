@@ -22,6 +22,10 @@ const targets = {
   linux: `${home}#download-linux`,
 };
 const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+const slides = [
+  { id: 'editor', label: t.hero.slides.editor, image: screens[locale].editor, alt: t.hero.screenAlt },
+  { id: 'packs', label: t.hero.slides.packs, image: screens[locale].packs, alt: t.hero.slides.packsAlt },
+];
 ---
 
 <section class="hero" aria-labelledby="hero-title">
@@ -53,7 +57,7 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
     </p>
   </div>
 
-  <div class="container hero__stage">
+  <div class="container hero__stage" data-showing="editor">
     <div class="hero__panel hero__panel--coral" aria-hidden="true"></div>
     <div class="hero__panel hero__panel--mint" aria-hidden="true"></div>
     <div class="chip chip--background" aria-hidden="true">
@@ -68,20 +72,63 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
       <span class="chip__icon chip__icon--coral"><Icon name="check" size={18} /></span>
       {t.hero.chips.exported}
     </div>
-    <figure class="window">
-      <div class="window__bar" aria-hidden="true">
-        <span></span><span></span><span></span>
+    <div class="window" role="region" aria-roledescription="carousel" aria-label={t.hero.slides.label} data-carousel>
+      <div class="window__bar">
+        <span class="window__dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <div class="switcher">
+          {
+            slides.map((slide, index) => (
+              <button
+                class:list={['switcher__tab', { 'is-active': index === 0 }]}
+                type="button"
+                aria-controls={`hero-slide-${slide.id}`}
+                aria-current={index === 0 ? 'true' : 'false'}
+                data-slide-tab={index}
+              >
+                {slide.label}
+              </button>
+            ))
+          }
+          <button
+            class="switcher__toggle"
+            type="button"
+            aria-label={t.hero.slides.pause}
+            title={t.hero.slides.pause}
+            data-slide-toggle
+            data-pause={t.hero.slides.pause}
+            data-play={t.hero.slides.play}
+          >
+            <Icon name="pause" size={16} class="switcher__pause" />
+            <Icon name="play" size={16} class="switcher__play" />
+          </button>
+        </div>
       </div>
-      <Picture
-        src={screens[locale].editor}
-        formats={['avif', 'webp']}
-        widths={[720, 1080, 1440]}
-        sizes="(max-width: 1240px) calc(100vw - 48px), 1100px"
-        alt={t.hero.screenAlt}
-        loading="eager"
-        fetchpriority="high"
-      />
-    </figure>
+      <div class="slides">
+        {
+          slides.map((slide, index) => (
+            <div
+              class:list={['slide', { 'is-active': index === 0 }]}
+              id={`hero-slide-${slide.id}`}
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`${index + 1} / ${slides.length}: ${slide.label}`}
+              aria-hidden={index === 0 ? undefined : 'true'}
+              data-slide={slide.id}
+            >
+              <Picture
+                src={slide.image}
+                formats={['avif', 'webp']}
+                widths={[720, 1080, 1440]}
+                sizes="(max-width: 1240px) calc(100vw - 48px), 1100px"
+                alt={slide.alt}
+                loading={index === 0 ? 'eager' : 'lazy'}
+                fetchpriority={index === 0 ? 'high' : undefined}
+              />
+            </div>
+          ))
+        }
+      </div>
+    </div>
   </div>
 </section>
 
@@ -109,6 +156,73 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
       if (label) label.textContent = `${link.dataset.label} ${names[system]}`;
     }
     document.querySelector(`[data-system="${system}"]`)?.classList.add('is-recommended');
+  }
+
+  // The window's screenshots take turns every few seconds; pointing at or
+  // focusing the window holds the current one, the toggle stops them, and
+  // reduced motion leaves the first one until a tab is chosen.
+  const carousel = document.querySelector<HTMLElement>('[data-carousel]');
+  const slides = [...document.querySelectorAll<HTMLElement>('[data-slide]')];
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-slide-tab]')];
+  const toggle = document.querySelector<HTMLButtonElement>('[data-slide-toggle]');
+  const switcher = toggle?.closest<HTMLElement>('.switcher');
+  const stage = carousel?.closest<HTMLElement>('.hero__stage');
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const turn = 6000;
+  let current = 0;
+  let timer = 0;
+  let stopped = still;
+  let held = false;
+
+  const schedule = () => {
+    window.clearTimeout(timer);
+    if (stopped || held) return;
+    timer = window.setTimeout(() => show((current + 1) % slides.length), turn);
+  };
+
+  const show = (index: number) => {
+    current = index;
+    // The chips describe the editor screenshot; they step aside for the others.
+    if (stage) stage.dataset.showing = slides[index]?.dataset.slide ?? '';
+    slides.forEach((slide, i) => {
+      slide.classList.toggle('is-active', i === index);
+      if (i === index) slide.removeAttribute('aria-hidden');
+      else slide.setAttribute('aria-hidden', 'true');
+    });
+    tabs.forEach((tab, i) => {
+      tab.classList.remove('is-active');
+      tab.setAttribute('aria-current', String(i === index));
+    });
+    // Restart the progress fill of the chosen tab.
+    void tabs[index]?.offsetWidth;
+    tabs[index]?.classList.add('is-active');
+    schedule();
+  };
+
+  const setStopped = (value: boolean) => {
+    stopped = value;
+    switcher?.classList.toggle('is-stopped', value);
+    if (toggle) {
+      const label = value ? toggle.dataset.play : toggle.dataset.pause;
+      toggle.setAttribute('aria-label', label ?? '');
+      toggle.title = label ?? '';
+    }
+    if (value) window.clearTimeout(timer);
+    else show(current);
+  };
+
+  if (carousel && slides.length > 1) {
+    tabs.forEach((tab, i) => tab.addEventListener('click', () => show(i)));
+    toggle?.addEventListener('click', () => setStopped(!stopped));
+    const hold = (value: boolean) => {
+      held = value;
+      switcher?.classList.toggle('is-held', value);
+      if (value) window.clearTimeout(timer);
+      else if (!stopped) show(current);
+    };
+    carousel.addEventListener('pointerenter', () => hold(true));
+    carousel.addEventListener('pointerleave', () => hold(false));
+    setStopped(stopped);
   }
 </script>
 
@@ -254,6 +368,7 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
     .hero__panel,
     .chip,
     .window,
+    .slide,
     .hero__title,
     .hero__lead,
     .hero__actions,
@@ -280,6 +395,20 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
     animation:
       chip-in 700ms var(--ease) both,
       float 6s ease-in-out infinite alternate;
+  }
+
+  /* filter and scale, not opacity and transform: those belong to the chips'
+     own entrance and float animations. */
+  .chip {
+    transition:
+      filter 400ms var(--ease),
+      scale 400ms var(--ease);
+  }
+
+  .hero__stage:not([data-showing='editor']) .chip {
+    filter: opacity(0);
+    scale: 0.92;
+    pointer-events: none;
   }
 
   .chip--background {
@@ -365,20 +494,152 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
 
   .window__bar {
     display: flex;
-    gap: 8px;
-    padding: 12px 16px;
+    align-items: center;
+    gap: 20px;
+    padding: 6px 8px 6px 16px;
     background: var(--ink);
   }
 
-  .window__bar span {
+  .window__dots {
+    display: flex;
+    gap: 8px;
+  }
+
+  .window__dots span {
     width: 11px;
     height: 11px;
     border-radius: 50%;
     background: rgb(231 234 242 / 0.28);
   }
 
-  .window :global(img) {
+  /* The screenshots share the frame of the widest one; the editor's
+     bottom bar falls outside it. */
+  .slides {
+    position: relative;
+    aspect-ratio: 1440 / 789;
+    background: var(--surface);
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(1.02);
+    transition:
+      opacity 700ms var(--ease),
+      transform 900ms var(--ease),
+      visibility 0s linear 700ms;
+  }
+
+  .slide.is-active {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 700ms var(--ease),
+      transform 900ms var(--ease),
+      visibility 0s;
+  }
+
+  .slide :global(picture),
+  .slide :global(img) {
     width: 100%;
+    height: 100%;
+  }
+
+  .slide :global(img) {
+    object-fit: cover;
+    object-position: top center;
+  }
+
+  /* Tabs in the window bar; a mint line fills under the chosen one while it
+     is shown. Mist on ink: 13.0:1; white on ink: 15.51:1. */
+  .switcher {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .switcher__tab,
+  .switcher__toggle {
+    position: relative;
+    overflow: hidden;
+    min-height: 32px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: rgb(231 234 242 / 0.72);
+    font: 600 13px/20px var(--font-body);
+    cursor: pointer;
+    transition:
+      background-color 160ms var(--ease),
+      color 160ms var(--ease);
+  }
+
+  .switcher__tab {
+    padding: 6px 14px;
+  }
+
+  .switcher__tab:hover,
+  .switcher__toggle:hover {
+    color: #fff;
+    background: rgb(231 234 242 / 0.08);
+  }
+
+  .switcher__tab.is-active {
+    color: #fff;
+    background: rgb(231 234 242 / 0.12);
+  }
+
+  .switcher__tab::after {
+    content: '';
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 3px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--mint);
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+
+  .switcher__tab.is-active::after {
+    animation: fill 6000ms linear both;
+  }
+
+  .switcher.is-stopped .switcher__tab.is-active::after {
+    animation: none;
+    transform: none;
+  }
+
+  .switcher.is-held .switcher__tab.is-active::after {
+    animation-play-state: paused;
+  }
+
+  @keyframes fill {
+    to {
+      transform: none;
+    }
+  }
+
+  .switcher__toggle {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    margin-left: auto;
+    padding: 0;
+  }
+
+  .switcher__toggle :global(.switcher__play),
+  .switcher.is-stopped .switcher__toggle :global(.switcher__pause) {
+    display: none;
+  }
+
+  .switcher.is-stopped .switcher__toggle :global(.switcher__play) {
+    display: block;
   }
 
   @media (max-width: 640px) {

@@ -22,6 +22,8 @@
 
 html {
   scroll-behavior: smooth;
+  /* Anchored sections land below the sticky header. */
+  scroll-padding-top: 88px;
   scrollbar-color: var(--border) var(--bg);
   accent-color: var(--coral);
   caret-color: var(--coral);
