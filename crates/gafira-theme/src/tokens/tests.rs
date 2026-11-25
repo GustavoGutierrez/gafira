@@ -37,8 +37,9 @@ fn s14_01_embedded_tokens_load() {
     assert_eq!(t.brand.coral, hex("#FF6B57"));
     assert_eq!(t.light.get("bg"), Some(hex("#FAFAF7")));
     assert_eq!(t.dark.get("surface.raised"), Some(hex("#223250")));
-    assert_eq!(t.light.len(), 45);
-    assert_eq!(t.dark.len(), 45);
+    // 45 tokens, plus the three 3D gizmo axis colours of spec 100.
+    assert_eq!(t.light.len(), 48);
+    assert_eq!(t.dark.len(), 48);
     let h3 = &t.typography.scale["h3"];
     assert_eq!(
         (h3.family.as_str(), h3.size, h3.line, h3.weight),
