@@ -20,6 +20,7 @@ export interface Copy {
     how: string;
     download: string;
     packs: string;
+    support: string;
     skip: string;
     language: string;
     menu: string;
@@ -60,6 +61,7 @@ export interface Copy {
     checksums: string;
     notes: string;
     all: string;
+    support: { text: string; done: string; link: string };
   };
   packs: {
     title: string;
@@ -115,6 +117,7 @@ const es: Copy = {
     how: 'Cómo funciona',
     download: 'Descargar',
     packs: 'Gratis',
+    support: 'Apóyanos',
     skip: 'Saltar al contenido',
     language: 'Idioma',
     menu: 'Menú',
@@ -304,6 +307,11 @@ const es: Copy = {
     checksums: 'Sumas SHA-256',
     notes: 'Notas de la versión',
     all: 'Todas las versiones',
+    support: {
+      text: 'Gafira es gratis. Si quieres apoyar su desarrollo,',
+      done: 'Tu descarga empezó. ¡Gracias por usar Gafira! Si quieres apoyar su desarrollo,',
+      link: 'llévate un paquete completo de ilustraciones',
+    },
   },
   packs: {
     title: 'Paquetes de ilustraciones gratis',
@@ -416,6 +424,7 @@ const en: Copy = {
     how: 'How it works',
     download: 'Download',
     packs: 'Free packs',
+    support: 'Support us',
     skip: 'Skip to content',
     language: 'Language',
     menu: 'Menu',
@@ -605,6 +614,11 @@ const en: Copy = {
     checksums: 'SHA-256 checksums',
     notes: 'Release notes',
     all: 'All releases',
+    support: {
+      text: 'Gafira is free. If you would like to support its development,',
+      done: 'Your download has started. Thanks for using Gafira! If you would like to support its development,',
+      link: 'get a full illustration pack',
+    },
   },
   packs: {
     title: 'Free illustration packs',
