@@ -1,7 +1,7 @@
 ---
 name: gafira-specs
 description: "Trigger: specs, spec workflow, backlog, done, numbering, spec status, status banner, specs/README.md index, Definition of Ready, TDD, test-first, moving or closing a spec, requirement IDs (ARQ-, RF-, RNF-, CAL-, FD-, FV-, D-). Organize Gafira specs with three-digit IDs, status folders and TDD for critical logic."
-license: Proprietary
+license: GPL-3.0-or-later
 metadata:
   author: Gafira
   version: "1.0"

@@ -55,6 +55,7 @@ fn kind_icon(kind: &NodeKind) -> Icon {
         NodeKind::Qr(_) => Icon::CategoryQrCodes,
         NodeKind::Table(_) => Icon::CategoryTables,
         NodeKind::Chart(_) => Icon::CategoryCharts,
+        NodeKind::Model3d(_) => Icon::Cube,
         NodeKind::Shape(_) | NodeKind::Line(_) | NodeKind::Extension(_) => Icon::CategoryShapes,
     }
 }

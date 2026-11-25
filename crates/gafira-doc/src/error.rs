@@ -180,6 +180,9 @@ pub enum ValidationError {
     InvalidImage { node: NodeId },
     /// P4: a chart whose data or numbers cannot be drawn (spec 083).
     InvalidChart { node: NodeId },
+    /// P4/P7: a 3D model whose pose or camera cannot be drawn, or whose model file is not
+    /// in the asset table (spec 100).
+    InvalidModel3d { node: NodeId },
     /// P4: an effect is not well formed (spec 065).
     InvalidEffect {
         node: NodeId,
@@ -274,6 +277,9 @@ impl fmt::Display for ValidationError {
             }
             Self::InvalidChart { node } => {
                 write!(f, "node {node}: the chart is not valid")
+            }
+            Self::InvalidModel3d { node } => {
+                write!(f, "node {node}: the 3D model is not valid")
             }
             Self::InvalidFrame { node } => {
                 write!(f, "node {node}: the frame is not valid")

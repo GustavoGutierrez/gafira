@@ -1304,6 +1304,19 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         node.base.id
     }
 
+    /// A 3D model draws the picture its camera sees, kept with the images (spec 100):
+    /// like an image without a look, stretched to its box.
+    fn visit_model3d(&mut self, node: &Node, model: &gafira_doc::Model3dNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Image(model.shown(), None),
+            },
+        );
+        node.base.id
+    }
+
     fn visit_extension(&mut self, node: &Node, _extension: &ExtensionNode) -> NodeId {
         // The seam of ARQ-137 is open: an extension draws nothing in this cut.
         node.base.id

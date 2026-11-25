@@ -1,0 +1,208 @@
+---
+import '@fontsource-variable/manrope';
+import '@fontsource-variable/inter';
+import '../styles/global.css';
+import { screens } from '../lib/screens';
+import ogEs from '../assets/og/og-es.png';
+import ogEn from '../assets/og/og-en.png';
+import { getImage } from 'astro:assets';
+import { copy, homePath, type Locale } from '../i18n/ui';
+import { downloads, type Release } from '../lib/release';
+import BackToTop from '../components/BackToTop.astro';
+import manrope from '@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2?url';
+import inter from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
+// The brand colours and radii, from the same token file the app loads.
+import tokens from '../../../assets/theme/gafira.tokens.json';
+
+interface Props {
+  locale: Locale;
+  title?: string;
+  description?: string;
+  /** The same page in the other language, for hreflang and the switcher. */
+  alternate?: boolean;
+  /** Not for search engines (the 404 page). */
+  noindex?: boolean;
+  /** The latest release, for the structured data of the landing page. */
+  release?: Release;
+}
+
+const { locale, title, description, alternate = true, noindex = false, release } = Astro.props;
+const t = copy[locale];
+const pageTitle = title ?? t.meta.title;
+const pageDescription = description ?? t.meta.description;
+const site = Astro.site ?? new URL('https://gafira.com');
+const canonical = new URL(Astro.url.pathname, site).href;
+// The share image (1200 × 630, made with scripts/og-image.html), as a JPEG
+// far under the ~300 KB some apps (WhatsApp) accept.
+const og = await getImage({ src: locale === 'es' ? ogEs : ogEn, width: 1200, format: 'jpg', quality: 85 });
+const ogUrl = new URL(og.src, site).href;
+const ogHeight = 630;
+const shot = await getImage({ src: screens[locale].editor, width: 1440, format: 'jpg', quality: 82 });
+const shotUrl = new URL(shot.src, site).href;
+const home = new URL(homePath(locale), site).href;
+const files = release ? downloads(release) : undefined;
+// Structured data: the organisation, the site and the app (no price or
+// rating: none is published, and none is invented).
+const structured = release && {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${site.href}#organization`,
+      name: 'Gafira',
+      url: site.href,
+      logo: new URL('/icon-512.png', site).href,
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${site.href}#website`,
+      name: 'Gafira',
+      url: site.href,
+      inLanguage: ['es', 'en'],
+      publisher: { '@id': `${site.href}#organization` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${site.href}#app`,
+      name: 'Gafira',
+      description: pageDescription,
+      url: home,
+      applicationCategory: 'DesignApplication',
+      operatingSystem: 'Windows, macOS, Linux',
+      softwareVersion: release.version,
+      datePublished: release.published,
+      inLanguage: ['es', 'en'],
+      downloadUrl: release.url,
+      installUrl: `${home}#download`,
+      releaseNotes: release.url,
+      screenshot: shotUrl,
+      image: new URL('/icon-512.png', site).href,
+      fileSize: files?.windowsInstaller ? `${Math.round(files.windowsInstaller.size / 1_000_000)}MB` : undefined,
+      publisher: { '@id': `${site.href}#organization` },
+    },
+  ],
+};
+const light = tokens.modes.light as Record<string, string>;
+const dark = tokens.modes.dark as Record<string, string>;
+// Semantic colours per mode; the brand colours stay fixed in both.
+const mode = (m: Record<string, string>, deep: string, tile: string) => ({
+  bg: m.bg,
+  surface: m.surface,
+  text: m.text,
+  'text-secondary': m['text.secondary'],
+  border: m.border,
+  muted: m['secondary.bg'],
+  deep,
+  tile,
+});
+const declare = (vars: Record<string, string>) =>
+  Object.entries(vars)
+    .map(([name, value]) => `--${name}:${value};`)
+    .join('');
+const lightVars = declare(mode(light, tokens.brand.ink, tokens.brand.ink));
+const darkVars = declare(mode(dark, dark.workspace, dark['secondary.bg']));
+const fixed = declare({
+  ...tokens.brand,
+  'radius-sm': `${tokens.radius.sm}px`,
+  'radius-md': `${tokens.radius.md}px`,
+  'radius-lg': `${tokens.radius.lg}px`,
+});
+const rootVars =
+  `:root{${fixed}${lightVars}color-scheme:light}` +
+  `@media (prefers-color-scheme:dark){:root:not([data-theme=light]){${darkVars}color-scheme:dark}}` +
+  `:root[data-theme=dark]{${darkVars}color-scheme:dark}`;
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <script is:inline>
+      // Before the first paint: motion classes and the theme the visitor chose
+      // (none = follow the system).
+      document.documentElement.classList.add('js');
+      try {
+        const theme = localStorage.getItem('gafira-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={pageDescription} />
+    <meta
+      name="robots"
+      content={noindex ? 'noindex, follow' : 'index, follow, max-image-preview:large, max-snippet:-1'}
+    />
+    {!noindex && <link rel="canonical" href={canonical} />}
+    {
+      alternate && (
+        <>
+          <link rel="alternate" hreflang="es" href={new URL(homePath('es'), site).href} />
+          <link rel="alternate" hreflang="en" href={new URL(homePath('en'), site).href} />
+          <link rel="alternate" hreflang="x-default" href={new URL(homePath('es'), site).href} />
+        </>
+      )
+    }
+    <link rel="preload" href={manrope} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={inter} as="font" type="font/woff2" crossorigin />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content={light.bg} media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content={dark.bg} media="(prefers-color-scheme: dark)" />
+    <meta name="application-name" content="Gafira" />
+    <meta name="apple-mobile-web-app-title" content="Gafira" />
+    <style is:inline set:html={rootVars} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Gafira" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogUrl} />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content={String(ogHeight)} />
+    <meta property="og:image:alt" content={t.meta.ogAlt} />
+    <meta property="og:locale" content={locale === 'es' ? 'es_ES' : 'en_US'} />
+    <meta property="og:locale:alternate" content={locale === 'es' ? 'en_US' : 'es_ES'} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:image" content={ogUrl} />
+    <meta name="twitter:image:alt" content={t.meta.ogAlt} />
+    {structured && <script type="application/ld+json" set:html={JSON.stringify(structured)} />}
+  </head>
+  <body>
+    <a class="skip" href="#main">{t.nav.skip}</a>
+    <slot />
+    <BackToTop locale={locale} />
+    <script>
+      // Reveals elements as they enter the screen, once.
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const items = document.querySelectorAll<HTMLElement>('.reveal');
+      if (reduced || !('IntersectionObserver' in window)) {
+        items.forEach((item) => item.classList.add('is-visible'));
+      } else {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              entry.target.classList.add('is-visible');
+              observer.unobserve(entry.target);
+            }
+          },
+          { rootMargin: '0px 0px -10% 0px', threshold: 0.12 },
+        );
+        items.forEach((item) => observer.observe(item));
+      }
+      // The header gets its shadow once the page scrolls.
+      const header = document.querySelector('.header');
+      const onScroll = () => header?.classList.toggle('is-scrolled', window.scrollY > 8);
+      onScroll();
+      window.addEventListener('scroll', onScroll, { passive: true });
+    </script>
+  </body>
+</html>

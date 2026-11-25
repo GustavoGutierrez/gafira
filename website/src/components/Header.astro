@@ -1,0 +1,340 @@
+---
+import Icon from './Icon.astro';
+import { copy, homePath, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale];
+const other: Locale = locale === 'es' ? 'en' : 'es';
+const home = homePath(locale);
+---
+
+<header class="header">
+  <div class="container header__inner">
+    <a class="header__logo" href={home}>
+      <!-- Below 160 px the brand manual asks for the symbol, not the full logo. -->
+      <picture>
+        <source media="(max-width: 420px)" srcset="/logo-symbol.svg" width="40" height="40" />
+        <img class="logo logo--light" src="/logo.svg" alt="Gafira" width="160" height="51" />
+      </picture>
+      <picture>
+        <source media="(max-width: 420px)" srcset="/logo-symbol-dark.svg" width="40" height="40" />
+        <img class="logo logo--dark" src="/logo-dark.svg" alt="Gafira" width="160" height="51" />
+      </picture>
+    </a>
+    <nav class="header__nav" aria-label={t.nav.menu}>
+      <a href={`${home}#how`} data-spy="how">{t.nav.how}</a>
+      <a href={`${home}#features`} data-spy="features">{t.nav.features}</a>
+      <a href={`${home}#download`} data-spy="download">{t.nav.download}</a>
+      <a href={`${home}#packs`} data-spy="packs">{t.nav.packs}</a>
+      <a class="header__support" href={`${home}#support`} data-spy="support">
+        <Icon name="heart" size={16} />
+        {t.nav.support}
+      </a>
+    </nav>
+    <div class="header__actions">
+      <button class="header__theme" type="button" data-theme-toggle aria-label={t.nav.theme} title={t.nav.theme}>
+        <span class="header__sun"><Icon name="sun" size={20} /></span>
+        <span class="header__moon"><Icon name="moon" size={20} /></span>
+      </button>
+      <a
+        class="header__lang"
+        href={homePath(other)}
+        hreflang={other}
+        lang={other}
+        aria-label={`${t.nav.language}: ${other === 'en' ? 'English' : 'Español'}`}
+      >
+        <Icon name="globe-simple" size={20} />
+        <span>{other === 'en' ? 'EN' : 'ES'}</span>
+      </a>
+      <a class="button button--primary button--small" href={`${home}#download`}>
+        <Icon name="download-simple" size={18} />
+        {t.nav.download}
+      </a>
+    </div>
+  </div>
+</header>
+
+<script>
+  // The menu marks the section in view: the last one whose top has passed a
+  // line a third of the way down the window.
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-spy]')];
+  const targets = links
+    .map((link) => document.getElementById(link.dataset.spy ?? ''))
+    .filter((section): section is HTMLElement => section !== null);
+  if (targets.length) {
+    let frame = 0;
+    const mark = () => {
+      frame = 0;
+      const line = window.innerHeight / 3;
+      let active = '';
+      for (const section of targets) {
+        if (section.getBoundingClientRect().top <= line) active = section.id;
+      }
+      // Past the end of the last section, nothing is current.
+      const last = targets[targets.length - 1]!;
+      if (last.getBoundingClientRect().bottom < line) active = '';
+      for (const link of links) {
+        if (link.dataset.spy === active) link.setAttribute('aria-current', 'location');
+        else link.removeAttribute('aria-current');
+      }
+    };
+    mark();
+    window.addEventListener('scroll', () => (frame ||= requestAnimationFrame(mark)), { passive: true });
+    window.addEventListener('resize', mark);
+  }
+
+  // The toggle flips the theme in use and remembers it.
+  const root = document.documentElement;
+  for (const button of document.querySelectorAll('[data-theme-toggle]')) {
+    button.addEventListener('click', () => {
+      const dark =
+        root.dataset.theme === 'dark' ||
+        (!root.dataset.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const next = dark ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try {
+        localStorage.setItem('gafira-theme', next);
+      } catch {}
+    });
+  }
+</script>
+
+<style>
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: saturate(160%) blur(14px);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+    transition:
+      box-shadow 220ms var(--ease),
+      background-color 220ms var(--ease);
+  }
+
+  /* One edge at a time: the hairline at rest, the shadow once scrolled. */
+  .header:global(.is-scrolled) {
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
+    border-bottom-color: transparent;
+    box-shadow: 0 6px 24px rgb(10 17 32 / 0.1);
+  }
+
+  .header__inner {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    min-height: 76px;
+  }
+
+  .header__logo .logo {
+    width: 160px;
+    height: auto;
+  }
+
+  .header__nav {
+    display: flex;
+    gap: 28px;
+    margin-left: auto;
+  }
+
+  .header__nav a {
+    position: relative;
+    padding-block: 6px;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--text-secondary);
+    transition: color 160ms var(--ease);
+  }
+
+  /* A mint line grows under the link pointed at and stays under the section
+     in view. */
+  .header__nav a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--mint);
+    transform: scaleX(0);
+    transition: transform 220ms var(--ease);
+  }
+
+  .header__nav a:hover,
+  .header__nav a[aria-current] {
+    color: var(--text);
+  }
+
+  .header__nav a:hover::after,
+  .header__nav a[aria-current]::after {
+    transform: none;
+  }
+
+  /* The way to support the project: a text link like the rest of the menu,
+     marked only by a coral heart, so it never competes with Download. */
+  .header__support {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .header__support :global(svg) {
+    flex: none;
+    color: var(--coral);
+    transition: transform 220ms var(--ease);
+  }
+
+  .header__support:hover :global(svg) {
+    transform: scale(1.15);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .header__support:hover :global(svg) {
+      transform: none;
+    }
+  }
+
+  .header__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header__lang {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--text);
+    transition: background-color 160ms var(--ease);
+  }
+
+  /* Icons keep their size when the bar is tight. */
+  .header__actions > *,
+  .header__actions :global(svg) {
+    flex: none;
+  }
+
+  .header__lang:hover,
+  .header__theme:hover {
+    background: var(--muted);
+  }
+
+  .header__theme {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: background-color 160ms var(--ease);
+  }
+
+  .header__theme > span {
+    grid-area: 1 / 1;
+    display: grid;
+    transition:
+      opacity 220ms var(--ease),
+      transform 220ms var(--ease);
+  }
+
+  /* The sun shows in dark mode (to go light), the moon in light mode. */
+  .header__sun,
+  :global([data-theme='dark']) .header__moon {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+
+  :global([data-theme='dark']) .header__sun {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .header__moon {
+      opacity: 0;
+      transform: rotate(90deg) scale(0.6);
+    }
+
+    :global(:root:not([data-theme='light'])) .header__sun {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .logo--dark,
+  :global([data-theme='dark']) .logo--light {
+    display: none;
+  }
+
+  :global([data-theme='dark']) .logo--dark {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .logo--light {
+      display: none;
+    }
+
+    :global(:root:not([data-theme='light'])) .logo--dark {
+      display: block;
+    }
+  }
+
+  /* Five links plus the actions need about 1120 px; below that the menu
+     hides and the page sections stay one scroll away. */
+  @media (max-width: 1120px) {
+    .header__nav {
+      display: none;
+    }
+
+    .header__actions {
+      margin-left: auto;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .header__inner {
+      min-height: 64px;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .header__inner {
+      gap: 12px;
+    }
+
+    .header__logo .logo {
+      width: 40px;
+    }
+
+    .header__actions {
+      gap: 4px;
+    }
+
+    .header__lang {
+      padding-inline: 10px;
+    }
+
+    .header__actions .button {
+      padding-inline: 12px;
+    }
+  }
+</style>

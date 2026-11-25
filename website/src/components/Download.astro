@@ -1,0 +1,432 @@
+---
+import Icon from './Icon.astro';
+import { copy, homePath, longDate, type Locale } from '../i18n/ui';
+import { downloads, megabytes, type Asset, type Release } from '../lib/release';
+
+interface Props {
+  locale: Locale;
+  release: Release;
+}
+
+const { locale, release } = Astro.props;
+const t = copy[locale];
+const d = t.download;
+const files = downloads(release);
+
+interface Option {
+  label: string;
+  note: string;
+  asset?: Asset;
+}
+
+const systems: { id: string; icon: string; name: string; note: string; options: Option[] }[] = [
+  {
+    id: 'windows',
+    icon: 'windows-logo',
+    name: d.windows.name,
+    note: d.windows.note,
+    options: [
+      { label: d.windows.installer, note: d.windows.installerNote, asset: files.windowsInstaller },
+      { label: d.windows.zip, note: d.windows.zipNote, asset: files.windowsZip },
+    ],
+  },
+  {
+    id: 'macos',
+    icon: 'apple-logo',
+    name: d.macos.name,
+    note: d.macos.note,
+    options: [{ label: d.macos.dmg, note: d.macos.dmgNote, asset: files.macos }],
+  },
+  {
+    id: 'linux',
+    icon: 'linux-logo',
+    name: d.linux.name,
+    note: d.linux.note,
+    options: [
+      { label: d.linux.deb, note: d.linux.debNote, asset: files.deb },
+      { label: d.linux.appImage, note: d.linux.appImageNote, asset: files.appImage },
+    ],
+  },
+];
+---
+
+<section class="section section--white" id="download" aria-labelledby="download-title">
+  <div class="container">
+    <div class="section-head section-head--center">
+      <h2 id="download-title">{d.title}</h2>
+      <p>{d.lead}</p>
+      <p class="release">
+        <span class="release__tag">{d.version} {release.version}</span>
+        <span>{d.published} <time datetime={release.published}>{longDate(release.published, locale)}</time></span>
+      </p>
+    </div>
+    <div class="systems">
+      {
+        systems.map((system, index) => (
+          <article class="system reveal" id={`download-${system.id}`} data-system={system.id} style={`--delay:${index * 110}ms`}>
+            <span class="system__badge">{d.recommended}</span>
+            <header class="system__head">
+              <span class="system__icon">
+                <Icon name={system.icon} size={30} />
+              </span>
+              <h3>{system.name}</h3>
+            </header>
+            <ul class="system__options">
+              {system.options
+                .filter((option) => option.asset)
+                .map((option, index) => (
+                  <li>
+                    <a
+                      class:list={['option', { 'option--main': index === 0 }]}
+                      href={option.asset!.url}
+                      download
+                    >
+                      <span class="option__text">
+                        <strong>{option.label}</strong>
+                        <span>
+                          {option.note} · {megabytes(option.asset!.size)}
+                        </span>
+                      </span>
+                      <Icon name="download-simple" size={22} />
+                    </a>
+                  </li>
+                ))}
+            </ul>
+            <p class="system__note">
+              <Icon name="info" size={18} />
+              <span>{system.note}</span>
+            </p>
+          </article>
+        ))
+      }
+    </div>
+    <p class="support" aria-live="polite" data-download-support>
+      <span class="support__icon" aria-hidden="true">
+        <span class="support__heart"><Icon name="heart" size={20} /></span>
+        <span class="support__check"><Icon name="check-circle" size={20} /></span>
+      </span>
+      <span>
+        <span class="support__text">{d.support.text}</span>
+        <span class="support__done">{d.support.done}</span>{' '}
+        <a href={`${homePath(locale)}#support`}>
+          {d.support.link}
+          <Icon name="arrow-down" size={16} />
+        </a>
+      </span>
+    </p>
+    <p class="links">
+      <a href={release.url}>
+        <Icon name="article" size={18} />
+        {d.notes}
+      </a>
+      {
+        files.checksums && (
+          <a href={files.checksums.url}>
+            <Icon name="shield-check" size={18} />
+            {d.checksums}
+          </a>
+        )
+      }
+      <a href="https://github.com/GustavoGutierrez/gafira/releases">
+        <Icon name="github-logo" size={18} />
+        {d.all}
+      </a>
+    </p>
+  </div>
+</section>
+
+<script>
+  // After a download starts, the support line thanks the visitor and keeps
+  // its invitation; it is the one moment the page asks for something more.
+  const support = document.querySelector<HTMLElement>('[data-download-support]');
+  if (support) {
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('#download .option')) {
+      link.addEventListener('click', () => support.classList.add('is-done'));
+    }
+  }
+</script>
+
+<style>
+  .release {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    font-size: 15px !important;
+  }
+
+  .release__tag {
+    padding: 2px 12px;
+    border-radius: 999px;
+    background: var(--muted);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .systems {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .system {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 28px;
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    border: 2px solid var(--muted);
+    transition: border-color 200ms var(--ease);
+  }
+
+  .system:global(.is-recommended) {
+    border-color: var(--mint);
+  }
+
+  .system__badge {
+    display: none;
+    position: absolute;
+    top: -14px;
+    left: 24px;
+    padding: 2px 12px;
+    border-radius: 999px;
+    background: var(--mint);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 22px;
+    font-weight: 600;
+  }
+
+  .system:global(.is-recommended) .system__badge {
+    display: inline-block;
+  }
+
+  .system__head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .system__icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-md);
+    background: var(--tile);
+    color: #fff;
+  }
+
+  h3 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+  }
+
+  .system__options {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    text-decoration: none;
+    transition:
+      transform 160ms var(--ease),
+      background-color 160ms var(--ease),
+      border-color 160ms var(--ease);
+  }
+
+  .option:hover {
+    transform: translateY(-1px);
+    border-color: var(--text);
+  }
+
+  .option--main {
+    background: var(--coral);
+    border-color: var(--coral);
+    color: var(--ink);
+  }
+
+  .option--main:hover {
+    border-color: var(--coral);
+    box-shadow: 0 8px 20px rgb(255 107 87 / 0.32);
+  }
+
+  .option__text {
+    display: grid;
+  }
+
+  .option__text strong {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .option__text span {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .system__note {
+    display: flex;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--text-secondary);
+  }
+
+  .system__note :global(svg) {
+    flex: none;
+    margin-top: 2px;
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px 28px;
+    margin-top: 40px;
+  }
+
+  .links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--text);
+    border-bottom: 2px solid var(--mint);
+    padding-bottom: 2px;
+  }
+
+  @media (max-width: 960px) {
+    .systems {
+      grid-template-columns: 1fr;
+      max-width: 520px;
+      margin-inline: auto;
+    }
+  }
+
+  /* The invitation to support Gafira: one quiet line under the downloads, a
+     text link, never a second button next to Download. */
+  .support {
+    width: fit-content;
+    max-width: 740px;
+    margin: 36px auto 0;
+    padding: 14px 22px;
+    border-radius: var(--radius-lg);
+    color: var(--text-secondary);
+    text-align: center;
+    text-wrap: pretty;
+    transition: background-color 300ms var(--ease);
+  }
+
+  /* The link sits on its own line under the sentence. */
+  .support a {
+    display: block;
+    width: fit-content;
+    margin: 6px auto 0;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-color: var(--coral);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .support a :global(svg) {
+    display: inline-block;
+    margin-left: 4px;
+    vertical-align: -3px;
+    transition: transform 220ms var(--ease);
+  }
+
+  .support a:hover :global(svg) {
+    transform: translateY(2px);
+  }
+
+  .support__icon {
+    position: relative;
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    vertical-align: -4px;
+  }
+
+  .support__heart,
+  .support__check {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    transition:
+      opacity 220ms var(--ease),
+      transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .support__heart {
+    color: var(--coral);
+  }
+
+  .support__check {
+    color: var(--mint);
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .support__done {
+    display: none;
+    color: var(--text);
+  }
+
+  /* After a download: the check replaces the heart, the line thanks the
+     visitor, and a mint tint marks the change. */
+  .support.is-done {
+    background: color-mix(in srgb, var(--mint) 14%, transparent);
+  }
+
+  .support.is-done .support__heart {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .support.is-done .support__check {
+    opacity: 1;
+    transform: none;
+  }
+
+  .support.is-done .support__text {
+    display: none;
+  }
+
+  .support.is-done .support__done {
+    display: inline;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .support,
+    .support__heart,
+    .support__check,
+    .support a :global(svg) {
+      transition: none;
+    }
+
+    .support a:hover :global(svg) {
+      transform: none;
+    }
+  }
+</style>

@@ -22,6 +22,7 @@ gafira-io-pdf.workspace = true
 gafira-io-svg.workspace = true
 gafira-io-pptx.workspace = true
 gafira-io-xlsx.workspace = true
+gafira-io-model3d.workspace = true
 # D-111: Elementos → Fotos, the only network besides the licence.
 gafira-photos = { workspace = true, features = ["online"] }
 gafira-vision = { workspace = true, features = ["online", "onnx"] }

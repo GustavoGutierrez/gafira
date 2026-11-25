@@ -193,6 +193,56 @@ pub trait ImageDecoder: Send + Sync {
     /// [`MediaError::Corrupt`] when the bytes are not an image this decoder
     /// reads.
     fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, MediaError>;
+
+    /// The picture of the 3D model `model` whose file is `bytes`, drawn `width` × `height`
+    /// pixels as its camera sees it, with a transparent background, 8-bit sRGB premultiplied
+    /// (spec 100 §8, D-130). A decoder without a 3D renderer cannot draw it.
+    ///
+    /// # Errors
+    /// [`MediaError::Corrupt`] when the model cannot be read or no renderer is wired.
+    fn render_model(
+        &self,
+        model: &gafira_doc::Model3dNode,
+        bytes: &[u8],
+        (width, height): (u32, u32),
+    ) -> Result<ImageBuf, MediaError> {
+        let _ = (model, bytes, width, height);
+        Err(MediaError::Corrupt {
+            detail: "no 3D renderer".to_owned(),
+        })
+    }
+}
+
+/// How many pixels a 3D model of a `w` × `h` px box is drawn with: its box times `scale`,
+/// the longer side at most `most` (spec 100 §8.2, AC-14).
+#[must_use]
+pub fn model_pixels((w, h): (f64, f64), scale: f64, most: u32) -> (u32, u32) {
+    let (w, h) = (w.abs() * scale, h.abs() * scale);
+    let longest = w.max(h);
+    if !(w.is_finite() && h.is_finite() && longest > 0.0) {
+        return (1, 1);
+    }
+    let fit = (f64::from(most) / longest).min(1.0);
+    // Clamped to [1, most]: the casts are exact.
+    let side = |v: f64| (v * fit).round().clamp(1.0, f64::from(most)) as u32;
+    (side(w), side(h))
+}
+
+/// The picture of the 3D model `model`, its file read from `store` and drawn by `images`
+/// at `size` pixels (spec 100).
+///
+/// # Errors
+/// [`ExportError::Store`] when the model file is not in the store, [`ExportError::Media`]
+/// when it cannot be drawn.
+pub fn render_model(
+    model: &gafira_doc::Model3dNode,
+    store: &dyn ContentStore,
+    images: &dyn ImageDecoder,
+    size: (u32, u32),
+) -> Result<ImageBuf, ExportError> {
+    let mut bytes = Vec::new();
+    io::Read::read_to_end(&mut store.open(model.asset.as_hash())?, &mut bytes)?;
+    Ok(images.render_model(model, &bytes, size)?)
 }
 
 /// The pixels `image` shows: those of its asset, the part of them it is
@@ -231,6 +281,21 @@ pub fn decode_image(
         .unwrap_or((pixels, 1.0));
     apply_look(look, &pixels, &|asset| masks.get(&asset).cloned(), scale)
         .map_err(|error| ExportError::Render(error.into()))
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::model_pixels;
+
+    // Spec 100 §8.2: the picture follows the box and the scale, never past the limit.
+    #[test]
+    fn s100_model_pixels_follow_the_box_and_stop_at_the_limit() {
+        assert_eq!(model_pixels((200.0, 100.0), 2.0, 4096), (400, 200));
+        assert_eq!(model_pixels((3000.0, 1000.0), 4.0, 4096), (4096, 1365));
+        assert_eq!(model_pixels((0.0, 0.0), 4.0, 4096), (1, 1));
+        assert_eq!(model_pixels((f64::NAN, 3.0), 1.0, 4096), (1, 1));
+        assert_eq!(model_pixels((0.2, 300.0), 1.0, 4096), (1, 300));
+    }
 }
 
 /// Why an export failed.

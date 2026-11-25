@@ -19,6 +19,8 @@ gafira-table.workspace = true
 gafira-chart.workspace = true
 # Decoding an image that is neither PNG nor JPEG (WebP) to re-encode it.
 gafira-io-image.workspace = true
+# Spec 100: a 3D model goes as the picture its camera sees.
+gafira-io-model3d.workspace = true
 image.workspace = true
 # The OPC package is a ZIP (already in the tree for .gaf).
 zip.workspace = true

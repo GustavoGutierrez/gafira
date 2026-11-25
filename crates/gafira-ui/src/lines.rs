@@ -154,7 +154,8 @@ pub(crate) fn outline_point(page: &Page, node: NodeId, p: Point) -> Option<([f64
         | NodeKind::Frame(_)
         | NodeKind::Qr(_)
         | NodeKind::Table(_)
-        | NodeKind::Chart(_) => box_point(local, w, h),
+        | NodeKind::Chart(_)
+        | NodeKind::Model3d(_) => box_point(local, w, h),
     };
     let unit = |v: f64, side: f64| if side > 0.0 { v / side } else { 0.5 };
     Some((

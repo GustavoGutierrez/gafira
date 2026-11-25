@@ -15,7 +15,7 @@ Code:
 
 - Rust edition 2024, toolchain 1.93.1 (`rust-toolchain.toml`), `#![forbid(unsafe_code)]` in every crate, no `#[allow]` to silence lints.
 - Hexagonal layering enforced by the CI layer table (V5 in `.github/workflows/ci.yml`); domain crates use `BTreeMap`/`BTreeSet`, never `HashMap`/`HashSet` (clippy ban, V12). A new domain crate needs a V5 row and a `clippy.toml` copy.
-- Permissive third-party licenses only (`deny.toml`); the product is proprietary, runs fully local and needs no external binaries.
+- Permissive third-party licenses only (`deny.toml`); the product is open source under GPL-3.0-or-later (D-129, `LICENSE`; brand in `TRADEMARKS.md`), runs fully local and needs no external binaries.
 - Action pins in CI are 40-hex SHAs.
 - Targets: Windows (MSI), Linux x86_64, macOS 12+ aarch64.
 - Language: code, comments, commits and generated artifacts in English; product specs in `specs/` are Spanish; user-facing UI text is Spanish and English (D-08); conversation with the owner in neutral Spanish.

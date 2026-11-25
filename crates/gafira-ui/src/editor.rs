@@ -383,6 +383,16 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// The pictures of 3D models, drawn on a worker (spec 100, D-130).
+    model3d_studio: std::cell::RefCell<crate::model3d::Studio>,
+    /// The open 3D editing session (spec 100 §3.3).
+    model3d_session: Option<crate::model3d::Session>,
+    /// The tab of the «Objeto 3D» properties.
+    model3d_tab: crate::model3d::Tab,
+    /// The undo step a 3D property control holds open outside a session.
+    model3d_gesture: Option<(NodeId, gafira_edit::GestureId)>,
+    /// A note about the last 3D import (its catalog key) and when it came.
+    model3d_note: Option<(&'static str, f64, bool)>,
     /// The box each curved text texture covers, by its key (FD-44).
     curved_covers: std::cell::RefCell<std::collections::BTreeMap<u64, Placement>>,
     /// The text being written on the canvas (spec 055).
@@ -588,6 +598,11 @@ impl Default for Editor {
             renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            model3d_studio: std::cell::RefCell::default(),
+            model3d_session: None,
+            model3d_tab: crate::model3d::Tab::default(),
+            model3d_gesture: None,
+            model3d_note: None,
             curved_covers: std::cell::RefCell::default(),
             editing: None,
             cropping: None,
@@ -623,6 +638,13 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// Open the 3D editor of a model (spec 100: double click or «Editar 3D»).
+    model3d_open: Option<(PageId, NodeId)>,
+    /// A 3D model changed from its properties; `true` closes the undo step.
+    model3d_set: Option<(PageId, NodeId, Box<gafira_doc::Model3dNode>, bool)>,
+    /// Apply or cancel the 3D editing session.
+    model3d_apply: bool,
+    model3d_cancel: bool,
     /// A text of a brand style to add to the page in view (spec 093).
     brand_text: Option<(gafira_doc::SpanStyle, String)>,
     /// The same, dropped at a point of a page.
@@ -1047,6 +1069,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         qr: None,
         table: None,
         chart: None,
+        model3d: None,
     })
 }
 
@@ -1497,6 +1520,7 @@ impl Editor {
         let mut asked = Asked::default();
         self.images_arrived(ctx, engine);
         self.looks.pump(ctx);
+        self.model3d_studio.get_mut().pump(ctx);
         // «Borrador de píxeles» takes the whole window and its keys: Ctrl+Z
         // is of its strokes (S84-08).
         if let Some(eraser) = self.eraser.as_mut() {
@@ -1523,6 +1547,15 @@ impl Editor {
             }
             if i.modifiers.command && i.key_pressed(egui::Key::Y) {
                 asked.redo = true;
+            }
+            // In the 3D editor, undo and redo are of its own steps (spec 100 §3.5).
+            if let Some(session) = self.model3d_session.as_mut() {
+                if std::mem::take(&mut asked.undo) {
+                    session.undo();
+                }
+                if std::mem::take(&mut asked.redo) {
+                    session.redo();
+                }
             }
             for key in [
                 egui::Key::Equals,
@@ -1559,8 +1592,14 @@ impl Editor {
         let in_cells = !typing && self.cell_keys(ctx, document.as_deref(), &mut asked);
         if !typing && !in_cells {
             ctx.input(|i| {
-                if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
+                // In the 3D editor, Delete does nothing and Enter applies (spec 100 §3.5).
+                if (i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+                    && self.model3d_session.is_none()
+                {
                     asked.delete = true;
+                }
+                if i.key_pressed(egui::Key::Enter) && self.model3d_session.is_some() {
+                    asked.model3d_apply = true;
                 }
                 // Enter applies what is cropped (spec 088).
                 if i.key_pressed(egui::Key::Enter)
@@ -1571,7 +1610,10 @@ impl Editor {
                 // Esc leaves the group entered, selecting it; outside one it
                 // empties the selection (03 §9.1, spec 043).
                 if i.key_pressed(egui::Key::Escape) {
-                    if self.image_edit.as_mut().is_some_and(|edit| edit.leave()) {
+                    // Esc leaves the 3D editor without its changes (spec 100 §3.5).
+                    if self.model3d_session.is_some() {
+                        asked.model3d_cancel = true;
+                    } else if self.image_edit.as_mut().is_some_and(|edit| edit.leave()) {
                         // The zone is left, the image stays chosen.
                     } else if self.cropping.is_some() {
                         asked.end_crop = true;
@@ -3052,6 +3094,59 @@ impl Editor {
                         });
                     return;
                 }
+                // A 3D model: «Objeto 3D» with its tabs, then its box (spec 100).
+                if let Some(doc_model) = &shape.model3d {
+                    let editing = self
+                        .model3d_session
+                        .as_ref()
+                        .filter(|s| s.node == shape.node && s.page == shape.page);
+                    let model =
+                        editing.map_or_else(|| doc_model.as_ref().clone(), |s| s.current.clone());
+                    let in_session = editing.is_some();
+                    let mut tab = self.model3d_tab;
+                    let studio = &self.model3d_studio;
+                    let ctx = ctx.clone();
+                    egui::ScrollArea::vertical()
+                        .id_salt("inspector.model3d")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 12.0);
+                            // The quick view tiles show the model itself, from bytes the
+                            // canvas already read.
+                            let mut thumb = |preset: gafira_model3d::ViewPreset| {
+                                let tile = crate::model3d::with_preset(&model, preset);
+                                studio.borrow_mut().picture(
+                                    &ctx,
+                                    &|_| None,
+                                    crate::model3d::Slot::Preset(preset as u8),
+                                    &tile,
+                                    (96, 96),
+                                    1,
+                                )
+                            };
+                            let at = (shape.page, shape.node);
+                            let ask = crate::model3d::panel(
+                                ui, theme, texts, &model, &mut tab, in_session, &mut thumb,
+                            );
+                            match ask {
+                                Some(crate::model3d::PanelAsk::Set(next, step)) => {
+                                    asked.model3d_set = Some((at.0, at.1, next, step));
+                                }
+                                Some(crate::model3d::PanelAsk::Edit) => {
+                                    asked.model3d_open = Some(at)
+                                }
+                                Some(crate::model3d::PanelAsk::Apply) => asked.model3d_apply = true,
+                                Some(crate::model3d::PanelAsk::Cancel) => {
+                                    asked.model3d_cancel = true
+                                }
+                                None => {}
+                            }
+                            ui.add_space(16.0);
+                            box_fields(ui, theme, texts, shape, can, asked);
+                        });
+                    self.model3d_tab = tab;
+                    return;
+                }
                 // A chart: how it looks, then its box (spec 083).
                 if let Some(chart) = &shape.chart {
                     egui::ScrollArea::vertical()
@@ -4030,6 +4125,7 @@ impl Editor {
                     qr: None,
                     table: None,
                     chart: None,
+                    model3d: None,
                 };
                 let cover = canvas::path_cover(&shape, 1.0);
                 let key = path_key(&shape, 1.0);
@@ -4240,6 +4336,10 @@ impl Editor {
         page: &Page,
         asked: &mut Asked,
     ) {
+        // The 3D editor has its own bar (spec 100 §3.3).
+        if self.model3d_session.is_some() {
+            return;
+        }
         let locked = self
             .selected
             .nodes()
@@ -4311,6 +4411,18 @@ impl Editor {
                             {
                                 if ui.button(plain(texts, "effects.title")).clicked() {
                                     asked.effects_open = Some(at);
+                                }
+                                bar_separator(ui, theme);
+                            }
+                            // «Editar 3D» on a 3D model (spec 100 §3.2).
+                            if let Some(at) = self.selected.single()
+                                && matches!(
+                                    page.node(at.1).map(|n| &n.kind),
+                                    Some(gafira_doc::NodeKind::Model3d(_))
+                                )
+                            {
+                                if ui.button(plain(texts, "model3d.edit")).clicked() {
+                                    asked.model3d_open = Some(at);
                                 }
                                 bar_separator(ui, theme);
                             }
@@ -5815,6 +5927,11 @@ impl Editor {
         document: Option<&Document>,
         asked: &mut Asked,
     ) {
+        // The wheel over the element being edited in 3D zooms its camera,
+        // not the page (spec 100 §3.4).
+        if let Some(session) = self.model3d_session.as_mut() {
+            session.wheel(ctx);
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(theme.c("workspace")))
             .show(ctx, |ui| {
@@ -6310,6 +6427,67 @@ impl Editor {
                                         }
                                         continue;
                                     }
+                                    // A 3D model is drawn from the picture
+                                    // its camera sees (spec 100); while it
+                                    // is edited, from the session's state,
+                                    // quicker while a gizmo is dragged.
+                                    if let Some(doc_model) = &shape.model3d {
+                                        let session = self
+                                            .model3d_session
+                                            .as_ref()
+                                            .filter(|s| s.node == shape.node && s.page == page_doc.id);
+                                        let model = session.map_or(doc_model.as_ref(), |s| &s.current);
+                                        let placement = session.map_or(shape.placement, |s| s.placement);
+                                        let ppp = ctx.pixels_per_point();
+                                        let side = |v: f64| {
+                                            // In steps of 32 px, so a zoom does not redraw on every frame.
+                                            let px = (v as f32 * zoom * ppp).clamp(16.0, 2048.0);
+                                            ((px / 32.0).ceil() * 32.0) as u32
+                                        };
+                                        let size = (side(placement.w), side(placement.h));
+                                        let samples = if session.is_some_and(crate::model3d::Session::dragging) { 1 } else { 2 };
+                                        let read = |hash: gafira_doc::ContentHash| -> Option<Vec<u8>> {
+                                            let mut bytes = Vec::new();
+                                            let mut source = engine.ports().store.open(hash).ok()?;
+                                            std::io::Read::read_to_end(&mut source, &mut bytes).ok()?;
+                                            Some(bytes)
+                                        };
+                                        let texture = self.model3d_studio.borrow_mut().picture(
+                                            ctx,
+                                            &read,
+                                            crate::model3d::Slot::Node(shape.node),
+                                            model,
+                                            size,
+                                            samples,
+                                        );
+                                        match texture {
+                                            Some(texture) => {
+                                                clip.add(canvas::image_mesh(
+                                                    texture,
+                                                    rotation::to_screen(page, zoom, &placement),
+                                                    &placement,
+                                                    Color32::WHITE.gamma_multiply(shape.alpha()),
+                                                ));
+                                            }
+                                            None => {
+                                                // Until the first picture arrives: its box, quietly.
+                                                let t = rotation::to_screen(page, zoom, &placement);
+                                                let (w, h) = (placement.w, placement.h);
+                                                let corners = vec![
+                                                    rotation::screen(t, 0.0, 0.0),
+                                                    rotation::screen(t, w, 0.0),
+                                                    rotation::screen(t, w, h),
+                                                    rotation::screen(t, 0.0, h),
+                                                ];
+                                                clip.add(egui::Shape::convex_polygon(
+                                                    corners,
+                                                    theme.c("surface.sunken").gamma_multiply(0.6),
+                                                    Stroke::NONE,
+                                                ));
+                                            }
+                                        }
+                                        continue;
+                                    }
                                     // A chart is drawn from its picture
                                     // (spec 083).
                                     if let Some(chart) = &shape.chart {
@@ -6472,6 +6650,16 @@ impl Editor {
                                     {
                                         asked.chart_open = Some((page_doc.id, node));
                                     }
+                                    // On a 3D model, it opens the 3D
+                                    // editor (spec 100 §3.2).
+                                    if response.double_clicked()
+                                        && page_doc.node(node).is_some_and(|n| {
+                                            matches!(n.kind, gafira_doc::NodeKind::Model3d(_))
+                                                && !n.base.locked
+                                        })
+                                    {
+                                        asked.model3d_open = Some((page_doc.id, node));
+                                    }
                                     // On an image, it crops it (spec 088).
                                     if response.double_clicked()
                                         && page_doc.node(node).is_some_and(|n| {
@@ -6585,6 +6773,11 @@ impl Editor {
                                             }
                                         }
                                     }
+                                    continue;
+                                }
+                                // The 3D editor draws its own frame and
+                                // takes the gestures (spec 100 §3.4).
+                                if self.model3d_session.as_ref().is_some_and(|s| s.node == shape.node) {
                                     continue;
                                 }
                                 let at = canvas::on_screen(page, zoom, &shape.placement);
@@ -7087,7 +7280,123 @@ impl Editor {
                 });
                 self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
                 self.page_rects = page_rects;
+                self.model3d_overlay(ctx, (theme, texts), document, area, asked);
             });
+    }
+
+    /// What the last 3D import has to say (spec 100 §3.1, §9): the cause of a refusal or a
+    /// warning, at the top of the canvas until closed or for a few seconds.
+    fn model3d_note(
+        &mut self,
+        ctx: &egui::Context,
+        (theme, texts): (&Theme, &Texts),
+        viewport: Rect,
+    ) {
+        let Some((key, since, error)) = self.model3d_note else {
+            return;
+        };
+        let now = ctx.input(|i| i.time);
+        if since == 0.0 {
+            self.model3d_note = Some((key, now, error));
+        } else if now - since > 8.0 {
+            self.model3d_note = None;
+            return;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        let width = 420.0_f32.min(viewport.width() - 32.0);
+        let at = Pos2::new(viewport.center().x - width / 2.0, viewport.top() + 16.0);
+        let mut close = false;
+        egui::Area::new(egui::Id::new("model3d.note"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .show(ctx, |ui| {
+                let (fill, ink) = if error {
+                    (theme.c("error.bg"), theme.c("error.fg"))
+                } else {
+                    (theme.c("warning.bg"), theme.c("warning.fg"))
+                };
+                egui::Frame::NONE
+                    .fill(fill)
+                    .stroke(Stroke::new(1.0, ink))
+                    .corner_radius(theme.radius_md())
+                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .show(ui, |ui| {
+                        ui.set_width(width - 24.0);
+                        // The words wrap beside the icon; «Cerrar» goes under them.
+                        ui.horizontal_top(|ui| {
+                            ui.add(crate::icons::image(
+                                ctx,
+                                Icon::Warning,
+                                crate::icons::Weight::Regular,
+                                18.0,
+                                ink,
+                            ));
+                            ui.add(
+                                egui::Label::new(RichText::new(plain(texts, key)).color(ink))
+                                    .wrap(),
+                            );
+                        });
+                        let row = Vec2::new(ui.available_width(), 20.0);
+                        let right = egui::Layout::right_to_left(egui::Align::Center);
+                        ui.allocate_ui_with_layout(row, right, |ui| {
+                            let dismiss = egui::Button::new(
+                                RichText::new(plain(texts, "model3d.dismiss")).color(ink),
+                            )
+                            .frame(false);
+                            if ui.add(dismiss).clicked() {
+                                close = true;
+                            }
+                        });
+                    });
+            });
+        if close {
+            self.model3d_note = None;
+        }
+    }
+
+    /// The 3D editor over its element (spec 100 §3.3): gizmos, orientation cube and tool
+    /// bar; a session whose element is gone is closed.
+    fn model3d_overlay(
+        &mut self,
+        ctx: &egui::Context,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        viewport: Rect,
+        asked: &mut Asked,
+    ) {
+        self.model3d_note(ctx, (theme, texts), viewport);
+        let Some(session) = self.model3d_session.as_ref() else {
+            return;
+        };
+        let node = document
+            .and_then(|d| d.page(session.page))
+            .and_then(|p| p.node(session.node))
+            .filter(|n| matches!(n.kind, gafira_doc::NodeKind::Model3d(_)));
+        let Some(node) = node else {
+            asked.model3d_cancel = true;
+            return;
+        };
+        let Some(&(_, page_rect)) = self.page_rects.iter().find(|(id, _)| *id == session.page)
+        else {
+            return;
+        };
+        // The session's box: Escalar changes it before Apply.
+        let placement = session.placement;
+        let _ = &node;
+        let t = rotation::to_screen(page_rect, self.zoom, &placement);
+        let corners = [
+            rotation::screen(t, 0.0, 0.0),
+            rotation::screen(t, placement.w, 0.0),
+            rotation::screen(t, placement.w, placement.h),
+            rotation::screen(t, 0.0, placement.h),
+        ];
+        let rect = Rect::from_points(&corners);
+        let Some(session) = self.model3d_session.as_mut() else {
+            return;
+        };
+        let asks = crate::model3d::overlay(ctx, theme, texts, session, (rect, self.zoom), viewport);
+        asked.model3d_apply |= asks.apply;
+        asked.model3d_cancel |= asks.cancel;
     }
 
     /// The rulers along the top and the left of the canvas, a guide dragged
@@ -7442,6 +7751,7 @@ impl Editor {
         self.charts(engine, asked, window);
         self.images(engine, asked);
         self.image_looks(engine, asked);
+        self.model3d_asks(engine, asked);
         self.text_looks(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine, window);
@@ -8800,6 +9110,12 @@ impl Editor {
                 waiting.0.push(path.clone());
                 continue;
             }
+            // A 3D model is checked, kept in the project and placed (spec 100 §3.1).
+            if crate::model3d::is_model_path(path) {
+                let at = at.map(|at| at + Vec2::splat(step));
+                self.place_model(engine, path, at);
+                continue;
+            }
             // A spreadsheet is a table (spec 082).
             if crate::sheets::is_sheet(path) {
                 let at = at.map(|at| at + Vec2::splat(step));
@@ -8826,6 +9142,71 @@ impl Editor {
                 }
                 Err(error) => eprintln!("import: {error}"),
             }
+        }
+    }
+
+    /// Brings in the 3D model at `path` (spec 100 §3.1): read and checked as untrusted data
+    /// first; a bad file leaves the design as it was and says why. The model is kept inside
+    /// the project and shows square, half the page's smaller side, centred at `at` (screen)
+    /// or in the middle of the current page, selected.
+    fn place_model(&mut self, engine: &mut Gafira, path: &std::path::Path, at: Option<Pos2>) {
+        let name = path.to_string_lossy().into_owned();
+        let checked = std::fs::read(path)
+            .map_err(|_| gafira_io_model3d::ImportError::Damaged("unreadable".into()))
+            .and_then(|bytes| crate::model3d::check_file(&bytes, &name));
+        let (format, warnings) = match checked {
+            Ok(found) => found,
+            Err(error) => {
+                eprintln!("3D import: {}: {error}", path.display());
+                self.model3d_note = Some((crate::model3d::error_key(&error), 0.0, true));
+                return;
+            }
+        };
+        self.model3d_note = warnings
+            .iter()
+            .find_map(crate::model3d::warning_key)
+            .map(|key| (key, 0.0, false));
+        let asset = match engine.assets().import(path) {
+            Ok(asset) => asset,
+            Err(error) => {
+                eprintln!("3D import: {error}");
+                self.model3d_note = Some(("model3d.error_damaged", 0.0, true));
+                return;
+            }
+        };
+        self.remember(path, false);
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let dropped = at.and_then(|at| canvas::drop_point(&self.page_rects, self.zoom, at));
+        let page = match dropped {
+            Some((page, _)) => page,
+            None => match self.current_page(&document) {
+                Some(page) => page.id,
+                None => return,
+            },
+        };
+        let Some(on) = document.page(page) else {
+            return;
+        };
+        let Ok(size) = on.size.to_px(document.dpi()) else {
+            return;
+        };
+        let side = size.width().min(size.height()) * 0.5;
+        let (cx, cy) = dropped.map_or((size.width() / 2.0, size.height() / 2.0), |(_, p)| p);
+        let placement = Placement::new(cx - side / 2.0, cy - side / 2.0, side, side);
+        let model = gafira_doc::Model3dNode::new(asset, gafira_io_model3d::document_format(format));
+        let mut spec =
+            gafira_edit::NodeSpec::new(gafira_doc::NodeKind::Model3d(Box::new(model)), placement);
+        spec.name = path.file_stem().and_then(|n| n.to_str()).map(str::to_owned);
+        let next = NodeId::new(document.next_id());
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+            }
+            Err(error) => eprintln!("3D import: {error}"),
         }
     }
 
@@ -9032,6 +9413,7 @@ impl Editor {
                 for (tab, key) in [
                     (Tab::Images, "library.images"),
                     (Tab::Designs, "library.designs"),
+                    (Tab::Models, "library.models"),
                 ] {
                     let on = view.0.tab == tab;
                     let label = RichText::new(plain(texts, key))
@@ -9068,6 +9450,7 @@ impl Editor {
             let key = match tab {
                 Tab::Images => "library.empty_images",
                 Tab::Designs => "library.empty_designs",
+                Tab::Models => "library.empty_models",
             };
             ui.label(
                 RichText::new(plain(texts, key))
@@ -9144,17 +9527,73 @@ impl Editor {
     ) {
         let file = entry.path.as_path();
         let design = entry.design;
-        let picture_h = if design { width } else { width * 0.75 };
-        let label_h = if design { 36.0 } else { 0.0 };
+        // A 3D model shows a picture of itself at its first view, square and
+        // named like a design (spec 100).
+        let model = crate::model3d::is_model_path(file);
+        let named = design || model;
+        let picture_h = if named { width } else { width * 0.75 };
+        let label_h = if named { 36.0 } else { 0.0 };
         let (rect, response) = ui.allocate_exact_size(
             Vec2::new(width, picture_h + label_h),
             egui::Sense::click_and_drag(),
         );
         let picture = Rect::from_min_size(rect.min, Vec2::new(width, picture_h));
-        let preview = self.library_preview(ui.ctx(), file, design);
+        let model_picture = if model {
+            self.model3d_studio
+                .borrow_mut()
+                .file_picture(ui.ctx(), file, 256)
+        } else {
+            None
+        };
+        let preview = if model {
+            None
+        } else {
+            self.library_preview(ui.ctx(), file, design)
+        };
         {
             let painter = ui.painter();
             painter.rect_filled(picture, theme.radius_md(), theme.c("surface.sunken"));
+            if model {
+                let fit = picture.shrink(6.0);
+                let side = fit.width().min(fit.height());
+                let at = Rect::from_center_size(fit.center(), Vec2::splat(side));
+                match model_picture {
+                    Some(texture) => {
+                        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                        painter.image(texture, at, uv, Color32::WHITE);
+                    }
+                    None => crate::icons::paint(
+                        painter,
+                        Rect::from_center_size(at.center(), Vec2::splat(side * 0.3)),
+                        Icon::Cube,
+                        crate::icons::Weight::Regular,
+                        theme.c("text.muted"),
+                    ),
+                }
+                let name = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default();
+                let kind = file
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(str::to_ascii_uppercase)
+                    .unwrap_or_default();
+                painter.text(
+                    Pos2::new(rect.min.x, picture.max.y + 4.0),
+                    Align2::LEFT_TOP,
+                    name,
+                    theme.font("ui-label"),
+                    theme.c("text"),
+                );
+                painter.text(
+                    Pos2::new(rect.min.x, picture.max.y + 20.0),
+                    Align2::LEFT_TOP,
+                    format!("{} · {kind}", plain(texts, "library.kind_model")),
+                    theme.font("caption"),
+                    theme.c("text.secondary"),
+                );
+            }
             if let Some((texture, size)) = &preview {
                 let fit = picture.shrink(if design { 12.0 } else { 0.0 });
                 let tex = texture.size_vec2();
@@ -9288,6 +9727,19 @@ impl Editor {
             && let Some(at) = at
         {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            if let Some(texture) = model_picture {
+                let ghost = ui.ctx().layer_painter(egui::LayerId::new(
+                    egui::Order::Tooltip,
+                    egui::Id::new("editor.library_ghost"),
+                ));
+                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                ghost.image(
+                    texture,
+                    Rect::from_center_size(at, Vec2::splat(96.0)),
+                    uv,
+                    Color32::WHITE.gamma_multiply(0.7),
+                );
+            }
             if let Some((texture, _)) = &preview {
                 let ghost = ui.ctx().layer_painter(egui::LayerId::new(
                     egui::Order::Tooltip,
@@ -9382,6 +9834,8 @@ impl Editor {
             texts,
             if entry.design {
                 "library.kind_design"
+            } else if crate::model3d::is_model_path(file) {
+                "library.kind_model"
             } else {
                 "library.kind_image"
             },
@@ -10742,6 +11196,122 @@ impl Editor {
         true
     }
 
+    /// The open undo step of a 3D property control is over.
+    fn end_model3d_step(&mut self, engine: &mut Gafira) {
+        if self.model3d_gesture.take().is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
+    /// Applies the 3D editing session: one undo step when something changed (spec 100
+    /// §3.5, AC-09); the session closes either way.
+    fn apply_model3d(&mut self, engine: &mut Gafira) {
+        let Some(session) = self.model3d_session.take() else {
+            return;
+        };
+        if !session.modified() {
+            return;
+        }
+        // The model and, when Escalar changed it, the element's box: one undo step.
+        let set = |property| {
+            Box::new(SetProperty::new(
+                session.page,
+                vec![session.node],
+                property,
+                None,
+            )) as Box<dyn Command>
+        };
+        let mut commands = vec![set(Property::Model3d(Box::new(session.current.clone())))];
+        if session.resized() {
+            commands.push(set(Property::Placement(session.placement)));
+        }
+        let label = MessageKey("edit.set_property");
+        if let Err(error) = engine
+            .edit()
+            .execute(Box::new(Transaction::new(label, commands)))
+        {
+            eprintln!("3D apply: {error}");
+        }
+    }
+
+    /// What the 3D editor and the «Objeto 3D» properties ask for (spec 100).
+    fn model3d_asks(&mut self, engine: &mut Gafira, asked: &Asked) {
+        // Choosing another element applies what was changed (spec 100 §3.5): no question.
+        if let Some(session) = &self.model3d_session
+            && self.selected.single() != Some((session.page, session.node))
+        {
+            self.apply_model3d(engine);
+        }
+        if asked.model3d_cancel {
+            self.model3d_session = None;
+        }
+        if asked.model3d_apply {
+            self.apply_model3d(engine);
+        }
+        if let Some((page, node)) = asked.model3d_open {
+            let found = engine.edit().document().and_then(|d| {
+                d.page(page)
+                    .and_then(|p| p.node(node))
+                    .map(|n| (n.kind.clone(), n.base.placement))
+            });
+            if let Some((gafira_doc::NodeKind::Model3d(model), placement)) = found {
+                if self
+                    .model3d_session
+                    .as_ref()
+                    .is_some_and(|s| s.node != node)
+                {
+                    self.apply_model3d(engine);
+                }
+                self.end_model3d_step(engine);
+                self.font_panel = false;
+                self.image_edit = None;
+                self.selected = Selection::one(page, node);
+                if self.model3d_session.is_none() {
+                    self.model3d_session =
+                        Some(crate::model3d::Session::new(page, node, *model, placement));
+                }
+            }
+        }
+        if let Some((node, _)) = self.model3d_gesture {
+            let same = asked
+                .model3d_set
+                .as_ref()
+                .is_none_or(|(_, of, _, _)| *of == node);
+            if asked.controls_rest || !same {
+                self.end_model3d_step(engine);
+            }
+        }
+        if let Some((page, node, model, step)) = &asked.model3d_set {
+            if let Some(session) = self.model3d_session.as_mut().filter(|s| s.node == *node) {
+                if *step {
+                    session.set((**model).clone());
+                } else {
+                    session.adjust((**model).clone());
+                }
+                return;
+            }
+            if self.model3d_gesture.is_none() && !*step {
+                let gesture = engine.edit().begin_gesture().ok();
+                self.model3d_gesture = gesture.map(|g| (*node, g));
+            }
+            let gesture = self.model3d_gesture.map(|(_, g)| g);
+            let command = SetProperty::new(
+                *page,
+                vec![*node],
+                Property::Model3d(model.clone()),
+                gesture,
+            );
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("3D: {error}");
+            }
+            if *step {
+                self.end_model3d_step(engine);
+            }
+        }
+    }
+
     /// The open undo step of an image is over.
     fn end_image_step(&mut self, engine: &mut Gafira) {
         if self.image_gesture.take().is_some()
@@ -11264,10 +11834,11 @@ impl Editor {
         // spreadsheets as tables (spec 082).
         let picked = crate::files::picker(window)
             .add_filter(
-                "Imagen, SVG, PDF, Excel, CSV",
+                "Imagen, SVG, PDF, Excel, CSV, 3D (GLB, OBJ)",
                 &[
                     &crate::files::IMAGES[..],
                     &["svg", "pdf", "xlsx", "xlsm", "csv", "tsv"],
+                    &crate::model3d::EXTENSIONS[..],
                 ]
                 .concat(),
             )
@@ -11876,7 +12447,10 @@ fn is_svg_path(path: &std::path::Path) -> bool {
 /// Whether `path` names a file the canvas takes: an image, a vector file or
 /// a spreadsheet (specs 067 and 082).
 fn is_importable(path: &std::path::Path) -> bool {
-    is_image_path(path) || is_vector_path(path) || crate::sheets::is_sheet(path)
+    is_image_path(path)
+        || is_vector_path(path)
+        || crate::sheets::is_sheet(path)
+        || crate::model3d::is_model_path(path)
 }
 
 /// The outline of the vector file at `path` (spec 066, S66-10).
@@ -13670,7 +14244,9 @@ fn box_fields(
 
 /// The title of «Propiedades» for `shape`: what kind of element it is.
 fn kind_title(shape: &Shape) -> &'static str {
-    if shape.table.is_some() {
+    if shape.model3d.is_some() {
+        "model3d.title"
+    } else if shape.table.is_some() {
         "layers.table"
     } else if shape.chart.is_some() {
         "layers.chart"
@@ -14813,7 +15389,9 @@ pub(crate) mod tests {
             ),
             ExportPorts::new(
                 crate::export::tests::pages(),
-                Arc::new(gafira_io_image::RasterDecoder::new()),
+                Arc::new(gafira_io_model3d::ModelDecoder::new(
+                    gafira_io_image::RasterDecoder::new(),
+                )),
             ),
         );
         Gafira::new(
@@ -16271,6 +16849,131 @@ pub(crate) mod tests {
         library.record(&png, false);
         std::fs::remove_file(&png).expect("deleted");
         assert!(library.existing().is_empty(), "a deleted file is not shown");
+        std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    // Spec 100 §3.1, §3.5, §8, AC-02, AC-04, AC-08, AC-09, AC-12, AC-15: a model file is
+    // placed and remembered; a bad one changes nothing; the 3D editor keeps its changes until
+    // Apply, which is one undo step; Cancel drops them; the export shows the model on
+    // transparency.
+    #[test]
+    fn s100_models_import_edit_and_export() {
+        use crate::LibraryStore as _;
+        let dir = std::env::temp_dir().join(format!("gafira-ui-3d-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let cube = dir.join("cubo.obj");
+        std::fs::write(
+            &cube,
+            "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n\
+             f 1 2 3 4\nf 5 6 7 8\nf 1 2 6 5\nf 2 3 7 6\nf 3 4 8 7\nf 4 1 5 8\n",
+        )
+        .expect("an obj");
+        let broken = dir.join("roto.glb");
+        std::fs::write(&broken, b"glTF\x02\0\0\0garbage").expect("a bad glb");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let library = std::rc::Rc::new(MemoryLibrary::default());
+        editor.library = Some(library.clone());
+        let roots = |engine: &mut Gafira| {
+            engine.edit().document().expect("doc").pages()[0]
+                .roots
+                .len()
+        };
+        let before = roots(&mut engine);
+
+        // A damaged file: nothing is added, the note says why.
+        editor.place_images(&mut engine, std::slice::from_ref(&broken), None);
+        assert_eq!(roots(&mut engine), before);
+        assert_eq!(
+            editor.model3d_note.map(|n| (n.0, n.2)),
+            Some(("model3d.error_damaged", true))
+        );
+
+        // A good one: placed, selected and remembered in Biblioteca's 3D tab.
+        editor.place_images(&mut engine, std::slice::from_ref(&cube), None);
+        assert_eq!(roots(&mut engine), before + 1);
+        let (page, node) = editor.selected.single().expect("the model is selected");
+        let model_of = |engine: &mut Gafira| {
+            let doc = engine.edit().document().expect("doc");
+            match &doc
+                .page(page)
+                .and_then(|p| p.node(node))
+                .expect("node")
+                .kind
+            {
+                gafira_doc::NodeKind::Model3d(m) => (**m).clone(),
+                other => panic!("not a model: {other:?}"),
+            }
+        };
+        let original = model_of(&mut engine);
+        assert_eq!(original.format, gafira_doc::Model3dFormat::Obj);
+        let shown = crate::library::shown(&library.existing(), crate::library::Tab::Models, "");
+        assert_eq!(shown.len(), 1);
+
+        // The 3D editor: a change stays in the session until Apply.
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                model3d_open: Some((page, node)),
+                ..Asked::default()
+            },
+        );
+        let mut turned = original.clone();
+        turned.camera.yaw = 60.0;
+        let set = Asked {
+            model3d_set: Some((page, node, Box::new(turned.clone()), true)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, set);
+        assert_eq!(
+            model_of(&mut engine),
+            original,
+            "nothing changes before Apply"
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                model3d_cancel: true,
+                ..Asked::default()
+            },
+        );
+        assert!(editor.model3d_session.is_none());
+        assert_eq!(model_of(&mut engine), original, "Cancel drops the change");
+
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                model3d_open: Some((page, node)),
+                ..Asked::default()
+            },
+        );
+        let set = Asked {
+            model3d_set: Some((page, node, Box::new(turned.clone()), true)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, set);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                model3d_apply: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(model_of(&mut engine), turned, "Apply keeps it");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(model_of(&mut engine), original, "one undo step");
+
+        // The export draws the model on transparency (AC-12).
+        let preview = engine.export().preview(page, true).expect("a preview");
+        let alpha = |x: u32, y: u32| preview.rgba[((y * preview.width + x) * 4 + 3) as usize];
+        assert_eq!(alpha(0, 0), 0);
+        assert!(alpha(preview.width / 2, preview.height / 2) > 200);
         std::fs::remove_dir_all(dir).expect("clean up");
     }
 

@@ -264,7 +264,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RNF-08 | **Accesibilidad.** Contraste AA, foco visible, AccessKit, reducción de movimiento, color nunca como única señal. | RNF-01, RNF-05 | ARQ-60..64 | CAL-33 |
 | RNF-09 | **Tamaño y recursos.** Instalador, binario y memoria dentro de los presupuestos de la §9. | — (vacío del PRD) | ARQ-83, ARQ-44 | CAL-22..CAL-26 |
 | RNF-10 | **Calidad de salida.** La vista previa y la exportación comparten el grafo; el render de exportación es determinista (CPU por defecto). | RNF-03 | ARQ-42 | CAL-34 |
-| RNF-11 | **Modelo comercial.** Producto propietario, todo de pago y una sola licencia, con modo sin licencia (D-12); sin módulos de pago separados (D-01). Se implementa en la fase final (§5.1) y no condiciona el MVP técnico. | Decisión del titular | ARQ-90..96 | — |
+| RNF-11 | **Modelo comercial.** ~~Producto propietario~~ Código abierto GPL-3.0-or-later (D-129); el resto del modelo, todo de pago y una sola licencia, con modo sin licencia (D-12); sin módulos de pago separados (D-01). Se implementa en la fase final (§5.1) y no condiciona el MVP técnico. | Decisión del titular | ARQ-90..96 | — |
 | RNF-12 | **Cobertura de traducción del 100 %.** Cada clave de mensaje, nombre del glosario y texto de microcopy existe en español y en inglés con los mismos parámetros y las formas de plural que exige cada idioma; una versión publicada nunca muestra una clave ni un texto en el otro idioma (respaldo: idioma pedido → inglés). | Decisión del titular (D-08) | ARQ-97, ARQ-98, ARQ-99 | CAL-37 |
 | RNF-13 | **Cambio de idioma sin reiniciar.** Ningún cambio de idioma exige reiniciar la app ni cerrar o recargar el proyecto; se conservan selección, historial y estado de los paneles, y el cambio completo se ve en ≤ 100 ms. | Decisión del titular (D-08) | ARQ-101 | CAL-36 |
 
@@ -361,7 +361,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | Plataformas | Solo Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Sin Linux aarch64, AppImage ni Flatpak (D-05) | D-05, ARQ-03, ARQ-84 |
 | Local | Sin servidores, web ni nube; la única conexión de red es la de la licencia (D-01); sin comprobación de versiones (D-06) | ARQ-04, ARQ-78, ARQ-91 |
 | Licencias | Dependencias y assets con licencias permisivas; `cargo-deny` en CI; sin dependencias git | ARQ-70, ARQ-71 |
-| Venta | Gafira debe poder venderse sin restricciones de licencia de terceros. Licencia propia: propietaria y de código cerrado, basada en el contrato de Tracewright (`LICENSE` y `LICENCIA.md`, prevalece el español) con tres adaptaciones; todo de pago, modo sin licencia y una sola licencia | D-01, D-12 |
+| Venta | Gafira debe poder venderse sin restricciones de licencia de terceros. Licencia propia: ~~propietaria y de código cerrado, basada en el contrato de Tracewright~~ GPL-3.0-or-later (D-129); todo de pago, modo sin licencia y una sola licencia | D-01, D-12 |
 | Binarios | Ningún ejecutable de terceros en el instalador | ARQ-72 |
 | Actualizaciones | La app no comprueba versiones nuevas; el usuario descarga cada versión desde la web | D-06, ARQ-78 |
 | Patentes | Exportación por defecto AV1 + Opus; H.264/AAC solo vía API del sistema; sin encoders propios de H.264, HEVC ni AAC; sin salida HEVC ni MP3; `encumbered-sw` desactivada | D-02, ADR-07 |
@@ -450,7 +450,7 @@ Ninguna, ni aquí ni en 02 (§12.3). Q-25 la cerró D-77; Q-34 pasó a tarea de 
 Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `license-hub`:
 
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio. **Aplazado** por D-62 y D-70: la primera versión se publica gratis y sin licencia, así que no bloquea el lanzamiento.
-2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`, contrato de Tracewright con las tres adaptaciones de D-01) y el `PRIVACY.md` de Gafira, con el identificador de dispositivo, se escriben en la fase final de licencia (spec 06).
+2. `LICENSE`: **hecho**, y sustituido por el texto de la GPL v3 (D-129). El EULA (`LICENCIA.md`, contrato de Tracewright con las tres adaptaciones de D-01) y el `PRIVACY.md` de Gafira, con el identificador de dispositivo, se escriben en la fase final de licencia (spec 06).
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
 4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento (ítem 145 de 07) y, opcionalmente, reservar más dominios. La elección del primer país de registro queda **aplazada** (D-84) y no bloquea esta spec (D-83).
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: ver 00, pendiente 5, y 02 §9.2; las patentes de MP3 siguen en VERIFICAR).

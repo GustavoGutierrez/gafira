@@ -314,6 +314,24 @@ impl Writer<'_, '_, '_> {
                     self.xfrm(&p)
                 );
             }
+            // A 3D model goes as the picture its camera sees (spec 100 §8).
+            NodeKind::Model3d(model) => {
+                let found = self
+                    .media
+                    .model(model, (p.w, p.h))
+                    .and_then(|()| self.picture(model.shown()));
+                let Some(rid) = found else {
+                    self.skipped = true;
+                    return;
+                };
+                let id = self.id();
+                let _ = write!(
+                    out,
+                    "<p:pic><p:nvPicPr><p:cNvPr id=\"{id}\" name=\"{name}\"/><p:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"{rid}\">{}</a:blip><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic>",
+                    alpha_mod(opacity),
+                    self.xfrm(&p)
+                );
+            }
             NodeKind::Frame(frame) => self.frame(out, frame, (&p, &name, opacity)),
             // A QR code goes as its shapes and its logo (spec 080); one that
             // cannot be made draws nothing anywhere.

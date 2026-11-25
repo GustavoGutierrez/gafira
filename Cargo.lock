@@ -1922,7 +1922,7 @@ checksum = "312d2295c7302019c395cfb90dacd00a82a2eabd700429bba9c7a3f38dbbe11b"
 
 [[package]]
 name = "gafira"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "eframe",
  "gafira-assets",
@@ -1932,6 +1932,7 @@ dependencies = [
  "gafira-geom",
  "gafira-i18n",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-io-pdf",
  "gafira-io-pptx",
  "gafira-io-svg",
@@ -1953,7 +1954,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-anim"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -1965,7 +1966,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-assets"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "gafira-doc",
@@ -1974,7 +1975,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-audio"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_no_alloc",
  "criterion",
@@ -1988,7 +1989,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-chart"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -1999,11 +2000,11 @@ dependencies = [
 
 [[package]]
 name = "gafira-cli"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "gafira-color"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "serde",
@@ -2012,7 +2013,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-doc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -2025,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-edit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2038,7 +2039,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-engine"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "crossbeam-channel",
  "gafira-doc",
@@ -2051,7 +2052,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-format"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "flate2",
@@ -2066,7 +2067,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-geom"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kurbo 0.13.1",
  "proptest",
@@ -2076,7 +2077,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-i18n"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-doc",
  "gafira-ports",
@@ -2088,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-image"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2108,8 +2109,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-io-model3d"
+version = "0.3.0"
+dependencies = [
+ "gafira-doc",
+ "gafira-model3d",
+ "gafira-ports",
+ "gafira-raster",
+ "glam",
+ "gltf",
+ "image",
+ "rayon",
+ "serde_json",
+ "tobj",
+]
+
+[[package]]
 name = "gafira-io-pdf"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2131,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-pptx"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "flate2",
  "gafira-chart",
@@ -2139,6 +2156,7 @@ dependencies = [
  "gafira-doc",
  "gafira-geom",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-ports",
  "gafira-qr",
  "gafira-raster",
@@ -2150,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-svg"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2170,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-vector"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2181,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-io-xlsx"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "flate2",
  "gafira-color",
@@ -2195,7 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-layout"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "gafira-doc",
@@ -2205,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-media"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2217,8 +2235,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-model3d"
+version = "0.3.0"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "gafira-pathops"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-doc",
  "gafira-geom",
@@ -2229,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-photos"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-ports",
  "serde",
@@ -2239,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-platform"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-doc",
  "gafira-ports",
@@ -2252,7 +2277,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-ports"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2267,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-qr"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2280,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-raster"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2293,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-render"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "gafira-anim",
@@ -2315,7 +2340,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-render-cpu"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2333,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-segment"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2347,7 +2372,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-table"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -2357,7 +2382,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-testkit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "assert_no_alloc",
  "gafira-color",
@@ -2375,7 +2400,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-text"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -2390,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-theme"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gafira-doc",
  "serde_json",
@@ -2399,7 +2424,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-time"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "serde",
@@ -2408,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-ui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "blake3",
@@ -2425,12 +2450,14 @@ dependencies = [
  "gafira-geom",
  "gafira-i18n",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-io-pdf",
  "gafira-io-pptx",
  "gafira-io-svg",
  "gafira-io-vector",
  "gafira-io-xlsx",
  "gafira-layout",
+ "gafira-model3d",
  "gafira-platform",
  "gafira-ports",
  "gafira-qr",
@@ -2441,6 +2468,7 @@ dependencies = [
  "gafira-table",
  "gafira-testkit",
  "gafira-theme",
+ "glam",
  "image",
  "kurbo 0.13.1",
  "proptest",
@@ -2456,7 +2484,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-vision"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "flate2",
@@ -2544,6 +2572,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.34.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "627003914c6057c9c8f0832ee4f870b5a4f599d0cfa83f4072675114860cd0ff"
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2559,6 +2593,42 @@ dependencies = [
  "slotmap",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "gltf"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3ce1918195723ce6ac74e80542c5a96a40c2b26162c1957a5cd70799b8cacf7"
+dependencies = [
+ "byteorder",
+ "gltf-json",
+ "lazy_static",
+ "serde_json",
+]
+
+[[package]]
+name = "gltf-derive"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14070e711538afba5d6c807edb74bcb84e5dbb9211a3bf5dea0dfab5b24f4c51"
+dependencies = [
+ "inflections",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "gltf-json"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6176f9d60a7eab0a877e8e96548605dedbde9190a7ae1e80bbcc1c9af03ab14"
+dependencies = [
+ "gltf-derive",
+ "serde",
+ "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
@@ -3007,6 +3077,12 @@ dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
 ]
+
+[[package]]
+name = "inflections"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 
 [[package]]
 name = "inout"
@@ -5575,6 +5651,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7c4ceeeca15c8384bbc3e011dbd8fccb7f068a440b752b7d9b32ceb0ca0e2e8"
 
 [[package]]
+name = "tobj"
+version = "4.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6eb8e04167c1c0c76b5de63226fd733485ad63ef71e40de31e16272f47b099e2"
+
+[[package]]
 name = "tokio"
 version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6851,7 +6933,7 @@ checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "resvg",
 ]

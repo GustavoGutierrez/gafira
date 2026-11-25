@@ -1,0 +1,655 @@
+---
+import { Picture } from 'astro:assets';
+import { screens } from '../lib/screens';
+import Icon from './Icon.astro';
+import { copy, homePath, type Locale } from '../i18n/ui';
+import { downloads, type Release } from '../lib/release';
+
+interface Props {
+  locale: Locale;
+  release: Release;
+}
+
+const { locale, release } = Astro.props;
+const t = copy[locale];
+const files = downloads(release);
+const home = homePath(locale);
+// The button points to the download section until the script below finds
+// the visitor's system (no JavaScript: the section is still one click away).
+const targets = {
+  windows: files.windowsInstaller?.url,
+  macos: files.macos?.url,
+  linux: `${home}#download-linux`,
+};
+const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+const slides = [
+  { id: 'editor', label: t.hero.slides.editor, image: screens[locale].editor, alt: t.hero.screenAlt },
+  { id: 'packs', label: t.hero.slides.packs, image: screens[locale].packs, alt: t.hero.slides.packsAlt },
+];
+---
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero__glow" aria-hidden="true"></div>
+  <div class="container hero__inner">
+    <h1 class="hero__title" id="hero-title">{t.hero.title}</h1>
+    <p class="hero__lead">{t.hero.lead}</p>
+    <div class="hero__actions">
+      <a
+        class="button button--primary hero__download"
+        href={`${home}#download`}
+        data-download
+        data-targets={JSON.stringify(targets)}
+        data-names={JSON.stringify(names)}
+        data-label={t.hero.downloadFor}
+      >
+        <Icon name="download-simple" size={20} />
+        <span data-download-label>{t.hero.download}</span>
+      </a>
+      <a class="button button--outline" href={`${home}#features`}>
+        {t.hero.features}
+        <Icon name="arrow-down" size={18} />
+      </a>
+    </div>
+    <p class="hero__meta">
+      <span>{t.hero.platforms}</span>
+      <span aria-hidden="true">·</span>
+      <span>{t.download.version} {release.version}</span>
+    </p>
+  </div>
+
+  <div class="container hero__stage" data-showing="editor">
+    <div class="hero__panel hero__panel--coral" aria-hidden="true"></div>
+    <div class="hero__panel hero__panel--mint" aria-hidden="true"></div>
+    <div class="chip chip--background" aria-hidden="true">
+      <span class="chip__icon chip__icon--mint"><Icon name="magic-wand" size={18} /></span>
+      {t.hero.chips.background}
+    </div>
+    <div class="chip chip--colors" aria-hidden="true">
+      <span class="chip__dots"><i></i><i></i><i></i><i></i></span>
+      {t.hero.chips.colors}
+    </div>
+    <div class="chip chip--exported" aria-hidden="true">
+      <span class="chip__icon chip__icon--coral"><Icon name="check" size={18} /></span>
+      {t.hero.chips.exported}
+    </div>
+    <div class="window" role="region" aria-roledescription="carousel" aria-label={t.hero.slides.label} data-carousel>
+      <div class="window__bar">
+        <span class="window__dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <div class="switcher">
+          {
+            slides.map((slide, index) => (
+              <button
+                class:list={['switcher__tab', { 'is-active': index === 0 }]}
+                type="button"
+                aria-controls={`hero-slide-${slide.id}`}
+                aria-current={index === 0 ? 'true' : 'false'}
+                data-slide-tab={index}
+              >
+                {slide.label}
+              </button>
+            ))
+          }
+          <button
+            class="switcher__toggle"
+            type="button"
+            aria-label={t.hero.slides.pause}
+            title={t.hero.slides.pause}
+            data-slide-toggle
+            data-pause={t.hero.slides.pause}
+            data-play={t.hero.slides.play}
+          >
+            <Icon name="pause" size={16} class="switcher__pause" />
+            <Icon name="play" size={16} class="switcher__play" />
+          </button>
+        </div>
+      </div>
+      <div class="slides">
+        {
+          slides.map((slide, index) => (
+            <div
+              class:list={['slide', { 'is-active': index === 0 }]}
+              id={`hero-slide-${slide.id}`}
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`${index + 1} / ${slides.length}: ${slide.label}`}
+              aria-hidden={index === 0 ? undefined : 'true'}
+              data-slide={slide.id}
+            >
+              <Picture
+                src={slide.image}
+                formats={['avif', 'webp']}
+                widths={[720, 1080, 1440]}
+                sizes="(max-width: 1240px) calc(100vw - 48px), 1100px"
+                alt={slide.alt}
+                loading={index === 0 ? 'eager' : 'lazy'}
+                fetchpriority={index === 0 ? 'high' : undefined}
+              />
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // The visitor's system picks the main download (no tracking, no request).
+  type System = 'windows' | 'macos' | 'linux';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean } };
+  const platform = (nav.userAgentData?.platform || navigator.platform || '').toLowerCase();
+  const agent = navigator.userAgent.toLowerCase();
+  const mobile = nav.userAgentData?.mobile || /android|iphone|ipad|ipod|mobile/.test(agent);
+  let system: System | undefined;
+  if (!mobile) {
+    if (platform.includes('win') || agent.includes('windows')) system = 'windows';
+    else if (platform.includes('mac') || agent.includes('mac os')) system = 'macos';
+    else if (platform.includes('linux') || agent.includes('linux') || agent.includes('x11')) system = 'linux';
+  }
+  if (system) {
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-download]')) {
+      const targets = JSON.parse(link.dataset.targets ?? '{}') as Record<System, string | undefined>;
+      const names = JSON.parse(link.dataset.names ?? '{}') as Record<System, string>;
+      const target = targets[system];
+      if (!target) continue;
+      link.href = target;
+      const label = link.querySelector('[data-download-label]');
+      if (label) label.textContent = `${link.dataset.label} ${names[system]}`;
+    }
+    document.querySelector(`[data-system="${system}"]`)?.classList.add('is-recommended');
+  }
+
+  // The window's screenshots take turns every few seconds; pointing at or
+  // focusing the window holds the current one, the toggle stops them, and
+  // reduced motion leaves the first one until a tab is chosen.
+  const carousel = document.querySelector<HTMLElement>('[data-carousel]');
+  const slides = [...document.querySelectorAll<HTMLElement>('[data-slide]')];
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-slide-tab]')];
+  const toggle = document.querySelector<HTMLButtonElement>('[data-slide-toggle]');
+  const switcher = toggle?.closest<HTMLElement>('.switcher');
+  const stage = carousel?.closest<HTMLElement>('.hero__stage');
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const turn = 6000;
+  let current = 0;
+  let timer = 0;
+  let stopped = still;
+  let held = false;
+
+  const schedule = () => {
+    window.clearTimeout(timer);
+    if (stopped || held) return;
+    timer = window.setTimeout(() => show((current + 1) % slides.length), turn);
+  };
+
+  const show = (index: number) => {
+    current = index;
+    // The chips describe the editor screenshot; they step aside for the others.
+    if (stage) stage.dataset.showing = slides[index]?.dataset.slide ?? '';
+    slides.forEach((slide, i) => {
+      slide.classList.toggle('is-active', i === index);
+      if (i === index) slide.removeAttribute('aria-hidden');
+      else slide.setAttribute('aria-hidden', 'true');
+    });
+    tabs.forEach((tab, i) => {
+      tab.classList.remove('is-active');
+      tab.setAttribute('aria-current', String(i === index));
+    });
+    // Restart the progress fill of the chosen tab.
+    void tabs[index]?.offsetWidth;
+    tabs[index]?.classList.add('is-active');
+    schedule();
+  };
+
+  const setStopped = (value: boolean) => {
+    stopped = value;
+    switcher?.classList.toggle('is-stopped', value);
+    if (toggle) {
+      const label = value ? toggle.dataset.play : toggle.dataset.pause;
+      toggle.setAttribute('aria-label', label ?? '');
+      toggle.title = label ?? '';
+    }
+    if (value) window.clearTimeout(timer);
+    else show(current);
+  };
+
+  if (carousel && slides.length > 1) {
+    tabs.forEach((tab, i) => tab.addEventListener('click', () => show(i)));
+    toggle?.addEventListener('click', () => setStopped(!stopped));
+    const hold = (value: boolean) => {
+      held = value;
+      switcher?.classList.toggle('is-held', value);
+      if (value) window.clearTimeout(timer);
+      else if (!stopped) show(current);
+    };
+    carousel.addEventListener('pointerenter', () => hold(true));
+    carousel.addEventListener('pointerleave', () => hold(false));
+    setStopped(stopped);
+  }
+</script>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding-top: clamp(56px, 9vw, 112px);
+  }
+
+  .hero__glow {
+    position: absolute;
+    inset: -20% -10% auto;
+    height: 720px;
+    background:
+      radial-gradient(40% 50% at 20% 30%, rgb(63 191 169 / 0.16), transparent 70%),
+      radial-gradient(35% 45% at 80% 20%, rgb(255 107 87 / 0.14), transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero__inner {
+    position: relative;
+    text-align: center;
+    max-width: 860px;
+  }
+
+  .hero__title {
+    animation: rise 700ms var(--ease) 60ms both;
+    margin-top: 0;
+    text-wrap: balance;
+    font-size: clamp(40px, 7vw, 64px);
+    line-height: 1.08;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+  }
+
+  .hero__lead {
+    animation: rise 700ms var(--ease) 180ms both;
+    margin: 24px auto 0;
+    max-width: 680px;
+    font-size: clamp(17px, 2vw, 19px);
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .hero__actions {
+    animation: rise 700ms var(--ease) 270ms both;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 36px;
+  }
+
+  .hero__meta {
+    animation: rise 700ms var(--ease) 360ms both;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--text-secondary);
+  }
+
+  .hero__stage {
+    position: relative;
+    margin-top: clamp(48px, 7vw, 80px);
+    padding-bottom: clamp(56px, 8vw, 96px);
+    max-width: 1100px;
+  }
+
+  /* Two panels behind the window, after the layers of the symbol. */
+  .hero__panel {
+    position: absolute;
+    border-radius: var(--radius-lg);
+  }
+
+  @keyframes float {
+    from {
+      translate: 0 0;
+    }
+    to {
+      translate: 0 -14px;
+    }
+  }
+
+  .hero__panel {
+    animation: float 7s ease-in-out infinite alternate;
+  }
+
+  .hero__panel--coral {
+    width: 34%;
+    height: 42%;
+    left: -2%;
+    top: -5%;
+    background: var(--coral);
+    transform: rotate(-4deg);
+  }
+
+  .hero__panel--mint {
+    width: 30%;
+    height: 40%;
+    right: -2%;
+    bottom: 6%;
+    background: var(--mint);
+    transform: rotate(4deg);
+    animation-delay: -3.5s;
+  }
+
+  .hero__stage {
+    perspective: 1800px;
+  }
+
+  .window {
+    animation: rise 900ms var(--ease) 420ms both;
+  }
+
+  /* Where the browser has scroll-driven animations, the window straightens
+     as it comes into view. */
+  @supports (animation-timeline: view()) {
+    .window {
+      transform-origin: center top;
+      animation:
+        rise 900ms var(--ease) 420ms both,
+        straighten linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, entry 0% cover 45%;
+    }
+
+    @keyframes straighten {
+      from {
+        transform: rotateX(14deg) scale(0.94);
+      }
+      to {
+        transform: none;
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero__panel,
+    .chip,
+    .window,
+    .slide,
+    .hero__title,
+    .hero__lead,
+    .hero__actions,
+    .hero__meta {
+      animation: none;
+    }
+  }
+
+  /* Interface chips floating around the window. */
+  .chip {
+    position: absolute;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 10px 10px;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 600;
+    white-space: nowrap;
+    animation:
+      chip-in 700ms var(--ease) both,
+      float 6s ease-in-out infinite alternate;
+  }
+
+  /* filter and scale, not opacity and transform: those belong to the chips'
+     own entrance and float animations. */
+  .chip {
+    transition:
+      filter 400ms var(--ease),
+      scale 400ms var(--ease);
+  }
+
+  .hero__stage:not([data-showing='editor']) .chip {
+    filter: opacity(0);
+    scale: 0.92;
+    pointer-events: none;
+  }
+
+  .chip--background {
+    left: -3%;
+    top: 30%;
+    animation-delay: 1100ms, 1800ms;
+  }
+
+  .chip--colors {
+    right: -4%;
+    top: 12%;
+    animation-delay: 1300ms, 0ms;
+  }
+
+  .chip--exported {
+    right: 8%;
+    bottom: 8%;
+    animation-delay: 1500ms, 900ms;
+  }
+
+  @keyframes chip-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .chip__icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    color: var(--ink);
+  }
+
+  .chip__icon--mint {
+    background: var(--mint);
+  }
+
+  .chip__icon--coral {
+    background: var(--coral);
+  }
+
+  .chip__dots {
+    display: flex;
+    padding-left: 6px;
+  }
+
+  .chip__dots i {
+    width: 22px;
+    height: 22px;
+    margin-left: -6px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    background: var(--tile);
+  }
+
+  .chip__dots i:nth-child(2) {
+    background: var(--coral);
+  }
+
+  .chip__dots i:nth-child(3) {
+    background: var(--mint);
+  }
+
+  .chip__dots i:nth-child(4) {
+    background: var(--mist);
+  }
+
+  .window {
+    position: relative;
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--ink);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .window__bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 6px 8px 6px 16px;
+    background: var(--ink);
+  }
+
+  .window__dots {
+    display: flex;
+    gap: 8px;
+  }
+
+  .window__dots span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: rgb(231 234 242 / 0.28);
+  }
+
+  /* The screenshots share the frame of the widest one; the editor's
+     bottom bar falls outside it. */
+  .slides {
+    position: relative;
+    aspect-ratio: 1440 / 789;
+    background: var(--surface);
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(1.02);
+    transition:
+      opacity 700ms var(--ease),
+      transform 900ms var(--ease),
+      visibility 0s linear 700ms;
+  }
+
+  .slide.is-active {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+      opacity 700ms var(--ease),
+      transform 900ms var(--ease),
+      visibility 0s;
+  }
+
+  .slide :global(picture),
+  .slide :global(img) {
+    width: 100%;
+    height: 100%;
+  }
+
+  .slide :global(img) {
+    object-fit: cover;
+    object-position: top center;
+  }
+
+  /* Tabs in the window bar; a mint line fills under the chosen one while it
+     is shown. Mist on ink: 13.0:1; white on ink: 15.51:1. */
+  .switcher {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .switcher__tab,
+  .switcher__toggle {
+    position: relative;
+    overflow: hidden;
+    min-height: 32px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: rgb(231 234 242 / 0.72);
+    font: 600 13px/20px var(--font-body);
+    cursor: pointer;
+    transition:
+      background-color 160ms var(--ease),
+      color 160ms var(--ease);
+  }
+
+  .switcher__tab {
+    padding: 6px 14px;
+  }
+
+  .switcher__tab:hover,
+  .switcher__toggle:hover {
+    color: #fff;
+    background: rgb(231 234 242 / 0.08);
+  }
+
+  .switcher__tab.is-active {
+    color: #fff;
+    background: rgb(231 234 242 / 0.12);
+  }
+
+  .switcher__tab::after {
+    content: '';
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 3px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--mint);
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+
+  .switcher__tab.is-active::after {
+    animation: fill 6000ms linear both;
+  }
+
+  .switcher.is-stopped .switcher__tab.is-active::after {
+    animation: none;
+    transform: none;
+  }
+
+  .switcher.is-held .switcher__tab.is-active::after {
+    animation-play-state: paused;
+  }
+
+  @keyframes fill {
+    to {
+      transform: none;
+    }
+  }
+
+  .switcher__toggle {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    margin-left: auto;
+    padding: 0;
+  }
+
+  .switcher__toggle :global(.switcher__play),
+  .switcher.is-stopped .switcher__toggle :global(.switcher__pause) {
+    display: none;
+  }
+
+  .switcher.is-stopped .switcher__toggle :global(.switcher__play) {
+    display: block;
+  }
+
+  @media (max-width: 640px) {
+    .hero__actions .button {
+      width: 100%;
+    }
+
+    .hero__panel,
+    .chip {
+      display: none;
+    }
+  }
+</style>

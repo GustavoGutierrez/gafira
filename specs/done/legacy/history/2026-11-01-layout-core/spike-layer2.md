@@ -202,4 +202,4 @@ rayon (02:1323) only. `ort` is Fase 3 behind `onnx`, with `load-dynamic` and `st
 | O11 | (Folded) approval of the look of the image sliders once the specifier proposes formulas (R-d). | | Ask only after the specifier proposal exists. |
 
 ## 8. Stray file
-A placeholder was written by mistake to `/tmp/claude-1000/-home-meridian-Documentos/Proyectos/Personal/gafira/.../scratchpad/layer2-gaps.md` (wrong dir name); the sandbox denied `rm`. It is outside the repo and can be ignored.
+A placeholder was written by mistake to `layer2-gaps.md` in a scratch directory with the wrong name; the sandbox denied `rm`. It is outside the repo and can be ignored.

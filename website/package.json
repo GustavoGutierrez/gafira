@@ -1,0 +1,29 @@
+{
+  "name": "gafira-website",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Gafira landing page (Astro, static), served by Cloudflare Workers at gafira.com.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro build && wrangler dev",
+    "deploy:dry-run": "astro build && wrangler deploy --dry-run",
+    "deploy": "astro build && wrangler deploy"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "3.7.6",
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/manrope": "5.3.0",
+    "@phosphor-icons/core": "2.1.1",
+    "astro": "7.4.13"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.12",
+    "typescript": "6.0.3",
+    "wrangler": "4.168.0"
+  }
+}

@@ -1,0 +1,251 @@
+/* Gafira website. Colours and radii come from assets/theme/gafira.tokens.json
+   as custom properties (Base.astro); type follows the brand scale: Manrope for
+   headings, Inter for text. Contrast pairs used: ink/canvas 14.83, white/ink
+   15.51, ink/coral 5.53, ink/mint 6.82, text.secondary/canvas 7.6, mist on
+   ink (decorative only). */
+
+:root {
+  --font-head: 'Manrope Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --shadow-sm: 0 1px 2px rgb(24 36 59 / 0.06), 0 1px 3px rgb(24 36 59 / 0.08);
+  --shadow-md: 0 8px 24px rgb(24 36 59 / 0.08), 0 2px 6px rgb(24 36 59 / 0.06);
+  --shadow-lg: 0 30px 60px rgb(24 36 59 / 0.18), 0 10px 20px rgb(24 36 59 / 0.08);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --width: 1180px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Anchored sections land below the sticky header. */
+  scroll-padding-top: 88px;
+  scrollbar-color: var(--border) var(--bg);
+  accent-color: var(--coral);
+  caret-color: var(--coral);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  transition:
+    background-color 220ms var(--ease),
+    color 220ms var(--ease);
+  font-size: 16px;
+  line-height: 26px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg,
+picture {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 0.22em;
+  text-decoration-thickness: 1.5px;
+}
+
+::selection {
+  background: var(--mint);
+  color: var(--ink);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-head);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.skip {
+  position: absolute;
+  left: 16px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--ink);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: top 160ms var(--ease);
+}
+
+.skip:focus {
+  top: 16px;
+}
+
+.container {
+  width: min(100% - 48px, var(--width));
+  margin-inline: auto;
+}
+
+.section {
+  padding-block: clamp(72px, 10vw, 128px);
+}
+
+.section--white {
+  background: var(--surface);
+}
+
+.section-head {
+  max-width: 720px;
+  margin-bottom: clamp(40px, 6vw, 64px);
+}
+
+.section-head--center {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.section-head h2 {
+  margin-top: 0;
+  text-wrap: balance;
+  font-size: clamp(30px, 4vw, 40px);
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.section-head p {
+  margin-top: 16px;
+  font-size: 18px;
+  line-height: 29px;
+  color: var(--text-secondary);
+}
+
+/* Buttons: coral with ink text (never white small text on coral), ink with
+   white text, or an outline. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 22px;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease),
+    box-shadow 160ms var(--ease),
+    background-color 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.button--primary {
+  background: var(--coral);
+  color: var(--ink);
+  box-shadow: 0 6px 16px rgb(255 107 87 / 0.32);
+}
+
+.button--primary:hover {
+  box-shadow: 0 10px 24px rgb(255 107 87 / 0.4);
+}
+
+.button--dark {
+  background: var(--ink);
+  color: #fff;
+}
+
+.button--outline {
+  border-color: var(--text);
+  color: var(--text);
+  background: transparent;
+}
+
+.button--outline:hover {
+  background: var(--muted);
+}
+
+.button--small {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
+
+/* Motion. Content is visible without JavaScript: only with the `js` class on
+   <html> do elements wait for their reveal. Reduced motion shows everything
+   in place (rule at the end). */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 700ms var(--ease),
+    transform 700ms var(--ease);
+  transition-delay: var(--delay, 0ms);
+}
+
+.js .reveal--zoom {
+  transform: translateY(32px) scale(0.96);
+}
+
+.js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

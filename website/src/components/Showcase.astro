@@ -1,0 +1,125 @@
+---
+import { Picture } from 'astro:assets';
+import { screens as shots } from '../lib/screens';
+import Icon from './Icon.astro';
+import { copy, type Locale } from '../i18n/ui';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = copy[locale];
+const { editor, home, exporting } = shots[locale];
+const screens = [editor, home, exporting];
+---
+
+<section class="section" aria-labelledby="showcase-title">
+  <div class="container">
+    <div class="section-head section-head--center">
+      <h2 id="showcase-title">{t.showcase.title}</h2>
+    </div>
+    <div class="rows">
+      {
+        t.showcase.items.map((item, index) => (
+          <article class:list={['row', { 'row--flip': index % 2 === 1 }]}>
+            <div class="row__text reveal">
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+              <ul>
+                {item.points.map((point) => (
+                  <li>
+                    <Icon name="check-circle" size={22} />
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <figure class="row__shot reveal reveal--zoom" style="--delay:120ms">
+              <Picture
+                src={screens[index] ?? editor}
+                formats={['avif', 'webp']}
+                widths={[640, 960, 1440]}
+                sizes="(max-width: 960px) calc(100vw - 48px), 680px"
+                alt={item.alt}
+              />
+            </figure>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .rows {
+    display: grid;
+    gap: clamp(64px, 9vw, 112px);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    align-items: center;
+    gap: clamp(32px, 5vw, 72px);
+  }
+
+  .row--flip .row__text {
+    order: 2;
+  }
+
+  h3 {
+    font-size: clamp(26px, 3vw, 32px);
+    line-height: 1.25;
+    font-weight: 700;
+  }
+
+  .row__text > p {
+    margin-top: 16px;
+    font-size: 18px;
+    line-height: 29px;
+    color: var(--text-secondary);
+  }
+
+  ul {
+    display: grid;
+    gap: 12px;
+    margin: 28px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 500;
+  }
+
+  li :global(svg) {
+    flex: none;
+    color: var(--mint);
+  }
+
+  .row__shot {
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    background: var(--surface);
+  }
+
+  .row__shot :global(img) {
+    width: 100%;
+  }
+
+  @media (max-width: 960px) {
+    .row {
+      grid-template-columns: 1fr;
+    }
+
+    .row--flip .row__text {
+      order: 0;
+    }
+  }
+</style>
