@@ -7,6 +7,7 @@ import Features from './Features.astro';
 import Showcase from './Showcase.astro';
 import Local from './Local.astro';
 import Download from './Download.astro';
+import Packs from './Packs.astro';
 import Cta from './Cta.astro';
 import Footer from './Footer.astro';
 import { latestRelease } from '../lib/release';
@@ -29,6 +30,7 @@ const release = await latestRelease();
     <Showcase locale={locale} />
     <Local locale={locale} />
     <Download locale={locale} release={release} />
+    <Packs locale={locale} />
     <Cta locale={locale} />
   </main>
   <Footer locale={locale} />
