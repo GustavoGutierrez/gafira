@@ -128,15 +128,12 @@ pub(crate) enum Icon {
     MoveAxes,
     ScaleOut,
     FitView,
-    CubeFocus,
-    Perspective,
-    Hand,
     Camera,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 83] = [
+    pub(crate) const ALL: [Self; 80] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -216,9 +213,6 @@ impl Icon {
         Self::MoveAxes,
         Self::ScaleOut,
         Self::FitView,
-        Self::CubeFocus,
-        Self::Perspective,
-        Self::Hand,
         Self::Camera,
     ];
 
@@ -304,9 +298,6 @@ impl Icon {
             Self::MoveAxes => "arrows-out-cardinal",
             Self::ScaleOut => "arrows-out",
             Self::FitView => "corners-out",
-            Self::CubeFocus => "cube-focus",
-            Self::Perspective => "perspective",
-            Self::Hand => "hand",
             Self::Camera => "camera",
         }
     }

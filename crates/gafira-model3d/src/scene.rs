@@ -265,8 +265,19 @@ impl Scene {
         self.validate(limits)?;
         let (min, max) = self.bounds().ok_or(SceneError::Empty)?;
         let centre = [0, 1, 2].map(|k| (min[k] + max[k]) / 2.0);
-        let half = [0, 1, 2].map(|k| (max[k] - min[k]) / 2.0);
-        let radius = (half[0] * half[0] + half[1] * half[1] + half[2] * half[2]).sqrt();
+        // The farthest vertex from the centre of the box: tighter than the box's half
+        // diagonal, and still nothing leaves the sphere when the model turns.
+        let mut radius = 0.0_f32;
+        for p in &self.primitives {
+            for &i in &p.indices {
+                let v = p.positions[i as usize];
+                let d = (0..3)
+                    .map(|k| (v[k] - centre[k]).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                radius = radius.max(d);
+            }
+        }
         if !radius.is_finite() || radius <= f32::EPSILON * 16.0 {
             return Err(SceneError::Degenerate);
         }

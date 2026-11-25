@@ -138,5 +138,9 @@ debug = "none"
 [profile.dev.package.gafira-segment]
 opt-level = 2
 
+# Spec 100: the 3D rasterizer draws on every gizmo drag; unoptimized it is too slow to edit with.
+[profile.dev.package.gafira-model3d]
+opt-level = 3
+
 [profile.dev.package.gafira-testkit]
 opt-level = 2

@@ -270,6 +270,7 @@ pub(crate) fn kind_key(kind: &NodeKind) -> &'static str {
         NodeKind::Frame(_) => "layers.frame",
         NodeKind::Qr(_) => "layers.qr",
         NodeKind::Table(_) => "layers.table",
+        NodeKind::Model3d(_) => "layers.model3d",
         NodeKind::Chart(_) => "layers.chart",
         _ => "layers.element",
     }

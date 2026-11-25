@@ -49,6 +49,7 @@ mod library;
 mod lines;
 mod looks;
 mod magnet;
+mod model3d;
 mod pack_dialog;
 mod pack_panel;
 mod packs;

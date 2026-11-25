@@ -326,10 +326,13 @@ fn main() -> eframe::Result {
                     Arc::new(JsonSettings::at(settings_file(&data_dir))),
                     resolver,
                 ),
-                // Spec 032: the image assets an export draws decode in io-image.
+                // Spec 032: the image assets an export draws decode in io-image;
+                // spec 100: 3D models are drawn by the CPU rasterizer (D-130).
                 ExportPorts::new(
                     export_pages(clock.clone(), for_export.clone()),
-                    Arc::new(gafira_io_image::RasterDecoder::new()),
+                    Arc::new(gafira_io_model3d::ModelDecoder::new(
+                        gafira_io_image::RasterDecoder::new(),
+                    )),
                 ),
             );
             Gafira::new(
