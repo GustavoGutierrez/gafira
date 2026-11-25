@@ -6,6 +6,7 @@ Alcance fuera de las primeras fases: esta spec **no bloquea** el desarrollo de l
 
 ## 1. Objetivo y alcance
 
+- **Nota (D-129):** Gafira es ahora software libre bajo GPL-3.0-or-later; esta spec debe revisarse con el titular antes de retomarla.
 - Permitir vender Gafira como software propietario de pago con prueba gratuita, con una sola licencia que desbloquea todo el producto.
 - Verificar la licencia sin conexión después de activarla una vez.
 - **Fuera de alcance**: construir un servidor de licencias nuevo. Se reutiliza el `license-hub` ya desplegado del titular (Cloudflare Workers + D1).
