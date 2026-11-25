@@ -973,10 +973,12 @@ pub(crate) fn overlay(
     // The blue ring runs from just past its arrow head round to it; the green one ends at
     // its top, heading right (spec 100 reference).
     use std::f32::consts::{PI, TAU};
-    // The blue ring is whole, its head riding on its near right side; the green one is an
-    // arc on the left, from the bottom up to its head at the top (spec 100 reference).
-    let (blue_from, blue_to) = (0.0, TAU);
-    let blue_head = (0.18, 0.34);
+    // The blue ring runs behind the model and along its sides; the green one is an arc on
+    // the left, from the bottom up to its head at the top (spec 100 reference).
+    // Open in front, where it would cross the model, so it reads as going round it; its
+    // head ends the arc on the near right.
+    let (blue_from, blue_to) = (PI / 2.0 + 0.85, TAU + PI / 2.0 - 0.85);
+    let blue_head = (blue_to - 0.12, blue_to);
     let (green_from, green_to) = (PI / 2.0 - 0.3, 1.5 * PI + 0.3);
 
     // What a press grabs, by tool and place.
