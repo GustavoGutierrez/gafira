@@ -1,6 +1,6 @@
 # Spike: layout-core
 
-Facts only. Scratch: `/tmp/claude-1000/-home-meridian-Documentos-Proyectos-Personal-gafira/d6202df9-be61-47bb-9426-75348061c106/scratchpad/` (`ws/` = copy of the workspace with `Page` edited; `prec/`, `rs/` = number and rstar checks). Toolchain 1.93.1 (pinned by `rust-toolchain.toml`). The repo was not modified except this file.
+Facts only. Scratch: `$SCRATCH/` (`ws/` = copy of the workspace with `Page` edited; `prec/`, `rs/` = number and rstar checks). Toolchain 1.93.1 (pinned by `rust-toolchain.toml`). The repo was not modified except this file.
 
 ## 1. Does adding `Page` fields need a new format version?
 

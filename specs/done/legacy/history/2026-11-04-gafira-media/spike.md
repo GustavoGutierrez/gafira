@@ -31,7 +31,7 @@ no delivery in this cut and XP11 to `RE1`.
 A real 1080p file of the machine, not a synthetic one:
 
 ```
-/home/meridian/Downloads/Introducción a la arquitectura de microservicios/
+~/Downloads/Introducción a la arquitectura de microservicios/
   1. Introducción a Microservicios/1 presentación.mp4
 ```
 
@@ -441,7 +441,7 @@ Neither claim was measured, on purpose: both need the planner of RE2, which does
 
 ```
 $ ls -la crates/gafira-render/src/
--rw-rw-r-- 1 meridian meridian  146 nov  4 12:55 lib.rs
+-rw-rw-r-- 1 user user  146 nov  4 12:55 lib.rs
 
 $ git ls-tree -r --name-only feat/layer-3-render crates/gafira-render/src/
 crates/gafira-render/src/graph.rs
