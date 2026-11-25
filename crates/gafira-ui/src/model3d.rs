@@ -1693,6 +1693,16 @@ fn tool_button(
 // ---------------------------------------------------------------------------------------
 // The «Objeto 3D» properties.
 
+/// The lighting presets in the order the panel shows them, with their names.
+const LIGHTS: [(Model3dLighting, &str); 6] = [
+    (Model3dLighting::Studio, "model3d.studio"),
+    (Model3dLighting::Warm, "model3d.warm"),
+    (Model3dLighting::Cool, "model3d.cool"),
+    (Model3dLighting::Dark, "model3d.dark"),
+    (Model3dLighting::Soft, "model3d.soft"),
+    (Model3dLighting::Natural, "model3d.natural"),
+];
+
 /// The tabs of the properties (spec 100, the panel of the reference pictures).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Tab {
@@ -1720,7 +1730,7 @@ pub(crate) fn panel(
     model: &Model3dNode,
     tab: &mut Tab,
     editing: bool,
-    thumb: &mut dyn FnMut(ViewPreset) -> Option<egui::TextureId>,
+    thumb: &mut dyn FnMut(&Model3dNode, u8) -> Option<egui::TextureId>,
 ) -> Option<PanelAsk> {
     let mut ask = None;
     let mut next = model.clone();
@@ -1904,7 +1914,7 @@ pub(crate) fn panel(
                             rect.min + Vec2::splat(4.0),
                             Vec2::splat(tile - 8.0),
                         );
-                        match thumb(*preset) {
+                        match thumb(&with_preset(model, *preset), *preset as u8) {
                             Some(texture) => {
                                 painter.image(
                                     texture,
@@ -2009,59 +2019,69 @@ pub(crate) fn panel(
             }
         }
         Tab::Light => {
+            // Six presets in two rows, each tile the model itself under that light.
             crate::image_panel::heading(ui, theme, plain(texts, "model3d.lighting"));
-            ui.horizontal(|ui| {
-                let w = (ui.available_width() - 12.0) / 3.0;
-                for (light, key, icon) in [
-                    (Model3dLighting::Soft, "model3d.soft", Icon::Light),
-                    (
-                        Model3dLighting::Studio,
-                        "model3d.studio",
-                        Icon::CategoryLights,
-                    ),
-                    (Model3dLighting::Dramatic, "model3d.dramatic", Icon::Dark),
-                ] {
-                    let on = model.lighting == light;
-                    let (rect, response) =
-                        ui.allocate_exact_size(Vec2::new(w, 64.0), egui::Sense::click());
-                    let painter = ui.painter();
-                    painter.rect_filled(
-                        rect,
-                        theme.radius_md(),
-                        if on {
-                            theme.c("selection.bg")
+            let tile = (ui.available_width() - 2.0 * 8.0) / 3.0;
+            for row in LIGHTS.chunks(3) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::splat(8.0);
+                    for (light, key) in row {
+                        let on = model.lighting == *light;
+                        let (rect, response) = ui.allocate_exact_size(
+                            Vec2::new(tile, tile + 18.0),
+                            egui::Sense::click(),
+                        );
+                        let painter = ui.painter();
+                        painter.rect_filled(rect, theme.radius_md(), theme.c("surface"));
+                        let stroke = if on {
+                            Stroke::new(2.0, theme.c("primary.bg"))
+                        } else if response.hovered() {
+                            Stroke::new(1.5, theme.c("border.strong"))
                         } else {
-                            theme.c("surface")
-                        },
-                    );
-                    let stroke = if on {
-                        Stroke::new(2.0, theme.c("primary.bg"))
-                    } else {
-                        Stroke::new(1.0, theme.c("border"))
-                    };
-                    painter.rect_stroke(rect, theme.radius_md(), stroke, egui::StrokeKind::Inside);
-                    icons::paint(
-                        painter,
-                        Rect::from_center_size(
-                            rect.center() - Vec2::new(0.0, 9.0),
-                            Vec2::splat(22.0),
-                        ),
-                        icon,
-                        Weight::Regular,
-                        theme.c("text"),
-                    );
-                    painter.text(
-                        Pos2::new(rect.center().x, rect.bottom() - 8.0),
-                        Align2::CENTER_BOTTOM,
-                        plain(texts, key),
-                        theme.font("caption"),
-                        theme.c("text"),
-                    );
-                    if response.clicked() {
-                        next.lighting = light;
+                            Stroke::new(1.0, theme.c("border"))
+                        };
+                        painter.rect_stroke(
+                            rect,
+                            theme.radius_md(),
+                            stroke,
+                            egui::StrokeKind::Inside,
+                        );
+                        let pic = Rect::from_min_size(
+                            rect.min + Vec2::splat(4.0),
+                            Vec2::splat(tile - 8.0),
+                        );
+                        let mut lit = model.clone();
+                        lit.lighting = *light;
+                        match thumb(&lit, 16 + *light as u8) {
+                            Some(texture) => {
+                                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                                painter.image(texture, pic, uv, Color32::WHITE);
+                            }
+                            None => icons::paint(
+                                painter,
+                                pic.shrink(tile * 0.3),
+                                Icon::Light,
+                                Weight::Regular,
+                                theme.c("text.muted"),
+                            ),
+                        }
+                        painter.text(
+                            Pos2::new(rect.center().x, rect.bottom() - 4.0),
+                            Align2::CENTER_BOTTOM,
+                            plain(texts, key),
+                            theme.font("caption"),
+                            theme.c("text"),
+                        );
+                        if response.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if response.clicked() {
+                            next.lighting = *light;
+                        }
                     }
-                }
-            });
+                });
+                ui.add_space(8.0);
+            }
         }
     }
     if ask.is_none() && next != *model && next.is_valid() {

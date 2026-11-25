@@ -1,37 +1,37 @@
 {
     "assets": [
         {
-            "name": "Gafira-0.2.0-macos-arm64.dmg",
-            "size": 82616657,
-            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.2.0/Gafira-0.2.0-macos-arm64.dmg"
+            "name": "Gafira-0.3.0-macos-arm64.dmg",
+            "size": 92433854,
+            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.3.0/Gafira-0.3.0-macos-arm64.dmg"
         },
         {
-            "name": "Gafira-0.2.0-Setup-x64.exe",
-            "size": 56760915,
-            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.2.0/Gafira-0.2.0-Setup-x64.exe"
+            "name": "Gafira-0.3.0-Setup-x64.exe",
+            "size": 67238271,
+            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.3.0/Gafira-0.3.0-Setup-x64.exe"
         },
         {
-            "name": "Gafira-0.2.0-windows-x64.zip",
-            "size": 76050835,
-            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.2.0/Gafira-0.2.0-windows-x64.zip"
+            "name": "Gafira-0.3.0-windows-x64.zip",
+            "size": 92696705,
+            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.3.0/Gafira-0.3.0-windows-x64.zip"
         },
         {
-            "name": "Gafira-0.2.0-x86_64.AppImage",
-            "size": 91032056,
-            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.2.0/Gafira-0.2.0-x86_64.AppImage"
+            "name": "Gafira-0.3.0-x86_64.AppImage",
+            "size": 91351544,
+            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.3.0/Gafira-0.3.0-x86_64.AppImage"
         },
         {
-            "name": "gafira_0.2.0_amd64.deb",
-            "size": 74209382,
-            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.2.0/gafira_0.2.0_amd64.deb"
+            "name": "gafira_0.3.0_amd64.deb",
+            "size": 74688818,
+            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.3.0/gafira_0.3.0_amd64.deb"
         },
         {
             "name": "SHA256SUMS",
             "size": 467,
-            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.2.0/SHA256SUMS"
+            "url": "https://github.com/GustavoGutierrez/gafira/releases/download/v0.3.0/SHA256SUMS"
         }
     ],
-    "published": "2026-11-24T17:25:57Z",
-    "tag": "v0.2.0",
-    "url": "https://github.com/GustavoGutierrez/gafira/releases/tag/v0.2.0"
+    "published": "2026-11-25T21:02:23Z",
+    "tag": "v0.3.0",
+    "url": "https://github.com/GustavoGutierrez/gafira/releases/tag/v0.3.0"
 }

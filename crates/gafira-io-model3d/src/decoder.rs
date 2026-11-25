@@ -37,9 +37,12 @@ pub fn document_format(format: ModelFormat) -> Model3dFormat {
 #[must_use]
 pub fn lighting_of(lighting: Model3dLighting) -> Lighting {
     match lighting {
-        Model3dLighting::Soft => Lighting::Soft,
         Model3dLighting::Studio => Lighting::Studio,
-        Model3dLighting::Dramatic => Lighting::Dramatic,
+        Model3dLighting::Warm => Lighting::Warm,
+        Model3dLighting::Cool => Lighting::Cool,
+        Model3dLighting::Dark => Lighting::Dark,
+        Model3dLighting::Soft => Lighting::Soft,
+        Model3dLighting::Natural => Lighting::Natural,
     }
 }
 

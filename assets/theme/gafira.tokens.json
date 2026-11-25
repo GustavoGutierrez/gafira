@@ -21,7 +21,7 @@
       "topbar.bg": "#18243B", "topbar.fg": "#FAFAF7", "topbar.fg.muted": "#C3CADB", "topbar.hover": "#2A3C5E",
       "canvas.selection": "#18243B", "canvas.selection.halo": "#FFFFFF",
       "canvas.guide": "#17695A", "canvas.bleed": "#B3261E", "canvas.safe": "#17695A",
-      "gizmo.x": "#E5484D", "gizmo.y": "#2FA36B", "gizmo.z": "#3B7BF6"
+      "gizmo.x": "#E5484D", "gizmo.y": "#2FA36B", "gizmo.z": "#3B7BF6", "present.bg": "#111318", "present.marker": "#FFD43B"
     },
     "dark": {
       "bg": "#0F1828", "surface": "#18243B", "surface.raised": "#223250", "surface.sunken": "#0A1120", "workspace": "#0A1120",
@@ -39,7 +39,7 @@
       "topbar.bg": "#0A1120", "topbar.fg": "#FAFAF7", "topbar.fg.muted": "#C3CADB", "topbar.hover": "#1B2A45",
       "canvas.selection": "#3FBFA9", "canvas.selection.halo": "#0F1828",
       "canvas.guide": "#3FBFA9", "canvas.bleed": "#FFB4AB", "canvas.safe": "#3FBFA9",
-      "gizmo.x": "#FF6B6E", "gizmo.y": "#4CC38A", "gizmo.z": "#5E95FF"
+      "gizmo.x": "#FF6B6E", "gizmo.y": "#4CC38A", "gizmo.z": "#5E95FF", "present.bg": "#111318", "present.marker": "#FFD43B"
     }
   },
   "splash": {

@@ -129,11 +129,20 @@ pub(crate) enum Icon {
     ScaleOut,
     FitView,
     Camera,
+    /// Spec 101: presenting.
+    CaretLeft,
+    CornersIn,
+    PenTool,
+    MarkerTool,
+    Highlighter,
+    EraserTool,
+    Laser,
+    ClearMarks,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 80] = [
+    pub(crate) const ALL: [Self; 88] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -214,6 +223,14 @@ impl Icon {
         Self::ScaleOut,
         Self::FitView,
         Self::Camera,
+        Self::CaretLeft,
+        Self::CornersIn,
+        Self::PenTool,
+        Self::MarkerTool,
+        Self::Highlighter,
+        Self::EraserTool,
+        Self::Laser,
+        Self::ClearMarks,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -299,6 +316,14 @@ impl Icon {
             Self::ScaleOut => "arrows-out",
             Self::FitView => "corners-out",
             Self::Camera => "camera",
+            Self::CaretLeft => "caret-left",
+            Self::CornersIn => "corners-in",
+            Self::PenTool => "pen",
+            Self::MarkerTool => "marker-circle",
+            Self::Highlighter => "highlighter",
+            Self::EraserTool => "eraser",
+            Self::Laser => "crosshair",
+            Self::ClearMarks => "broom",
         }
     }
 

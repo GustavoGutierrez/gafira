@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-25
+
+Present your designs full screen, see all the pages in a grid, and six lights for 3D objects.
+
+### Added
+
+- Icons (spec 103): Elementos → Iconos now includes about 5,100 Tabler icons (MIT) in line and filled styles, grouped in 40 categories with a search in Spanish and English; an icon is added as vector shapes that scale and take any colour. Icons from installed packs stay under «De tus paquetes».
+- Biblioteca: the details of a 3D model show its preview, and the file menu has the list style of the other menus.
+- 3D lighting: six presets — Studio (brighter, now the default), Warm, Cool, Dark (formerly Dramatic; older files open with it), Soft and Natural — each shown as a small picture of the model under that light.
+- Grid view (spec 102): a button in the bottom bar shows every page as a thumbnail; pages are picked, reordered by dragging (the others make room and a gap shows where it lands), added with a «+» between two pages, duplicated, deleted and hidden; each page has a «⋯» menu with its title, size and these actions plus lock. Closing the grid shows the page chosen.
+- Present full screen (spec 101): a button in the bottom bar and Ctrl+Alt+P show the pages one at a time on the whole screen. The arrow keys, Space and a click move between them, Esc leaves, and the bar with the page number and the arrows hides when the pointer leaves the bottom edge. Pages change with a cross-fade, and a laser pointer (L) and drawing tools (pen, marker, highlighter, eraser, six colours) work over the slides.
+
 ## [0.3.0] - 2026-11-25
 
 3D objects in your designs, and Gafira becomes free and open source software.

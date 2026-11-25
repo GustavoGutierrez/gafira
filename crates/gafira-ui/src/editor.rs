@@ -110,6 +110,9 @@ const ALIGN_BOTTOM: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key
 const RULERS: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::R);
 const GUIDES: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Semicolon);
+/// Presentar en pantalla completa (spec 101).
+const PRESENT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::P);
 const MAGNET: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Quote);
 /// Orden de apilado (03 §9.2 «Capas», spec 042).
@@ -383,6 +386,14 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// Elementos → Iconos (spec 103).
+    icon_panel: std::cell::RefCell<crate::icon_library::IconPanel>,
+    /// The grid of pages, while it is open (spec 102).
+    grid: Option<crate::page_grid::Grid>,
+    /// Scroll the canvas to this page in the next frame (spec 102, leaving the grid).
+    scroll_to: Option<PageId>,
+    /// The presentation on the whole screen, while it is open (spec 101).
+    presenting: Option<crate::present::Presenting>,
     /// The pictures of 3D models, drawn on a worker (spec 100, D-130).
     model3d_studio: std::cell::RefCell<crate::model3d::Studio>,
     /// The open 3D editing session (spec 100 §3.3).
@@ -598,6 +609,10 @@ impl Default for Editor {
             renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            icon_panel: std::cell::RefCell::default(),
+            grid: None,
+            scroll_to: None,
+            presenting: None,
             model3d_studio: std::cell::RefCell::default(),
             model3d_session: None,
             model3d_tab: crate::model3d::Tab::default(),
@@ -638,6 +653,14 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// An icon of the set to add (spec 103).
+    icon_insert: Option<crate::icon_library::Picked>,
+    /// Open or close the grid of pages (spec 102).
+    grid_toggle: bool,
+    /// What the grid of pages asks (spec 102).
+    grid: Vec<crate::page_grid::GridAsk>,
+    /// Present the design on the whole screen (spec 101).
+    present: bool,
     /// Open the 3D editor of a model (spec 100: double click or «Editar 3D»).
     model3d_open: Option<(PageId, NodeId)>,
     /// A 3D model changed from its properties; `true` closes the undo step.
@@ -1521,6 +1544,11 @@ impl Editor {
         self.images_arrived(ctx, engine);
         self.looks.pump(ctx);
         self.model3d_studio.get_mut().pump(ctx);
+        // A presentation takes the whole screen and its keys (spec 101).
+        if self.presenting.is_some() {
+            self.present_frame(ctx, engine, theme, texts);
+            return Go::Stay;
+        }
         // «Borrador de píxeles» takes the whole window and its keys: Ctrl+Z
         // is of its strokes (S84-08).
         if let Some(eraser) = self.eraser.as_mut() {
@@ -1569,6 +1597,9 @@ impl Editor {
                 }
             }
         });
+        // Presentar en pantalla completa (spec 101): the event's own modifiers count, so a
+        // quick Ctrl+Alt+P is not lost.
+        asked.present |= ctx.input_mut(|i| i.consume_shortcut(&PRESENT));
         // A turned text maps its glyphs with the atlas size of the last
         // frame; if the atlas grew after that, draw once more (spec 041).
         if let Some(used) = self.font_atlas.take()
@@ -2251,6 +2282,27 @@ impl Editor {
                         );
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        // Presentar en pantalla completa (spec 101).
+                        let name = plain(texts, "bottom.present");
+                        let tooltip = with_keys(ui.ctx(), texts, name.clone(), PRESENT);
+                        if IconButton::new(Icon::FitView, name)
+                            .tooltip(tooltip)
+                            .small()
+                            .show(ui, theme)
+                            .clicked()
+                        {
+                            asked.present = true;
+                        }
+                        // Vista de cuadrícula (spec 102).
+                        if IconButton::new(Icon::Pages, plain(texts, "grid.title"))
+                            .active(self.grid.is_some())
+                            .small()
+                            .show(ui, theme)
+                            .clicked()
+                        {
+                            asked.grid_toggle = true;
+                        }
+                        ui.add_space(4.0);
                         let ids: Vec<PageId> = document
                             .as_ref()
                             .map(|d| d.pages().iter().map(|page| page.id).collect())
@@ -2266,7 +2318,6 @@ impl Editor {
                         ))));
                         ui.add_space(8.0);
                         ui.label(label(texts.t(&gafira_doc::msg!("bottom.pages"))));
-                        bar_icon(ui, theme, Icon::Pages, theme.c("text"));
                         bar_separator(ui, theme);
                         asked.zoom =
                             zoom_controls(ui, theme, texts, (self.zoom, self.view)).or(asked.zoom);
@@ -2748,26 +2799,35 @@ impl Editor {
                         return;
                     }
                     if category == Category::Icons {
-                        // Spec 097: the icons of the installed packages.
-                        egui::ScrollArea::vertical()
-                            .id_salt("editor.icons")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                let shown = self.pack_assets(
-                                    ui,
-                                    theme,
-                                    texts,
-                                    crate::packs::PackSection::Icons,
-                                    asked,
-                                );
-                                if !shown {
-                                    ui.label(
-                                        RichText::new(plain(texts, "packs.no_icons"))
-                                            .font(theme.font("body-sm"))
-                                            .color(theme.c("text.secondary")),
+                        // Spec 103: the icon set of Gafira; the icons of the installed
+                        // packages (spec 097) are under it.
+                        let rects = self.page_rects.clone();
+                        let zoom = self.zoom;
+                        let can_drop =
+                            move |at: Pos2| canvas::drop_point(&rects, zoom, at).is_some();
+                        let has_packs = !crate::pack_panel::with_any(
+                            &self.installed_packs(),
+                            &[crate::packs::PackSection::Icons],
+                        )
+                        .is_empty();
+                        if has_packs {
+                            egui::CollapsingHeader::new(plain(texts, "icons.from_packs"))
+                                .id_salt("editor.icons.packs")
+                                .show(ui, |ui| {
+                                    self.pack_assets(
+                                        ui,
+                                        theme,
+                                        texts,
+                                        crate::packs::PackSection::Icons,
+                                        asked,
                                     );
-                                }
-                            });
+                                });
+                            ui.add_space(6.0);
+                        }
+                        asked.icon_insert = self
+                            .icon_panel
+                            .borrow_mut()
+                            .show(ui, theme, texts, &can_drop);
                         return;
                     }
                     if category != Category::Shapes {
@@ -3113,13 +3173,12 @@ impl Editor {
                             ui.set_max_width(ui.available_width() - 12.0);
                             // The quick view tiles show the model itself, from bytes the
                             // canvas already read.
-                            let mut thumb = |preset: gafira_model3d::ViewPreset| {
-                                let tile = crate::model3d::with_preset(&model, preset);
+                            let mut thumb = |tile: &gafira_doc::Model3dNode, slot: u8| {
                                 studio.borrow_mut().picture(
                                     &ctx,
                                     &|_| None,
-                                    crate::model3d::Slot::Preset(preset as u8),
-                                    &tile,
+                                    crate::model3d::Slot::Preset(slot),
+                                    tile,
                                     (96, 96),
                                     1,
                                 )
@@ -5927,6 +5986,11 @@ impl Editor {
         document: Option<&Document>,
         asked: &mut Asked,
     ) {
+        // The grid of pages takes the place of the canvas (spec 102).
+        if self.grid.is_some() {
+            self.grid_view(ctx, engine, (theme, texts), document, asked);
+            return;
+        }
         // The wheel over the element being edited in 3D zooms its camera,
         // not the page (spec 100 §3.4).
         if let Some(session) = self.model3d_session.as_mut() {
@@ -5985,6 +6049,20 @@ impl Editor {
                     CANVAS_MARGIN,
                 ));
                 let zoom = self.zoom;
+                // Back from the grid: the page chosen at the top of the view (spec 102).
+                if let Some(page) = self.scroll_to.take()
+                    && let Some(index) = document
+                        .and_then(|d| d.pages().iter().position(|p| p.id == page))
+                {
+                    let origin = zoom::page_origin(
+                        &sizes,
+                        index,
+                        zoom,
+                        area.size(),
+                        (CANVAS_MARGIN, PAGE_GAP),
+                    );
+                    anchored = Some((origin - Vec2::new(CANVAS_MARGIN, 48.0)).max(Vec2::ZERO));
+                }
                 let dpi = document.map_or(96.0, |d| f64::from(d.dpi().get()));
                 // Each page's id and screen box, for the rulers and the
                 // guides (spec 044).
@@ -7752,6 +7830,25 @@ impl Editor {
         self.images(engine, asked);
         self.image_looks(engine, asked);
         self.model3d_asks(engine, asked);
+        if asked.present {
+            self.start_presenting(engine);
+        }
+        // An icon of the set: vector shapes, a quarter of the page (spec 103).
+        if let Some(icon) = &asked.icon_insert {
+            match gafira_io_vector::svg_drawing_outlined(icon.svg.as_bytes()) {
+                Ok(drawing) => {
+                    self.place_drawing(engine, &drawing, icon.at, Some((0.25, icon.name.clone())));
+                }
+                Err(error) => eprintln!("icon: {error}"),
+            }
+        }
+        if asked.grid_toggle {
+            self.apply_model3d(engine);
+            self.toggle_grid();
+        }
+        if !asked.grid.is_empty() {
+            self.grid_asks(engine, &asked.grid);
+        }
         self.text_looks(engine, asked);
         if asked.pick_frame_photo {
             self.pick_frame_photo(engine, window);
@@ -9691,16 +9788,20 @@ impl Editor {
             if menu_open {
                 let area = egui::Area::new(id.with("menu"))
                     .order(egui::Order::Foreground)
-                    .fixed_pos(at.left_bottom() + Vec2::new(-120.0, 4.0))
+                    .fixed_pos(Pos2::new(picture.left(), at.bottom() + 4.0))
                     .show(ui.ctx(), |ui| {
+                        // The same list style as every other menu (spec 098).
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.set_min_width(150.0);
-                            if ui.button(plain(texts, "library.info")).clicked() {
+                            ui.set_min_width(200.0);
+                            crate::widgets::menu_style(ui, theme);
+                            let info = (Icon::About, plain(texts, "library.info"));
+                            if menu_item(ui, theme, info, None, true) {
                                 let mut view = self.library_view.borrow_mut();
                                 view.0.info = Some(entry.clone());
                                 view.0.menu = None;
                             }
-                            if ui.button(plain(texts, "library.remove")).clicked() {
+                            let remove = (Icon::Delete, plain(texts, "library.remove"));
+                            if menu_item(ui, theme, remove, None, true) {
                                 asked.library_remove = vec![key.clone()];
                                 self.library_view.borrow_mut().0.menu = None;
                             }
@@ -9799,11 +9900,42 @@ impl Editor {
             );
         });
         ui.add_space(12.0);
-        let preview = self.library_preview(ui.ctx(), file, entry.design);
+        // A 3D model shows a picture of itself, drawn like its tile's (spec 100).
+        let model = crate::model3d::is_model_path(file);
+        let preview = if model {
+            None
+        } else {
+            self.library_preview(ui.ctx(), file, entry.design)
+        };
         let width = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, width * 0.7), egui::Sense::hover());
         ui.painter()
             .rect_filled(rect, theme.radius_md(), theme.c("surface.sunken"));
+        if model {
+            let side = rect.height() - 16.0;
+            let at = Rect::from_center_size(rect.center(), Vec2::splat(side));
+            match self
+                .model3d_studio
+                .borrow_mut()
+                .file_picture(ui.ctx(), file, 512)
+            {
+                Some(texture) => {
+                    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    ui.painter().image(texture, at, uv, Color32::WHITE);
+                }
+                None => {
+                    crate::icons::paint(
+                        ui.painter(),
+                        Rect::from_center_size(at.center(), Vec2::splat(side * 0.25)),
+                        Icon::Cube,
+                        crate::icons::Weight::Regular,
+                        theme.c("text.muted"),
+                    );
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                }
+            }
+        }
         if let Some((texture, _)) = &preview {
             let fit = rect.shrink(16.0);
             let tex = texture.size_vec2();
@@ -9859,7 +9991,8 @@ impl Editor {
             .num_columns(2)
             .spacing([16.0, 8.0])
             .show(ui, |ui| {
-                for (key, value) in rows {
+                // A row with nothing to say (the size in px of a 3D model) is left out.
+                for (key, value) in rows.into_iter().filter(|(_, v)| !v.is_empty()) {
                     ui.label(RichText::new(plain(texts, key)).color(theme.c("text.secondary")));
                     ui.label(value);
                     ui.end_row();
@@ -11194,6 +11327,230 @@ impl Editor {
                 asked.effects_close = asks.close;
             });
         true
+    }
+
+    /// The grid of pages in the central area (spec 102).
+    fn grid_view(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &Gafira,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        let pages: Vec<crate::page_grid::GridPage> = document
+            .map(|d| {
+                d.pages()
+                    .iter()
+                    .map(|p| crate::page_grid::GridPage {
+                        id: p.id,
+                        // A changed page is a new allocation: its picture is drawn again.
+                        version: Arc::as_ptr(p) as usize,
+                        hidden: p.hidden,
+                        locked: p.locked,
+                        name: p.name.clone(),
+                        size: p.size.to_px(d.dpi()).map_or_else(
+                            |_| String::new(),
+                            |s| format!("{:.0} × {:.0} px", s.width(), s.height()),
+                        ),
+                        aspect: p
+                            .size
+                            .to_px(d.dpi())
+                            .map_or(1.0, |s| (s.width() / s.height()) as f32),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Some(grid) = self.grid.as_mut() else {
+            return;
+        };
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(theme.c("workspace")))
+            .show(ctx, |ui| {
+                let mut picture = |page: PageId| {
+                    let preview = engine.export().preview(page, false).ok()?;
+                    Some(egui::ColorImage::from_rgba_unmultiplied(
+                        [preview.width as usize, preview.height as usize],
+                        &preview.rgba,
+                    ))
+                };
+                asked.grid = grid.show(ui, (theme, texts), &pages, &mut picture);
+            });
+    }
+
+    /// Opens or closes the grid; closing it shows the page chosen last (spec 102).
+    fn toggle_grid(&mut self) {
+        match self.grid.take() {
+            Some(grid) => {
+                if let Some(page) = grid.last.filter(|p| grid.selected.contains(p)) {
+                    self.active = Some(page);
+                    self.scroll_to = Some(page);
+                }
+            }
+            None => {
+                let mut grid = crate::page_grid::Grid::default();
+                if let Some(page) = self.active {
+                    grid.selected.insert(page);
+                    grid.last = Some(page);
+                }
+                self.selected = Selection::default();
+                self.editing = None;
+                self.grid = Some(grid);
+            }
+        }
+    }
+
+    /// What the grid asks, each one undo step (spec 102).
+    fn grid_asks(&mut self, engine: &mut Gafira, asks: &[crate::page_grid::GridAsk]) {
+        use crate::page_grid::GridAsk;
+        for ask in asks {
+            let Some(document) = engine.edit().document() else {
+                return;
+            };
+            let pages = document.pages();
+            let next = PageId::new(document.next_id());
+            let command: Box<dyn Command> = match ask {
+                GridAsk::Open(page) => {
+                    if let Some(grid) = self.grid.as_mut() {
+                        grid.selected = [*page].into_iter().collect();
+                        grid.last = Some(*page);
+                    }
+                    self.toggle_grid();
+                    continue;
+                }
+                GridAsk::MoveTo(page, to) => Box::new(gafira_edit::ReorderPage::new(*page, *to)),
+                GridAsk::AddAt(at) => {
+                    let size = pages
+                        .get(at.saturating_sub(1))
+                        .or_else(|| pages.first())
+                        .map(|p| p.size);
+                    let Some(size) = size else { continue };
+                    new_page(&document, *at, size)
+                }
+                GridAsk::Duplicate(ids) => Box::new(Transaction::new(
+                    MessageKey("edit.duplicate_page"),
+                    ids.iter()
+                        .map(|id| {
+                            Box::new(gafira_edit::DuplicatePage::new(*id)) as Box<dyn Command>
+                        })
+                        .collect(),
+                )),
+                GridAsk::Delete(ids) => {
+                    // A design keeps at least one page.
+                    let ids: Vec<PageId> = ids
+                        .iter()
+                        .copied()
+                        .take(pages.len().saturating_sub(1))
+                        .collect();
+                    if ids.is_empty() {
+                        continue;
+                    }
+                    Box::new(Transaction::new(
+                        MessageKey("edit.remove_page"),
+                        ids.iter()
+                            .map(|id| {
+                                Box::new(gafira_edit::RemovePage::new(*id)) as Box<dyn Command>
+                            })
+                            .collect(),
+                    ))
+                }
+                GridAsk::Lock(page, on) => {
+                    Box::new(SetProperty::page(*page, Property::PageLocked(*on), None))
+                }
+                GridAsk::Rename(page, name) => Box::new(SetProperty::page(
+                    *page,
+                    Property::PageName(name.clone()),
+                    None,
+                )),
+                GridAsk::Hide(ids, on) => Box::new(Transaction::new(
+                    MessageKey("edit.set_property"),
+                    ids.iter()
+                        .map(|id| {
+                            Box::new(SetProperty::page(*id, Property::PageHidden(*on), None))
+                                as Box<dyn Command>
+                        })
+                        .collect(),
+                )),
+            };
+            match engine.edit().execute(command) {
+                Ok(_) => {
+                    if let Some(grid) = self.grid.as_mut() {
+                        match ask {
+                            GridAsk::AddAt(_) => {
+                                grid.selected = [next].into_iter().collect();
+                                grid.last = Some(next);
+                            }
+                            GridAsk::Delete(_) => {
+                                grid.selected.clear();
+                                grid.last = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(error) => eprintln!("grid: {error}"),
+            }
+        }
+    }
+
+    /// Opens the presentation from the current page, the window on the whole screen
+    /// (spec 101). A 3D session is applied first, as on any other change of view.
+    fn start_presenting(&mut self, engine: &mut Gafira) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let pages: Vec<PageId> = document
+            .pages()
+            .iter()
+            .filter(|p| !p.hidden)
+            .map(|p| p.id)
+            .collect();
+        if pages.is_empty() {
+            return;
+        }
+        self.apply_model3d(engine);
+        self.editing = None;
+        let current = self.current_page(&document).map(|p| p.id);
+        self.presenting = Some(crate::present::Presenting::new(pages, current, true));
+    }
+
+    /// One frame of the presentation; on leaving it, the window goes back as it was and
+    /// the editor shows the page that was presented last.
+    fn present_frame(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &Gafira,
+        theme: &Theme,
+        texts: &Texts,
+    ) {
+        let Some(presenting) = self.presenting.as_mut() else {
+            return;
+        };
+        // The first frame puts the window on the whole screen, minding how it was.
+        if !presenting.opened {
+            presenting.opened = true;
+            presenting.was_windowed = !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        }
+        let mut draw = |page: PageId, fit: (u32, u32)| {
+            engine
+                .export()
+                .present(page, fit)
+                .ok()
+                .map(|p| (p.width, p.height, p.rgba))
+        };
+        let asks = presenting.show(ctx, theme, texts, &mut draw);
+        if asks.exit {
+            let last = presenting.current();
+            let windowed = presenting.was_windowed;
+            self.presenting = None;
+            if windowed {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            }
+            if let Some(page) = last {
+                self.active = Some(page);
+            }
+        }
     }
 
     /// The open undo step of a 3D property control is over.
@@ -13813,7 +14170,7 @@ fn node_image(node: &gafira_doc::Node) -> Option<gafira_doc::timeline::AssetRef>
 
 /// An item of a menu with its icon and, if any, its shortcut; whether it
 /// was chosen.
-fn menu_item(
+pub(crate) fn menu_item(
     ui: &mut egui::Ui,
     theme: &Theme,
     (icon, text): (Icon, String),
