@@ -386,6 +386,10 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// The grid of pages, while it is open (spec 102).
+    grid: Option<crate::page_grid::Grid>,
+    /// Scroll the canvas to this page in the next frame (spec 102, leaving the grid).
+    scroll_to: Option<PageId>,
     /// The presentation on the whole screen, while it is open (spec 101).
     presenting: Option<crate::present::Presenting>,
     /// The pictures of 3D models, drawn on a worker (spec 100, D-130).
@@ -603,6 +607,8 @@ impl Default for Editor {
             renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            grid: None,
+            scroll_to: None,
             presenting: None,
             model3d_studio: std::cell::RefCell::default(),
             model3d_session: None,
@@ -644,6 +650,10 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// Open or close the grid of pages (spec 102).
+    grid_toggle: bool,
+    /// What the grid of pages asks (spec 102).
+    grid: Vec<crate::page_grid::GridAsk>,
     /// Present the design on the whole screen (spec 101).
     present: bool,
     /// Open the 3D editor of a model (spec 100: double click or «Editar 3D»).
@@ -2278,6 +2288,15 @@ impl Editor {
                         {
                             asked.present = true;
                         }
+                        // Vista de cuadrícula (spec 102).
+                        if IconButton::new(Icon::Pages, plain(texts, "grid.title"))
+                            .active(self.grid.is_some())
+                            .small()
+                            .show(ui, theme)
+                            .clicked()
+                        {
+                            asked.grid_toggle = true;
+                        }
                         ui.add_space(4.0);
                         let ids: Vec<PageId> = document
                             .as_ref()
@@ -2294,7 +2313,6 @@ impl Editor {
                         ))));
                         ui.add_space(8.0);
                         ui.label(label(texts.t(&gafira_doc::msg!("bottom.pages"))));
-                        bar_icon(ui, theme, Icon::Pages, theme.c("text"));
                         bar_separator(ui, theme);
                         asked.zoom =
                             zoom_controls(ui, theme, texts, (self.zoom, self.view)).or(asked.zoom);
@@ -5955,6 +5973,11 @@ impl Editor {
         document: Option<&Document>,
         asked: &mut Asked,
     ) {
+        // The grid of pages takes the place of the canvas (spec 102).
+        if self.grid.is_some() {
+            self.grid_view(ctx, engine, (theme, texts), document, asked);
+            return;
+        }
         // The wheel over the element being edited in 3D zooms its camera,
         // not the page (spec 100 §3.4).
         if let Some(session) = self.model3d_session.as_mut() {
@@ -6013,6 +6036,20 @@ impl Editor {
                     CANVAS_MARGIN,
                 ));
                 let zoom = self.zoom;
+                // Back from the grid: the page chosen at the top of the view (spec 102).
+                if let Some(page) = self.scroll_to.take()
+                    && let Some(index) = document
+                        .and_then(|d| d.pages().iter().position(|p| p.id == page))
+                {
+                    let origin = zoom::page_origin(
+                        &sizes,
+                        index,
+                        zoom,
+                        area.size(),
+                        (CANVAS_MARGIN, PAGE_GAP),
+                    );
+                    anchored = Some((origin - Vec2::new(CANVAS_MARGIN, 48.0)).max(Vec2::ZERO));
+                }
                 let dpi = document.map_or(96.0, |d| f64::from(d.dpi().get()));
                 // Each page's id and screen box, for the rulers and the
                 // guides (spec 044).
@@ -7782,6 +7819,13 @@ impl Editor {
         self.model3d_asks(engine, asked);
         if asked.present {
             self.start_presenting(engine);
+        }
+        if asked.grid_toggle {
+            self.apply_model3d(engine);
+            self.toggle_grid();
+        }
+        if !asked.grid.is_empty() {
+            self.grid_asks(engine, &asked.grid);
         }
         self.text_looks(engine, asked);
         if asked.pick_frame_photo {
@@ -11227,6 +11271,170 @@ impl Editor {
         true
     }
 
+    /// The grid of pages in the central area (spec 102).
+    fn grid_view(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &Gafira,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        let pages: Vec<crate::page_grid::GridPage> = document
+            .map(|d| {
+                d.pages()
+                    .iter()
+                    .map(|p| crate::page_grid::GridPage {
+                        id: p.id,
+                        // A changed page is a new allocation: its picture is drawn again.
+                        version: Arc::as_ptr(p) as usize,
+                        hidden: p.hidden,
+                        locked: p.locked,
+                        name: p.name.clone(),
+                        size: p.size.to_px(d.dpi()).map_or_else(
+                            |_| String::new(),
+                            |s| format!("{:.0} × {:.0} px", s.width(), s.height()),
+                        ),
+                        aspect: p
+                            .size
+                            .to_px(d.dpi())
+                            .map_or(1.0, |s| (s.width() / s.height()) as f32),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Some(grid) = self.grid.as_mut() else {
+            return;
+        };
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(theme.c("workspace")))
+            .show(ctx, |ui| {
+                let mut picture = |page: PageId| {
+                    let preview = engine.export().preview(page, false).ok()?;
+                    Some(egui::ColorImage::from_rgba_unmultiplied(
+                        [preview.width as usize, preview.height as usize],
+                        &preview.rgba,
+                    ))
+                };
+                asked.grid = grid.show(ui, (theme, texts), &pages, &mut picture);
+            });
+    }
+
+    /// Opens or closes the grid; closing it shows the page chosen last (spec 102).
+    fn toggle_grid(&mut self) {
+        match self.grid.take() {
+            Some(grid) => {
+                if let Some(page) = grid.last.filter(|p| grid.selected.contains(p)) {
+                    self.active = Some(page);
+                    self.scroll_to = Some(page);
+                }
+            }
+            None => {
+                let mut grid = crate::page_grid::Grid::default();
+                if let Some(page) = self.active {
+                    grid.selected.insert(page);
+                    grid.last = Some(page);
+                }
+                self.selected = Selection::default();
+                self.editing = None;
+                self.grid = Some(grid);
+            }
+        }
+    }
+
+    /// What the grid asks, each one undo step (spec 102).
+    fn grid_asks(&mut self, engine: &mut Gafira, asks: &[crate::page_grid::GridAsk]) {
+        use crate::page_grid::GridAsk;
+        for ask in asks {
+            let Some(document) = engine.edit().document() else {
+                return;
+            };
+            let pages = document.pages();
+            let next = PageId::new(document.next_id());
+            let command: Box<dyn Command> = match ask {
+                GridAsk::Open(page) => {
+                    if let Some(grid) = self.grid.as_mut() {
+                        grid.selected = [*page].into_iter().collect();
+                        grid.last = Some(*page);
+                    }
+                    self.toggle_grid();
+                    continue;
+                }
+                GridAsk::MoveTo(page, to) => Box::new(gafira_edit::ReorderPage::new(*page, *to)),
+                GridAsk::AddAt(at) => {
+                    let size = pages
+                        .get(at.saturating_sub(1))
+                        .or_else(|| pages.first())
+                        .map(|p| p.size);
+                    let Some(size) = size else { continue };
+                    new_page(&document, *at, size)
+                }
+                GridAsk::Duplicate(ids) => Box::new(Transaction::new(
+                    MessageKey("edit.duplicate_page"),
+                    ids.iter()
+                        .map(|id| {
+                            Box::new(gafira_edit::DuplicatePage::new(*id)) as Box<dyn Command>
+                        })
+                        .collect(),
+                )),
+                GridAsk::Delete(ids) => {
+                    // A design keeps at least one page.
+                    let ids: Vec<PageId> = ids
+                        .iter()
+                        .copied()
+                        .take(pages.len().saturating_sub(1))
+                        .collect();
+                    if ids.is_empty() {
+                        continue;
+                    }
+                    Box::new(Transaction::new(
+                        MessageKey("edit.remove_page"),
+                        ids.iter()
+                            .map(|id| {
+                                Box::new(gafira_edit::RemovePage::new(*id)) as Box<dyn Command>
+                            })
+                            .collect(),
+                    ))
+                }
+                GridAsk::Lock(page, on) => {
+                    Box::new(SetProperty::page(*page, Property::PageLocked(*on), None))
+                }
+                GridAsk::Rename(page, name) => Box::new(SetProperty::page(
+                    *page,
+                    Property::PageName(name.clone()),
+                    None,
+                )),
+                GridAsk::Hide(ids, on) => Box::new(Transaction::new(
+                    MessageKey("edit.set_property"),
+                    ids.iter()
+                        .map(|id| {
+                            Box::new(SetProperty::page(*id, Property::PageHidden(*on), None))
+                                as Box<dyn Command>
+                        })
+                        .collect(),
+                )),
+            };
+            match engine.edit().execute(command) {
+                Ok(_) => {
+                    if let Some(grid) = self.grid.as_mut() {
+                        match ask {
+                            GridAsk::AddAt(_) => {
+                                grid.selected = [next].into_iter().collect();
+                                grid.last = Some(next);
+                            }
+                            GridAsk::Delete(_) => {
+                                grid.selected.clear();
+                                grid.last = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(error) => eprintln!("grid: {error}"),
+            }
+        }
+    }
+
     /// Opens the presentation from the current page, the window on the whole screen
     /// (spec 101). A 3D session is applied first, as on any other change of view.
     fn start_presenting(&mut self, engine: &mut Gafira) {
@@ -13904,7 +14112,7 @@ fn node_image(node: &gafira_doc::Node) -> Option<gafira_doc::timeline::AssetRef>
 
 /// An item of a menu with its icon and, if any, its shortcut; whether it
 /// was chosen.
-fn menu_item(
+pub(crate) fn menu_item(
     ui: &mut egui::Ui,
     theme: &Theme,
     (icon, text): (Icon, String),

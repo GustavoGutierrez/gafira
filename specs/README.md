@@ -78,6 +78,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 099 | [Sitio web de Gafira (landing)](099-sitio-web-gafira.md) | in-progress: landing en Astro en `website/`, ES y EN, modo claro y oscuro, descargas de la última versión de GitHub, movimiento con reduced motion; SEO y HTML semántico; publicado en gafira.com (Cloudflare Workers) con `www` → apex y https; pendiente la revisión del titular |
 | 100 | [Objetos 3D: importación y edición básica](100-objetos-3D.md) | in-progress: importar `.glb` y `.obj` como elemento del lienzo, editor 3D en el propio lienzo (girar, mover, escalar, cámara, vistas rápidas, iluminación), guardado dentro del `.gaf` y exportación; render 3D por CPU (D-130) |
 | 101 | [Presentar en pantalla completa](101-presentar-en-pantalla-completa.md) | in-progress: botón en la barra inferior y Ctrl+Alt+P; páginas a pantalla completa con teclado, clic, transiciones, barra que se oculta, dibujo y puntero láser; pendiente del titular |
+| 102 | [Vista de cuadrícula de las páginas](102-vista-de-cuadricula.md) | in-progress: botón en la barra inferior; miniaturas, selección, reordenar arrastrando, «+» entre páginas, duplicar, eliminar y ocultar; pendiente del titular |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -145,4 +146,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
 
-Siguiente ID libre: **102**.
+Siguiente ID libre: **103**.
