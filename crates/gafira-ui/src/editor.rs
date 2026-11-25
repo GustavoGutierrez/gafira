@@ -9766,16 +9766,20 @@ impl Editor {
             if menu_open {
                 let area = egui::Area::new(id.with("menu"))
                     .order(egui::Order::Foreground)
-                    .fixed_pos(at.left_bottom() + Vec2::new(-120.0, 4.0))
+                    .fixed_pos(Pos2::new(picture.left(), at.bottom() + 4.0))
                     .show(ui.ctx(), |ui| {
+                        // The same list style as every other menu (spec 098).
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.set_min_width(150.0);
-                            if ui.button(plain(texts, "library.info")).clicked() {
+                            ui.set_min_width(200.0);
+                            crate::widgets::menu_style(ui, theme);
+                            let info = (Icon::About, plain(texts, "library.info"));
+                            if menu_item(ui, theme, info, None, true) {
                                 let mut view = self.library_view.borrow_mut();
                                 view.0.info = Some(entry.clone());
                                 view.0.menu = None;
                             }
-                            if ui.button(plain(texts, "library.remove")).clicked() {
+                            let remove = (Icon::Delete, plain(texts, "library.remove"));
+                            if menu_item(ui, theme, remove, None, true) {
                                 asked.library_remove = vec![key.clone()];
                                 self.library_view.borrow_mut().0.menu = None;
                             }
