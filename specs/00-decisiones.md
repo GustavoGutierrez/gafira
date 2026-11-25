@@ -519,7 +519,7 @@ Fecha: 2 de noviembre de 2026.
 ## Pendientes del titular
 
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y fijar el precio final (tentativo 99 USD, PROPUESTA).
-2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
+2. `LICENSE`: **hecho**; sustituido por la GPL v3 (D-129). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
 3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
 4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento y, opcionalmente, reservar gafira.app, .io, .co y .dev (gafira.com ya está registrado por el titular para la página de presentación). La elección del primer país de registro queda **aplazada** (D-84).
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: pasan 72 de 76; `zip`, `ureq`, `directories` y `ort` se corrigen con features o cambiando de crate, ver 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
@@ -1098,3 +1098,12 @@ Fecha: 23 de noviembre de 2026.
 - **Decisión** (titular, spec 097): Gafira instala paquetes de recursos `.gafpack` (ZIP con `manifest.json` 1.1 y `thumb.webp`). Un paquete se muestra y se valida antes de instalarlo —desde Inicio → Instalar paquete o con doble clic en el archivo— y sus recursos aparecen en la sección que les toca, por paquete y filtrables. Nada de un paquete se ejecuta.
 - **Consecuencia**: nuevo puerto `PackStore`, carpeta `packages/` en los datos, categoría Iconos en Elementos, sección Paquetes en Ajustes y el tipo `application/vnd.gafira.gafpack+zip` con su icono. La fase 1 admite clip art, ilustraciones, iconos y formas; los recursos compuestos quedan para la fase 2.
 
+## D-129 Gafira pasa a ser software libre (GPL-3.0-or-later)
+
+Fecha: 25 de noviembre de 2026.
+
+- **Decisión** (titular): el código de Gafira se publica como software libre y de código abierto bajo la **GNU GPL, versión 3 o posterior** (`GPL-3.0-or-later`). El `LICENSE` de la raíz es el texto de la GPL v3 y `Cargo.toml` declara `GPL-3.0-or-later` para todo el workspace.
+- **Qué sustituye**: la parte **Licencia** de D-01 (propietaria, código cerrado, contrato de Tracewright y `LICENCIA.md`) y el aviso propietario de `LICENSE` (punto 2 de la lista de pendientes). Las referencias a una licencia propietaria en 01, 02 y la spec 06 quedan sustituidas por esta decisión.
+- **Qué no cambia**: las dependencias siguen siendo solo permisivas (`deny.toml`, ARQ-70..79). El nombre, el logotipo y el icono de Gafira quedan reservados como marca (`TRADEMARKS.md`): una versión modificada debe usar otro nombre e icono. Los paquetes de ilustraciones `.gafpack` conservan su propia licencia dentro de cada paquete (D-128), y los completos se venden en Gumroad para financiar el desarrollo.
+- **Abierto**: el modelo comercial de D-12 (licencia de pago, modo sin licencia, activación) sigue aplazado (D-62, D-70) y debe revisarse con el titular a la luz de esta decisión antes de retomarlo.
+- **Contribuciones**: guía en `CONTRIBUTING.md`; las aportaciones se aceptan bajo la misma licencia con firma DCO (`git commit -s`).

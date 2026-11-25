@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- Gafira is now free and open source software under the GNU General Public License, version 3 or later (`LICENSE`). The name, logo and app icon stay reserved (`TRADEMARKS.md`), and contributors have a guide (`CONTRIBUTING.md`).
+
 ## [0.2.0] - 2026-11-24
 
 One way to choose colours everywhere, a new Layers panel, and quotes and speech bubbles.

@@ -51,7 +51,7 @@ allow = ["BSD-1-Clause"]
 crate = "assert_no_alloc"
 
 [licenses.private]
-# Workspace crates use LicenseRef-Gafira-Proprietary and are never published.
+# Workspace crates are GPL-3.0-or-later and never published; this check is for dependencies.
 ignore = true
 
 [bans]

@@ -7,9 +7,11 @@
 
 **Haz visibles tus ideas. Bring your ideas to life.**
 
-Gafira is a local-first graphic design app for everyone and for content creators, written in Rust (egui). Pick a template, make it yours and share it. It runs on Windows, macOS and Linux, in Spanish and English. It is proprietary software.
+Gafira is a local-first graphic design app for everyone and for content creators, written in Rust (egui). Pick a template, make it yours and share it. It runs on Windows, macOS and Linux, in Spanish and English. It is free and open source software under the GPL, version 3 or later.
 
-Current version: `0.2.0` (see `CHANGELOG.md`). Website: <https://gafira.com> (source in `website/`).
+Current version: `0.2.0` (see `CHANGELOG.md`).
+
+Website: <https://gafira.com> (Spanish) · <https://gafira.com/en/> (English). Its source is in `website/`.
 
 ## Preview
 
@@ -112,4 +114,8 @@ Audio under `assets/musics/` is kept out of git (owner decision D-10 in `specs/0
 
 ## License
 
-Proprietary; see `LICENSE`. The full license agreement and privacy policy are written in the final licensing phase (`specs/backlog/06-licencia-y-activacion.md`). Third-party crates must use permissive licenses only (`deny.toml`).
+Gafira is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version (`GPL-3.0-or-later`; see `LICENSE`). It comes with no warranty.
+
+The Gafira name, logo and app icon are not covered by that license; see `TRADEMARKS.md`. Illustration packs (`.gafpack`) carry their own license inside each pack. Third-party crates must use permissive licenses (`deny.toml`).
+
+Want to help? Read `CONTRIBUTING.md`.
