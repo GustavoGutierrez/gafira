@@ -1932,6 +1932,7 @@ dependencies = [
  "gafira-geom",
  "gafira-i18n",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-io-pdf",
  "gafira-io-pptx",
  "gafira-io-svg",
@@ -2108,6 +2109,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-io-model3d"
+version = "0.2.0"
+dependencies = [
+ "gafira-doc",
+ "gafira-model3d",
+ "gafira-ports",
+ "gafira-raster",
+ "glam",
+ "gltf",
+ "image",
+ "rayon",
+ "serde_json",
+ "tobj",
+]
+
+[[package]]
 name = "gafira-io-pdf"
 version = "0.2.0"
 dependencies = [
@@ -2139,6 +2156,7 @@ dependencies = [
  "gafira-doc",
  "gafira-geom",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-ports",
  "gafira-qr",
  "gafira-raster",
@@ -2214,6 +2232,13 @@ dependencies = [
  "gafira-raster",
  "gafira-testkit",
  "gafira-time",
+]
+
+[[package]]
+name = "gafira-model3d"
+version = "0.2.0"
+dependencies = [
+ "glam",
 ]
 
 [[package]]
@@ -2425,12 +2450,14 @@ dependencies = [
  "gafira-geom",
  "gafira-i18n",
  "gafira-io-image",
+ "gafira-io-model3d",
  "gafira-io-pdf",
  "gafira-io-pptx",
  "gafira-io-svg",
  "gafira-io-vector",
  "gafira-io-xlsx",
  "gafira-layout",
+ "gafira-model3d",
  "gafira-platform",
  "gafira-ports",
  "gafira-qr",
@@ -2441,6 +2468,7 @@ dependencies = [
  "gafira-table",
  "gafira-testkit",
  "gafira-theme",
+ "glam",
  "image",
  "kurbo 0.13.1",
  "proptest",
@@ -2544,6 +2572,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.34.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "627003914c6057c9c8f0832ee4f870b5a4f599d0cfa83f4072675114860cd0ff"
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2559,6 +2593,42 @@ dependencies = [
  "slotmap",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "gltf"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3ce1918195723ce6ac74e80542c5a96a40c2b26162c1957a5cd70799b8cacf7"
+dependencies = [
+ "byteorder",
+ "gltf-json",
+ "lazy_static",
+ "serde_json",
+]
+
+[[package]]
+name = "gltf-derive"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14070e711538afba5d6c807edb74bcb84e5dbb9211a3bf5dea0dfab5b24f4c51"
+dependencies = [
+ "inflections",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "gltf-json"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6176f9d60a7eab0a877e8e96548605dedbde9190a7ae1e80bbcc1c9af03ab14"
+dependencies = [
+ "gltf-derive",
+ "serde",
+ "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
@@ -3007,6 +3077,12 @@ dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
 ]
+
+[[package]]
+name = "inflections"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 
 [[package]]
 name = "inout"
@@ -5573,6 +5649,12 @@ name = "to_method"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7c4ceeeca15c8384bbc3e011dbd8fccb7f068a440b752b7d9b32ceb0ca0e2e8"
+
+[[package]]
+name = "tobj"
+version = "4.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6eb8e04167c1c0c76b5de63226fd733485ad63ef71e40de31e16272f47b099e2"
 
 [[package]]
 name = "tokio"

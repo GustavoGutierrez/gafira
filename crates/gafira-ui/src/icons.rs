@@ -123,11 +123,17 @@ pub(crate) enum Icon {
     Submenu,
     Check,
     Warning,
+    /// Spec 100: the 3D model tools.
+    Cube,
+    MoveAxes,
+    ScaleOut,
+    FitView,
+    Camera,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 75] = [
+    pub(crate) const ALL: [Self; 80] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -203,6 +209,11 @@ impl Icon {
         Self::Submenu,
         Self::Check,
         Self::Warning,
+        Self::Cube,
+        Self::MoveAxes,
+        Self::ScaleOut,
+        Self::FitView,
+        Self::Camera,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -283,6 +294,11 @@ impl Icon {
             Self::Submenu => "caret-right",
             Self::Check => "check",
             Self::Warning => "warning",
+            Self::Cube => "cube",
+            Self::MoveAxes => "arrows-out-cardinal",
+            Self::ScaleOut => "arrows-out",
+            Self::FitView => "corners-out",
+            Self::Camera => "camera",
         }
     }
 

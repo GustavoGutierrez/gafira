@@ -1,0 +1,26 @@
+[package]
+name = "gafira-io-model3d"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-model3d.workspace = true
+# Spec 100: drawing a model for an export through the `ImageDecoder` port.
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-raster.workspace = true
+rayon.workspace = true
+# Spec 100 §6.1: glTF 2.0 GLB reading; no `import` feature, so nothing is fetched from a path or URL.
+gltf.workspace = true
+# Spec 100 §6.1: OBJ reading; without `ahash` (std hashing is enough for one file).
+tobj.workspace = true
+# Decoding the PNG and JPEG textures embedded in a GLB.
+image.workspace = true
+glam.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

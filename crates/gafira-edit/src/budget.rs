@@ -103,6 +103,8 @@ fn node_bytes(node: &Node) -> usize {
                     .map(|c| size_of::<String>() + c.len())
                     .sum::<usize>()
         }
+        // A 3D model keeps its pose; the model file is an asset (spec 100).
+        NodeKind::Model3d(_) => size_of::<gafira_doc::Model3dNode>(),
         // A code keeps the words it says on the heap (spec 080).
         NodeKind::Qr(qr) => qr.content.fields().iter().map(|f| f.len()).sum(),
         NodeKind::Group(_) | NodeKind::Image(_) | NodeKind::Line(_) => 0,

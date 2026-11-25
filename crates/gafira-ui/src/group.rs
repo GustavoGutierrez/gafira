@@ -588,12 +588,20 @@ pub(crate) fn top_ids(first: u64, specs: &[NodeSpec]) -> Vec<NodeId> {
         .collect()
 }
 
-/// Every image asset `specs` show, each once, in order.
+/// Every image and 3D model asset `specs` show, each once, in order.
 pub(crate) fn assets(specs: &[NodeSpec]) -> Vec<gafira_doc::AssetRef> {
     fn visit(spec: &NodeSpec, out: &mut Vec<gafira_doc::AssetRef>) {
         if let NodeKind::Image(image) = &spec.kind {
             // What it can go back to comes too (spec 084).
             for asset in image.assets() {
+                if !out.contains(&asset) {
+                    out.push(asset);
+                }
+            }
+        }
+        // The model file of a 3D model comes too (spec 100).
+        if let NodeKind::Model3d(model) = &spec.kind {
+            for asset in model.assets() {
                 if !out.contains(&asset) {
                     out.push(asset);
                 }

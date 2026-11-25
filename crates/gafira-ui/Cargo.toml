@@ -45,6 +45,10 @@ sha2.workspace = true
 arboard.workspace = true
 # Spec 066, S66-10: custom frames from SVG and PDF outlines.
 gafira-io-vector.workspace = true
+# Spec 100: 3D models, read and drawn on the CPU (D-130).
+gafira-model3d.workspace = true
+gafira-io-model3d.workspace = true
+glam.workspace = true
 rfd.workspace = true
 # Spec 093: the colours of an SVG logo; already in the tree through egui_extras.
 resvg.workspace = true

@@ -77,6 +77,8 @@ pub enum Property {
     Image(gafira_doc::ImageNode),
     /// A whole chart (spec 083).
     Chart(Box<gafira_doc::ChartNode>),
+    /// A whole 3D model: pose, camera and lighting (spec 100).
+    Model3d(Box<gafira_doc::Model3dNode>),
     PageName(String),
     /// The background of a page (spec 069); `None` makes it white again.
     PageBackground(Option<gafira_doc::PageBackground>),
@@ -118,6 +120,7 @@ impl Property {
             Self::Qr(_) => "set_property.qr",
             Self::Table(_) => "set_property.table",
             Self::Chart(_) => "set_property.chart",
+            Self::Model3d(_) => "set_property.model3d",
             Self::Image(_) => "set_property.image",
             Self::TextContent(_) => "set_property.text_content",
             Self::TextCurve(_) => "set_property.text_curve",
@@ -193,6 +196,7 @@ impl Property {
             Self::Qr(qr) => ("qr", qr.is_valid()),
             Self::Table(table) => ("table", table.is_valid()),
             Self::Chart(chart) => ("chart", chart.is_valid()),
+            Self::Model3d(model) => ("model3d", model.is_valid()),
             Self::FrameContent(Some(content)) => (
                 "frame_content",
                 content.natural.0 > 0 && content.natural.1 > 0,
@@ -254,6 +258,7 @@ impl Property {
             (Self::Table(_), NodeKind::Table(t)) => Self::Table(t.clone()),
             (Self::Image(_), NodeKind::Image(i)) => Self::Image(i.clone()),
             (Self::Chart(_), NodeKind::Chart(c)) => Self::Chart(c.clone()),
+            (Self::Model3d(_), NodeKind::Model3d(m)) => Self::Model3d(m.clone()),
             (Self::Qr(_), NodeKind::Qr(q)) => Self::Qr(q.clone()),
             (Self::Stroke(_), NodeKind::Frame(f)) => Self::Stroke(f.stroke),
             (Self::CornerRadius(_), NodeKind::Frame(f)) => Self::CornerRadius(f.corner_radius),
@@ -299,6 +304,7 @@ impl Property {
             (Self::Table(v), NodeKind::Table(t)) => t.clone_from(v),
             (Self::Image(v), NodeKind::Image(i)) => i.clone_from(v),
             (Self::Chart(v), NodeKind::Chart(c)) => c.clone_from(v),
+            (Self::Model3d(v), NodeKind::Model3d(m)) => m.clone_from(v),
             (Self::Qr(v), NodeKind::Qr(q)) => q.clone_from(v),
             (Self::Stroke(v), NodeKind::Frame(f)) => f.stroke = *v,
             (Self::CornerRadius(v), NodeKind::Frame(f)) => f.corner_radius = *v,
@@ -870,6 +876,36 @@ mod tests {
         revert(&mut change, &mut doc).unwrap();
         assert_eq!(doc, original);
         let mut refused = set(&[A], Property::Chart(Box::new(chart(ChartKind::Pie, 3))));
+        assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
+    // Spec 100 AC-09: applying a 3D edit is one change that undo restores; a broken pose is
+    // refused and leaves the document as it was.
+    #[test]
+    fn s100_the_model3d_is_changed_and_undone() {
+        use gafira_doc::{ContentHash, Model3dFormat, Model3dNode, timeline::AssetRef};
+        let model = Model3dNode::new(AssetRef::new(ContentHash([7; 32])), Model3dFormat::Glb);
+        let mut original = fixture();
+        {
+            let token = EditToken::__new_for_gafira_edit_only();
+            let mut edit = original.edit(&token);
+            let page = Arc::make_mut(&mut edit.pages_mut()[0]);
+            let node = Arc::make_mut(page.nodes.get_mut(&A).expect("A"));
+            node.kind = NodeKind::Model3d(Box::new(model.clone()));
+        }
+        let mut doc = original.clone();
+        let mut next = model.clone();
+        next.camera.yaw = 45.0;
+        next.scale = [1.5; 3];
+        let mut change = set(&[A], Property::Model3d(Box::new(next.clone())));
+        assert_eq!(apply(&mut change, &mut doc), Ok(Applied::Changed));
+        assert_eq!(node(&doc, A).kind, NodeKind::Model3d(Box::new(next)));
+        revert(&mut change, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut broken = model;
+        broken.scale = [0.0; 3];
+        let mut refused = set(&[A], Property::Model3d(Box::new(broken)));
         assert!(apply(&mut refused, &mut doc).is_err());
         assert_eq!(doc, original);
     }

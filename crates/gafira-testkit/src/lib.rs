@@ -1019,7 +1019,10 @@ mod guards {
                             assert!(value_depth(&e.payload) <= 3);
                             assert!(payload_in_bounds(&e.payload));
                         }
-                        NodeKind::Shape(_) | NodeKind::Text(_) | NodeKind::Image(_) => {
+                        NodeKind::Shape(_)
+                        | NodeKind::Text(_)
+                        | NodeKind::Image(_)
+                        | NodeKind::Model3d(_) => {
                             assert!(node.children.is_empty());
                         }
                     }

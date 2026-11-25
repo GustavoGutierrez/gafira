@@ -209,6 +209,27 @@ impl<'a> Media<'a> {
         Some(())
     }
 
+    /// Draws the 3D model `model` for a `w` × `h` pt box (spec 100) and keeps it as a PNG
+    /// under its picture key; `None` when it cannot be drawn.
+    pub(crate) fn model(
+        &mut self,
+        model: &gafira_doc::Model3dNode,
+        (w, h): (f64, f64),
+    ) -> Option<()> {
+        let shown = model.shown();
+        if self.by_asset.contains_key(&shown) {
+            return Some(());
+        }
+        let size = gafira_ports::export::model_pixels((w, h), 2.0, 4096);
+        let decoder = gafira_io_model3d::ModelDecoder::new(gafira_io_image::RasterDecoder::new());
+        let drawn = gafira_ports::export::render_model(model, self.store, &decoder, size).ok()?;
+        let png = png_of(&drawn)?;
+        self.files
+            .push((format!("image{}.png", self.files.len() + 1), png));
+        self.by_asset.insert(shown, Some(self.files.len() - 1));
+        Some(())
+    }
+
     /// The file name of `asset` in `ppt/media/`, reading it the first time;
     /// `None` when it cannot be read.
     pub(crate) fn name(&mut self, asset: AssetRef) -> Option<String> {

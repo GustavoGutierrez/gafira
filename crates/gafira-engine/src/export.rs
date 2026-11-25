@@ -21,7 +21,7 @@
 //! 035). The persisted export queue, its states and its retries (02 §6.4)
 //! are later.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -370,8 +370,40 @@ fn decode_images_until(
         cancel.check()?;
         decoded.insert(shown, Arc::new(decode_image(image, store, images, most)?));
     }
+    // A 3D model is drawn as its camera sees it (spec 100 §8): for an export at four times
+    // its box so any export scale keeps its detail (AC-14), for a preview at its box.
+    let mut models: BTreeMap<AssetRef, (&gafira_doc::Model3dNode, (u32, u32))> = BTreeMap::new();
+    for node in pages
+        .iter()
+        .filter_map(|page| document.page(*page))
+        .flat_map(|page| page.nodes.values())
+    {
+        let NodeKind::Model3d(model) = &node.kind else {
+            continue;
+        };
+        let p = node.base.placement;
+        let (scale, limit) =
+            most.map_or((MODEL_EXPORT_SCALE, MODEL_EXPORT_MOST), |most| (1.0, most));
+        let size = gafira_ports::export::model_pixels((p.w, p.h), scale, limit);
+        // Two boxes showing the same picture share it, drawn for the larger one.
+        let entry = models.entry(model.shown()).or_insert((model, size));
+        if size.0 * size.1 > entry.1.0 * entry.1.1 {
+            entry.1 = size;
+        }
+    }
+    for (shown, (model, size)) in models {
+        cancel.check()?;
+        let pixels = gafira_ports::export::render_model(model, store, images, size)?;
+        decoded.insert(shown, Arc::new(pixels));
+    }
     Ok(decoded)
 }
+
+/// How much larger than its box a 3D model is drawn for an export (spec 100 AC-14): the
+/// largest export scale.
+const MODEL_EXPORT_SCALE: f64 = 4.0;
+/// The longest side of a 3D model's picture in an export (spec 100 §8.2).
+const MODEL_EXPORT_MOST: u32 = 4096;
 
 /// One output in progress: its temporary, its final name and its file.
 struct Pending {

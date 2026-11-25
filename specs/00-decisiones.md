@@ -1107,3 +1107,12 @@ Fecha: 25 de noviembre de 2026.
 - **Qué no cambia**: las dependencias siguen siendo solo permisivas (`deny.toml`, ARQ-70..79). El nombre, el logotipo y el icono de Gafira quedan reservados como marca (`TRADEMARKS.md`): una versión modificada debe usar otro nombre e icono. Los paquetes de ilustraciones `.gafpack` conservan su propia licencia dentro de cada paquete (D-128), y los completos se venden en Gumroad para financiar el desarrollo.
 - **Abierto**: el modelo comercial de D-12 (licencia de pago, modo sin licencia, activación) sigue aplazado (D-62, D-70) y debe revisarse con el titular a la luz de esta decisión antes de retomarlo.
 - **Contribuciones**: guía en `CONTRIBUTING.md`; las aportaciones se aceptan bajo la misma licencia con firma DCO (`git commit -s`).
+
+## D-130 Render 3D por CPU para los objetos 3D
+
+Fecha: 25 de noviembre de 2026.
+
+- **Decisión** (titular, spec 100): los modelos 3D (`.glb`, `.obj`) se dibujan con un rasterizador 3D propio por software en Rust (triángulos, z-buffer, sombreado y suavizado de bordes), no con `wgpu`. Es el mismo código para la vista del lienzo, el editor 3D y la exportación a cualquier resolución.
+- **Por qué**: Gafira usa `eframe` con glow (OpenGL) y su render y exportación son por CPU (`tiny-skia`, `gafira-render-cpu`). Un rasterizador por CPU es determinista, no depende de la GPU (sin pérdida de dispositivo ni diferencias entre sistemas) y no añade un segundo backend gráfico.
+- **Consecuencia**: sustituye la recomendación de `wgpu` de la spec 100 §6.1. Los modelos muy pesados giran más lento durante la edición; la vista se dibuja a menor resolución mientras se arrastra y a resolución completa al soltar.
+

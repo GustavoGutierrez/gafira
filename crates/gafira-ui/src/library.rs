@@ -1,7 +1,8 @@
 //! The Biblioteca panel (spec 068): the files imported into Gafira, newest
-//! first, as previews in two tabs, «Imágenes» (PNG, JPEG, and SVG brought in
-//! as vector shapes) and «Diseños» (SVG and PDF brought in as the outlines
-//! of frames), with a search by name, ticks, a menu and details.
+//! first, as previews in three tabs, «Imágenes» (PNG, JPEG, and SVG brought in
+//! as vector shapes), «Diseños» (SVG and PDF brought in as the outlines
+//! of frames) and «3D» (GLB and OBJ models, spec 100), with a search by name,
+//! ticks, a menu and details.
 
 use std::path::{Path, PathBuf};
 
@@ -31,13 +32,17 @@ pub(crate) enum Tab {
     #[default]
     Images,
     Designs,
+    /// 3D models (spec 100).
+    Models,
 }
 
 /// Whether Biblioteca shows `file` at all, by its extension.
 pub(crate) fn known(file: &Path) -> bool {
     file.extension().and_then(|e| e.to_str()).is_some_and(|e| {
         let e = e.to_ascii_lowercase();
-        crate::files::IMAGES.contains(&e.as_str()) || matches!(e.as_str(), "svg" | "pdf")
+        crate::files::IMAGES.contains(&e.as_str())
+            || matches!(e.as_str(), "svg" | "pdf")
+            || crate::model3d::EXTENSIONS.contains(&e.as_str())
     })
 }
 
@@ -47,7 +52,15 @@ pub(crate) fn shown(files: &[LibraryEntry], tab: Tab, query: &str) -> Vec<Librar
     let query = query.trim().to_lowercase();
     files
         .iter()
-        .filter(|entry| known(&entry.path) && entry.design == (tab == Tab::Designs))
+        .filter(|entry| {
+            let model = crate::model3d::is_model_path(&entry.path);
+            known(&entry.path)
+                && match tab {
+                    Tab::Images => !entry.design && !model,
+                    Tab::Designs => entry.design,
+                    Tab::Models => model,
+                }
+        })
         .filter(|entry| {
             query.is_empty()
                 || entry
@@ -126,6 +139,8 @@ mod tests {
             entry("/x/logo.svg", false),
             entry("/x/logo.svg", true),
             entry("/x/notes.txt", false),
+            entry("/x/Regalo.glb", false),
+            entry("/x/fenix.OBJ", false),
         ];
         let names = |tab, query| {
             shown(&files, tab, query)
@@ -147,6 +162,9 @@ mod tests {
         assert_eq!(names(Tab::Designs, ""), ["perro.pdf", "logo.svg"]);
         assert_eq!(names(Tab::Designs, "per"), ["perro.pdf"]);
         assert!(names(Tab::Designs, "sol").is_empty());
+        // Spec 100: 3D models have their own tab and never show as images.
+        assert_eq!(names(Tab::Models, ""), ["Regalo.glb", "fenix.OBJ"]);
+        assert_eq!(names(Tab::Models, "reg"), ["Regalo.glb"]);
     }
 
     // S68-06: the details read a date and a size the way people do.
