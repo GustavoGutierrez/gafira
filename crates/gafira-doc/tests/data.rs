@@ -59,7 +59,9 @@ fn s104_02_simple_keys() {
 // codes with leading zeros and empty cells included (§11, AC 7 and 8).
 #[test]
 fn s104_03_round_trip() {
-    let doc = Document::default().with_data(Some(Arc::new(set()))).unwrap();
+    let doc = Document::default()
+        .with_data(Some(Arc::new(set())))
+        .unwrap();
     let json = doc.to_json().unwrap();
     assert!(json.contains("\"connected_data\""), "{json}");
     let back = Document::from_json(json.as_bytes()).unwrap();

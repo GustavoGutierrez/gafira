@@ -36,7 +36,9 @@ impl Command for SetData {
             return Ok(Applied::Unchanged);
         }
         if self.data.as_deref().and_then(DataSet::problem).is_some() {
-            return Err(CommandError::InvalidValue("the connected data is not valid"));
+            return Err(CommandError::InvalidValue(
+                "the connected data is not valid",
+            ));
         }
         doc.set_data(self.data.clone());
         // Merged commands keep the first old value.

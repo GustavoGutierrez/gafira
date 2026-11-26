@@ -212,7 +212,11 @@ impl DataSet {
                 return Some(DataProblem::IdNotBelowNext);
             }
         }
-        if self.rows.iter().any(|r| r.values.len() != self.columns.len()) {
+        if self
+            .rows
+            .iter()
+            .any(|r| r.values.len() != self.columns.len())
+        {
             return Some(DataProblem::RowWidth);
         }
         let long = |r: &Arc<DataRow>| r.values.iter().any(|v| v.len() > Self::MAX_CELL_TEXT);
