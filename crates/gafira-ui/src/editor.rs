@@ -21700,4 +21700,86 @@ pub(crate) mod tests {
         assert!((to.h - from.h).abs() < 1e-6);
         drag_end(&mut engine, &mut editor);
     }
+
+    // S104-56: «Crear en lote» is a tab of the rail; its three steps draw
+    // over a design with data, the preview of a row is drawn and a field
+    // goes into the selected text as one undo step (§4, §7.2, §9).
+    #[test]
+    fn s104_56_the_bulk_panel_draws_every_step() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let set = gafira_doc::DataSet {
+            name: "clientes".to_owned(),
+            columns: vec![gafira_doc::DataColumn::new(1, "Nombre", "nombre")],
+            rows: vec![Arc::new(gafira_doc::DataRow::new(
+                2,
+                vec!["Ana".to_owned()],
+            ))],
+            next_id: 3,
+            ..gafira_doc::DataSet::default()
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetData::new(Some(Arc::new(set)))))
+            .expect("the data");
+        let mut editor = Editor::default();
+        let tab = TABS
+            .iter()
+            .position(|(key, _)| *key == "tab.bulk")
+            .expect("the tab");
+        editor.rail.click_tab(tab);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        for step in [
+            crate::bulk::Step::Data,
+            crate::bulk::Step::Connect,
+            crate::bulk::Step::Generate,
+        ] {
+            editor.bulk.get_mut().step = step;
+            frame(&ctx, &mut editor, &mut engine, None);
+            if step == crate::bulk::Step::Generate {
+                // The picture of the row was asked and drawn.
+                assert!(editor.bulk.get_mut().picture.is_some());
+            }
+            frame(&ctx, &mut editor, &mut engine, None);
+            assert_eq!(editor.bulk.get_mut().step, step);
+        }
+        // «Añadir texto» of a field: a text that says it.
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "{{nombre}}".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        let (id, _) = page
+            .nodes
+            .iter()
+            .find(|(_, n)| matches!(&n.kind, gafira_doc::NodeKind::Text(t) if t.content.plain_text() == "{{nombre}}"))
+            .expect("the text");
+        let id = *id;
+        // «Añadir al final» on the selected text.
+        editor.selected = Selection::one(page.id, id);
+        let snapshot = engine.edit().document();
+        let asked = Asked {
+            bulk: Some(crate::bulk::Asks {
+                append: Some("{{fila}}".to_owned()),
+                ..crate::bulk::Asks::default()
+            }),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &snapshot, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let words = match &document.pages()[0].nodes[&id].kind {
+            gafira_doc::NodeKind::Text(t) => t.content.plain_text(),
+            _ => String::new(),
+        };
+        assert_eq!(words, "{{nombre}} {{fila}}");
+        engine.edit().undo().expect("undo");
+        let document = engine.edit().document().expect("a document");
+        assert!(
+            matches!(&document.pages()[0].nodes[&id].kind, gafira_doc::NodeKind::Text(t) if t.content.plain_text() == "{{nombre}}")
+        );
+    }
 }
