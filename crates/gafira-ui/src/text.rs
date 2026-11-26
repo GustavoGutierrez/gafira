@@ -1953,6 +1953,18 @@ mod tests {
         "bulk.offer_hint",
         "bulk.close",
         "bulk.use_table",
+        "paint.copy_style",
+        "paint.copy_effects",
+        "paint.copy_properties",
+        "paint.paste",
+        "paint.hint",
+        "bulk.menu_connect",
+        "bulk.menu_add_field",
+        "bulk.menu_load_data",
+        "bulk.drop_here",
+        "bulk.add_text_hint",
+        "bulk.replace_hint",
+        "bulk.append_hint",
     ];
 
     #[test]

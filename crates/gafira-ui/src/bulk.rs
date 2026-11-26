@@ -1203,6 +1203,7 @@ fn chip(
         ui.horizontal_wrapped(|ui| {
             if ui
                 .add(small(theme, plain(texts, "bulk.add_text")))
+                .on_hover_text(plain(texts, "bulk.add_text_hint"))
                 .clicked()
             {
                 asks.insert = Some(token.clone());
@@ -1212,6 +1213,7 @@ fn chip(
                 small(theme, plain(texts, "bulk.replace_selected")),
             );
             if fill
+                .on_hover_text(plain(texts, "bulk.replace_hint"))
                 .on_disabled_hover_text(plain(texts, "bulk.select_text"))
                 .clicked()
             {
@@ -1222,6 +1224,7 @@ fn chip(
                 small(theme, plain(texts, "bulk.append_selected")),
             );
             if add
+                .on_hover_text(plain(texts, "bulk.append_hint"))
                 .on_disabled_hover_text(plain(texts, "bulk.select_text"))
                 .clicked()
             {

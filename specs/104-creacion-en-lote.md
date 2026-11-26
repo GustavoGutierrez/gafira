@@ -587,3 +587,12 @@ Consulta: **26 de noviembre de 2026**. Se enlazan documentos públicos; sus inte
 - Pausar, reintentar fallidos, reanudar tras cerrar y manifiesto del trabajo (§10.3, §12.6); perfiles de rendimiento y mediciones (§14).
 - «Quitar datos personales y conservar campos» al distribuir plantillas (§11.3) y `.gaf` por registro.
 - Tab en el autocompletado: el foco de egui lo toma antes que el campo; hoy se inserta con Intro.
+
+### 19.5 Ajustes tras la primera prueba del titular (2026-11-26)
+
+- Etiqueta del riel en dos líneas cuando no cabe («Crear» / «en lote»).
+- Botones del panel con aspecto de botón (principal en coral, secundarios con contorno) y explicación al pasar el ratón por «Añadir texto», «Reemplazar» y «Añadir al final».
+- El panel ya no se ensancha solo: la fila de pasos y las fichas cabían con unos píxeles de más (S104-61 lo comprueba fotograma a fotograma).
+- «Crear tabla» abre un borrador con «Usar esta tabla» y «Cancelar» (S104-60).
+- Soltar un CSV o Excel sobre el panel carga sus datos, con un aviso mientras se arrastra (S104-62).
+- Clic derecho sobre un texto o una forma: «Conectar datos (reemplazar el texto)» y «Añadir un campo al final» con las columnas, o «Conectar datos…» que abre el panel cuando no hay datos (§7.2, con la spec 105).
