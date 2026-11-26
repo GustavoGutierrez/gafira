@@ -35,7 +35,18 @@ export interface Copy {
     features: string;
     platforms: string;
     screenAlt: string;
-    slides: { label: string; editor: string; packs: string; packsAlt: string; pause: string; play: string };
+    slides: {
+      label: string;
+      editor: string;
+      packs: string;
+      packsAlt: string;
+      flowers: string;
+      flowersAlt: string;
+      model3d: string;
+      model3dAlt: string;
+      pause: string;
+      play: string;
+    };
     chips: { background: string; colors: string; exported: string };
   };
   how: {
@@ -148,6 +159,11 @@ const es: Copy = {
       packs: 'Ilustraciones',
       packsAlt:
         'Gafira con paquetes de ilustraciones instalados y una página llena de ellas: lazos, esquineros, un farol, un pastel, rosas, globos y un osito',
+      flowers: 'Flores',
+      flowersAlt:
+        'Gafira con el paquete Flores botánicas abierto y una página llena de flores: rosas de varios colores, girasoles, un anturio, una fucsia y una heliconia',
+      model3d: 'Modelos 3D',
+      model3dAlt: 'Gafira girando un modelo 3D de un dragón de cristal, con las vistas rápidas y los controles de cámara',
       pause: 'Pausar las capturas',
       play: 'Reanudar las capturas',
     },
@@ -519,6 +535,11 @@ const en: Copy = {
       packs: 'Illustrations',
       packsAlt:
         'Gafira with illustration packs installed and a page full of them: bows, corners, a lantern, a cake, roses, balloons and a teddy bear',
+      flowers: 'Flowers',
+      flowersAlt:
+        'Gafira with the Botanical Flowers pack open and a page full of flowers: roses in several colours, sunflowers, an anthurium, a fuchsia and a heliconia',
+      model3d: '3D models',
+      model3dAlt: 'Gafira rotating a 3D model, with the camera and rotation controls',
       pause: 'Pause the screenshots',
       play: 'Play the screenshots',
     },
