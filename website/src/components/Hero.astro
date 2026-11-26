@@ -25,6 +25,8 @@ const names = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
 const slides = [
   { id: 'editor', label: t.hero.slides.editor, image: screens[locale].editor, alt: t.hero.screenAlt },
   { id: 'packs', label: t.hero.slides.packs, image: screens[locale].packs, alt: t.hero.slides.packsAlt },
+  { id: 'flowers', label: t.hero.slides.flowers, image: screens[locale].flowers, alt: t.hero.slides.flowersAlt },
+  { id: 'model3d', label: t.hero.slides.model3d, image: screens[locale].model3dHero, alt: t.hero.slides.model3dAlt },
 ];
 ---
 
@@ -645,6 +647,33 @@ const slides = [
   @media (max-width: 640px) {
     .hero__actions .button {
       width: 100%;
+    }
+
+    /* Four tabs and the pause button must fit a phone-width window bar;
+       the decorative dots give way and the row can scroll as a last resort. */
+    .window__bar {
+      padding-inline: 8px;
+    }
+
+    .window__dots {
+      display: none;
+    }
+
+    .switcher {
+      gap: 2px;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .switcher__tab {
+      flex: none;
+      padding: 6px 6px;
+      font-size: 12px;
+    }
+
+    .switcher__toggle {
+      flex: none;
     }
 
     .hero__panel,
