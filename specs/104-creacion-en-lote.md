@@ -1,4 +1,6 @@
-# Gafira · Creación en lote con datos conectados
+# 104 — Creación en lote con datos conectados
+
+> **Estado:** in-progress — 2026-11-26 — primera entrega implementada y probada (§19); pendientes las partes de §19.4.
 
 **Especificación funcional y técnica propuesta · v1.2 · 26 de noviembre de 2026**
 
@@ -545,3 +547,43 @@ Consulta: **26 de noviembre de 2026**. Se enlazan documentos públicos; sus inte
 - **[R2] Rust calamine — Documentación de la biblioteca.** [Consultar fuente](https://docs.rs/calamine/latest/calamine/)
 - **[R3] Rust Rayon — Documentación de la biblioteca.** [Consultar fuente](https://docs.rs/rayon/latest/rayon/)
 - **[R4] Rust rusqlite — Documentación de la biblioteca.** [Consultar fuente](https://docs.rs/rusqlite/latest/rusqlite/)
+
+## 19. Estado de la implementación (primera entrega, 2026-11-26)
+
+### 19.1 Decisiones tomadas con el código real
+
+| Tema | Decisión |
+| --- | --- |
+| Acceso | Pestaña «Crear en lote» del riel, entre Dibujo y Marca (icono `Stack`), con el panel de tres pasos **Datos → Conectar → Generar**. No hay menú contextual general de elementos en el lienzo; las acciones «Reemplazar» y «Añadir al final» del panel actúan sobre el texto seleccionado. |
+| Campos en el texto | Los campos se guardan como texto `{{clave}}` dentro de los tramos (`Span`) del texto enriquecido, no como un nodo nuevo: el editor de texto en el lienzo trabaja con texto plano y un nodo propio exigiría reescribirlo. La identidad estable es la **clave** de la columna: renombrar la columna cambia su nombre visible y conserva la clave, así que las conexiones siguen funcionando. `{{["Título"]}}` nombra por título original. |
+| Tabla en el `.gaf` | Bloque opcional `connected_data` en `document.json` (`DataSet`, versión 1), escrito solo cuando hay tabla; los documentos sin datos conservan sus bytes. No se usa SQLite: la tabla viaja entera y las filas se comparten por `Arc` entre pasos de deshacer. |
+| Resultado editable (§10.2) | Gafira no abre varios diseños a la vez: el resultado editable es **un archivo `.gaf` nuevo**, con una página por fila y página de plantilla, textos reemplazados y sin la tabla de datos. La plantilla abierta no cambia y no se cierra. |
+| Exportación | Reutiliza los exportadores PNG, JPEG y PDF del motor sobre un documento resuelto aparte (`ExportService::prepare_document` y `PreparedExport::again`), con las opciones predeterminadas de cada formato. Los archivos por fila se resuelven fila a fila, sin tener todas las páginas en memoria; el PDF combinado y el `.gaf` necesitan el documento completo. |
+| Cuadrícula de datos | La cuadrícula del editor de datos de los gráficos se extrajo a `data_grid` y la usan los gráficos y la tabla del lote (panel y ventana «Editar tabla»). |
+| Texto que no cabe | Política «Avisar»: las cajas que crecen (ancho o alto automáticos) siguen a sus palabras como al escribir; las de tamaño fijo que no alcanzan se informan por fila y elemento al terminar. |
+
+### 19.2 Hecho
+
+- Importar CSV/TSV/XLSX/XLSM en segundo plano, con elección de hoja (diálogo de la spec 082), fila de nombres sugerida y corregible, filas vacías omitidas y filas desiguales avisadas; pegar desde una hoja; crear una tabla y escribirla en la cuadrícula (añade filas y campos al escribir fuera).
+- Claves únicas ASCII a partir de los títulos (`Año de ingreso` → `ano_de_ingreso`), títulos sin nombre «Columna A».
+- Conectar: fichas por campo con ejemplo de la fila y número de usos; arrastrar al lienzo, «Añadir texto», «Reemplazar», «Añadir al final», «Copiar»; autocompletado al escribir `{{` en el lienzo (↑ ↓ e Intro). Campo especial `{{fila}}`.
+- Revisar: vista previa renderizada de cada fila y página de plantilla, navegación por filas, campos sin columna (bloquean, con «Ir»), filas con campos vacíos (aviso).
+- Generar: páginas de plantilla, todas las filas o un rango, PDF combinado, PDF por fila, PNG, JPEG o solo `.gaf`, y la opción de `.gaf` editable además; nombres de archivo con campos, saneados y sin sobrescribir (`-2`, `-3`); progreso con fase, hechos/total, fallidos, faltan, archivo en curso, tiempo y estimación, botón «Cancelar», tarjeta flotante con el panel cerrado e informe final.
+
+### 19.3 Evidencia
+
+- Pruebas nuevas (`git grep s104_`): `gafira-doc` `tests/data.rs` (6), `gafira-edit` `tests/data_commands.rs` (2), `gafira-bulk` `tests/template.rs` (8) y `tests/resolve.rs` (7), `gafira-io-xlsx` `s104_30`, `gafira-engine` `s104_40`, `gafira-ui` `bulk::tests` (S104-50 a 55 y 57) y `editor::tests` (S104-56 y 58). S104-50 y 51 escriben PNG, PDF y `.gaf` reales y reabren el `.gaf`.
+- Pruebas de propiedades: `set_data_obeys_the_command_laws` (V14) en `gafira-edit/tests/prop_commands.rs`.
+- Gates (2026-11-26): `cargo fmt --check` OK; `cargo clippy --workspace --all-targets --locked -- -D warnings` OK; `cargo test --workspace --locked --no-fail-fast` 3805 pasadas, 0 fallidas en 301 binarios; pasos de política de `ci.yml` V5, V12, ARQ-107 (dos), V13 y V14 OK en local; `python3 tools/sync_agents.py --check` OK. Sin dependencias nuevas de terceros (`gafira-bulk` usa `serde_json` del workspace).
+- No verificado: uso manual en la app de escritorio (diálogos del sistema y arrastre reales); las pruebas dibujan frames completos del editor y escriben los archivos, pero no abren ventanas.
+
+### 19.4 Pendiente
+
+- Imágenes conectadas a columnas (§8) y reglas de visibilidad.
+- Políticas «Reducir hasta», «Ampliar caja» y «Recortar con puntos suspensivos» (§9).
+- Formatos de número, fecha y moneda por campo, valores de respaldo, tipos de columna visibles y configuración regional (§6).
+- Buscar, filtrar, ordenar y deshacer por celda en la tabla; «Actualizar desde archivo» con remapeo (§6).
+- Elegir rango con letras (`A3:H240`) y tablas nombradas de XLSX (§5.2).
+- Pausar, reintentar fallidos, reanudar tras cerrar y manifiesto del trabajo (§10.3, §12.6); perfiles de rendimiento y mediciones (§14).
+- «Quitar datos personales y conservar campos» al distribuir plantillas (§11.3) y `.gaf` por registro.
+- Tab en el autocompletado: el foco de egui lo toma antes que el campo; hoy se inserta con Intro.
