@@ -96,11 +96,12 @@ use crate::color_field::{ColorField, Picked};
 const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::X);
 const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
 const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
-/// «Copiar estilo» and «Pegar estilo» (spec 105).
+/// «Copiar estilo» and «Pegar estilo» (spec 105). Not Ctrl+Alt: AltGr
+/// arrives as Ctrl+Alt on Windows, and Ctrl+Alt+C copies (S44-01).
 const COPY_STYLE: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::C);
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C);
 const PASTE_STYLE: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::V);
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::V);
 const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
 const GROUP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
 const UNGROUP: KeyboardShortcut =
@@ -1750,10 +1751,10 @@ impl Editor {
                     {
                         asked.v_released = true;
                     }
-                    // Ctrl+Alt+C and Ctrl+Alt+V copy and paste the style of
-                    // elements (spec 105); the cells of a table keep them
-                    // for their own style.
-                    let styling = i.modifiers.alt && self.cells.is_none();
+                    // Ctrl+Mayús+C and Ctrl+Mayús+V copy and paste the style
+                    // of elements (spec 105); the cells of a table keep
+                    // their own keys.
+                    let styling = i.modifiers.shift && !i.modifiers.alt && self.cells.is_none();
                     match event {
                         egui::Event::Copy if styling => {
                             asked.paint_copy = Some(crate::paint::Part::Style);
@@ -22600,10 +22601,10 @@ pub(crate) mod tests {
         assert_eq!(words, "{{nombre}}");
     }
 
-    // S105-08: Ctrl+Alt+C copies the style of the selection and arms the
-    // painter; plain Ctrl+C still copies the element.
+    // S105-08: Ctrl+Mayús+C copies the style of the selection and arms the
+    // painter; Ctrl+C and Ctrl+Alt+C still copy the element (S44-01).
     #[test]
-    fn s105_08_ctrl_alt_c_copies_the_style() {
+    fn s105_08_ctrl_shift_c_copies_the_style() {
         let mut engine = engine();
         start(&mut engine, StartFormat::Social).expect("a new document");
         let mut editor = Editor::default();
@@ -22618,7 +22619,7 @@ pub(crate) mod tests {
         theme().apply(&ctx);
         let mut clip = None;
         frame(&ctx, &mut editor, &mut engine, None);
-        let both = Modifiers::COMMAND.plus(Modifiers::ALT);
+        let both = Modifiers::COMMAND.plus(Modifiers::SHIFT);
         frame_events(
             &ctx,
             &mut editor,
