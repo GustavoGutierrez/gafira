@@ -1995,9 +1995,34 @@ mod tests {
     fn s104_61_the_panel_does_not_widen_itself() {
         let texts = texts();
         let theme = theme();
-        let mut with_data = Document::default();
-        let set = new_table(&texts);
-        with_data = with_data.with_data(Some(Arc::new(set))).expect("valid");
+        // Like the sample of the owner: five fields, long names.
+        let rows = grid(&[
+            &["Nombre", "Curso", "Fecha", "Código", "Aprobado"],
+            &[
+                "Valentina Rodríguez de la Fuente",
+                "Edición de video para redes",
+                "24/11/2026",
+                "00129",
+                "Sí",
+            ],
+            &[
+                "Ana María Pérez",
+                "Diseño gráfico básico",
+                "15/11/2026",
+                "00125",
+                "Sí",
+            ],
+        ]);
+        let set = Pending::new(
+            rows.clone(),
+            DataSource::default(),
+            "participantes".to_owned(),
+            &texts,
+        )
+        .table();
+        let with_data = Document::default()
+            .with_data(Some(Arc::new(set)))
+            .expect("valid");
         for (document, step) in [
             (Document::default(), Step::Data),
             (with_data.clone(), Step::Data),
@@ -2010,6 +2035,15 @@ mod tests {
                 step,
                 ..Panel::default()
             };
+            // The first case also waits for its row of names.
+            if document.data().is_none() {
+                panel.pending = Some(Pending::new(
+                    rows.clone(),
+                    DataSource::default(),
+                    "participantes".to_owned(),
+                    &texts,
+                ));
+            }
             let mut widths = Vec::new();
             for _ in 0..12 {
                 let input = egui::RawInput {
@@ -2035,8 +2069,11 @@ mod tests {
                     widths.push(shown.response.rect.width());
                 });
             }
-            let (first, last) = (widths[1], widths[widths.len() - 1]);
-            assert!((last - first).abs() < 0.5, "{step:?}: {widths:?}");
+            // From the first frame on: no jump when the tab opens either.
+            assert!(
+                widths.iter().all(|w| (w - widths[0]).abs() < 0.5),
+                "{step:?}: {widths:?}"
+            );
         }
     }
 
