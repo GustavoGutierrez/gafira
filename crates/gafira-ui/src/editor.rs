@@ -446,6 +446,13 @@ pub(crate) struct Editor {
     /// offered while `{{` is written in a text (§7.3).
     field_keys: Vec<(String, String)>,
     field_hint: Option<usize>,
+    /// The menu of an element right-clicked on the canvas, where (spec 105).
+    element_menu: Option<(PageId, NodeId, Pos2)>,
+    /// What «Copiar estilo» took, and whether the next click pastes it.
+    painter: Option<crate::paint::Copied>,
+    painting: bool,
+    /// The box of the side panel, for files dropped on it.
+    side_rect: std::cell::Cell<Option<Rect>>,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -640,6 +647,10 @@ impl Default for Editor {
             bulk_ctx: None,
             field_keys: Vec::new(),
             field_hint: None,
+            element_menu: None,
+            painter: None,
+            painting: false,
+            side_rect: std::cell::Cell::new(None),
             studio: crate::vision::Studio::default(),
             eraser: None,
             chart_panel: std::cell::RefCell::default(),
@@ -673,6 +684,18 @@ struct Asked {
     /// wide grid.
     bulk: Option<crate::bulk::Asks>,
     bulk_data: Option<Option<gafira_doc::DataSet>>,
+    /// A field from the menu of an element: it replaces the words of the
+    /// selected text, or goes after them (spec 104 §7.2).
+    field_replace: Option<String>,
+    field_append: Option<String>,
+    /// Open «Crear en lote» (spec 104).
+    open_bulk: bool,
+    /// The format painter (spec 105): copy a part of the selected element,
+    /// paste it on the selection, paste it on the element clicked, stop.
+    paint_copy: Option<crate::paint::Part>,
+    paint_paste: bool,
+    paint_on: Option<(PageId, NodeId)>,
+    paint_stop: bool,
     /// An icon of the set to add (spec 103).
     icon_insert: Option<crate::icon_library::Picked>,
     /// Open or close the grid of pages (spec 102).
@@ -1872,6 +1895,8 @@ impl Editor {
         }
         self.rail(ctx, theme, texts);
         self.bulk_frame(ctx, (theme, texts), document.as_deref(), &mut asked);
+        self.element_menu_of(ctx, (theme, texts), document.as_deref(), &mut asked);
+        self.painter_hint(ctx, (theme, texts), &mut asked);
         let editing = !self.font_panel
             && self.chart_panel_of(ctx, theme, texts, document.as_deref(), &mut asked);
         let editing = editing
@@ -2413,6 +2438,7 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                self.side_rect.set(Some(ui.max_rect()));
                 if self.font_panel {
                     self.fonts_panel(ui, theme, texts, asked);
                     return;
@@ -3594,6 +3620,7 @@ impl Editor {
                         image,
                         can,
                         paste,
+                        rename: true,
                     };
                     let mut renamed = false;
                     egui::Popup::menu(&more)
@@ -6177,9 +6204,12 @@ impl Editor {
                         };
                         // In crop mode a drag moves the photo, not the
                         // elements (S66-07).
-                        let pressed =
-                            (response.clicked() || response.drag_started())
-                                && self.cropping.is_none()
+                        // A right-click picks too, for the menu of the
+                        // element (spec 105).
+                        let pressed = (response.clicked()
+                            || response.drag_started()
+                            || response.secondary_clicked())
+                            && self.cropping.is_none()
                                 && !self.image_edit.as_ref().is_some_and(|e| e.choosing());
                         if self.cropping.is_some() && response.dragged() {
                             asked.crop_drag = Some(response.drag_delta());
@@ -7249,7 +7279,31 @@ impl Editor {
                             self.active =
                                 active_after(&page_rects, at, picked.map(|(page, _)| page));
                         }
-                        if let Some(tool) = self.drawing_tool() {
+                        // A right-click on an element selects it and opens
+                        // its menu (spec 105).
+                        if response.secondary_clicked()
+                            && self.drawing_tool().is_none()
+                            && let (Some((page, node)), Some(at)) = (picked, pointer)
+                        {
+                            if !self.selected.contains(page, node) {
+                                asked.select = Some(Selection::one(page, node));
+                            }
+                            self.element_menu = Some((page, node, at));
+                            self.painting = false;
+                        }
+                        if self.painting && self.drawing_tool().is_none() {
+                            // The format painter: the next click pastes on
+                            // the element under it; on nothing, it stops.
+                            if response.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
+                            }
+                            if response.clicked() {
+                                match picked {
+                                    Some(target) => asked.paint_on = Some(target),
+                                    None => asked.paint_stop = true,
+                                }
+                            }
+                        } else if let Some(tool) = self.drawing_tool() {
                             // Dibujo with a brush or the eraser: the
                             // pointer draws or erases (spec 079).
                             self.draw_input(
@@ -8120,6 +8174,7 @@ impl Editor {
             self.bring_sheet(engine, sheet, purpose, at);
         }
         self.apply_bulk(engine, document, (asked, theme), window);
+        self.apply_paint(engine, document, asked);
         if asked.import_frame_shape {
             self.import_frame_shape(engine, window);
         }
@@ -8286,7 +8341,25 @@ impl Editor {
             }
         }
         if !asked.drop_files.is_empty() {
-            self.place_images(engine, &asked.drop_files, asked.drop_at);
+            // A spreadsheet dropped on «Crear en lote» is its data (spec
+            // 104 §5.1); the rest goes to the page.
+            let on_bulk = self.rail.open
+                && TABS[self.rail.tab].0 == "tab.bulk"
+                && asked
+                    .drop_at
+                    .zip(self.side_rect.get())
+                    .is_some_and(|(at, rect)| rect.contains(at));
+            let (sheets, rest): (Vec<_>, Vec<_>) = asked
+                .drop_files
+                .iter()
+                .cloned()
+                .partition(|path| on_bulk && crate::sheets::is_sheet(path));
+            if let Some(path) = sheets.into_iter().next() {
+                self.read_for_bulk(engine, path);
+            }
+            if !rest.is_empty() {
+                self.place_images(engine, &rest, asked.drop_at);
+            }
         }
         if let Some(words) = &asked.paste_text
             && let Some(document) = document
@@ -14241,6 +14314,8 @@ struct LayerMenu {
     image: Option<gafira_doc::timeline::AssetRef>,
     can: CanArrange,
     paste: bool,
+    /// «Cambiar nombre» is offered: in Capas, not on the canvas.
+    rename: bool,
 }
 
 /// The image of `node`, if it is one.
@@ -14392,13 +14467,14 @@ fn layer_menu(
         },
     );
     ui.separator();
-    let renamed = menu_item(
-        ui,
-        theme,
-        (Icon::Drawing, plain(texts, "layers.rename")),
-        None,
-        true,
-    );
+    let renamed = what.rename
+        && menu_item(
+            ui,
+            theme,
+            (Icon::Drawing, plain(texts, "layers.rename")),
+            None,
+            true,
+        );
     let (icon, key) = if what.locked {
         (Icon::Unlocked, "layers.unlock")
     } else {
@@ -15771,6 +15847,36 @@ impl Editor {
         if !shown {
             self.bulk.get_mut().floating(ctx, theme, texts);
         }
+        // A file carried over the panel says it can be dropped there.
+        let carried = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if shown
+            && carried
+            && let Some(rect) = self.side_rect.get()
+        {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("bulk.drop"),
+            ));
+            painter.rect_filled(
+                rect,
+                theme.radius_md(),
+                theme.c("surface").gamma_multiply(0.92),
+            );
+            let line = Stroke::new(2.0, theme.c("primary.bg"));
+            painter.rect_stroke(
+                rect.shrink(6.0),
+                theme.radius_md(),
+                line,
+                egui::StrokeKind::Inside,
+            );
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                plain(texts, "bulk.drop_here"),
+                theme.font("ui-label"),
+                theme.c("text"),
+            );
+        }
     }
 
     /// A sheet read for bulk create waits for its row of names (§5.2).
@@ -15807,6 +15913,19 @@ impl Editor {
             let command = gafira_edit::SetData::new(data.map(Arc::new));
             if let Err(error) = engine.edit().execute(Box::new(command)) {
                 eprintln!("set data: {error}");
+            }
+        }
+        if asked.open_bulk
+            && let Some(tab) = TABS.iter().position(|(key, _)| *key == "tab.bulk")
+            && !(self.rail.open && self.rail.tab == tab)
+        {
+            self.rail.click_tab(tab);
+        }
+        if let Some(document) = document {
+            for (token, append) in [(&asked.field_replace, false), (&asked.field_append, true)] {
+                if let Some(token) = token {
+                    self.fill_selection(engine, (document, theme), token, append);
+                }
             }
         }
         let Some(asks) = &asked.bulk else { return };
@@ -15997,6 +16116,259 @@ impl Editor {
         let panel = self.bulk.get_mut();
         panel.report = None;
         panel.run = Some(Run::start(job, wake));
+    }
+}
+
+/// The menu of an element on the canvas and the format painter (spec 105).
+impl Editor {
+    /// The menu of the element right-clicked: what Capas offers, the format
+    /// painter and, on a text, «Conectar datos» (spec 104 §7.2).
+    fn element_menu_of(
+        &mut self,
+        ctx: &egui::Context,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        let Some((page, node, at)) = self.element_menu else {
+            return;
+        };
+        let Some(found) = document
+            .and_then(|d| d.page(page))
+            .and_then(|p| p.node(node))
+        else {
+            self.element_menu = None;
+            return;
+        };
+        let what = LayerMenu {
+            page,
+            node,
+            locked: found.base.locked,
+            shown: found.base.visible,
+            image: node_image(found),
+            can: self.can,
+            paste: self.clip.is_some(),
+            rename: false,
+        };
+        let words = matches!(
+            found.kind,
+            gafira_doc::NodeKind::Text(_) | gafira_doc::NodeKind::Shape(_)
+        );
+        let columns: Vec<(String, String)> = document
+            .and_then(Document::data)
+            .map(|set| {
+                set.columns
+                    .iter()
+                    .map(|c| (c.key.clone(), c.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let has_copy = self.painter.is_some();
+        let mut open = true;
+        let room = ctx.content_rect().height() - 48.0;
+        let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("element.menu"));
+        // The press that opened it does not close it.
+        let fresh = ctx.input(|i| i.pointer.any_click());
+        egui::Popup::new(
+            egui::Id::new("element.menu"),
+            ctx.clone(),
+            egui::PopupAnchor::Position(at),
+            layer,
+        )
+        .kind(egui::PopupKind::Menu)
+        .style(egui::containers::menu::menu_style)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .open_bool(&mut open)
+        .show(|ui| {
+            egui::ScrollArea::vertical()
+                .max_height(room)
+                .show(ui, |ui| {
+                    if menu_item(
+                        ui,
+                        theme,
+                        (Icon::CopySimple, plain(texts, "editor.cut")),
+                        None,
+                        true,
+                    ) {
+                        asked.cut = true;
+                    }
+                    layer_menu(ui, theme, texts, &what, asked);
+                    if what.can.group || what.can.ungroup {
+                        ui.separator();
+                    }
+                    if what.can.group
+                        && menu_item(
+                            ui,
+                            theme,
+                            (Icon::Stack, plain(texts, "editor.group")),
+                            None,
+                            true,
+                        )
+                    {
+                        asked.group = true;
+                    }
+                    if what.can.ungroup
+                        && menu_item(
+                            ui,
+                            theme,
+                            (Icon::Stack, plain(texts, "editor.ungroup")),
+                            None,
+                            true,
+                        )
+                    {
+                        asked.ungroup = true;
+                    }
+                    ui.separator();
+                    for (part, key, icon) in [
+                        (
+                            crate::paint::Part::Style,
+                            "paint.copy_style",
+                            Icon::Eyedropper,
+                        ),
+                        (
+                            crate::paint::Part::Effects,
+                            "paint.copy_effects",
+                            Icon::Light,
+                        ),
+                        (
+                            crate::paint::Part::Properties,
+                            "paint.copy_properties",
+                            Icon::Settings,
+                        ),
+                    ] {
+                        if menu_item(ui, theme, (icon, plain(texts, key)), None, true) {
+                            asked.paint_copy = Some(part);
+                        }
+                    }
+                    if menu_item(
+                        ui,
+                        theme,
+                        (Icon::Paste, plain(texts, "paint.paste")),
+                        None,
+                        has_copy,
+                    ) {
+                        asked.paint_paste = true;
+                    }
+                    if words {
+                        ui.separator();
+                        if columns.is_empty() {
+                            let text = plain(texts, "bulk.menu_load_data");
+                            if menu_item(ui, theme, (Icon::Stack, text), None, true) {
+                                asked.open_bulk = true;
+                            }
+                        } else {
+                            for (key, append) in
+                                [("bulk.menu_connect", false), ("bulk.menu_add_field", true)]
+                            {
+                                submenu(ui, theme, (Icon::Stack, plain(texts, key)), |ui| {
+                                    ui.set_min_width(220.0);
+                                    for (field, name) in &columns {
+                                        let token = gafira_bulk::token(
+                                            &gafira_bulk::FieldRef::Key(field.clone()),
+                                        );
+                                        let text = format!("{name}  ·  {token}");
+                                        if menu_item(ui, theme, (Icon::Text, text), None, true) {
+                                            if append {
+                                                asked.field_append = Some(token);
+                                            } else {
+                                                asked.field_replace = Some(token);
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                });
+        });
+        let escaped = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if (!open && !fresh) || escaped {
+            self.element_menu = None;
+        }
+    }
+
+    /// While the painter waits for its click: what to do, and Esc stops it.
+    fn painter_hint(
+        &mut self,
+        ctx: &egui::Context,
+        (theme, texts): (&Theme, &Texts),
+        asked: &mut Asked,
+    ) {
+        if !self.painting {
+            return;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            asked.paint_stop = true;
+        }
+        egui::Area::new(egui::Id::new("paint.hint"))
+            .anchor(egui::Align2::CENTER_TOP, Vec2::new(0.0, 96.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label(
+                        RichText::new(plain(texts, "paint.hint"))
+                            .font(theme.font("body-sm"))
+                            .color(theme.c("text")),
+                    );
+                });
+            });
+    }
+
+    /// Copy a part of the selected element, or paste it: on the element
+    /// clicked with the painter, or on the selection from the menu. One
+    /// paste is one undo step (S105-03 to 06).
+    fn apply_paint(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Option<Arc<Document>>,
+        asked: &Asked,
+    ) {
+        if asked.paint_stop {
+            self.painting = false;
+        }
+        let Some(document) = document else { return };
+        if let Some(part) = asked.paint_copy
+            && let Some((page, node)) = self.selected.primary()
+            && let Some(from) = document.page(page).and_then(|p| p.node(node))
+        {
+            self.painter = Some(crate::paint::Copied {
+                part,
+                from: from.clone(),
+            });
+            self.painting = true;
+        }
+        let targets: Vec<(PageId, NodeId)> = match asked.paint_on {
+            Some(target) => {
+                self.painting = false;
+                vec![target]
+            }
+            None if asked.paint_paste => match self.selected.page() {
+                Some(page) => self.selected.nodes().iter().map(|n| (page, *n)).collect(),
+                None => Vec::new(),
+            },
+            None => Vec::new(),
+        };
+        let Some(copied) = &self.painter else { return };
+        let mut commands: Vec<Box<dyn Command>> = Vec::new();
+        for (page, node) in targets {
+            let Some(to) = document.page(page).and_then(|p| p.node(node)) else {
+                continue;
+            };
+            for property in crate::paint::pasted(copied, to) {
+                commands.push(Box::new(SetProperty::new(page, vec![node], property, None)));
+            }
+        }
+        if commands.is_empty() {
+            return;
+        }
+        let paste = gafira_edit::Transaction::new(
+            gafira_doc::msg::MessageKey("edit.paste_style"),
+            commands,
+        );
+        if let Err(error) = engine.edit().execute(Box::new(paste)) {
+            eprintln!("paste style: {error}");
+        }
     }
 }
 
@@ -21961,5 +22333,218 @@ pub(crate) mod tests {
             "{words}"
         );
         assert_eq!(editor.field_hint, None);
+    }
+
+    // S105-01, S105-06: a right-click on an element selects it and opens its
+    // menu; «Copiar estilo» arms the painter and a click on another text
+    // pastes the style there, one undo step, keeping its words.
+    #[test]
+    fn s105_01_right_click_menu_and_the_format_painter() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let page = engine.edit().document().expect("a document").pages()[0].id;
+        for (words, at) in [("Uno", (300.0, 300.0)), ("Dos", (700.0, 800.0))] {
+            let document = engine.edit().document();
+            let asked = Asked {
+                drop_text: Some((canvas::TextPreset::Body, words.to_owned(), page, at)),
+                ..Asked::default()
+            };
+            editor.apply(&mut engine, &document, &asked, &theme(), None);
+        }
+        let document = engine.edit().document().expect("a document");
+        let find = |words: &str| {
+            let page = &document.pages()[0];
+            page.nodes
+                .iter()
+                .find(|(_, n)| {
+                    matches!(&n.kind, gafira_doc::NodeKind::Text(t) if t.content.plain_text() == words)
+                })
+                .map(|(id, n)| (*id, n.base.placement))
+                .expect("the text")
+        };
+        let ((one, one_box), (two, two_box)) = (find("Uno"), find("Dos"));
+        // «Uno» in Lora, large and bold.
+        let style = gafira_doc::SpanStyle {
+            font: "Lora".to_owned(),
+            size: 80.0,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.8, 0.1, 0.1, 1.0)),
+            bold: true,
+            italic: false,
+        };
+        engine
+            .edit()
+            .execute(Box::new(SetProperty::new(
+                page,
+                vec![one],
+                Property::TextContent(gafira_doc::RichText::plain("Uno", &style)),
+                None,
+            )))
+            .expect("the style");
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut clip = None;
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, None);
+        let (_, rect) = editor.page_rects[0];
+        let zoom = editor.zoom;
+        let centre = |b: Placement| {
+            rect.min
+                + Vec2::new(
+                    ((b.x + b.w / 2.0) as f32) * zoom,
+                    ((b.y + b.h / 2.0) as f32) * zoom,
+                )
+        };
+        let press =
+            |pos: Pos2, button: egui::PointerButton, pressed: bool| egui::Event::PointerButton {
+                pos,
+                button,
+                pressed,
+                modifiers: Modifiers::NONE,
+            };
+        let at = centre(one_box);
+        let secondary = egui::PointerButton::Secondary;
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::PointerMoved(at)],
+            Modifiers::NONE,
+            &mut clip,
+        );
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![press(at, secondary, true)],
+            Modifiers::NONE,
+            &mut clip,
+        );
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![press(at, secondary, false)],
+            Modifiers::NONE,
+            &mut clip,
+        );
+        assert_eq!(
+            editor.element_menu.map(|(p, n, _)| (p, n)),
+            Some((page, one))
+        );
+        assert_eq!(editor.selected.single(), Some((page, one)));
+        // «Copiar estilo» from the menu.
+        let document = engine.edit().document();
+        let asked = Asked {
+            paint_copy: Some(crate::paint::Part::Style),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        assert!(editor.painting);
+        editor.element_menu = None;
+        // A click on «Dos» pastes it.
+        let at = centre(two_box);
+        let primary = egui::PointerButton::Primary;
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::PointerMoved(at)],
+            Modifiers::NONE,
+            &mut clip,
+        );
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![press(at, primary, true)],
+            Modifiers::NONE,
+            &mut clip,
+        );
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![press(at, primary, false)],
+            Modifiers::NONE,
+            &mut clip,
+        );
+        assert!(!editor.painting);
+        let text_of = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("a document");
+            match &document.pages()[0].nodes[&two].kind {
+                gafira_doc::NodeKind::Text(t) => t.content.clone(),
+                _ => gafira_doc::RichText::default(),
+            }
+        };
+        let pasted = text_of(&mut engine);
+        assert_eq!(pasted.plain_text(), "Dos");
+        assert_eq!(pasted.first_style(), Some(&style));
+        engine.edit().undo().expect("undo");
+        assert_ne!(text_of(&mut engine).first_style(), Some(&style));
+    }
+
+    // S104-62: a CSV dropped on the panel «Crear en lote» is read as its
+    // data, and nothing is put on the page; from the menu of a text,
+    // «Conectar datos» puts a field in it (§5.1, §7.2).
+    #[test]
+    fn s104_62_drop_a_sheet_on_the_panel_and_connect_from_the_menu() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let tab = TABS
+            .iter()
+            .position(|(key, _)| *key == "tab.bulk")
+            .expect("the tab");
+        editor.rail.click_tab(tab);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        let rect = editor.side_rect.get().expect("the side panel");
+        let dir = std::env::temp_dir().join(format!("gafira-s104-62-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let csv = dir.join("datos.csv");
+        std::fs::write(&csv, "Nombre;Curso\nAna;Rust\n").expect("the file");
+        let before = engine.edit().document().expect("a document").pages()[0]
+            .nodes
+            .len();
+        let document = engine.edit().document();
+        let asked = Asked {
+            drop_files: vec![csv],
+            drop_at: Some(rect.center()),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        assert!(editor.bulk_read.is_some(), "it is read for bulk create");
+        let after = engine.edit().document().expect("a document").pages()[0]
+            .nodes
+            .len();
+        assert_eq!(before, after, "nothing on the page");
+        // The menu of a text: «Conectar datos» replaces its words.
+        let page = engine.edit().document().expect("a document").pages()[0].id;
+        let document = engine.edit().document();
+        let asked = Asked {
+            drop_text: Some((
+                canvas::TextPreset::Body,
+                "Hola".to_owned(),
+                page,
+                (300.0, 300.0),
+            )),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (_, node) = editor.selected.single().expect("the new text");
+        let document = engine.edit().document();
+        let asked = Asked {
+            field_replace: Some("{{nombre}}".to_owned()),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let words = match &document.pages()[0].nodes[&node].kind {
+            gafira_doc::NodeKind::Text(t) => t.content.plain_text(),
+            _ => String::new(),
+        };
+        assert_eq!(words, "{{nombre}}");
     }
 }

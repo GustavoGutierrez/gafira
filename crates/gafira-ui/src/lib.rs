@@ -58,6 +58,7 @@ mod pack_dialog;
 mod pack_panel;
 mod packs;
 mod page_grid;
+mod paint;
 mod pairings;
 mod photos;
 mod present;
