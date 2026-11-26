@@ -333,18 +333,23 @@ impl Panel {
             &["bulk.how_1", "bulk.how_2", "bulk.how_3", "bulk.how_4"],
         );
         ui.add_space(12.0);
-        let wide = Vec2::new(ui.available_width(), 40.0);
-        let upload = egui::Button::new(plain(texts, "bulk.upload")).min_size(wide);
+        // Actions look like buttons, not like the steps above them (owner
+        // request): the main one coral, the others outlined.
+        let width = ui.available_width();
+        let upload =
+            action(theme, plain(texts, "bulk.upload"), true).min_size(Vec2::new(width, 40.0));
         if ui.add(upload).clicked() {
             asks.import = true;
         }
-        ui.add_space(6.0);
-        let paste = egui::Button::new(plain(texts, "bulk.paste")).min_size(wide);
+        ui.add_space(8.0);
+        let paste =
+            action(theme, plain(texts, "bulk.paste"), false).min_size(Vec2::new(width, 40.0));
         if ui.add(paste).clicked() {
             self.pasting = Some(String::new());
         }
-        ui.add_space(6.0);
-        let create = egui::Button::new(plain(texts, "bulk.create_table")).min_size(wide);
+        ui.add_space(8.0);
+        let create = action(theme, plain(texts, "bulk.create_table"), false)
+            .min_size(Vec2::new(width, 40.0));
         if ui.add(create).clicked() {
             asks.data = Some(Some(new_table(texts)));
             self.wide = true;
@@ -662,7 +667,7 @@ impl Panel {
             ui.horizontal_wrapped(|ui| {
                 for column in set.columns.iter().take(6) {
                     let token = gafira_bulk::token(&FieldRef::Key(column.key.clone()));
-                    if ui.small_button(&token).clicked() {
+                    if ui.add(small(theme, token.clone())).clicked() {
                         let joined =
                             format!("{}_{token}", set.profile.file_name.trim_end_matches('_'));
                         asks.data = changed(set, |s| s.profile.file_name = joined);
@@ -1120,12 +1125,15 @@ fn chip(
                 .color(theme.c("text.secondary")),
         );
         ui.horizontal_wrapped(|ui| {
-            if ui.small_button(plain(texts, "bulk.add_text")).clicked() {
+            if ui
+                .add(small(theme, plain(texts, "bulk.add_text")))
+                .clicked()
+            {
                 asks.insert = Some(token.clone());
             }
             let fill = ui.add_enabled(
                 view.can_fill,
-                egui::Button::new(plain(texts, "bulk.replace_selected")).small(),
+                small(theme, plain(texts, "bulk.replace_selected")),
             );
             if fill
                 .on_disabled_hover_text(plain(texts, "bulk.select_text"))
@@ -1135,7 +1143,7 @@ fn chip(
             }
             let add = ui.add_enabled(
                 view.can_fill,
-                egui::Button::new(plain(texts, "bulk.append_selected")).small(),
+                small(theme, plain(texts, "bulk.append_selected")),
             );
             if add
                 .on_disabled_hover_text(plain(texts, "bulk.select_text"))
@@ -1144,7 +1152,7 @@ fn chip(
                 asks.append = Some(token.clone());
             }
             if ui
-                .small_button(plain(texts, "bulk.copy"))
+                .add(small(theme, plain(texts, "bulk.copy")))
                 .on_hover_text(plain(texts, "bulk.copy_hint"))
                 .clicked()
             {
@@ -1228,7 +1236,7 @@ fn problems(
                 page = Count(number as u64),
                 element = Text(element)
             )));
-            if ui.small_button(plain(texts, "bulk.go_to")).clicked() {
+            if ui.add(small(theme, plain(texts, "bulk.go_to"))).clicked() {
                 asks.go_to = Some((page, node));
             }
         });
@@ -1433,6 +1441,34 @@ fn file_hint(texts: &Texts, set: &DataSet) -> String {
         "bulk.file_names_hint",
         example = Text(example)
     ))
+}
+
+/// A button of the panel: coral with ink words for the main action
+/// (DIS-15), else outlined in ink on the surface, so neither looks like the
+/// boxes of text around it.
+fn action(theme: &Theme, text: String, main: bool) -> egui::Button<'static> {
+    let (fill, words, line) = if main {
+        ("primary.bg", "primary.fg", None)
+    } else {
+        ("surface", "text", Some("text"))
+    };
+    let button = egui::Button::new(
+        RichText::new(text)
+            .font(theme.font("ui-label"))
+            .color(theme.c(words)),
+    )
+    .fill(theme.c(fill))
+    .corner_radius(theme.radius_md());
+    match line {
+        Some(line) => button.stroke(egui::Stroke::new(1.0, theme.c(line))),
+        None => button,
+    }
+}
+
+/// A small outlined button, for the actions of a field.
+fn small(theme: &Theme, text: String) -> egui::Button<'static> {
+    let button = action(theme, text, false);
+    button.min_size(Vec2::new(0.0, 26.0))
 }
 
 /// `seconds` as `m:ss`, or `h:mm:ss`.
