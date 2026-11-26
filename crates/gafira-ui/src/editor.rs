@@ -694,6 +694,8 @@ struct Asked {
     /// wide grid.
     bulk: Option<crate::bulk::Asks>,
     bulk_data: Option<Option<gafira_doc::DataSet>>,
+    /// The picture of the row shown large: key, row, page and size.
+    bulk_zoom: Option<(u64, usize, PageId, (u32, u32))>,
     /// A field from the menu of an element: it replaces the words of the
     /// selected text, or goes after them (spec 104 §7.2).
     field_replace: Option<String>,
@@ -1671,7 +1673,9 @@ impl Editor {
                 .collect();
             asked.drop_at = i.pointer.latest_pos();
         });
-        let typing = ctx.wants_keyboard_input();
+        // The row shown large of «Crear en lote» takes the arrows and Esc:
+        // they do not move or delete the selection behind it (spec 104).
+        let typing = ctx.wants_keyboard_input() || self.bulk.get_mut().zoom;
         // The cells chosen of a table take the keys (S81-08).
         let in_cells = !typing && self.cell_keys(ctx, document.as_deref(), &mut asked);
         if !typing && !in_cells {
@@ -15873,6 +15877,7 @@ impl Editor {
         }
         let panel = self.bulk.get_mut();
         asked.bulk_data = panel.wide(ctx, theme, texts, document.and_then(Document::data));
+        asked.bulk_zoom = panel.zoomed(ctx, theme, texts, document);
         let shown = self.rail.open && TABS[self.rail.tab].0 == "tab.bulk";
         // A file carried over the panel says it can be dropped there.
         let carried = ctx.input(|i| !i.raw.hovered_files.is_empty());
@@ -15941,6 +15946,12 @@ impl Editor {
             if let Err(error) = engine.edit().execute(Box::new(command)) {
                 eprintln!("set data: {error}");
             }
+        }
+        if let (Some((key, row, page, fit)), Some(document)) = (asked.bulk_zoom, document)
+            && let Some(set) = document.data()
+        {
+            let image = crate::bulk_run::row_picture(engine, (document, set), (row, page), fit);
+            self.bulk.get_mut().big_picture = Some((key, image));
         }
         if asked.open_bulk
             && let Some(tab) = TABS.iter().position(|(key, _)| *key == "tab.bulk")
@@ -22511,5 +22522,56 @@ pub(crate) mod tests {
         assert!(editor.painting, "the painter waits for its click");
         assert!(editor.painter.is_some());
         assert!(editor.clip.is_none(), "the element is not copied");
+    }
+
+    // S104-64: «Ampliar» shows the row large; the arrows change the row and
+    // do not move the selection behind it; the picture is drawn for it.
+    #[test]
+    fn s104_64_the_row_shown_large() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let set = gafira_doc::DataSet {
+            columns: vec![gafira_doc::DataColumn::new(1, "Nombre", "nombre")],
+            rows: vec![
+                Arc::new(gafira_doc::DataRow::new(2, vec!["Ana".to_owned()])),
+                Arc::new(gafira_doc::DataRow::new(3, vec!["Luis".to_owned()])),
+            ],
+            next_id: 4,
+            ..gafira_doc::DataSet::default()
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetData::new(Some(Arc::new(set)))))
+            .expect("the data");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "{{nombre}}".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (page, node) = editor.selected.single().expect("the text");
+        let before = placements(&mut engine, &[node]);
+        let tab = TABS
+            .iter()
+            .position(|(key, _)| *key == "tab.bulk")
+            .expect("the tab");
+        editor.rail.click_tab(tab);
+        editor.bulk.get_mut().step = crate::bulk::Step::Review;
+        editor.bulk.get_mut().zoom = true;
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert!(editor.bulk.get_mut().big_picture.is_some(), "drawn large");
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowRight),
+            Modifiers::NONE,
+        );
+        assert_eq!(editor.bulk.get_mut().row, 1, "the next row");
+        assert_eq!(placements(&mut engine, &[node]), before, "nothing moved");
+        assert_eq!(editor.selected.single(), Some((page, node)));
     }
 }

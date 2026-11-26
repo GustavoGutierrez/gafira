@@ -140,6 +140,10 @@ pub(crate) struct Panel {
     pub source_file: Option<(String, String)>,
     /// A new table being written in the wide grid, not yet in the design.
     draft: Option<DataSet>,
+    /// The row shown as large as the window allows, and its picture.
+    pub zoom: bool,
+    big: Option<(u64, egui::TextureHandle)>,
+    pub big_picture: Option<(u64, egui::ColorImage)>,
 }
 
 impl Panel {
@@ -605,7 +609,17 @@ impl Panel {
             asks.preview = Some((key, self.row, page));
         }
         let side = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(side, side * 0.7), Sense::hover());
+        // A click opens the row as large as the window allows.
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(side, side * 0.7), Sense::click());
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ZoomIn);
+        }
+        if response
+            .on_hover_text(plain(texts, "bulk.zoom_hint"))
+            .clicked()
+        {
+            self.zoom = true;
+        }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, theme.radius_md(), theme.c("surface.sunken"));
         match &self.preview {
@@ -678,7 +692,158 @@ impl Panel {
                 }
             });
         }
+        ui.add_space(4.0);
+        if ui
+            .add(small(theme, plain(texts, "bulk.zoom")))
+            .on_hover_text(plain(texts, "bulk.zoom_hint"))
+            .clicked()
+        {
+            self.zoom = true;
+        }
         hint(ui, theme, &plain(texts, "bulk.preview_hint"));
+    }
+
+    /// The row as large as the window allows, to look at it closely: ← and
+    /// → go through the rows, Esc closes it. The picture it needs, if any:
+    /// its key, the row, the page and the size to draw it in.
+    pub(crate) fn zoomed(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        document: Option<&Document>,
+    ) -> Option<(u64, usize, PageId, (u32, u32))> {
+        if !self.zoom {
+            return None;
+        }
+        let Some((document, set)) = document.and_then(|d| Some((d, d.data()?))) else {
+            self.zoom = false;
+            return None;
+        };
+        let pages = gafira_bulk::template_pages(document, set);
+        let total = set.rows.len();
+        if total == 0 || pages.is_empty() {
+            self.zoom = false;
+            return None;
+        }
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::ArrowRight) {
+                self.row = (self.row + 1).min(total - 1);
+            }
+            if i.key_pressed(egui::Key::ArrowLeft) {
+                self.row = self.row.saturating_sub(1);
+            }
+        });
+        self.row = self.row.min(total - 1);
+        self.page = self.page.min(pages.len() - 1);
+        let page = pages[self.page];
+        let screen = ctx.content_rect().size();
+        let room = (screen - Vec2::new(96.0, 96.0)).max(Vec2::new(480.0, 360.0));
+        // The picture, a little larger than its room, for sharp edges.
+        let scale = ctx.pixels_per_point();
+        let fit = (
+            (room.x * scale).round().max(1.0) as u32,
+            ((room.y - 72.0) * scale).round().max(1.0) as u32,
+        );
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            picture_key(document, set, self.row, page).hash(&mut hasher);
+            fit.hash(&mut hasher);
+            hasher.finish()
+        };
+        if let Some((of, pixels)) = self.big_picture.take_if(|(of, _)| *of == key) {
+            let options = egui::TextureOptions::LINEAR;
+            self.big = Some((of, ctx.load_texture("bulk-zoom", pixels, options)));
+        }
+        let wanted = self
+            .big
+            .as_ref()
+            .is_none_or(|(of, _)| *of != key)
+            .then_some((key, self.row, page, fit));
+        let frame = egui::Frame::popup(&ctx.style()).inner_margin(egui::Margin::same(16));
+        let modal = egui::Modal::new(egui::Id::new("bulk_zoom")).frame(frame);
+        let response = modal.show(ctx, |ui| {
+            ui.set_width(room.x);
+            ui.set_height(room.y);
+            ui.horizontal(|ui| {
+                if ui
+                    .button("‹")
+                    .on_hover_text(plain(texts, "bulk.previous"))
+                    .clicked()
+                {
+                    self.row = self.row.saturating_sub(1);
+                }
+                ui.label(
+                    RichText::new(texts.t(&gafira_doc::msg!(
+                        "bulk.row_of",
+                        row = Count(self.row as u64 + 1),
+                        total = Count(total as u64)
+                    )))
+                    .font(theme.font("ui-label")),
+                );
+                if ui
+                    .button("›")
+                    .on_hover_text(plain(texts, "bulk.next"))
+                    .clicked()
+                {
+                    self.row = (self.row + 1).min(total - 1);
+                }
+                if pages.len() > 1 {
+                    ui.add_space(16.0);
+                    if ui.button("‹").clicked() {
+                        self.page = self.page.saturating_sub(1);
+                    }
+                    ui.label(texts.t(&gafira_doc::msg!(
+                        "bulk.page_of",
+                        page = Count(self.page as u64 + 1),
+                        total = Count(pages.len() as u64)
+                    )));
+                    if ui.button("›").clicked() {
+                        self.page = (self.page + 1).min(pages.len() - 1);
+                    }
+                }
+                ui.add_space(16.0);
+                hint(ui, theme, &plain(texts, "bulk.zoom_keys"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let close = egui::Button::new(RichText::new("×").size(22.0)).frame(false);
+                    if ui
+                        .add(close)
+                        .on_hover_text(plain(texts, "bulk.close"))
+                        .clicked()
+                    {
+                        self.zoom = false;
+                    }
+                });
+            });
+            ui.add_space(8.0);
+            let (rect, _) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, theme.radius_md(), theme.c("surface.sunken"));
+            match &self.big {
+                Some((of, texture)) if *of == key => {
+                    let size = texture.size_vec2();
+                    let room = rect.shrink(8.0);
+                    let k = (room.width() / size.x).min(room.height() / size.y);
+                    let place = egui::Rect::from_center_size(rect.center(), size * k);
+                    let uv = egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    painter.image(texture.id(), place, uv, egui::Color32::WHITE);
+                }
+                _ => {
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        plain(texts, "bulk.drawing"),
+                        theme.font("caption"),
+                        theme.c("text.secondary"),
+                    );
+                }
+            }
+        });
+        if response.should_close() {
+            self.zoom = false;
+        }
+        wanted.filter(|_| self.zoom)
     }
 
     // ---- The wide table ------------------------------------------------
