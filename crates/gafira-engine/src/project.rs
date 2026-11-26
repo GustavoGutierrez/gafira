@@ -384,6 +384,23 @@ impl ProjectService {
         })
     }
 
+    /// A save of `document`, which is not the session's, at `path` under a
+    /// new project id and with no versions (spec 104: the editable `.gaf` of
+    /// a bulk run). The session does not change and the job accounts for
+    /// nothing; its assets come from the same store.
+    #[must_use]
+    pub fn prepare_save_document(&self, document: Document, path: PathBuf) -> SaveJob {
+        let document = document.with_project_id(self.ids.project_id());
+        SaveJob {
+            writer: self.writer(),
+            temporary: self.temporaries.fetch_add(1, Ordering::SeqCst),
+            document: Arc::new(document),
+            versions: Vec::new(),
+            path,
+            account: None,
+        }
+    }
+
     /// Account for a [`SaveJob`] that ran: on success the session is clean
     /// at the saved version, holds its versions and, after «Guardar como»,
     /// lives at its new file with the lock moved; a session replaced or
@@ -1663,6 +1680,22 @@ mod tests {
         );
         engine.projects().save().expect("a save");
         assert_eq!(fs.file(TARGET), Some(new_bytes(&mut engine)), "same path");
+    }
+
+    // S104-40: the pages a bulk run made are saved at their own file under a
+    // new identity, and the session does not change.
+    #[test]
+    fn s104_40_a_generated_document_saves_beside_the_session() {
+        let (mut engine, fs, _repository) = opened_and_edited(false);
+        let generated = Document::default();
+        let job = engine
+            .projects()
+            .prepare_save_document(generated.clone(), Path::new(COPY).to_path_buf());
+        engine.projects().save_finished(job.run()).expect("saved");
+        let copy = stored(&fs, COPY);
+        assert_eq!(copy, generated.with_project_id(id(2)));
+        assert_eq!(session_id(&mut engine), id(1), "the session keeps its id");
+        assert!(engine.projects().is_modified(), "the session is not saved");
     }
 
     // S12-07

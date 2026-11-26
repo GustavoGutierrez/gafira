@@ -114,15 +114,30 @@ impl ExportService {
         request: ExportRequest,
         to: PathBuf,
     ) -> Result<PreparedExport, EngineError> {
-        if !self.license.can_export() {
-            return Err(EngineError::ExportNotAllowed);
-        }
         let document = self
             .shared
             .lock()
             .as_ref()
             .map(|session| Arc::clone(session.history.document()))
             .ok_or(EngineError::NoSession)?;
+        self.prepare_document(document, request, to)
+    }
+
+    /// [`prepare`](Self::prepare) over `document` instead of the open one
+    /// (spec 104: the pages a bulk run resolves, which never enter the
+    /// session). Its images come from the same store.
+    ///
+    /// # Errors
+    /// Those of [`prepare`](Self::prepare) but [`EngineError::NoSession`].
+    pub fn prepare_document(
+        &self,
+        document: Arc<Document>,
+        request: ExportRequest,
+        to: PathBuf,
+    ) -> Result<PreparedExport, EngineError> {
+        if !self.license.can_export() {
+            return Err(EngineError::ExportNotAllowed);
+        }
         let exporter = self
             .exporters
             .iter()
@@ -166,6 +181,20 @@ impl ExportService {
         self.picture(page, transparent, None)
     }
 
+    /// `page` of `document`, not the open one, drawn as large as fits in
+    /// `fit` pixels (spec 104: a row of a bulk run before it runs).
+    ///
+    /// # Errors
+    /// As [`Self::preview`], without a session.
+    pub fn preview_document(
+        &self,
+        document: &Document,
+        page: PageId,
+        fit: (u32, u32),
+    ) -> Result<PagePreview, EngineError> {
+        self.picture_of(document, page, false, Some(fit))
+    }
+
     /// `page` drawn as large as fits in `fit` pixels, keeping its proportions and
     /// enlarging a small page (spec 101, presenting on a full screen); its long side is at
     /// most [`PRESENT_MAX_SIDE`].
@@ -188,6 +217,16 @@ impl ExportService {
             .as_ref()
             .map(|session| Arc::clone(session.history.document()))
             .ok_or(EngineError::NoSession)?;
+        self.picture_of(&document, page, transparent, fit)
+    }
+
+    fn picture_of(
+        &self,
+        document: &Document,
+        page: PageId,
+        transparent: bool,
+        fit: Option<(u32, u32)>,
+    ) -> Result<PagePreview, EngineError> {
         let invalid = |detail: &str| {
             EngineError::Export(ExportError::Io(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -207,10 +246,10 @@ impl ExportService {
         };
         let (width, height, scale) = sized.ok_or_else(|| invalid("the page has no pixels"))?;
         let images =
-            decode_images(&document, &[page], &*self.store, &*self.images).unwrap_or_default();
+            decode_images(document, &[page], &*self.store, &*self.images).unwrap_or_default();
         let image = self
             .pages
-            .for_document(&document, images)
+            .for_document(document, images)
             .render(
                 &PageRenderRequest {
                     page,
@@ -312,6 +351,25 @@ impl PreparedExport {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.to
+    }
+
+    /// The same checked export of the same format and options over another
+    /// document, scope and file (spec 104: a bulk run writes many files
+    /// with one exporter, off the window thread).
+    #[must_use]
+    pub fn again(&self, document: Arc<Document>, scope: ExportScope, to: PathBuf) -> Self {
+        let mut request = self.request.clone();
+        request.scope = scope;
+        Self {
+            request,
+            to,
+            document,
+            exporter: Arc::clone(&self.exporter),
+            pages: Arc::clone(&self.pages),
+            images: Arc::clone(&self.images),
+            store: Arc::clone(&self.store),
+            filesystem: Arc::clone(&self.filesystem),
+        }
     }
 
     /// Decode the images of the scope, render and write the files through
