@@ -288,6 +288,9 @@ pub struct Resolved {
     pub rows: Vec<usize>,
     /// The fields with no value, by page of the result, element and field.
     pub missing: Vec<(PageId, NodeId, FieldRef)>,
+    /// The elements of the result whose texts had fields, by page: the ones
+    /// whose boxes may need to follow their new words.
+    pub filled: Vec<(PageId, NodeId)>,
 }
 
 /// A new document with the template pages `pages` of `doc` once per row of
@@ -305,6 +308,23 @@ pub fn resolve(
     rows: &[usize],
     pages: &[PageId],
 ) -> Result<Resolved, ValidationError> {
+    let mut go_on = |_: usize| true;
+    resolve_with(doc, set, rows, pages, &mut go_on)
+        .map(|done| done.unwrap_or_else(|| unreachable!()))
+}
+
+/// [`resolve`], telling `go_on` how many rows are done before each row;
+/// `None` when it answers `false` (the run was cancelled).
+///
+/// # Errors
+/// As [`resolve`].
+pub fn resolve_with(
+    doc: &Document,
+    set: &DataSet,
+    rows: &[usize],
+    pages: &[PageId],
+    go_on: &mut dyn FnMut(usize) -> bool,
+) -> Result<Option<Resolved>, ValidationError> {
     let mut counter: u64 = 1;
     let mut next = || {
         let id = counter;
@@ -314,7 +334,19 @@ pub fn resolve(
     let mut out_pages = Vec::new();
     let mut out_rows = Vec::new();
     let mut missing = Vec::new();
+    let mut filled = Vec::new();
+    let mut last = None;
+    let mut done = 0;
     for (row, page_id) in plan(rows, pages) {
+        if last != Some(row) {
+            if last.is_some() {
+                done += 1;
+            }
+            last = Some(row);
+            if !go_on(done) {
+                return Ok(None);
+            }
+        }
         let Some(source) = doc.page(page_id) else {
             continue;
         };
@@ -349,6 +381,7 @@ pub fn resolve(
                     }
                 }
                 if has_fields(&node) {
+                    filled.push((id, map(old)));
                     let lost = resolve_node(&mut node, &value);
                     missing.extend(lost.into_iter().map(|f| (id, map(old), f)));
                 }
@@ -360,9 +393,10 @@ pub fn resolve(
     }
     let document =
         Document::from_parts_with_assets(counter, doc.dpi(), out_pages, doc.assets().clone())?;
-    Ok(Resolved {
+    Ok(Some(Resolved {
         document,
         rows: out_rows,
         missing,
-    })
+        filled,
+    }))
 }

@@ -210,3 +210,21 @@ fn s104_25_resolve_the_document() {
     assert_eq!(missing.len(), 1);
     assert_eq!(missing[0].2, FieldRef::Key("falta".into()));
 }
+
+// S104-26: a cancelled run stops between rows; the filled elements are
+// listed for the boxes that follow their words.
+#[test]
+fn s104_26_cancel_between_rows() {
+    let (doc, set) = template();
+    let pages = [PageId::new(1), PageId::new(4)];
+    let mut seen = Vec::new();
+    let mut go_on = |done: usize| {
+        seen.push(done);
+        done < 1
+    };
+    let out = gafira_bulk::resolve_with(&doc, &set, &[0, 1], &pages, &mut go_on).unwrap();
+    assert!(out.is_none());
+    assert_eq!(seen, [0, 1]);
+    let all = resolve(&doc, &set, &[0], &pages).unwrap();
+    assert_eq!(all.filled.len(), 2);
+}

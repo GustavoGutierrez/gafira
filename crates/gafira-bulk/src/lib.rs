@@ -20,6 +20,7 @@ pub use import::{Grid, Imported, from_grid, guess_header};
 pub use keys::{column_letter, key_for};
 pub use names::{Names, sanitize};
 pub use resolve::{
-    Resolved, lookup, plan, resolve, resolve_plain, resolve_rich, template_pages, unknown, usage,
+    Resolved, lookup, plan, resolve, resolve_plain, resolve_rich, resolve_with, template_pages,
+    unknown, usage,
 };
 pub use syntax::{FieldRef, Piece, fields, parse, token};
