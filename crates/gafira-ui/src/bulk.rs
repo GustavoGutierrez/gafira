@@ -144,6 +144,8 @@ pub(crate) struct Panel {
     range: Option<(usize, usize)>,
     /// The kind and the name of the file being read.
     pub source_file: Option<(String, String)>,
+    /// A new table being written in the wide grid, not yet in the design.
+    draft: Option<DataSet>,
 }
 
 /// The connected data with one change, as the editor applies it.
@@ -198,7 +200,10 @@ impl Panel {
     /// «1 Datos · 2 Conectar · 3 Generar».
     fn steps(&mut self, ui: &mut Ui, theme: &Theme, texts: &Texts, has_data: bool) {
         ui.horizontal(|ui| {
-            let third = (ui.available_width() - 12.0) / 3.0;
+            // Three buttons and the two gaps between them fill the row
+            // exactly: a wider row would widen the side panel every frame.
+            let gap = ui.spacing().item_spacing.x;
+            let third = ((ui.available_width() - 2.0 * gap) / 3.0).floor();
             for (step, key) in [
                 (Step::Data, "bulk.step_data"),
                 (Step::Connect, "bulk.step_connect"),
@@ -351,7 +356,8 @@ impl Panel {
         let create = action(theme, plain(texts, "bulk.create_table"), false)
             .min_size(Vec2::new(width, 40.0));
         if ui.add(create).clicked() {
-            asks.data = Some(Some(new_table(texts)));
+            // A draft until «Usar esta tabla»: «Cancelar» leaves no trace.
+            self.draft = Some(new_table(texts));
             self.wide = true;
         }
         ui.add_space(10.0);
@@ -388,7 +394,7 @@ impl Panel {
         };
         let mut header = pending.header;
         egui::ComboBox::from_id_salt("bulk.header")
-            .width(ui.available_width())
+            .width(ui.available_width() - 16.0)
             .selected_text(shown)
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut header, None, plain(texts, "bulk.no_header"));
@@ -897,7 +903,10 @@ impl Panel {
 
     // ---- The wide table ------------------------------------------------
 
-    /// «Editar tabla», over everything.
+    /// «Editar tabla», over everything: the table of the design, whose
+    /// changes are kept as they are written («Listo» or «Cerrar» end it), or
+    /// a new draft, which comes in only with «Usar esta tabla» («Cancelar»
+    /// and closing it leave nothing).
     pub(crate) fn wide(
         &mut self,
         ctx: &egui::Context,
@@ -905,11 +914,21 @@ impl Panel {
         texts: &Texts,
         set: Option<&DataSet>,
     ) -> Option<Option<DataSet>> {
-        let set = set?;
         if !self.wide {
             return None;
         }
+        let drafting = self.draft.is_some();
+        let shown = match (&self.draft, set) {
+            (Some(draft), _) => draft.clone(),
+            (None, Some(set)) => set.clone(),
+            (None, None) => {
+                self.wide = false;
+                return None;
+            }
+        };
         let mut out = None;
+        let mut close = false;
+        let mut accept = false;
         let screen = ctx.content_rect().size();
         let room = (screen - Vec2::new(120.0, 120.0)).max(Vec2::new(480.0, 320.0));
         let frame = egui::Frame::popup(&ctx.style()).inner_margin(egui::Margin::same(24));
@@ -918,24 +937,48 @@ impl Panel {
             ui.set_width(room.x);
             ui.set_height(room.y);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(plain(texts, "bulk.edit_table")).font(theme.font("h3")));
+                let title = if drafting {
+                    "bulk.new_table"
+                } else {
+                    "bulk.edit_table"
+                };
+                ui.label(RichText::new(plain(texts, title)).font(theme.font("h3")));
                 ui.label(
                     RichText::new(texts.t(&gafira_doc::msg!(
                         "bulk.summary",
-                        rows = Count(set.rows.len() as u64),
-                        fields = Count(set.columns.len() as u64)
+                        rows = Count(shown.rows.len() as u64),
+                        fields = Count(shown.columns.len() as u64)
                     )))
                     .color(theme.c("text.secondary")),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if widgets::primary(ui, theme, plain(texts, "bulk.done")).clicked() {
-                        self.wide = false;
+                    let x = egui::Button::new(RichText::new("×").size(22.0)).frame(false);
+                    let hint = if drafting {
+                        "bulk.cancel"
+                    } else {
+                        "bulk.close"
+                    };
+                    if ui.add(x).on_hover_text(plain(texts, hint)).clicked() {
+                        close = true;
+                    }
+                    if drafting {
+                        if widgets::primary(ui, theme, plain(texts, "bulk.use_table")).clicked() {
+                            accept = true;
+                        }
+                        if ui
+                            .add(action(theme, plain(texts, "bulk.cancel"), false))
+                            .clicked()
+                        {
+                            close = true;
+                        }
+                    } else if widgets::primary(ui, theme, plain(texts, "bulk.done")).clicked() {
+                        close = true;
                     }
                 });
             });
             hint(ui, theme, &plain(texts, "bulk.table_hint"));
             ui.add_space(8.0);
-            let mut cells = DataCells::new(set, texts);
+            let mut cells = DataCells::new(&shown, texts);
             let tall = ui.available_height() - 8.0;
             let salt = ("bulk", "wide");
             data_grid::grid(
@@ -945,12 +988,18 @@ impl Panel {
                 &mut self.wide_focus,
                 (tall, 170.0, salt),
             );
-            out = cells.out.map(Some);
+            out = cells.out;
         });
         if response.should_close() {
+            close = true;
+        }
+        if drafting {
+            return self.end_draft(out, accept, close);
+        }
+        if close {
             self.wide = false;
         }
-        out
+        out.map(Some)
     }
 }
 
@@ -1015,6 +1064,32 @@ pub(crate) fn complete_field(
     let out = format!("{}{token}{rest}", &text[..start]);
     let at = text[..start].chars().count() + token.chars().count();
     (out, at)
+}
+
+impl Panel {
+    /// The draft after a frame of the wide grid: its changes kept, put in the
+    /// design with «Usar esta tabla», dropped with «Cancelar».
+    fn end_draft(
+        &mut self,
+        changed: Option<DataSet>,
+        accept: bool,
+        close: bool,
+    ) -> Option<Option<DataSet>> {
+        if let Some(next) = changed {
+            self.draft = Some(next);
+        }
+        if accept {
+            self.wide = false;
+            self.row = 0;
+            self.step = Step::Data;
+            return self.draft.take().map(Some);
+        }
+        if close {
+            self.wide = false;
+            self.draft = None;
+        }
+        None
+    }
 }
 
 /// A key of the picture of `row` on `page`: it changes with the page, its
@@ -1096,7 +1171,8 @@ fn chip(
         .corner_radius(theme.radius_md())
         .inner_margin(egui::Margin::same(8));
     let inner = frame.show(ui, |ui| {
-        ui.set_width(width - 16.0);
+        // The inner margin and the line on each side: no wider than the room.
+        ui.set_width(width - 18.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(&column.name).font(theme.font("ui-label")));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1635,7 +1711,7 @@ impl Cells for DataCells<'_> {
 mod tests {
     use std::sync::Arc;
 
-    use gafira_doc::{BulkOutput, DataSet, NodeKind, TextSizing};
+    use gafira_doc::{BulkOutput, DataSet, Document, NodeKind, TextSizing};
     use gafira_ports::i18n::Locale;
 
     use super::*;
@@ -1882,6 +1958,90 @@ mod tests {
             complete_field("Hola, {{no}}!", (6, 10), "nombre"),
             ("Hola, {{nombre}}!".to_owned(), 16)
         );
+    }
+
+    // S104-60: «Crear tabla» is a draft: «Cancelar» leaves the design as
+    // it was; only «Usar esta tabla» puts it in (owner request).
+    #[test]
+    fn s104_60_a_new_table_is_a_draft_until_used() {
+        let texts = texts();
+        let draft = || Panel {
+            draft: Some(new_table(&texts)),
+            wide: true,
+            ..Panel::default()
+        };
+        // Writing keeps the draft and puts nothing in the design.
+        let mut panel = draft();
+        let mut written = new_table(&texts);
+        written.name = "Invitados".to_owned();
+        assert_eq!(panel.end_draft(Some(written), false, false), None);
+        assert_eq!(
+            panel.draft.as_ref().map(|d| d.name.as_str()),
+            Some("Invitados")
+        );
+        // «Cancelar»: nothing comes in and the window closes.
+        assert_eq!(panel.end_draft(None, false, true), None);
+        assert!(panel.draft.is_none() && !panel.wide);
+        // «Usar esta tabla»: the table comes in, once.
+        let mut panel = draft();
+        let used = panel.end_draft(None, true, false);
+        assert!(matches!(used, Some(Some(ref set)) if set.columns.len() == 2));
+        assert!(panel.draft.is_none() && !panel.wide);
+    }
+
+    // S104-61: the panel keeps the width of the side panel frame after
+    // frame, with or without data (owner report: it widened by itself).
+    #[test]
+    fn s104_61_the_panel_does_not_widen_itself() {
+        let texts = texts();
+        let theme = theme();
+        let mut with_data = Document::default();
+        let set = new_table(&texts);
+        with_data = with_data.with_data(Some(Arc::new(set))).expect("valid");
+        for (document, step) in [
+            (Document::default(), Step::Data),
+            (with_data.clone(), Step::Data),
+            (with_data.clone(), Step::Connect),
+            (with_data, Step::Generate),
+        ] {
+            let ctx = egui::Context::default();
+            theme.apply(&ctx);
+            let mut panel = Panel {
+                step,
+                ..Panel::default()
+            };
+            let mut widths = Vec::new();
+            for _ in 0..12 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(1440.0, 900.0),
+                    )),
+                    ..Default::default()
+                };
+                let _ = ctx.run(input, |ctx| {
+                    let shown = egui::SidePanel::left("bulk.test")
+                        .default_width(320.0)
+                        .width_range(280.0..=480.0)
+                        .show(ctx, |ui| {
+                            let none = |_: Pos2| None;
+                            let view = View {
+                                doc: &document,
+                                can_fill: false,
+                                drop_point: &none,
+                            };
+                            let _ = panel.show(ui, &theme, &texts, &view);
+                        });
+                    widths.push(shown.response.rect.width());
+                });
+            }
+            let (first, last) = (widths[1], widths[widths.len() - 1]);
+            assert!((last - first).abs() < 0.5, "{step:?}: {widths:?}");
+        }
+    }
+
+    fn theme() -> Theme {
+        Theme::new(gafira_theme::ThemeTokens::embedded().expect("tokens"))
     }
 
     // S104-55: the rows of a run: every one, or a range from 1.

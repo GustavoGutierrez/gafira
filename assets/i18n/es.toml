@@ -2266,4 +2266,6 @@ saved_in = "Guardado en: {place}"
 failed_row = "Fila {row}: no se pudo crear {file} ({why})"
 overflow = { one = "El texto «{element}» no cabe en su caja en {count} fila: {rows}.", many = "El texto «{element}» no cabe en su caja en {count} de filas: {rows}.", other = "El texto «{element}» no cabe en su caja en {count} filas: {rows}." }
 close_report = "Cerrar"
+close = "Cerrar"
+use_table = "Usar esta tabla"
 offer_hint = "Intro para insertar el campo · flechas para elegir · Esc para cerrar"
