@@ -384,6 +384,16 @@ const es: Copy = {
         text: 'Hojas, bambú, arbustos, hierbas medicinales y follaje navideño en estilo botánico realista.',
         alt: 'Una hoja de monstera, una flor de Pascua, lavanda, un coleo y un hibisco',
       },
+      {
+        name: 'Flores botánicas',
+        text: 'Rosas, girasoles, orquídeas, capullos y flores tropicales en estilo botánico realista.',
+        alt: 'Un girasol, una rosa roja, una orquídea, una dalia y un ave del paraíso',
+      },
+      {
+        name: 'Ramas, ramos y arreglos',
+        text: 'Ramos de rosas, ramas florales, enredaderas, pampas y arreglos tropicales en estilo botánico realista.',
+        alt: 'Un ramo de rosas de colores, una rama de peonías, hortensias azules, heliconias y una rama de eucalipto',
+      },
     ],
     install: {
       title: 'Cómo usarlos',
@@ -440,6 +450,18 @@ const es: Copy = {
         text: 'Hojas, ramas, bambú, arbustos, hierbas medicinales y follaje navideño en 12 láminas botánicas.',
         alt: 'Una hoja de monstera, una flor de Pascua, lavanda, un coleo, un hibisco y una hoja de arce',
         samples: ['Bambú negro', 'Una rama de roble con bellotas', 'Un árbol de jade', 'Una pasiflora', 'Una cheflera variegada', 'Una flor de Pascua blanca', 'Un amarilis rojo', 'Caléndulas'],
+      },
+      {
+        name: 'Flores botánicas',
+        text: 'Clásicas de jardín, más de 30 girasoles, capullos, orquídeas, flores colombianas y series por color en 21 láminas botánicas.',
+        alt: 'Una rosa roja, un girasol, una peonía, una dalia iridiscente, una orquídea, un ave del paraíso y una camelia',
+        samples: ['Un capullo de loto', 'Una dalia azul', 'Un ranúnculo', 'Un hibisco', 'Una orquídea lluvia de oro', 'Un iris iridiscente', 'Una gloriosa', 'Un girasol bicolor'],
+      },
+      {
+        name: 'Ramas, ramos y arreglos',
+        text: 'Ramos de rosas con lazo, ramas florales, enredaderas, hierbas, pampas y arreglos tropicales en 30 láminas botánicas.',
+        alt: 'Un ramo de rosas de colores con lazo, un ramo de rosas rojas, rosas verde jade, orquídeas, bastones del emperador y peonías',
+        samples: ['Jengibres rojos', 'Una rama de pasifloras', 'Una cascada de rosas', 'Salvia en flor', 'Pampas beige', 'Lirios blancos', 'Rosas verde lima', 'Un ramo de rosas burdeos y lilas'],
       },
     ],
     points: ['Uso personal y comercial', 'Fondo transparente, listas para Gafira', 'Pago a través de Gumroad'],
@@ -733,6 +755,16 @@ const en: Copy = {
         text: 'Leaves, bamboo, shrubs, medicinal herbs and Christmas greenery in a realistic botanical style.',
         alt: 'A monstera leaf, a poinsettia, lavender, a coleus and a hibiscus',
       },
+      {
+        name: 'Botanical flowers',
+        text: 'Roses, sunflowers, orchids, buds and tropical blooms in a realistic botanical style.',
+        alt: 'A sunflower, a red rose, an orchid, a dahlia and a bird of paradise',
+      },
+      {
+        name: 'Branches, bouquets & arrangements',
+        text: 'Rose bouquets, flowering branches, vines, pampas grass and tropical arrangements in a realistic botanical style.',
+        alt: 'A bouquet of colourful roses, a peony branch, blue hydrangeas, heliconias and a eucalyptus branch',
+      },
     ],
     install: {
       title: 'How to use them',
@@ -789,6 +821,18 @@ const en: Copy = {
         text: 'Leaves, branches, bamboo, shrubs, medicinal herbs and Christmas greenery across 12 botanical sheets.',
         alt: 'A monstera leaf, a poinsettia, lavender, a coleus, a hibiscus and a maple leaf',
         samples: ['Black bamboo', 'An oak branch with acorns', 'A jade plant', 'A passion flower', 'A variegated schefflera', 'A white poinsettia', 'A red amaryllis', 'Calendulas'],
+      },
+      {
+        name: 'Botanical flowers',
+        text: 'Garden classics, more than 30 sunflowers, buds, orchids, Colombian flowers and colour sets across 21 botanical sheets.',
+        alt: 'A red rose, a sunflower, a peony, an iridescent dahlia, an orchid, a bird of paradise and a camellia',
+        samples: ['A lotus bud', 'A blue dahlia', 'A ranunculus', 'A hibiscus', 'A golden shower orchid', 'An iridescent iris', 'A flame lily', 'A two-tone sunflower'],
+      },
+      {
+        name: 'Branches, bouquets & arrangements',
+        text: 'Rose bouquets with ribbons, flowering branches, hanging vines, herbs, pampas grass and tropical arrangements across 30 botanical sheets.',
+        alt: 'A bouquet of colourful roses with a ribbon, a bouquet of red roses, jade green roses, orchids, torch ginger and peonies',
+        samples: ['Red ginger', 'A passion flower branch', 'A cascade of roses', 'Flowering sage', 'Beige pampas grass', 'White lilies', 'Lime green roses', 'A bouquet of burgundy and lilac roses'],
       },
     ],
     points: ['Personal and commercial use', 'Transparent backgrounds, ready for Gafira', 'Checkout through Gumroad'],

@@ -27,6 +27,16 @@ import plants2 from '../assets/packs/plants-2.webp';
 import plants3 from '../assets/packs/plants-3.webp';
 import plants4 from '../assets/packs/plants-4.webp';
 import plants5 from '../assets/packs/plants-5.webp';
+import flowers1 from '../assets/packs/flowers-1.webp';
+import flowers2 from '../assets/packs/flowers-2.webp';
+import flowers3 from '../assets/packs/flowers-3.webp';
+import flowers4 from '../assets/packs/flowers-4.webp';
+import flowers5 from '../assets/packs/flowers-5.webp';
+import branches1 from '../assets/packs/branches-1.webp';
+import branches2 from '../assets/packs/branches-2.webp';
+import branches3 from '../assets/packs/branches-3.webp';
+import branches4 from '../assets/packs/branches-4.webp';
+import branches5 from '../assets/packs/branches-5.webp';
 
 interface Props {
   locale: Locale;
@@ -72,6 +82,20 @@ const packs: Pack[] = [
     size: 34_839_617,
     tint: 'var(--mint)',
     images: [plants1, plants2, plants3, plants4, plants5],
+  },
+  {
+    id: 'flowers',
+    url: 'https://cdn.gafira.com/packages/botanical-flowers-Free.gafpack',
+    size: 34_215_653,
+    tint: 'var(--coral)',
+    images: [flowers1, flowers2, flowers3, flowers4, flowers5],
+  },
+  {
+    id: 'branches',
+    url: 'https://cdn.gafira.com/packages/branches-bouquets-arrangements-Free.gafpack',
+    size: 53_317_450,
+    tint: 'var(--text-secondary)',
+    images: [branches1, branches2, branches3, branches4, branches5],
   },
 ];
 
@@ -190,7 +214,7 @@ const spots = [
 </script>
 
 <style>
-  /* Four packs: two by two, narrow enough that each stage stays card-sized. */
+  /* Two columns, narrow enough that each stage stays card-sized. */
   .grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
