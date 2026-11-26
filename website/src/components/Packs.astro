@@ -112,7 +112,7 @@ const spots = [
                       class="piece"
                       style={`--x:${spot.x}cqw;--y:${spot.y}cqw;--r:${spot.r}deg;--s:${spot.s};--z:${5 - i};--i:${i};--bob:${i * -0.7}s`}
                     >
-                      <Image src={image} alt="" widths={[160, 240, 320]} sizes="(max-width: 960px) 40vw, 220px" loading="lazy" />
+                      <Image src={image} alt="" widths={[160, 240, 320]} sizes="(max-width: 720px) 40vw, (max-width: 960px) 20vw, 220px" loading="lazy" />
                     </span>
                   );
                 })}
@@ -193,7 +193,7 @@ const spots = [
   /* Four packs: two by two, narrow enough that each stage stays card-sized. */
   .grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 24px;
     max-width: 960px;
     margin-inline: auto;
@@ -399,7 +399,7 @@ const spots = [
   .howto {
     display: grid;
     gap: 28px;
-    max-width: 1040px;
+    max-width: 960px;
     margin: clamp(56px, 7vw, 80px) auto 0;
   }
 
@@ -474,13 +474,15 @@ const spots = [
     white-space: nowrap;
   }
 
-  @media (max-width: 960px) {
+  @media (max-width: 720px) {
     .grid {
       grid-template-columns: 1fr;
       max-width: 520px;
       margin-inline: auto;
     }
+  }
 
+  @media (max-width: 960px) {
     .howto ol {
       grid-template-columns: 1fr;
     }

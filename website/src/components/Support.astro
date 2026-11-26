@@ -227,7 +227,7 @@ const g = t.gallery;
                       src={slide.image}
                       alt=""
                       widths={slide.cover ? [400, 600, 800] : [300, 450, 600]}
-                      sizes={slide.cover ? '(max-width: 960px) 90vw, 470px' : '(max-width: 960px) 60vw, 340px'}
+                      sizes={slide.cover ? '(max-width: 720px) 90vw, (max-width: 960px) 45vw, 470px' : '(max-width: 720px) 60vw, (max-width: 960px) 30vw, 340px'}
                       loading={i === 0 ? 'eager' : 'lazy'}
                     />
                   </button>
@@ -602,7 +602,7 @@ const g = t.gallery;
   /* Four packs: two by two, narrow enough that each card keeps its proportions. */
   .grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 24px;
     max-width: 960px;
     margin-inline: auto;
@@ -632,6 +632,8 @@ const g = t.gallery;
   .media {
     position: relative;
     aspect-ratio: 4 / 3;
+    /* Clip so tall slides cannot stretch the box past 4:3 and unbalance a row. */
+    overflow: hidden;
     background: #fafaf7;
   }
 
@@ -1160,13 +1162,15 @@ const g = t.gallery;
     }
   }
 
-  @media (max-width: 960px) {
+  @media (max-width: 720px) {
     .grid {
       grid-template-columns: 1fr;
       max-width: 520px;
       margin-inline: auto;
     }
+  }
 
+  @media (max-width: 960px) {
     /* On a phone the reassurance reads as a short left-aligned list. */
     .points {
       flex-direction: column;
