@@ -96,6 +96,11 @@ use crate::color_field::{ColorField, Picked};
 const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::X);
 const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
 const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
+/// «Copiar estilo» and «Pegar estilo» (spec 105).
+const COPY_STYLE: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::C);
+const PASTE_STYLE: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::V);
 const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
 const GROUP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
 const UNGROUP: KeyboardShortcut =
@@ -1745,7 +1750,15 @@ impl Editor {
                     {
                         asked.v_released = true;
                     }
+                    // Ctrl+Alt+C and Ctrl+Alt+V copy and paste the style of
+                    // elements (spec 105); the cells of a table keep them
+                    // for their own style.
+                    let styling = i.modifiers.alt && self.cells.is_none();
                     match event {
+                        egui::Event::Copy if styling => {
+                            asked.paint_copy = Some(crate::paint::Part::Style);
+                        }
+                        egui::Event::Paste(_) if styling => asked.paint_paste = true,
                         egui::Event::Copy => asked.copy = true,
                         egui::Event::Cut => asked.cut = true,
                         egui::Event::Paste(text)
@@ -3625,6 +3638,7 @@ impl Editor {
                         can,
                         paste,
                         rename: true,
+                        width: 250.0,
                     };
                     let mut renamed = false;
                     egui::Popup::menu(&more)
@@ -14321,6 +14335,8 @@ struct LayerMenu {
     paste: bool,
     /// «Cambiar nombre» is offered: in Capas, not on the canvas.
     rename: bool,
+    /// The width of the menu.
+    width: f32,
 }
 
 /// The image of `node`, if it is one.
@@ -14347,9 +14363,16 @@ pub(crate) fn menu_item(
         16.0,
         theme.c("text"),
     );
-    let mut item = egui::Button::image_and_text(image, text);
+    // As wide as the menu, so the shortcut sits on its right edge, in a
+    // pill (owner request).
+    let mut item =
+        egui::Button::image_and_text(image, text).min_size(Vec2::new(ui.available_width(), 0.0));
     if let Some(keys) = keys {
-        item = item.shortcut_text(keys);
+        let pill = RichText::new(format!(" {keys} "))
+            .font(theme.font("caption"))
+            .color(theme.c("text.secondary"))
+            .background_color(theme.c("surface.sunken"));
+        item = item.shortcut_text(pill);
     }
     let chosen = ui.add_enabled(enabled, item).clicked();
     if chosen {
@@ -14373,7 +14396,9 @@ fn submenu(
         theme.c("text"),
     );
     let arrow = crate::widgets::submenu_arrow(ui);
-    let button = egui::Button::image_and_text(image, text).right_text(arrow);
+    let button = egui::Button::image_and_text(image, text)
+        .right_text(arrow)
+        .min_size(Vec2::new(ui.available_width(), 0.0));
     egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
         crate::widgets::menu_style(ui, theme);
         add(ui);
@@ -14391,7 +14416,8 @@ fn layer_menu(
     what: &LayerMenu,
     asked: &mut Asked,
 ) -> bool {
-    ui.set_min_width(240.0);
+    // A fixed width: the items fill it and their shortcuts line up right.
+    ui.set_width(what.width);
     crate::widgets::menu_style(ui, theme);
     let keys = |ui: &egui::Ui, k: &KeyboardShortcut| Some(keys_text(ui.ctx(), k));
     if menu_item(
@@ -14436,7 +14462,7 @@ fn layer_menu(
         theme,
         (Icon::Stack, plain(texts, "layers.layer")),
         |ui| {
-            ui.set_min_width(220.0);
+            ui.set_width(240.0);
             for (index, (order, key, icon, shortcut)) in ORDERS.into_iter().enumerate() {
                 let text = plain(texts, key);
                 if menu_item(
@@ -14456,7 +14482,7 @@ fn layer_menu(
         theme,
         (Icon::AlignLeft, plain(texts, "layers.align_page")),
         |ui| {
-            ui.set_min_width(220.0);
+            ui.set_width(240.0);
             for (action, key, icon, shortcut) in ALIGNS {
                 let shortcut = shortcut.and_then(|k| keys(ui, &k));
                 if menu_item(
@@ -16154,6 +16180,7 @@ impl Editor {
             can: self.can,
             paste: self.clip.is_some(),
             rename: false,
+            width: 300.0,
         };
         let words = matches!(
             found.kind,
@@ -16170,7 +16197,6 @@ impl Editor {
             .unwrap_or_default();
         let has_copy = self.painter.is_some();
         let mut open = true;
-        let room = ctx.content_rect().height() - 48.0;
         let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("element.menu"));
         egui::Popup::new(
             egui::Id::new("element.menu"),
@@ -16183,106 +16209,104 @@ impl Editor {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .open_bool(&mut open)
         .show(|ui| {
-            egui::ScrollArea::vertical()
-                .max_height(room)
-                .show(ui, |ui| {
-                    if menu_item(
-                        ui,
-                        theme,
-                        (Icon::CopySimple, plain(texts, "editor.cut")),
-                        None,
-                        true,
-                    ) {
-                        asked.cut = true;
+            ui.set_width(what.width);
+            if menu_item(
+                ui,
+                theme,
+                (Icon::CopySimple, plain(texts, "editor.cut")),
+                Some(keys_text(ui.ctx(), &CUT)),
+                true,
+            ) {
+                asked.cut = true;
+            }
+            layer_menu(ui, theme, texts, &what, asked);
+            if what.can.group || what.can.ungroup {
+                ui.separator();
+            }
+            if what.can.group
+                && menu_item(
+                    ui,
+                    theme,
+                    (Icon::Stack, plain(texts, "editor.group")),
+                    None,
+                    true,
+                )
+            {
+                asked.group = true;
+            }
+            if what.can.ungroup
+                && menu_item(
+                    ui,
+                    theme,
+                    (Icon::Stack, plain(texts, "editor.ungroup")),
+                    None,
+                    true,
+                )
+            {
+                asked.ungroup = true;
+            }
+            ui.separator();
+            for (part, key, icon) in [
+                (
+                    crate::paint::Part::Style,
+                    "paint.copy_style",
+                    Icon::Eyedropper,
+                ),
+                (
+                    crate::paint::Part::Effects,
+                    "paint.copy_effects",
+                    Icon::Light,
+                ),
+                (
+                    crate::paint::Part::Properties,
+                    "paint.copy_properties",
+                    Icon::Settings,
+                ),
+            ] {
+                let shortcut =
+                    (part == crate::paint::Part::Style).then(|| keys_text(ui.ctx(), &COPY_STYLE));
+                if menu_item(ui, theme, (icon, plain(texts, key)), shortcut, true) {
+                    asked.paint_copy = Some(part);
+                }
+            }
+            if menu_item(
+                ui,
+                theme,
+                (Icon::Paste, plain(texts, "paint.paste")),
+                Some(keys_text(ui.ctx(), &PASTE_STYLE)),
+                has_copy,
+            ) {
+                asked.paint_paste = true;
+            }
+            if words {
+                ui.separator();
+                if columns.is_empty() {
+                    let text = plain(texts, "bulk.menu_load_data");
+                    if menu_item(ui, theme, (Icon::Stack, text), None, true) {
+                        asked.open_bulk = true;
                     }
-                    layer_menu(ui, theme, texts, &what, asked);
-                    if what.can.group || what.can.ungroup {
-                        ui.separator();
-                    }
-                    if what.can.group
-                        && menu_item(
-                            ui,
-                            theme,
-                            (Icon::Stack, plain(texts, "editor.group")),
-                            None,
-                            true,
-                        )
+                } else {
+                    for (key, append) in
+                        [("bulk.menu_connect", false), ("bulk.menu_add_field", true)]
                     {
-                        asked.group = true;
-                    }
-                    if what.can.ungroup
-                        && menu_item(
-                            ui,
-                            theme,
-                            (Icon::Stack, plain(texts, "editor.ungroup")),
-                            None,
-                            true,
-                        )
-                    {
-                        asked.ungroup = true;
-                    }
-                    ui.separator();
-                    for (part, key, icon) in [
-                        (
-                            crate::paint::Part::Style,
-                            "paint.copy_style",
-                            Icon::Eyedropper,
-                        ),
-                        (
-                            crate::paint::Part::Effects,
-                            "paint.copy_effects",
-                            Icon::Light,
-                        ),
-                        (
-                            crate::paint::Part::Properties,
-                            "paint.copy_properties",
-                            Icon::Settings,
-                        ),
-                    ] {
-                        if menu_item(ui, theme, (icon, plain(texts, key)), None, true) {
-                            asked.paint_copy = Some(part);
-                        }
-                    }
-                    if menu_item(
-                        ui,
-                        theme,
-                        (Icon::Paste, plain(texts, "paint.paste")),
-                        None,
-                        has_copy,
-                    ) {
-                        asked.paint_paste = true;
-                    }
-                    if words {
-                        ui.separator();
-                        if columns.is_empty() {
-                            let text = plain(texts, "bulk.menu_load_data");
-                            if menu_item(ui, theme, (Icon::Stack, text), None, true) {
-                                asked.open_bulk = true;
-                            }
-                        } else {
-                            for (key, append) in
-                                [("bulk.menu_connect", false), ("bulk.menu_add_field", true)]
-                            {
-                                submenu(ui, theme, (Icon::Stack, plain(texts, key)), |ui| {
-                                    ui.set_min_width(220.0);
-                                    for (field, name) in &columns {
-                                        let token = gafira_bulk::token(
-                                            &gafira_bulk::FieldRef::Key(field.clone()),
-                                        );
-                                        let text = format!("{name}  ·  {token}");
-                                        if menu_item(ui, theme, (Icon::Text, text), None, true) {
-                                            if append {
-                                                asked.field_append = Some(token);
-                                            } else {
-                                                asked.field_replace = Some(token);
-                                            }
-                                        }
+                        submenu(ui, theme, (Icon::Stack, plain(texts, key)), |ui| {
+                            ui.set_width(300.0);
+                            for (field, name) in &columns {
+                                let token =
+                                    gafira_bulk::token(&gafira_bulk::FieldRef::Key(field.clone()));
+                                let text = format!("{name}  ·  {token}");
+                                if menu_item(ui, theme, (Icon::Text, text), None, true) {
+                                    if append {
+                                        asked.field_append = Some(token);
+                                    } else {
+                                        asked.field_replace = Some(token);
                                     }
-                                });
+                                }
                             }
-                        }
+                        });
                     }
-                });
+                }
+            }
         });
         // Only the click that opened it is not one outside it: any later
         // click outside closes it, as Esc does (owner report).
@@ -22574,5 +22598,37 @@ pub(crate) mod tests {
             _ => String::new(),
         };
         assert_eq!(words, "{{nombre}}");
+    }
+
+    // S105-08: Ctrl+Alt+C copies the style of the selection and arms the
+    // painter; plain Ctrl+C still copies the element.
+    #[test]
+    fn s105_08_ctrl_alt_c_copies_the_style() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "Hola".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        assert!(editor.selected.single().is_some());
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut clip = None;
+        frame(&ctx, &mut editor, &mut engine, None);
+        let both = Modifiers::COMMAND.plus(Modifiers::ALT);
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Copy],
+            both,
+            &mut clip,
+        );
+        assert!(editor.painting, "the painter waits for its click");
+        assert!(editor.painter.is_some());
+        assert!(editor.clip.is_none(), "the element is not copied");
     }
 }
