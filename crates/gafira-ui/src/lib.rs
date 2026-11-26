@@ -25,6 +25,7 @@ mod color_field;
 mod colors;
 mod create;
 mod crop;
+mod data_grid;
 mod design_art;
 mod design_sizes;
 mod dialogs;
