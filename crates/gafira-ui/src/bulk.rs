@@ -7,14 +7,13 @@
 //! (`DataSet`); the panel never changes the document by itself, it asks the
 //! editor through [`Asks`], so every change is one undo step.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use egui::{Pos2, RichText, Sense, Ui, Vec2};
 use gafira_bulk::{FieldRef, Grid, Imported};
-use gafira_doc::{BulkOutput, DataColumn, DataRow, DataSet, DataSource, Document, NodeId, PageId};
+use gafira_doc::{DataColumn, DataRow, DataSet, DataSource, Document, NodeId, PageId};
 
-use crate::bulk_run::{Note, Phase, Run, Status};
+use crate::bulk_run::{Phase, Status};
 use crate::data_grid::{self, Cells, Focus};
 use crate::style::Theme;
 use crate::text::Texts;
@@ -30,7 +29,7 @@ pub(crate) enum Step {
     #[default]
     Data,
     Connect,
-    Generate,
+    Review,
 }
 
 /// A table read or pasted that waits for its row of names (§5.2).
@@ -99,8 +98,8 @@ pub(crate) struct Asks {
     pub replace: Option<String>,
     /// This field goes after the words of the selected text.
     pub append: Option<String>,
-    /// «Generar».
-    pub generate: bool,
+    /// «Exportar en lote…».
+    pub export: bool,
     /// «Ir»: select this element.
     pub go_to: Option<(PageId, NodeId)>,
     /// A picture of a row for the preview: its key, the row and the page.
@@ -137,22 +136,10 @@ pub(crate) struct Panel {
     pub picture: Option<(u64, egui::ColorImage)>,
     /// The file being read, for the person.
     pub reading: Option<String>,
-    pub run: Option<Run>,
-    /// The last run, once it ended.
-    pub report: Option<Status>,
-    /// The rows of a run, from 1, both included; none is every row.
-    range: Option<(usize, usize)>,
     /// The kind and the name of the file being read.
     pub source_file: Option<(String, String)>,
     /// A new table being written in the wide grid, not yet in the design.
     draft: Option<DataSet>,
-}
-
-/// The connected data with one change, as the editor applies it.
-fn changed(set: &DataSet, change: impl FnOnce(&mut DataSet)) -> Option<Option<DataSet>> {
-    let mut next = set.clone();
-    change(&mut next);
-    (next != *set).then_some(Some(next))
 }
 
 impl Panel {
@@ -175,7 +162,6 @@ impl Panel {
         ui.add_space(10.0);
         self.steps(ui, theme, texts, view.doc.data().is_some());
         ui.add_space(10.0);
-        self.running(ui, theme, texts);
         egui::ScrollArea::vertical()
             .id_salt("bulk.panel")
             .auto_shrink([false, false])
@@ -189,8 +175,8 @@ impl Panel {
                     (Step::Connect, Some(set)) => {
                         self.connect(ui, theme, texts, view, set, &mut asks)
                     }
-                    (Step::Generate, Some(set)) => {
-                        self.generate(ui, theme, texts, view, set, &mut asks);
+                    (Step::Review, Some(set)) => {
+                        self.review(ui, theme, texts, view, set, &mut asks);
                     }
                 }
             });
@@ -207,7 +193,7 @@ impl Panel {
             for (step, key) in [
                 (Step::Data, "bulk.step_data"),
                 (Step::Connect, "bulk.step_connect"),
-                (Step::Generate, "bulk.step_generate"),
+                (Step::Review, "bulk.step_review"),
             ] {
                 let on = self.step == step;
                 let text = RichText::new(plain(texts, key)).font(theme.font("ui-label"));
@@ -554,14 +540,16 @@ impl Panel {
         ui.add_space(10.0);
         problems(ui, theme, texts, view.doc, set, &pages, asks);
         ui.add_space(12.0);
-        if widgets::primary(ui, theme, plain(texts, "bulk.next_generate")).clicked() {
-            self.step = Step::Generate;
+        if widgets::primary(ui, theme, plain(texts, "bulk.next_review")).clicked() {
+            self.step = Step::Review;
         }
     }
 
-    // ---- Step 3: Revisar y generar -------------------------------------
+    // ---- Step 3: Revisar -----------------------------------------------
 
-    fn generate(
+    /// A row as it will look, what stops an export or deserves a look, and
+    /// «Exportar en lote…», which opens the dialog with the formats.
+    fn review(
         &mut self,
         ui: &mut Ui,
         theme: &Theme,
@@ -573,172 +561,19 @@ impl Panel {
         let pages = gafira_bulk::template_pages(view.doc, set);
         self.preview(ui, theme, texts, view, set, &pages, asks);
         ui.add_space(12.0);
-        // The template pages (§10.1).
-        if view.doc.pages().len() > 1 {
-            section(ui, theme, texts, "bulk.template_pages");
-            let mut chosen: Vec<PageId> = pages.clone();
-            for (k, page) in view.doc.pages().iter().enumerate() {
-                let mut on = chosen.contains(&page.id);
-                let name = if page.name.is_empty() {
-                    texts.t(&gafira_doc::msg!("bulk.page", number = Count(k as u64 + 1)))
-                } else {
-                    format!("{} · {}", k + 1, page.name)
-                };
-                if ui.checkbox(&mut on, name).changed() {
-                    if on {
-                        chosen.push(page.id);
-                    } else {
-                        chosen.retain(|p| *p != page.id);
-                    }
-                    let order: Vec<PageId> = view
-                        .doc
-                        .pages()
-                        .iter()
-                        .map(|p| p.id)
-                        .filter(|p| chosen.contains(p))
-                        .collect();
-                    asks.data = changed(set, |s| s.template_pages = order);
-                }
-            }
-            ui.add_space(10.0);
-        }
-        // The rows (§10.2: all, or a range).
-        section(ui, theme, texts, "bulk.rows");
-        let total = set.rows.len();
-        let mut all = self.range.is_none();
-        if ui
-            .radio_value(&mut all, true, plain(texts, "bulk.all_rows"))
+        let all: Vec<usize> = (0..set.rows.len()).collect();
+        let blocked = problems(ui, theme, texts, view.doc, set, &pages, asks);
+        empty_values(ui, theme, texts, view.doc, set, &pages, &all);
+        ui.add_space(12.0);
+        let width = ui.available_width();
+        let export =
+            action(theme, plain(texts, "bulk.export"), true).min_size(Vec2::new(width, 40.0));
+        let response = ui.add_enabled(!blocked, export);
+        if response
+            .on_hover_text(plain(texts, "bulk.export_hint"))
             .clicked()
         {
-            self.range = None;
-        }
-        if ui
-            .radio_value(&mut all, false, plain(texts, "bulk.some_rows"))
-            .clicked()
-            && self.range.is_none()
-        {
-            self.range = Some((1, total.max(1)));
-        }
-        if let Some((from, to)) = &mut self.range {
-            ui.horizontal(|ui| {
-                ui.label(plain(texts, "bulk.from"));
-                ui.add(egui::DragValue::new(from).range(1..=total.max(1)));
-                ui.label(plain(texts, "bulk.to"));
-                ui.add(egui::DragValue::new(to).range(1..=total.max(1)));
-            });
-            if *to < *from {
-                *to = *from;
-            }
-        }
-        ui.add_space(10.0);
-        // What it writes (§10.2).
-        section(ui, theme, texts, "bulk.output");
-        let mut output = set.profile.output;
-        for (value, key) in [
-            (BulkOutput::PdfCombined, "bulk.out_pdf"),
-            (BulkOutput::PdfEach, "bulk.out_pdf_each"),
-            (BulkOutput::Png, "bulk.out_png"),
-            (BulkOutput::Jpeg, "bulk.out_jpeg"),
-            (BulkOutput::Gaf, "bulk.out_gaf"),
-        ] {
-            ui.radio_value(&mut output, value, plain(texts, key));
-        }
-        if output != set.profile.output {
-            asks.data = changed(set, |s| s.profile.output = output);
-        }
-        if output != BulkOutput::Gaf {
-            let mut editable = set.profile.editable;
-            if ui
-                .checkbox(&mut editable, plain(texts, "bulk.also_gaf"))
-                .on_hover_text(plain(texts, "bulk.also_gaf_hint"))
-                .changed()
-            {
-                asks.data = changed(set, |s| s.profile.editable = editable);
-            }
-        }
-        ui.add_space(10.0);
-        // The names of the files (§10.2).
-        if matches!(
-            output,
-            BulkOutput::PdfEach | BulkOutput::Png | BulkOutput::Jpeg
-        ) {
-            section(ui, theme, texts, "bulk.file_names");
-            let mut name = set.profile.file_name.clone();
-            if ui
-                .add(widgets::field(&mut name, file_hint(texts, set)))
-                .changed()
-            {
-                asks.data = changed(set, |s| s.profile.file_name = name.clone());
-            }
-            ui.horizontal_wrapped(|ui| {
-                for column in set.columns.iter().take(6) {
-                    let token = gafira_bulk::token(&FieldRef::Key(column.key.clone()));
-                    if ui.add(small(theme, token.clone())).clicked() {
-                        let joined =
-                            format!("{}_{token}", set.profile.file_name.trim_end_matches('_'));
-                        asks.data = changed(set, |s| s.profile.file_name = joined);
-                    }
-                }
-            });
-            hint(ui, theme, &plain(texts, "bulk.examples"));
-            let mut names = gafira_bulk::Names::default();
-            for row in 0..set.rows.len().min(5) {
-                let stem = crate::bulk_run::stem(&set.profile.file_name, set, row);
-                let extension = if output == BulkOutput::PdfEach {
-                    "pdf"
-                } else if output == BulkOutput::Jpeg {
-                    "jpg"
-                } else {
-                    "png"
-                };
-                ui.label(RichText::new(names.unique(&stem, extension)).font(theme.font("caption")));
-            }
-            ui.add_space(10.0);
-        }
-        // How much it makes, and what stops it (§9).
-        let rows = self.rows(set);
-        let count = rows.len() * pages.len();
-        card(ui, theme, |ui| {
-            ui.label(texts.t(&gafira_doc::msg!(
-                "bulk.plan",
-                rows = Count(rows.len() as u64),
-                per = Count(pages.len() as u64),
-                pages = Count(count as u64)
-            )));
-        });
-        let blocked = problems(ui, theme, texts, view.doc, set, &pages, asks) || count == 0;
-        empty_values(ui, theme, texts, view.doc, set, &pages, &rows);
-        ui.add_space(10.0);
-        let busy = self.run.is_some();
-        let label = texts.t(&gafira_doc::msg!(
-            "bulk.generate",
-            count = Count(count as u64)
-        ));
-        let response =
-            ui.add_enabled_ui(!blocked && !busy, |ui| widgets::primary(ui, theme, label));
-        if response.inner.clicked() {
-            asks.generate = true;
-        }
-        if let Some(report) = &self.report {
-            ui.add_space(12.0);
-            let mut close = false;
-            report_card(ui, theme, texts, report, &mut close);
-            if close {
-                self.report = None;
-            }
-        }
-    }
-
-    /// The rows a run takes, from 0.
-    pub(crate) fn rows(&self, set: &DataSet) -> Vec<usize> {
-        let total = set.rows.len();
-        match self.range {
-            None => (0..total).collect(),
-            Some((from, to)) => {
-                let from = from.max(1).min(total.max(1)) - 1;
-                let to = to.min(total);
-                (from..to).collect()
-            }
+            asks.export = true;
         }
     }
 
@@ -844,61 +679,6 @@ impl Panel {
             });
         }
         hint(ui, theme, &plain(texts, "bulk.preview_hint"));
-    }
-
-    // ---- The run -------------------------------------------------------
-
-    /// What the run is doing, with «Cancelar»; always on top of the panel.
-    fn running(&mut self, ui: &mut Ui, theme: &Theme, texts: &Texts) {
-        let Some(run) = &self.run else {
-            return;
-        };
-        let status = run.status();
-        let cancelling = run.is_cancelling();
-        let mut cancel = false;
-        progress_card(ui, theme, texts, &status, cancelling, &mut cancel);
-        if cancel {
-            run.cancel();
-        }
-        ui.add_space(10.0);
-    }
-
-    /// The run ended: what it did stays as the report.
-    pub(crate) fn pump(&mut self) -> bool {
-        let Some(run) = &mut self.run else {
-            return false;
-        };
-        if !run.poll() {
-            return true;
-        }
-        self.report = self.run.take().map(|run| {
-            let mut status = run.status();
-            status.took = Some(status.started.elapsed());
-            status
-        });
-        false
-    }
-
-    /// The small card of a run over the canvas, while the panel is closed.
-    pub(crate) fn floating(&mut self, ctx: &egui::Context, theme: &Theme, texts: &Texts) {
-        let Some(run) = &self.run else {
-            return;
-        };
-        let status = run.status();
-        let cancelling = run.is_cancelling();
-        let mut cancel = false;
-        egui::Area::new(egui::Id::new("bulk.floating"))
-            .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-24.0, -56.0))
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_width(300.0);
-                    progress_card(ui, theme, texts, &status, cancelling, &mut cancel);
-                });
-            });
-        if cancel {
-            run.cancel();
-        }
     }
 
     // ---- The wide table ------------------------------------------------
@@ -1094,7 +874,7 @@ impl Panel {
 
 /// A key of the picture of `row` on `page`: it changes with the page, its
 /// elements and the table, which are shared until they change.
-fn picture_key(doc: &Document, set: &DataSet, row: usize, page: PageId) -> u64 {
+pub(crate) fn picture_key(doc: &Document, set: &DataSet, row: usize, page: PageId) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     let shown = doc.pages().iter().find(|p| p.id == page);
@@ -1325,7 +1105,7 @@ fn problems(
 
 /// The rows with an empty value in a field the design uses: a warning,
 /// not a block (§6: an empty value stays empty).
-fn empty_values(
+pub(crate) fn empty_values(
     ui: &mut Ui,
     theme: &Theme,
     texts: &Texts,
@@ -1368,7 +1148,7 @@ fn empty_values(
 }
 
 /// The phase, the counts, the bar, the file and «Cancelar» (§10.3).
-fn progress_card(
+pub(crate) fn progress_card(
     ui: &mut Ui,
     theme: &Theme,
     texts: &Texts,
@@ -1431,97 +1211,6 @@ fn progress_card(
     });
 }
 
-/// What the last run did: files, failures, texts that do not fit.
-fn report_card(ui: &mut Ui, theme: &Theme, texts: &Texts, status: &Status, close: &mut bool) {
-    card(ui, theme, |ui| {
-        let (key, color) = match (&status.stopped, status.phase) {
-            (Some(_), _) => ("bulk.report_failed", "error.fg"),
-            (None, Phase::Cancelled) => ("bulk.report_cancelled", "warning.fg"),
-            _ => ("bulk.report_done", "success.fg"),
-        };
-        ui.label(
-            RichText::new(plain(texts, key))
-                .font(theme.font("ui-label"))
-                .color(theme.c(color)),
-        );
-        ui.label(texts.t(&gafira_doc::msg!(
-            "bulk.report_counts",
-            written = Count(status.written as u64),
-            failed = Count(status.failed as u64),
-            elapsed = Text(clock(status.took.unwrap_or_default().as_secs()))
-        )));
-        if let Some(why) = &status.stopped {
-            ui.label(RichText::new(why).font(theme.font("caption")));
-        }
-        if let Some(place) = &status.place {
-            ui.label(
-                RichText::new(texts.t(&gafira_doc::msg!(
-                    "bulk.saved_in",
-                    place = Text(place.display().to_string())
-                )))
-                .font(theme.font("caption"))
-                .color(theme.c("text.secondary")),
-            );
-        }
-        let mut failures = 0;
-        let mut overflows = BTreeMap::new();
-        for note in &status.notes {
-            match note {
-                Note::Failed { row, file, why } => {
-                    failures += 1;
-                    if failures <= 10 {
-                        ui.label(
-                            RichText::new(texts.t(&gafira_doc::msg!(
-                                "bulk.failed_row",
-                                row = Count(*row as u64),
-                                file = Text(file.clone()),
-                                why = Text(why.clone())
-                            )))
-                            .font(theme.font("caption"))
-                            .color(theme.c("error.fg")),
-                        );
-                    }
-                }
-                Note::Overflow { row, element } => {
-                    overflows
-                        .entry(element.clone())
-                        .or_insert_with(Vec::new)
-                        .push(*row);
-                }
-            }
-        }
-        for (element, rows) in overflows {
-            let first: Vec<String> = rows.iter().take(8).map(ToString::to_string).collect();
-            ui.label(
-                RichText::new(texts.t(&gafira_doc::msg!(
-                    "bulk.overflow",
-                    element = Text(element),
-                    count = Count(rows.len() as u64),
-                    rows = Text(first.join(", "))
-                )))
-                .font(theme.font("caption"))
-                .color(theme.c("warning.fg")),
-            );
-        }
-        if widgets::secondary(ui, theme, plain(texts, "bulk.close_report")).clicked() {
-            *close = true;
-        }
-    });
-}
-
-/// «Por ejemplo: certificado_{{nombre}}», with the first field.
-fn file_hint(texts: &Texts, set: &DataSet) -> String {
-    let key = set.columns.first().map_or("fila", |c| c.key.as_str());
-    let example = format!(
-        "diseno_{}",
-        gafira_bulk::token(&FieldRef::Key(key.to_owned()))
-    );
-    texts.t(&gafira_doc::msg!(
-        "bulk.file_names_hint",
-        example = Text(example)
-    ))
-}
-
 /// A button of the panel: coral with ink words for the main action
 /// (DIS-15), else outlined in ink on the surface, so neither looks like the
 /// boxes of text around it.
@@ -1551,18 +1240,13 @@ fn small(theme: &Theme, text: String) -> egui::Button<'static> {
 }
 
 /// `seconds` as `m:ss`, or `h:mm:ss`.
-fn clock(seconds: u64) -> String {
+pub(crate) fn clock(seconds: u64) -> String {
     let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
     if h > 0 {
         format!("{h}:{m:02}:{s:02}")
     } else {
         format!("{m}:{s:02}")
     }
-}
-
-fn section(ui: &mut Ui, theme: &Theme, texts: &Texts, key: &'static str) {
-    ui.label(RichText::new(plain(texts, key)).font(theme.font("ui-label")));
-    ui.add_space(4.0);
 }
 
 fn hint(ui: &mut Ui, theme: &Theme, words: &str) {
@@ -1714,7 +1398,8 @@ impl Cells for DataCells<'_> {
 mod tests {
     use std::sync::Arc;
 
-    use gafira_doc::{BulkOutput, DataSet, Document, NodeKind, TextSizing};
+    use crate::bulk_run::Written;
+    use gafira_doc::{Document, NodeKind, TextSizing};
     use gafira_ports::i18n::Locale;
 
     use super::*;
@@ -1742,7 +1427,7 @@ mod tests {
     }
 
     /// An engine with a design that says «Hola, {{nombre}}» and a table.
-    fn designed(output: BulkOutput) -> crate::editor::tests::TestEngine {
+    fn designed(format: &str) -> crate::editor::tests::TestEngine {
         let repository = Arc::new(gafira_format::GafRepository::default());
         let mut engine = engine_over(repository);
         start(&mut engine, StartFormat::Social).expect("a document");
@@ -1779,7 +1464,7 @@ mod tests {
             &texts(),
         );
         let mut set = pending.table();
-        set.profile.output = output;
+        set.profile.format = format.to_owned();
         set.profile.file_name = "certificado_{{nombre}}".to_owned();
         engine
             .edit()
@@ -1802,17 +1487,25 @@ mod tests {
     // and without the table (§10.2, AC 10, 16, 17).
     #[test]
     fn s104_50_images_and_the_editable_file() {
-        let mut engine = designed(BulkOutput::Png);
+        let mut engine = designed("png");
         let document = engine.edit().document().expect("a document");
         let dir = folder("png");
         std::fs::write(dir.join("certificado_Luis.png"), b"there before").expect("a file");
         let gaf = dir.join("lote.gaf");
+        let png = Written {
+            extension: "png".to_owned(),
+            multipage: false,
+            one_file: true,
+        };
         let job = crate::bulk_run::job(
             &engine,
             &document,
-            vec![0, 1, 2],
-            Target::Folder(dir.clone()),
-            Some(gaf.clone()),
+            (
+                vec![0, 1, 2],
+                Target::Folder(dir.clone()),
+                Some(gaf.clone()),
+            ),
+            Some(("png", png, gafira_doc::contract::ParamValues::new())),
         )
         .expect("a job");
         let status = finish(Run::start(job, Arc::new(|| {})));
@@ -1855,16 +1548,20 @@ mod tests {
     // S104-51: one PDF with every page, in order (AC 9).
     #[test]
     fn s104_51_one_combined_pdf() {
-        let mut engine = designed(BulkOutput::PdfCombined);
+        let mut engine = designed("pdf");
         let document = engine.edit().document().expect("a document");
         let dir = folder("pdf");
         let path = dir.join("todos.pdf");
+        let pdf = Written {
+            extension: "pdf".to_owned(),
+            multipage: true,
+            one_file: true,
+        };
         let job = crate::bulk_run::job(
             &engine,
             &document,
-            vec![0, 1, 2],
-            Target::File(path.clone()),
-            None,
+            (vec![0, 1, 2], Target::File(path.clone()), None),
+            Some(("pdf", pdf, gafira_doc::contract::ParamValues::new())),
         )
         .expect("a job");
         let status = finish(Run::start(job, Arc::new(|| {})));
@@ -1878,7 +1575,7 @@ mod tests {
     // too small for it is told (§9 «Avisar»).
     #[test]
     fn s104_52_boxes_follow_their_words() {
-        let mut engine = designed(BulkOutput::Png);
+        let mut engine = designed("png");
         let document = engine.edit().document().expect("a document");
         let page = &document.pages()[0];
         let mut node = (*page.nodes[&page.roots[0]]).clone();
@@ -2030,7 +1727,7 @@ mod tests {
             (Document::default(), Step::Data),
             (with_data.clone(), Step::Data),
             (with_data.clone(), Step::Connect),
-            (with_data, Step::Generate),
+            (with_data, Step::Review),
         ] {
             let ctx = egui::Context::default();
             theme.apply(&ctx);
@@ -2084,21 +1781,76 @@ mod tests {
         Theme::new(gafira_theme::ThemeTokens::embedded().expect("tokens"))
     }
 
-    // S104-55: the rows of a run: every one, or a range from 1.
+    // S104-55: «Exportar en lote» opens on the last choices of the
+    // document, offers the formats of «Exportar» but the spreadsheet, and
+    // takes every row or a range from 1.
     #[test]
-    fn s104_55_rows_of_a_run() {
-        let mut panel = Panel::default();
-        let set = DataSet {
-            rows: (0..5)
-                .map(|k| Arc::new(DataRow::new(10 + k, Vec::new())))
-                .collect(),
-            next_id: 20,
-            ..DataSet::default()
-        };
-        assert_eq!(panel.rows(&set), [0, 1, 2, 3, 4]);
-        panel.range = Some((2, 4));
-        assert_eq!(panel.rows(&set), [1, 2, 3]);
-        panel.range = Some((4, 99));
-        assert_eq!(panel.rows(&set), [3, 4]);
+    fn s104_55_the_bulk_export_dialog() {
+        let mut engine = designed("pdf");
+        let document = engine.edit().document().expect("a document");
+        let mut set = document.data().expect("data").clone();
+        set.profile.format = "png".to_owned();
+        set.rows = (0..5)
+            .map(|k| Arc::new(DataRow::new(100 + k, vec![String::new(); 2])))
+            .collect();
+        set.next_id = 200;
+        let formats = crate::export::formats(&engine);
+        let mut dialog = crate::bulk_export::Dialog::new(formats, &NoPresets, &set);
+        let (id, written, _) = dialog.written().expect("a format");
+        assert_eq!((id, written.extension.as_str()), ("png", "png"));
+        assert!(!dialog.one_target_file(), "a file per row and page");
+        assert_eq!(dialog.rows(&set), [0, 1, 2, 3, 4]);
+        dialog.range = Some((2, 4));
+        assert_eq!(dialog.rows(&set), [1, 2, 3]);
+        dialog.range = Some((4, 99));
+        assert_eq!(dialog.rows(&set), [3, 4]);
+        assert_eq!(dialog.profile().format, "png");
+        let mut only_gaf = set.clone();
+        only_gaf.profile.format = "gaf".to_owned();
+        let formats = crate::export::formats(&engine);
+        let dialog = crate::bulk_export::Dialog::new(formats, &NoPresets, &only_gaf);
+        assert!(dialog.written().is_none());
+        assert!(dialog.one_target_file());
+        assert_eq!(dialog.extension(), "gaf");
+    }
+
+    // S104-63: the dialog draws its preview, its choices and its summary
+    // and waits for the person: nothing is written while it is open.
+    #[test]
+    fn s104_63_the_dialog_draws_and_waits() {
+        let mut engine = designed("png");
+        let document = engine.edit().document().expect("a document");
+        let set = document.data().expect("data").clone();
+        let formats = crate::export::formats(&engine);
+        let mut dialog = crate::bulk_export::Dialog::new(formats, &NoPresets, &set);
+        let ctx = egui::Context::default();
+        let theme = theme();
+        theme.apply(&ctx);
+        let texts = texts();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(1440.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                let answer =
+                    crate::bulk_export::show(ctx, &theme, &texts, &mut engine, &mut dialog);
+                assert_eq!(answer, crate::bulk_export::Answer::Open);
+            });
+        }
+        assert_eq!(engine.edit().document().expect("a document"), document);
+    }
+
+    struct NoPresets;
+
+    impl crate::export::ExportPresets for NoPresets {
+        fn load(&self, _: &str) -> Option<Vec<(String, crate::export::PresetValue)>> {
+            None
+        }
+
+        fn save(&self, _: &str, _: Option<Vec<(String, crate::export::PresetValue)>>) {}
     }
 }

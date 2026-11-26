@@ -17,6 +17,7 @@ mod brand;
 mod brand_panel;
 mod brand_screen;
 mod bulk;
+mod bulk_export;
 mod bulk_run;
 mod canvas;
 mod chart_templates;

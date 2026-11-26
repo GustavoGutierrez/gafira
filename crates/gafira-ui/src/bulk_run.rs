@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use gafira_bulk::{FieldRef, Names, Resolved};
 use gafira_doc::contract::{CancelToken, Progress};
-use gafira_doc::{BulkOutput, DataSet, Document, Node, NodeKind, PageId, TextSizing};
+use gafira_doc::{DataSet, Document, Node, NodeKind, PageId, TextSizing};
 use gafira_engine::{DocumentSaver, PreparedExport};
 use gafira_ports::export::ExportScope;
 
@@ -71,6 +71,8 @@ pub(crate) struct Status {
     pub place: Option<PathBuf>,
     /// How long the whole run took, once it ended.
     pub took: Option<Duration>,
+    /// The first file written, for «Mostrar en carpeta».
+    pub first: Option<PathBuf>,
 }
 
 impl Status {
@@ -89,6 +91,7 @@ impl Status {
             stopped: None,
             place: None,
             took: None,
+            first: None,
         }
     }
 
@@ -124,13 +127,31 @@ pub(crate) enum Target {
     Folder(PathBuf),
 }
 
+/// The format of the files of a run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Written {
+    pub extension: String,
+    /// The format holds several pages (PDF, PowerPoint): a file per row,
+    /// or one file with every row when `one_file`.
+    pub multipage: bool,
+    pub one_file: bool,
+}
+
+impl Written {
+    /// One file with every page of every row.
+    fn combined(&self) -> bool {
+        self.multipage && self.one_file
+    }
+}
+
 /// Everything a run needs, taken on the window thread.
 pub(crate) struct Job {
     pub template: Arc<Document>,
     pub set: Arc<DataSet>,
     pub rows: Vec<usize>,
     pub pages: Vec<PageId>,
-    pub output: BulkOutput,
+    /// The format the files are written in; none writes only the `.gaf`.
+    pub format: Option<Written>,
     pub target: Target,
     /// The editable `.gaf` to write too, if asked.
     pub gaf: Option<PathBuf>,
@@ -220,6 +241,16 @@ impl Run {
     }
 }
 
+impl Run {
+    /// Cancel and wait: the window is closing.
+    pub(crate) fn stop(mut self) {
+        self.cancel();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// The side of the run that works.
 struct Worker<'a> {
     status: &'a Mutex<Status>,
@@ -277,7 +308,7 @@ impl Worker<'_> {
 
     fn run(&self, mut job: Job) {
         let saver = job.saver.take();
-        let combined = matches!(job.output, BulkOutput::PdfCombined | BulkOutput::Gaf);
+        let combined = job.format.as_ref().is_none_or(Written::combined);
         let whole = if combined || job.gaf.is_some() {
             match self.resolve_all(&job) {
                 Some(resolved) => Some(resolved),
@@ -286,14 +317,14 @@ impl Worker<'_> {
         } else {
             None
         };
-        match (&job.output, &whole) {
-            (BulkOutput::PdfCombined, Some(resolved)) => {
+        match (&job.format, &whole) {
+            (Some(format), Some(resolved)) if format.combined() => {
                 if !self.export_combined(&job, resolved) {
                     return;
                 }
             }
-            (BulkOutput::PdfEach | BulkOutput::Png | BulkOutput::Jpeg, _) => {
-                if !self.export_each(&job) {
+            (Some(format), _) if !format.combined() => {
+                if !self.export_each(&job, format) {
                     return;
                 }
             }
@@ -392,7 +423,10 @@ impl Worker<'_> {
             path.clone(),
         );
         match run.run(&progress, self.cancel) {
-            Ok(_) => self.update(|s| s.written += 1),
+            Ok(_) => self.update(|s| {
+                s.written += 1;
+                s.first.get_or_insert_with(|| path.clone());
+            }),
             Err(_) if self.cancel.is_cancelled() => {
                 self.update(|s| s.phase = Phase::Cancelled);
                 return false;
@@ -406,19 +440,12 @@ impl Worker<'_> {
     }
 
     /// A file per row, or per row and page, a row resolved at a time.
-    fn export_each(&self, job: &Job) -> bool {
+    fn export_each(&self, job: &Job, format: &Written) -> bool {
         let (Some(export), Target::Folder(folder)) = (&job.export, &job.target) else {
             return true;
         };
-        let per_row = match job.output {
-            BulkOutput::PdfEach => 1,
-            _ => job.pages.len(),
-        };
-        let extension = match job.output {
-            BulkOutput::PdfEach => "pdf",
-            BulkOutput::Jpeg => "jpg",
-            _ => "png",
-        };
+        let per_row = if format.multipage { 1 } else { job.pages.len() };
+        let extension = format.extension.as_str();
         self.phase(Phase::Exporting, job.rows.len() * per_row);
         let mut names = taken(folder);
         for &row in &job.rows {
@@ -467,15 +494,17 @@ impl Worker<'_> {
                     return false;
                 }
                 self.update(|s| s.current.clone_from(&file));
+                let path = folder.join(&file);
                 let run = export.again(
                     Arc::clone(&document),
                     ExportScope::Pages(scope),
-                    folder.join(&file),
+                    path.clone(),
                 );
                 match run.run(&gafira_doc::contract::NoProgress, self.cancel) {
                     Ok(_) => self.update(|s| {
                         s.written += 1;
                         s.done += 1;
+                        s.first.get_or_insert(path);
                     }),
                     Err(_) if self.cancel.is_cancelled() => {
                         self.update(|s| s.phase = Phase::Cancelled);
@@ -508,6 +537,7 @@ impl Worker<'_> {
             Ok(()) => self.update(|s| {
                 s.written += 1;
                 s.done = 1;
+                s.first.get_or_insert_with(|| path.to_path_buf());
             }),
             Err(error) => self.update(|s| s.stopped = Some(error.to_string())),
         }
@@ -516,8 +546,8 @@ impl Worker<'_> {
 
 /// Where the editable `.gaf` goes, if anywhere.
 fn gaf_path(job: &Job) -> Option<PathBuf> {
-    match (&job.output, &job.target) {
-        (BulkOutput::Gaf, Target::File(path)) => Some(path.clone()),
+    match (&job.format, &job.target) {
+        (None, Target::File(path)) => Some(path.clone()),
         _ => job.gaf.clone(),
     }
 }
@@ -641,18 +671,9 @@ impl Reading {
     }
 }
 
-impl Status {
-    /// A run that could not start, with why.
-    pub(crate) fn refused(why: String) -> Self {
-        let mut status = Self::new();
-        status.stopped = Some(why);
-        status
-    }
-}
-
 /// The run of the connected data of `document` over `rows`, writing to
-/// `target` and, if asked, the editable `.gaf` at `gaf`: the export of its
-/// format checked by the engine, with the options the format starts with.
+/// `target` in `format` with `options` (none: only the `.gaf`) and, if
+/// asked, the editable `.gaf` at `gaf`; the export checked by the engine.
 ///
 /// # Errors
 /// What the engine says when the export is refused; a document without
@@ -660,49 +681,68 @@ impl Status {
 pub(crate) fn job(
     engine: &gafira_engine::Gafira,
     document: &Arc<Document>,
-    rows: Vec<usize>,
-    target: Target,
-    gaf: Option<PathBuf>,
+    (rows, target, gaf): (Vec<usize>, Target, Option<PathBuf>),
+    format: Option<(&str, Written, gafira_doc::contract::ParamValues)>,
 ) -> Result<Job, gafira_engine::EngineError> {
     let set = document
         .data_arc()
         .cloned()
         .ok_or(gafira_engine::EngineError::NoSession)?;
     let pages = gafira_bulk::template_pages(document, &set);
-    let output = set.profile.output;
-    let format = match output {
-        BulkOutput::PdfCombined | BulkOutput::PdfEach => Some("pdf"),
-        BulkOutput::Png => Some("png"),
-        BulkOutput::Jpeg => Some("jpeg"),
-        BulkOutput::Gaf => None,
-    };
-    let export = match format {
-        Some(id) => {
+    let (export, written) = match format {
+        Some((id, written, options)) => {
             let request = gafira_ports::export::ExportRequest {
                 format_id: id.to_owned(),
                 scope: ExportScope::Pages(pages.clone()),
-                options: gafira_doc::contract::ParamValues::new(),
+                options,
             };
-            Some(
+            let prepared =
                 engine
                     .export()
-                    .prepare_document(Arc::clone(document), request, PathBuf::new())?,
-            )
+                    .prepare_document(Arc::clone(document), request, PathBuf::new())?;
+            (Some(prepared), Some(written))
         }
-        None => None,
+        None => (None, None),
     };
-    let saver =
-        (gaf.is_some() || output == BulkOutput::Gaf).then(|| engine.projects().document_saver());
+    let saver = (gaf.is_some() || written.is_none()).then(|| engine.projects().document_saver());
     Ok(Job {
         template: Arc::clone(document),
         file_name: set.profile.file_name.clone(),
         set,
         rows,
         pages,
-        output,
+        format: written,
         target,
         gaf,
         export,
         saver,
     })
+}
+
+/// The picture of `row` on the template page `page`, as large as fits in
+/// `fit`: the row resolved apart, its boxes following their words, drawn by
+/// the export renderers. A picture of nothing when it cannot be drawn.
+pub(crate) fn row_picture(
+    engine: &gafira_engine::Gafira,
+    (document, set): (&Document, &DataSet),
+    (row, page): (usize, PageId),
+    fit: (u32, u32),
+) -> egui::ColorImage {
+    let resolved =
+        gafira_bulk::resolve_with(document, set, &[row], &[page], &mut |_| true, &fit_node);
+    let picture = match resolved {
+        Ok(Some(resolved)) => resolved.document.pages().first().and_then(|first| {
+            engine
+                .export()
+                .preview_document(&resolved.document, first.id, fit)
+                .ok()
+        }),
+        _ => None,
+    };
+    match picture {
+        Some(p) => {
+            egui::ColorImage::from_rgba_unmultiplied([p.width as usize, p.height as usize], &p.rgba)
+        }
+        None => egui::ColorImage::filled([1, 1], egui::Color32::TRANSPARENT),
+    }
 }

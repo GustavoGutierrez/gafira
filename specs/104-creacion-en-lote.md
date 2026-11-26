@@ -596,3 +596,14 @@ Consulta: **26 de noviembre de 2026**. Se enlazan documentos públicos; sus inte
 - «Crear tabla» abre un borrador con «Usar esta tabla» y «Cancelar» (S104-60).
 - Soltar un CSV o Excel sobre el panel carga sus datos, con un aviso mientras se arrastra (S104-62).
 - Clic derecho sobre un texto o una forma: «Conectar datos (reemplazar el texto)» y «Añadir un campo al final» con las columnas, o «Conectar datos…» que abre el panel cuando no hay datos (§7.2, con la spec 105).
+
+### 19.6 Rediseño de la exportación (crítica de diseño, 2026-11-26)
+
+Tras una crítica con la skill `impeccable` (20/40 en las heurísticas de Nielsen: inconsistencia con «Exportar» y demasiadas decisiones en 320 px), el titular aprobó:
+
+- El paso 3 del panel pasa a «Revisar»: vista previa por fila, problemas con «Ir» y un único botón «Exportar en lote…».
+- Diálogo «Exportar en lote» con la misma estructura que «Exportar»: vista previa de la fila a la izquierda; a la derecha el formato y sus opciones (todos los formatos de «Exportar» salvo Excel, más «Gafira editable (.gaf)», con la configuración recordada por formato), «Un solo archivo / Un archivo por fila» para los formatos de varias páginas, filas, páginas de la plantilla, nombres de archivo con fichas y ejemplos, y «También un .gaf editable»; abajo el resumen y «Exportar N páginas».
+- El progreso y el resultado son una tarjeta abajo a la derecha, como la de «Exportar»: fase, hechos de total, fallidos, faltan, archivo en curso, tiempo y «Cancelar»; al terminar, «Mostrar en carpeta», «Ver detalles» (fallos y textos que no caben) y «Cerrar».
+- `BulkProfile` guarda el id del formato (`pdf`, `png`… o `gaf`) y `one_file`, en lugar de la lista fija anterior.
+- Evidencia: S104-55 (diálogo: formatos, filas, perfil, solo `.gaf`) y S104-63 (el diálogo se dibuja y no escribe nada mientras está abierto).
+

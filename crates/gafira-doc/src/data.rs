@@ -62,28 +62,17 @@ pub struct DataSource {
     pub header_row: Option<usize>,
 }
 
-/// What a bulk run writes (spec 104 §10.2).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BulkOutput {
-    /// One PDF with every page, row after row.
-    #[default]
-    PdfCombined,
-    /// One PDF per row.
-    PdfEach,
-    /// One PNG per row and page.
-    Png,
-    /// One JPEG per row and page.
-    Jpeg,
-    /// Only the editable `.gaf` with every page.
-    Gaf,
-}
-
-/// The settings of the last bulk run, kept with the document (§11.1).
+/// The settings of the last bulk export, kept with the document (§11.1).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BulkProfile {
-    #[serde(default)]
-    pub output: BulkOutput,
+    /// The id of the export format (`pdf`, `png`…), or `gaf` for only the
+    /// editable file.
+    #[serde(default = "pdf")]
+    pub format: String,
+    /// For a format that holds several pages (PDF): one file with every
+    /// row, else one file per row.
+    #[serde(default = "yes")]
+    pub one_file: bool,
     /// The names of the files, with fields: `certificado_{{nombre}}`.
     #[serde(default)]
     pub file_name: String,
@@ -92,10 +81,19 @@ pub struct BulkProfile {
     pub editable: bool,
 }
 
+fn pdf() -> String {
+    "pdf".to_owned()
+}
+
+fn yes() -> bool {
+    true
+}
+
 impl Default for BulkProfile {
     fn default() -> Self {
         Self {
-            output: BulkOutput::default(),
+            format: pdf(),
+            one_file: true,
             file_name: "diseno_{{fila}}".to_owned(),
             editable: false,
         }
