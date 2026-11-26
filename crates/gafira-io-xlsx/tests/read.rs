@@ -624,3 +624,41 @@ fn s82_04_deep_parts() {
     );
     assert!(read(&book, ES).is_ok(), "a little is fine");
 }
+
+// S104-30: bulk create reads every row and column of a sheet and of a file
+// of separated values; a table still takes what it holds.
+#[test]
+fn s104_30_the_reach_of_bulk_create() {
+    use gafira_io_xlsx::{Reach, read_csv_reach, read_reach};
+    let all = Reach {
+        rows: 100_001,
+        columns: 500,
+    };
+    let rows: String = (1..=300)
+        .map(|r| {
+            let cells: String = (0..30)
+                .map(|c| format!("<c r=\"{}{r}\"><v>{c}</v></c>", column(c)))
+                .collect();
+            format!("<row r=\"{r}\">{cells}</row>")
+        })
+        .collect();
+    let bytes = book(&[("Hoja", &format!("<sheetData>{rows}</sheetData>"))], &[]);
+    let sheet = read_reach(&bytes, ES, all).expect("read").remove(0);
+    assert_eq!((sheet.data.len(), sheet.data[299].len()), (300, 30));
+    assert_eq!(sheet.data[299][29], "29");
+    assert_eq!(
+        (sheet.table.rows.len(), sheet.table.columns.len()),
+        (50, 20)
+    );
+    let text: String = (0..300)
+        .map(|r| {
+            let cells: Vec<String> = (0..30).map(|c| format!("{r}.{c}")).collect();
+            cells.join(";") + "\n"
+        })
+        .collect();
+    let csv = read_csv_reach(text.as_bytes(), "datos", all).expect("csv");
+    assert_eq!((csv.data.len(), csv.data[299].len()), (300, 30));
+    assert_eq!(csv.data[299][29], "299.29");
+    let cut = read_csv(text.as_bytes(), "datos").expect("csv");
+    assert_eq!((cut.data.len(), cut.data[0].len()), (201, 20));
+}

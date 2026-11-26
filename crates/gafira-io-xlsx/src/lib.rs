@@ -35,9 +35,9 @@ use gafira_ports::export::{
 };
 use gafira_ports::format::{ByteSignature, FormatDescriptor, FormatKind};
 
-pub use csv::read_csv;
+pub use csv::{read_csv, read_csv_reach};
 pub use number::{Locale, show};
-pub use read::{MAX_DATA_ROWS, ReadError, ReadSheet, read};
+pub use read::{MAX_DATA_ROWS, Reach, ReadError, ReadSheet, read, read_reach};
 use styles::Styles;
 use xml::escape;
 
