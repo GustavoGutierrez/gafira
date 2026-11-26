@@ -135,7 +135,7 @@ const packs: FullPack[] = [
   {
     id: 'flowers',
     url: 'https://gusdev.gumroad.com/l/botanical-flowers-full',
-    price: 3,
+    price: 5,
     count: 180,
     added: 150,
     tint: 'var(--coral)',
@@ -154,7 +154,7 @@ const packs: FullPack[] = [
   {
     id: 'branches',
     url: 'https://gusdev.gumroad.com/l/branches-bouquets-arrangements-full',
-    price: 3,
+    price: 5,
     count: 159,
     added: 129,
     tint: 'var(--mint)',
@@ -269,7 +269,7 @@ const g = t.gallery;
                       src={slide.image}
                       alt=""
                       widths={slide.cover ? [400, 600, 800] : [300, 450, 600]}
-                      sizes={slide.cover ? '(max-width: 720px) 90vw, (max-width: 960px) 45vw, 470px' : '(max-width: 720px) 60vw, (max-width: 960px) 30vw, 340px'}
+                      sizes={slide.cover ? '(max-width: 720px) 90vw, (max-width: 1100px) 45vw, 380px' : '(max-width: 720px) 60vw, (max-width: 1100px) 30vw, 270px'}
                       loading={i === 0 ? 'eager' : 'lazy'}
                     />
                   </button>
@@ -641,7 +641,7 @@ const g = t.gallery;
     color: rgb(255 255 255 / 0.8);
   }
 
-  /* Two columns, narrow enough that each card keeps its proportions. */
+  /* Two columns, narrow enough that each card keeps its proportions; three on wide screens (see below). */
   .grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1201,6 +1201,20 @@ const g = t.gallery;
   @keyframes fade-in {
     from {
       opacity: 0;
+    }
+  }
+
+  /* Wide screens: six packs read as two rows of three, using the full container. */
+  @media (min-width: 1100px) {
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      max-width: none;
+    }
+
+    .card h3 {
+      font-size: 22px;
+      line-height: 30px;
+      text-wrap: balance;
     }
   }
 
