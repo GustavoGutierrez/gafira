@@ -218,6 +218,8 @@ pub enum ValidationError {
         sequence: SequenceId,
         error: TimelineError,
     },
+    /// P9: the connected data breaks a rule of its table (spec 104).
+    InvalidData { problem: crate::DataProblem },
 }
 
 impl fmt::Display for ValidationError {
@@ -316,6 +318,9 @@ impl fmt::Display for ValidationError {
             }
             Self::TimelineLaw { sequence, error } => {
                 write!(f, "sequence {sequence}: {error}")
+            }
+            Self::InvalidData { problem } => {
+                write!(f, "the connected data is not valid ({problem:?})")
             }
         }
     }

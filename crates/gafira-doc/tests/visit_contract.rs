@@ -77,6 +77,7 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "arena.rs",
     "blend.rs",
     "content_hash.rs",
+    "data.rs",
     "contract/mod.rs",
     "contract/cancel.rs",
     "contract/describe.rs",

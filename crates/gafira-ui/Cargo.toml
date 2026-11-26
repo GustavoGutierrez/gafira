@@ -27,6 +27,7 @@ gafira-qr.workspace = true
 gafira-table.workspace = true
 # Spec 083: charts.
 gafira-chart.workspace = true
+gafira-bulk.workspace = true
 gafira-io-xlsx.workspace = true
 # FD-44: a curved text is drawn from the outline the export draws.
 gafira-render.workspace = true

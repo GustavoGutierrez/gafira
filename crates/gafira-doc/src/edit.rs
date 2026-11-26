@@ -132,6 +132,11 @@ impl DocMut<'_> {
         self.doc.next_id = self.doc.next_id.max(value);
     }
 
+    /// Sets the connected data of bulk create (spec 104; not validated here).
+    pub fn set_data(&mut self, data: Option<Arc<crate::DataSet>>) {
+        self.doc.data = data;
+    }
+
     /// Sets the document resolution (not validated here).
     pub fn set_dpi(&mut self, dpi: Dpi) {
         self.doc.dpi = dpi;

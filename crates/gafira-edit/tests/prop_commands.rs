@@ -11,7 +11,7 @@ use gafira_doc::{
 use gafira_edit::{
     Applied, ApplyTemplate, Command, CommandError, DirtySet, DuplicatePage, GestureId, InsertAsset,
     InsertNodes, InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder, ReorderPage,
-    Reparent, RestoreVersion, SetProperty, Transaction,
+    Reparent, RestoreVersion, SetData, SetProperty, Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -377,6 +377,39 @@ fn duplicate_page(doc: &Document) -> BoxedStrategy<DuplicatePage> {
 #[test]
 fn duplicate_page_obeys_the_command_laws() {
     prop_command(duplicate_page);
+}
+
+/// A connected table of up to three rows of words, an invalid one (a bad
+/// key), or none (spec 104).
+fn set_data(_doc: &Document) -> BoxedStrategy<SetData> {
+    let table = (
+        prop::collection::vec("[a-zA-Z0-9 ]{0,6}", 0..4),
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(values, valid, none)| {
+            if none {
+                return SetData::new(None);
+            }
+            let key = if valid { "nombre" } else { "1 mal" };
+            let rows = values
+                .into_iter()
+                .enumerate()
+                .map(|(k, v)| Arc::new(gafira_doc::DataRow::new(2 + k as u64, vec![v])))
+                .collect();
+            SetData::new(Some(Arc::new(gafira_doc::DataSet {
+                columns: vec![gafira_doc::DataColumn::new(1, "Nombre", key)],
+                rows,
+                next_id: 10,
+                ..gafira_doc::DataSet::default()
+            })))
+        });
+    table.boxed()
+}
+
+#[test]
+fn set_data_obeys_the_command_laws() {
+    prop_command(set_data);
 }
 
 /// A page of the document, or a missing one, and up to three of its own

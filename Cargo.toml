@@ -44,6 +44,7 @@ gafira-chart = { path = "crates/gafira-chart" }
 gafira-vision = { path = "crates/gafira-vision" }
 gafira-io-xlsx = { path = "crates/gafira-io-xlsx" }
 gafira-qr = { path = "crates/gafira-qr" }
+gafira-bulk = { path = "crates/gafira-bulk" }
 gafira-photos = { path = "crates/gafira-photos" }
 gafira-model3d = { path = "crates/gafira-model3d" }
 gafira-io-model3d = { path = "crates/gafira-io-model3d" }

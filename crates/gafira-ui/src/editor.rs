@@ -48,11 +48,13 @@ use crate::zoom::{self, Zoom, ZoomAsk};
 /// The tabs of the rail, in the order of 03 §2.3, with their icons.
 /// The tabs of the rail (owner request): Elementos first, the one open
 /// when a design opens; Marca (spec 093) and Plantillas (spec 091) last.
-const TABS: [(&str, Icon); 6] = [
+const TABS: [(&str, Icon); 7] = [
     ("tab.pieces", Icon::Pieces),
     ("tab.text", Icon::Text),
     ("tab.library", Icon::Library),
     ("tab.drawing", Icon::Drawing),
+    // «Crear en lote» (spec 104): a design per row of a table.
+    ("tab.bulk", Icon::Stack),
     ("tab.identity", Icon::Identity),
     ("tab.templates", Icon::Templates),
 ];
@@ -435,6 +437,15 @@ pub(crate) struct Editor {
     eraser: Option<crate::eraser::Eraser>,
     /// Spreadsheets waiting for the sheet to insert (spec 082).
     sheets: crate::sheets::Asks,
+    /// «Crear en lote» (spec 104): its panel, the file it reads and the
+    /// window to wake while it runs.
+    bulk: std::cell::RefCell<crate::bulk::Panel>,
+    bulk_read: Option<crate::bulk_run::Reading>,
+    bulk_ctx: Option<egui::Context>,
+    /// The fields of the connected data, by key and name, and the one
+    /// offered while `{{` is written in a text (§7.3).
+    field_keys: Vec<(String, String)>,
+    field_hint: Option<usize>,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -624,6 +635,11 @@ impl Default for Editor {
             paste_seen: false,
             pending_svg: None,
             sheets: crate::sheets::Asks::default(),
+            bulk: std::cell::RefCell::default(),
+            bulk_read: None,
+            bulk_ctx: None,
+            field_keys: Vec::new(),
+            field_hint: None,
             studio: crate::vision::Studio::default(),
             eraser: None,
             chart_panel: std::cell::RefCell::default(),
@@ -653,6 +669,10 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// What «Crear en lote» asks (spec 104), and the table changed in its
+    /// wide grid.
+    bulk: Option<crate::bulk::Asks>,
+    bulk_data: Option<Option<gafira_doc::DataSet>>,
     /// An icon of the set to add (spec 103).
     icon_insert: Option<crate::icon_library::Picked>,
     /// Open or close the grid of pages (spec 102).
@@ -1851,6 +1871,7 @@ impl Editor {
             asked.sheet = self.sheets.show(ctx, theme, texts);
         }
         self.rail(ctx, theme, texts);
+        self.bulk_frame(ctx, (theme, texts), document.as_deref(), &mut asked);
         let editing = !self.font_panel
             && self.chart_panel_of(ctx, theme, texts, document.as_deref(), &mut asked);
         let editing = editing
@@ -2421,6 +2442,12 @@ impl Editor {
                             &mut catalogue.borrow_mut(),
                             (document, page),
                         );
+                    }
+                    return;
+                }
+                if TABS[self.rail.tab].0 == "tab.bulk" {
+                    if let Some(document) = document {
+                        self.bulk_panel(ui, (theme, texts), document, asked);
                     }
                     return;
                 }
@@ -5805,7 +5832,7 @@ impl Editor {
     fn edit_field(
         &mut self,
         ui: &mut egui::Ui,
-        theme: &Theme,
+        (theme, texts): (&Theme, &Texts),
         pages: &[Arc<Page>],
         page_rects: &[(PageId, Rect)],
         zoom: f32,
@@ -5899,6 +5926,23 @@ impl Editor {
         } else {
             field_rect
         };
+        // While a field is offered, its keys choose it (§7.3 rule 2).
+        let mut pick = false;
+        if let Some(chosen) = self.field_hint.as_mut() {
+            ui.input_mut(|i| {
+                pick = i.consume_key(Modifiers::NONE, Key::Tab)
+                    || i.consume_key(Modifiers::NONE, Key::Enter);
+                if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
+                    *chosen += 1;
+                }
+                if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
+                    *chosen = chosen.saturating_sub(1);
+                }
+            });
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                self.field_hint = None;
+            }
+        }
         let field = egui::TextEdit::multiline(&mut editing.words)
             .frame(false)
             .background_color(Color32::TRANSPARENT)
@@ -5908,11 +5952,45 @@ impl Editor {
             .vertical_align(vertical)
             .desired_width(field_rect.width());
         let mut height = None;
+        let mut cursor = None;
         let response = ui.put(field_rect, |ui: &mut egui::Ui| {
             let output = field.show(ui);
             height = Some(output.galley.size().y);
+            cursor = output.cursor_range.map(|r| r.primary.index);
             output.response
         });
+        let mut completed = false;
+        if !self.field_keys.is_empty()
+            && let Some(cursor) = cursor
+            && let Some((start, partial)) = crate::bulk::partial_field(&editing.words, cursor)
+        {
+            let found = crate::bulk::matching(&self.field_keys, &partial, 6);
+            let chosen = self
+                .field_hint
+                .unwrap_or(0)
+                .min(found.len().saturating_sub(1));
+            if found.is_empty() {
+                self.field_hint = None;
+            } else if pick {
+                let (words, at) =
+                    crate::bulk::complete_field(&editing.words, (start, cursor), &found[chosen].0);
+                editing.words = words;
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                    let place = egui::text::CCursor::new(at);
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(place)));
+                    state.store(ui.ctx(), response.id);
+                }
+                self.field_hint = None;
+                completed = true;
+            } else {
+                self.field_hint = Some(chosen);
+                field_offer(ui, (theme, texts), response.rect, &found, chosen);
+            }
+        } else {
+            self.field_hint = None;
+        }
         // The height of the words, for a text box that grows with them.
         if let (Some(height), gafira_doc::NodeKind::Text(_)) = (height, &node.kind) {
             asked.edit_height = Some(f64::from(height / zoom));
@@ -5923,7 +6001,7 @@ impl Editor {
         } else if response.lost_focus() {
             asked.end_edit = true;
         }
-        if response.changed() {
+        if response.changed() || completed {
             asked.edit_text = Some(editing.words.clone());
         }
     }
@@ -7149,7 +7227,7 @@ impl Editor {
                         }
                         // The field of a text being written on the
                         // canvas, over its element (spec 055).
-                        self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
+                        self.edit_field(ui, (theme, texts), pages, &page_rects, zoom, asked);
                         self.cell_field(ui, theme, pages, &page_rects, zoom, asked);
                         // Moving elements: Gafira's own move pointer in
                         // place of the system one (spec 095).
@@ -8041,6 +8119,7 @@ impl Editor {
         {
             self.bring_sheet(engine, sheet, purpose, at);
         }
+        self.apply_bulk(engine, document, (asked, theme), window);
         if asked.import_frame_shape {
             self.import_frame_shape(engine, window);
         }
@@ -11104,6 +11183,10 @@ impl Editor {
         use crate::sheets::Purpose;
         match purpose {
             Purpose::Table => self.insert_sheet(engine, sheet, at),
+            Purpose::Bulk => {
+                let texts = Texts::new(engine.settings().locale().locale);
+                self.bring_bulk(sheet, &texts);
+            }
             Purpose::Chart => self.chart_from(engine, &sheet.data, sheet.name),
             Purpose::Data(page, node) => {
                 let document = engine.edit().document();
@@ -15601,6 +15684,393 @@ fn to_u8(value: f32) -> u8 {
         out += 1;
     }
     out
+}
+
+/// «Crear en lote» (spec 104): the panel, the file it reads, the run and
+/// what its asks change in the document.
+impl Editor {
+    /// The panel of the tab, in the side panel.
+    fn bulk_panel(
+        &self,
+        ui: &mut egui::Ui,
+        (theme, texts): (&Theme, &Texts),
+        document: &Document,
+        asked: &mut Asked,
+    ) {
+        let can_fill = self.selected.single().is_some_and(|(page, node)| {
+            document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .is_some_and(|n| {
+                    matches!(
+                        n.kind,
+                        gafira_doc::NodeKind::Text(_) | gafira_doc::NodeKind::Shape(_)
+                    )
+                })
+        });
+        let rects = self.page_rects.clone();
+        let zoom = self.zoom;
+        let drop_point = move |at: Pos2| canvas::drop_point(&rects, zoom, at);
+        let view = crate::bulk::View {
+            doc: document,
+            can_fill,
+            drop_point: &drop_point,
+        };
+        let mut asks = self.bulk.borrow_mut().show(ui, theme, texts, &view);
+        // A field comes in as a text of the panel Texto does (spec 061).
+        if let Some(token) = asks.insert.take() {
+            asked.insert_text = Some((canvas::TextPreset::Body, token));
+        }
+        if let Some((token, page, point)) = asks.drop.take() {
+            asked.drop_text = Some((canvas::TextPreset::Body, token, page, point));
+        }
+        if let Some((page, node)) = asks.go_to.take() {
+            asked.select = Some(Selection::one(page, node));
+        }
+        asked.bulk = Some(asks);
+    }
+
+    /// Every frame: the file being read, the run, the wide table and the
+    /// card of a run while the panel is closed.
+    fn bulk_frame(
+        &mut self,
+        ctx: &egui::Context,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        self.bulk_ctx = Some(ctx.clone());
+        self.field_keys = document
+            .and_then(Document::data)
+            .map(|set| {
+                set.columns
+                    .iter()
+                    .map(|c| (c.key.clone(), c.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(found) = self
+            .bulk_read
+            .as_ref()
+            .and_then(crate::bulk_run::Reading::poll)
+            && let Some(reading) = self.bulk_read.take()
+        {
+            self.bulk.get_mut().reading = None;
+            let purpose = (crate::sheets::Purpose::Bulk, None);
+            if let Some(sheet) = self.sheets.take(&reading.path, purpose, found) {
+                self.bring_bulk(sheet, texts);
+            }
+        }
+        let panel = self.bulk.get_mut();
+        if panel.pump() {
+            // The time and the counts move on.
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        asked.bulk_data = panel.wide(ctx, theme, texts, document.and_then(Document::data));
+        let shown = self.rail.open && TABS[self.rail.tab].0 == "tab.bulk";
+        if !shown {
+            self.bulk.get_mut().floating(ctx, theme, texts);
+        }
+    }
+
+    /// A sheet read for bulk create waits for its row of names (§5.2).
+    fn bring_bulk(&mut self, sheet: gafira_io_xlsx::ReadSheet, texts: &Texts) {
+        let panel = self.bulk.get_mut();
+        let (kind, file) = panel.source_file.clone().unwrap_or_default();
+        let name = std::path::Path::new(&file)
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| sheet.name.clone());
+        let source = gafira_doc::DataSource {
+            sheet: (kind != "csv").then(|| sheet.name.clone()),
+            kind,
+            file_name: file,
+            header_row: None,
+        };
+        panel.pending = Some(crate::bulk::Pending::new(sheet.data, source, name, texts));
+        panel.step = crate::bulk::Step::Data;
+    }
+
+    /// What «Crear en lote» asked, with the engine.
+    fn apply_bulk(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Option<Arc<Document>>,
+        (asked, theme): (&Asked, &Theme),
+        window: Option<&eframe::Frame>,
+    ) {
+        let data = asked
+            .bulk_data
+            .clone()
+            .or_else(|| asked.bulk.as_ref().and_then(|a| a.data.clone()));
+        if let Some(data) = data {
+            let command = gafira_edit::SetData::new(data.map(Arc::new));
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("set data: {error}");
+            }
+        }
+        let Some(asks) = &asked.bulk else { return };
+        if asks.import
+            && let Some(path) = Self::pick_sheet(window)
+        {
+            self.read_for_bulk(engine, path);
+        }
+        let Some(document) = document else { return };
+        for (token, append) in [(&asks.replace, false), (&asks.append, true)] {
+            if let Some(token) = token {
+                self.fill_selection(engine, (document, theme), token, append);
+            }
+        }
+        if let Some(wanted) = asks.preview {
+            self.bulk_picture(engine, document, wanted);
+        }
+        if asks.generate {
+            self.start_bulk(engine, document, window);
+        }
+    }
+
+    /// Reads the spreadsheet at `path` on its own thread, every row.
+    fn read_for_bulk(&mut self, engine: &mut Gafira, path: std::path::PathBuf) {
+        let texts = Texts::new(engine.settings().locale().locale);
+        let file = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let kind = match extension.as_str() {
+            "csv" | "tsv" => "csv",
+            _ => "xlsx",
+        };
+        let panel = self.bulk.get_mut();
+        panel.reading = Some(file.clone());
+        panel.source_file = Some((kind.to_owned(), file));
+        let wake = self.waker();
+        self.bulk_read = Some(crate::bulk_run::Reading::start(
+            path,
+            crate::sheets::marks(&texts),
+            wake,
+        ));
+    }
+
+    /// A closure that asks the window to draw again.
+    fn waker(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let ctx = self.bulk_ctx.clone();
+        Arc::new(move || {
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
+        })
+    }
+
+    /// The words of the selected text become `token`, or it goes after them.
+    fn fill_selection(
+        &self,
+        engine: &mut Gafira,
+        (document, theme): (&Document, &Theme),
+        token: &str,
+        append: bool,
+    ) {
+        let Some((page, node)) = self.selected.single() else {
+            return;
+        };
+        let Some(found) = document.page(page).and_then(|p| p.node(node)) else {
+            return;
+        };
+        let fallback = text_style(theme, canvas::TextPreset::Body);
+        let fill = |content: &gafira_doc::RichText| {
+            let style = content.first_style().cloned().unwrap_or(fallback.clone());
+            if !append || content.plain_text().is_empty() {
+                return gafira_doc::RichText::plain(token, &style);
+            }
+            let mut out = content.clone();
+            if let Some(span) = out.paragraphs.last_mut().and_then(|p| p.spans.last_mut()) {
+                if !span.text.ends_with(' ') {
+                    span.text.push(' ');
+                }
+                span.text.push_str(token);
+            }
+            out
+        };
+        let property = match &found.kind {
+            gafira_doc::NodeKind::Text(text) => Property::TextContent(fill(&text.content)),
+            gafira_doc::NodeKind::Shape(shape) => {
+                let mut text = shape
+                    .text
+                    .clone()
+                    .unwrap_or_else(|| gafira_doc::ShapeText::plain("", &fallback));
+                text.content = fill(&text.content);
+                Property::ShapeText(Some(text))
+            }
+            _ => return,
+        };
+        let command = SetProperty::new(page, vec![node], property, None);
+        if let Err(error) = engine.edit().execute(Box::new(command)) {
+            eprintln!("bulk field: {error}");
+        }
+    }
+
+    /// The picture of `row` on `page` for the preview of the panel.
+    fn bulk_picture(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        (key, row, page): (u64, usize, PageId),
+    ) {
+        let Some(set) = document.data() else { return };
+        let resolved = gafira_bulk::resolve_with(
+            document,
+            set,
+            &[row],
+            &[page],
+            &mut |_| true,
+            &crate::bulk_run::fit_node,
+        );
+        let picture = match resolved {
+            Ok(Some(resolved)) => resolved.document.pages().first().and_then(|first| {
+                engine
+                    .export()
+                    .preview_document(&resolved.document, first.id, (720, 720))
+                    .ok()
+            }),
+            _ => None,
+        };
+        let image = match picture {
+            Some(p) => egui::ColorImage::from_rgba_unmultiplied(
+                [p.width as usize, p.height as usize],
+                &p.rgba,
+            ),
+            None => egui::ColorImage::filled([1, 1], Color32::TRANSPARENT),
+        };
+        self.bulk.get_mut().picture = Some((key, image));
+    }
+
+    /// «Generar»: where the files go, the checked export and the run on
+    /// its thread (§10).
+    fn start_bulk(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Arc<Document>,
+        window: Option<&eframe::Frame>,
+    ) {
+        use crate::bulk_run::{Run, Status, Target};
+        use gafira_doc::BulkOutput;
+        let Some(set) = document.data_arc().cloned() else {
+            return;
+        };
+        if self.bulk.get_mut().run.is_some() {
+            return;
+        }
+        let rows = self.bulk.get_mut().rows(&set);
+        let output = set.profile.output;
+        let base = Some(gafira_bulk::sanitize(&set.name))
+            .filter(|b| !b.is_empty())
+            .unwrap_or_else(|| "lote".to_owned());
+        let picker = crate::files::picker(window);
+        let target = match output {
+            BulkOutput::PdfCombined => picker
+                .add_filter("PDF", &["pdf"])
+                .set_file_name(format!("{base}.pdf"))
+                .save_file()
+                .map(|p| Target::File(with_extension(p, "pdf"))),
+            BulkOutput::Gaf => picker
+                .add_filter("Gafira", &["gaf"])
+                .set_file_name(format!("{base}_lote.gaf"))
+                .save_file()
+                .map(|p| Target::File(with_extension(p, "gaf"))),
+            _ => picker.pick_folder().map(Target::Folder),
+        };
+        let Some(target) = target else { return };
+        let gaf = (set.profile.editable && output != BulkOutput::Gaf)
+            .then(|| editable_beside(&target, &base));
+        let job = crate::bulk_run::job(engine, document, rows, target, gaf);
+        let job = match job {
+            Ok(job) => job,
+            Err(error) => {
+                self.bulk.get_mut().report = Some(Status::refused(error.to_string()));
+                return;
+            }
+        };
+        let wake = self.waker();
+        let panel = self.bulk.get_mut();
+        panel.report = None;
+        panel.run = Some(Run::start(job, wake));
+    }
+}
+
+/// The fields offered under a text being written, the chosen one lit;
+/// Enter writes it (§7.3 rule 2). Words only: a click would take
+/// the keyboard from the text.
+fn field_offer(
+    ui: &egui::Ui,
+    (theme, texts): (&Theme, &Texts),
+    under: Rect,
+    found: &[(String, String)],
+    chosen: usize,
+) {
+    egui::Area::new(egui::Id::new("editor.field_offer"))
+        .fixed_pos(under.left_bottom() + Vec2::new(0.0, 4.0))
+        .order(egui::Order::Tooltip)
+        .interactable(false)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                for (k, (key, name)) in found.iter().enumerate() {
+                    let words = format!("{{{{{key}}}}}  ·  {name}");
+                    let text = RichText::new(words).font(theme.font("body-sm"));
+                    let text = if k == chosen {
+                        text.color(theme.c("accent")).strong()
+                    } else {
+                        text.color(theme.c("text"))
+                    };
+                    ui.label(text);
+                }
+                ui.label(
+                    RichText::new(plain(texts, "bulk.offer_hint"))
+                        .font(theme.font("caption"))
+                        .color(theme.c("text.secondary")),
+                );
+            });
+        });
+}
+
+/// The editable `.gaf` of a run beside its files: never over a file that
+/// is there (AC 10).
+fn editable_beside(target: &crate::bulk_run::Target, base: &str) -> std::path::PathBuf {
+    use crate::bulk_run::Target;
+    let (folder, stem) = match target {
+        Target::File(path) => (
+            path.parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default(),
+            path.file_stem()
+                .map_or_else(|| base.to_owned(), |s| s.to_string_lossy().into_owned()),
+        ),
+        Target::Folder(folder) => (folder.clone(), format!("{base}_lote")),
+    };
+    let mut names = gafira_bulk::Names::default();
+    if let Ok(entries) = std::fs::read_dir(&folder) {
+        for entry in entries.flatten() {
+            names.take(&entry.file_name().to_string_lossy());
+        }
+    }
+    folder.join(names.unique(&stem, "gaf"))
+}
+
+/// `path` ending in `.extension`, added when it has another or none.
+fn with_extension(path: std::path::PathBuf, extension: &str) -> std::path::PathBuf {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(extension))
+    {
+        path
+    } else {
+        let mut name = path.into_os_string();
+        name.push(".");
+        name.push(extension);
+        std::path::PathBuf::from(name)
+    }
 }
 
 #[cfg(test)]
@@ -21330,5 +21800,166 @@ pub(crate) mod tests {
         assert!((to.x + to.w / 2.0 - from.x - from.w / 2.0).abs() < 1e-6);
         assert!((to.h - from.h).abs() < 1e-6);
         drag_end(&mut engine, &mut editor);
+    }
+
+    // S104-56: «Crear en lote» is a tab of the rail; its three steps draw
+    // over a design with data, the preview of a row is drawn and a field
+    // goes into the selected text as one undo step (§4, §7.2, §9).
+    #[test]
+    fn s104_56_the_bulk_panel_draws_every_step() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let set = gafira_doc::DataSet {
+            name: "clientes".to_owned(),
+            columns: vec![gafira_doc::DataColumn::new(1, "Nombre", "nombre")],
+            rows: vec![Arc::new(gafira_doc::DataRow::new(
+                2,
+                vec!["Ana".to_owned()],
+            ))],
+            next_id: 3,
+            ..gafira_doc::DataSet::default()
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetData::new(Some(Arc::new(set)))))
+            .expect("the data");
+        let mut editor = Editor::default();
+        let tab = TABS
+            .iter()
+            .position(|(key, _)| *key == "tab.bulk")
+            .expect("the tab");
+        editor.rail.click_tab(tab);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        for step in [
+            crate::bulk::Step::Data,
+            crate::bulk::Step::Connect,
+            crate::bulk::Step::Generate,
+        ] {
+            editor.bulk.get_mut().step = step;
+            frame(&ctx, &mut editor, &mut engine, None);
+            if step == crate::bulk::Step::Generate {
+                // The picture of the row was asked and drawn.
+                assert!(editor.bulk.get_mut().picture.is_some());
+            }
+            frame(&ctx, &mut editor, &mut engine, None);
+            assert_eq!(editor.bulk.get_mut().step, step);
+        }
+        // «Añadir texto» of a field: a text that says it.
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "{{nombre}}".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        let (id, _) = page
+            .nodes
+            .iter()
+            .find(|(_, n)| matches!(&n.kind, gafira_doc::NodeKind::Text(t) if t.content.plain_text() == "{{nombre}}"))
+            .expect("the text");
+        let id = *id;
+        // «Añadir al final» on the selected text.
+        editor.selected = Selection::one(page.id, id);
+        let snapshot = engine.edit().document();
+        let asked = Asked {
+            bulk: Some(crate::bulk::Asks {
+                append: Some("{{fila}}".to_owned()),
+                ..crate::bulk::Asks::default()
+            }),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &snapshot, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let words = match &document.pages()[0].nodes[&id].kind {
+            gafira_doc::NodeKind::Text(t) => t.content.plain_text(),
+            _ => String::new(),
+        };
+        assert_eq!(words, "{{nombre}} {{fila}}");
+        engine.edit().undo().expect("undo");
+        let document = engine.edit().document().expect("a document");
+        assert!(
+            matches!(&document.pages()[0].nodes[&id].kind, gafira_doc::NodeKind::Text(t) if t.content.plain_text() == "{{nombre}}")
+        );
+    }
+
+    // S104-58: writing `{{no` in a text on the canvas offers «nombre»; Enter
+    // writes the whole field (§7.3 rules 1 and 2).
+    #[test]
+    fn s104_58_typing_braces_offers_the_fields() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let set = gafira_doc::DataSet {
+            columns: vec![gafira_doc::DataColumn::new(1, "Nombre", "nombre")],
+            rows: vec![Arc::new(gafira_doc::DataRow::new(
+                2,
+                vec!["Ana".to_owned()],
+            ))],
+            next_id: 3,
+            ..gafira_doc::DataSet::default()
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetData::new(Some(Arc::new(set)))))
+            .expect("the data");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "Hola".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (page, node) = editor.selected.single().expect("the new text");
+        let document = engine.edit().document();
+        let asked = Asked {
+            begin_edit: Some((page, node)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut clip = None;
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, None);
+        let typed = vec![egui::Event::Text("{{no".to_owned())];
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            typed,
+            Modifiers::NONE,
+            &mut clip,
+        );
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.field_hint, Some(0));
+        // The person sees the offer before pressing Tab.
+        frame(&ctx, &mut editor, &mut engine, None);
+        let tab = vec![egui::Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }];
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            tab,
+            Modifiers::NONE,
+            &mut clip,
+        );
+        let words = editor
+            .editing
+            .as_ref()
+            .map(|e| e.words.clone())
+            .unwrap_or_default();
+        assert!(words.contains("{{nombre}}"), "{words}");
+        assert!(
+            !words.contains("{{no}") && words.matches("{{").count() == 1,
+            "{words}"
+        );
+        assert_eq!(editor.field_hint, None);
     }
 }

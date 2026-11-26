@@ -1988,6 +1988,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-bulk"
+version = "0.4.0"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "gafira-geom",
+ "serde_json",
+]
+
+[[package]]
 name = "gafira-chart"
 version = "0.4.0"
 dependencies = [
@@ -2442,6 +2452,7 @@ dependencies = [
  "egui_extras",
  "flate2",
  "gafira-assets",
+ "gafira-bulk",
  "gafira-chart",
  "gafira-color",
  "gafira-doc",

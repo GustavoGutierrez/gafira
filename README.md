@@ -43,6 +43,7 @@ Website: <https://gafira.com> (Spanish) · <https://gafira.com/en/> (English). I
 - **3D objects:** import `.glb` and `.obj` models and place them like any element; double-click to rotate, move, scale and orbit them with on-canvas gizmos, quick views and lighting presets, then apply. They are drawn on the CPU, saved inside the `.gaf` and exported as the view their camera sees.
 - **Organise:** Layers with drag and drop, lock and hide; guides, snapping, rulers, align and distribute; versions inside the `.gaf` file and crash recovery.
 - **Brand and packages:** brand kits (logos, colours, text styles, fonts) shared as `.gafkit`; asset packages (`.gafpack`) installed from Home and uninstalled from Settings or from their panel.
+- **Bulk create:** connect a CSV, Excel or pasted table to a design, put its fields in the texts as `{{field}}` (drag, buttons or autocomplete) and generate one design per row as a combined PDF, a PDF per row, PNG or JPEG files and an editable `.gaf`, in the background with progress and cancel. The table is saved inside the `.gaf`.
 - **Export:** PNG, JPEG, WebP, AVIF, SVG, vector PDF (CMYK, password) and editable PowerPoint, in the background.
 
 ## Download

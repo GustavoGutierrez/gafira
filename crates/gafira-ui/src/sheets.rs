@@ -61,6 +61,16 @@ impl Failure {
 
 /// The sheets of the file at `path`.
 pub(crate) fn read(path: &Path, texts: &Texts) -> Result<Vec<ReadSheet>, Failure> {
+    read_reach(path, marks(texts), gafira_io_xlsx::Reach::default())
+}
+
+/// [`read`] with the data of every sheet as far as `reach` (spec 104); it
+/// knows no window, so it runs on any thread.
+pub(crate) fn read_reach(
+    path: &Path,
+    locale: Locale,
+    reach: gafira_io_xlsx::Reach,
+) -> Result<Vec<ReadSheet>, Failure> {
     if extension(path) == "ods" {
         return Err(Failure::Read(ReadError::Unsupported));
     }
@@ -71,9 +81,10 @@ pub(crate) fn read(path: &Path, texts: &Texts) -> Result<Vec<ReadSheet>, Failure
     let bytes = std::fs::read(path).map_err(|_| Failure::Open)?;
     let sheets = if matches!(extension(path).as_str(), "csv" | "tsv") {
         let name = path.file_stem().and_then(|n| n.to_str());
-        gafira_io_xlsx::read_csv(&bytes, name.unwrap_or_default()).map(|sheet| vec![fitted(sheet)])
+        gafira_io_xlsx::read_csv_reach(&bytes, name.unwrap_or_default(), reach)
+            .map(|sheet| vec![fitted(sheet)])
     } else {
-        gafira_io_xlsx::read(&bytes, marks(texts))
+        gafira_io_xlsx::read_reach(&bytes, locale, reach)
     };
     sheets.map_err(Failure::Read)
 }
@@ -99,7 +110,7 @@ fn fitted(mut sheet: ReadSheet) -> ReadSheet {
 }
 
 /// The marks of the numbers in the language of the interface.
-fn marks(texts: &Texts) -> Locale {
+pub(crate) fn marks(texts: &Texts) -> Locale {
     match texts.locale {
         gafira_ports::i18n::Locale::Es => Locale {
             comma: true,
@@ -122,6 +133,8 @@ pub(crate) enum Purpose {
     Chart,
     /// The data of this chart (S83-07).
     Data(PageId, NodeId),
+    /// The connected data of bulk create (spec 104): every row.
+    Bulk,
 }
 
 impl Purpose {
@@ -305,7 +318,7 @@ fn choose(ui: &mut Ui, theme: &Theme, texts: &Texts, ask: &mut Ask, name: &str) 
         let text = match ask.purpose {
             Purpose::Table => gafira_doc::msg!("sheet_import.insert"),
             Purpose::Chart => gafira_doc::msg!("sheet_import.chart"),
-            Purpose::Data(..) => gafira_doc::msg!("sheet_import.data"),
+            Purpose::Data(..) | Purpose::Bulk => gafira_doc::msg!("sheet_import.data"),
         };
         let text = texts.t(&text);
         insert |= widgets::primary(ui, theme, text).clicked();

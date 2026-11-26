@@ -113,12 +113,6 @@ impl Asks {
     }
 }
 
-/// The height of a row of the data.
-const ROW: f32 = 30.0;
-
-/// The empty rows and columns after the data, to write in.
-const SPARE: (usize, usize) = (12, 3);
-
 impl Editing {
     pub fn new(page: PageId, node: NodeId) -> Self {
         Self {
@@ -303,216 +297,105 @@ impl Editing {
         (tall, wide, place): (f32, f32, &'static str),
         asks: &mut Asks,
     ) {
-        let node = self.node;
-        let id = |row: usize, col: usize| egui::Id::new(("chart_cell", place, node, row, col));
-        let focused = ui.memory(|m| m.focused());
-        let writing = self.cell.filter(|(r, col)| focused == Some(id(*r, *col)));
-        if let Some(at) = writing {
-            paste(ui, c, at, asks);
-        }
-        // As many as fill the room, and some more past the data.
-        let fill = |room: f32, side: f32| (room / side).max(0.0) as usize;
-        let rows = (c.rows() + SPARE.0)
-            .max(fill(tall, ROW))
-            .min(ChartNode::MAX_ROWS);
-        let columns = (c.columns + SPARE.1)
-            .max(fill(ui.available_width(), wide))
-            .min(ChartNode::MAX_COLUMNS);
-        let kinds: Vec<Column> = (0..columns)
-            .map(|col| gafira_chart::column(c, col))
-            .collect();
-        let by = gafira_chart::colored(c);
-        let places = gafira_chart::places(c);
         let (_, values) = gafira_chart::columns(c);
-        let names = gafira_chart::color_names(c);
-        const HEAD: f32 = 34.0;
-        let line = Stroke::new(1.0, theme.c("border"));
-        let mut next_focus = None;
-        egui::Frame::NONE.stroke(line).show(ui, |ui| {
-            egui::ScrollArea::both()
-                .id_salt(("chart.grid", place))
-                .max_height(tall)
-                .min_scrolled_height(tall)
-                .auto_shrink([false, false])
-                .show_rows(ui, ROW, rows + 1, |ui, shown| {
-                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-                    ui.set_min_width(HEAD + wide * columns as f32);
-                    for line_of in shown {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing = Vec2::ZERO;
-                            // The first line says what each column holds.
-                            let Some(row) = line_of.checked_sub(1) else {
-                                square(ui, theme, HEAD);
-                                for (col, kind) in kinds.iter().enumerate() {
-                                    let rect = square(ui, theme, wide);
-                                    let text = match kind {
-                                        Column::Numbers => "123",
-                                        _ => "abc",
-                                    };
-                                    let at = rect.center();
-                                    let color = theme.c("text.secondary");
-                                    ui.painter().text(
-                                        at,
-                                        egui::Align2::CENTER_CENTER,
-                                        text,
-                                        theme.font("caption"),
-                                        color,
-                                    );
-                                    let series = values.iter().position(|v| *v == col);
-                                    if by == Colored::Series
-                                        && let Some(series) = series
-                                    {
-                                        let at = rect.left_center() + Vec2::new(14.0, 0.0);
-                                        dot(ui, c, series, at, (place, "column"), asks);
-                                    }
-                                }
-                                return;
-                            };
-                            let head = square(ui, theme, HEAD);
-                            let color = match by {
-                                Colored::Rows => places.get(row).copied().flatten(),
-                                _ => None,
-                            };
-                            if let Some(index) = color.filter(|i| *i < names.len()) {
-                                dot(ui, c, index, head.center(), (place, "row"), asks);
-                            }
-                            for (col, kind) in kinds.iter().enumerate() {
-                                let cell = Cell {
-                                    id: id(row, col),
-                                    row,
-                                    col,
-                                    wide,
-                                    numbers: *kind == Column::Numbers,
-                                };
-                                if cell.show(ui, theme, texts, c, asks) {
-                                    self.cell = Some((row, col));
-                                }
-                                if self.cell == Some((row, col))
-                                    && ui.memory(|m| m.focused()).is_none()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                {
-                                    next_focus = Some((row + 1, col));
-                                }
-                            }
-                        });
-                    }
-                });
+        let mut cells = ChartCells {
+            c,
+            asks,
+            texts,
+            place,
+            kinds: (0..ChartNode::MAX_COLUMNS)
+                .map(|col| gafira_chart::column(c, col))
+                .collect(),
+            by: gafira_chart::colored(c),
+            places: gafira_chart::places(c),
+            values,
+            names: gafira_chart::color_names(c).len(),
+        };
+        let mut focus = crate::data_grid::Focus(self.cell);
+        let salt = ("chart", place, self.node);
+        crate::data_grid::grid(ui, theme, &mut cells, &mut focus, (tall, wide, salt));
+        self.cell = focus.0;
+    }
+}
+
+/// The data of a chart as the cells of the grid (spec 083).
+struct ChartCells<'a> {
+    c: &'a ChartNode,
+    asks: &'a mut Asks,
+    texts: &'a Texts,
+    place: &'static str,
+    kinds: Vec<Column>,
+    by: Colored,
+    places: Vec<Option<usize>>,
+    values: Vec<usize>,
+    names: usize,
+}
+
+impl crate::data_grid::Cells for ChartCells<'_> {
+    fn size(&self) -> (usize, usize) {
+        (self.c.columns, self.c.rows())
+    }
+
+    fn most(&self) -> (usize, usize) {
+        (ChartNode::MAX_COLUMNS, ChartNode::MAX_ROWS)
+    }
+
+    fn longest(&self) -> usize {
+        ChartNode::MAX_WORDS / 4
+    }
+
+    fn cell(&self, row: usize, col: usize) -> &str {
+        self.c.cell(row, col)
+    }
+
+    fn set(&mut self, row: usize, col: usize, words: &str) {
+        self.asks.edit(self.c, |c| {
+            gafira_chart::set_cell(c, row, col, words);
         });
-        if let Some((row, col)) = next_focus.filter(|(row, _)| *row < rows) {
-            ui.memory_mut(|m| m.request_focus(id(row, col)));
-            self.cell = Some((row, col));
+    }
+
+    fn numbers(&self, col: usize) -> bool {
+        self.kinds.get(col) == Some(&Column::Numbers)
+    }
+
+    /// A cell of a column of numbers that is not one is left out, and
+    /// says so.
+    fn wrong(&self, row: usize, col: usize, words: &str) -> Option<String> {
+        let wrong = self.numbers(col)
+            && row > 0
+            && !words.trim().is_empty()
+            && !gafira_chart::is_number(words);
+        wrong.then(|| plain(self.texts, "chart.not_number"))
+    }
+
+    fn column_head(&mut self, ui: &mut Ui, theme: &Theme, rect: Rect, col: usize) {
+        let text = if self.numbers(col) { "123" } else { "abc" };
+        crate::data_grid::head_words(ui, theme, rect, text);
+        let series = self.values.iter().position(|v| *v == col);
+        if self.by == Colored::Series
+            && let Some(series) = series
+        {
+            let at = rect.left_center() + Vec2::new(14.0, 0.0);
+            dot(ui, self.c, series, at, (self.place, "column"), self.asks);
         }
     }
-}
 
-/// A square of the edge of the data.
-fn square(ui: &mut Ui, theme: &Theme, wide: f32) -> Rect {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(wide, ROW), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 0.0, theme.c("surface.sunken"));
-    edge(ui, theme, rect);
-    rect
-}
-
-fn edge(ui: &Ui, theme: &Theme, rect: Rect) {
-    let line = Stroke::new(1.0, theme.c("border"));
-    let painter = ui.painter();
-    // Inside the cell: the next one would cover its edge.
-    let rect = Rect::from_min_max(rect.min, rect.max - Vec2::splat(0.5));
-    painter.line_segment([rect.right_top(), rect.right_bottom()], line);
-    painter.line_segment([rect.left_bottom(), rect.right_bottom()], line);
-}
-
-struct Cell {
-    id: egui::Id,
-    row: usize,
-    col: usize,
-    wide: f32,
-    numbers: bool,
-}
-
-impl Cell {
-    /// A field with the words of the cell; whether it has the keys.
-    fn show(
-        &self,
-        ui: &mut Ui,
-        theme: &Theme,
-        texts: &Texts,
-        c: &ChartNode,
-        asks: &mut Asks,
-    ) -> bool {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(self.wide, ROW), Sense::hover());
-        // The rows below are there to write in; a column more is farther.
-        let inside = self.col < c.columns;
-        let fill = if inside { "surface" } else { "surface.sunken" };
-        ui.painter().rect_filled(rect, 0.0, theme.c(fill));
-        edge(ui, theme, rect);
-        let mut words = c.cell(self.row, self.col).to_owned();
-        let head = self.row == 0;
-        // A cell of a column of numbers that is not one is left out, and
-        // says so.
-        let wrong =
-            self.numbers && !head && !words.trim().is_empty() && !gafira_chart::is_number(&words);
-        let font = theme.font(if head { "ui-label" } else { "body-sm" });
-        let color = if wrong {
-            theme.c("error.fg")
-        } else {
-            theme.c("text")
-        };
-        let align = if self.numbers && !head {
-            egui::Align::RIGHT
-        } else {
-            egui::Align::LEFT
-        };
-        let field = egui::TextEdit::singleline(&mut words)
-            .id(self.id)
-            .font(font)
-            .text_color(color)
-            .frame(false)
-            .char_limit(ChartNode::MAX_WORDS / 4)
-            .margin(Vec2::new(10.0, 5.0))
-            .horizontal_align(align);
-        let response = ui.put(rect.shrink(1.5), field);
-        if response.has_focus() {
-            let stroke = Stroke::new(2.0, theme.c("primary.bg"));
-            let painter = ui.painter();
-            painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Inside);
-        }
-        if response.changed() {
-            let at = (self.row, self.col);
-            asks.edit(c, |c| {
-                gafira_chart::set_cell(c, at.0, at.1, &words);
-            });
-        }
-        let has_keys = response.has_focus();
-        if wrong {
-            response.on_hover_text(plain(texts, "chart.not_number"));
-        }
-        has_keys
-    }
-}
-
-/// Several cells in the clipboard go to as many, from the one at `at`.
-fn paste(ui: &Ui, c: &ChartNode, at: (usize, usize), asks: &mut Asks) {
-    let pasted = ui.input_mut(|i| {
-        let found = i.events.iter().position(
-            |e| matches!(e, egui::Event::Paste(text) if text.trim_end().contains(['\t', '\n'])),
-        )?;
-        match i.events.remove(found) {
-            egui::Event::Paste(text) => Some(text),
+    fn row_head(&mut self, ui: &mut Ui, _theme: &Theme, rect: Rect, row: usize) {
+        let color = match self.by {
+            Colored::Rows => self.places.get(row).copied().flatten(),
             _ => None,
+        };
+        if let Some(index) = color.filter(|i| *i < self.names) {
+            dot(
+                ui,
+                self.c,
+                index,
+                rect.center(),
+                (self.place, "row"),
+                self.asks,
+            );
         }
-    });
-    let Some(text) = pasted else { return };
-    let grid = gafira_table::parse_grid(&text);
-    asks.edit(c, |c| {
-        for (r, row) in grid.iter().enumerate() {
-            for (col, words) in row.iter().enumerate() {
-                gafira_chart::set_cell(c, at.0 + r, at.1 + col, words);
-            }
-        }
-    });
-    ui.ctx().request_repaint();
+    }
 }
 
 /// A dot with the colour `index`, which a click changes.

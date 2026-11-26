@@ -6,7 +6,7 @@ use gafira_table::{CellValue, value};
 
 use crate::look::color;
 use crate::package::MAX_FILE;
-use crate::read::{MAX_DATA_ROWS, clean, lines};
+use crate::read::{Reach, clean, lines};
 use crate::{ReadError, ReadSheet};
 
 /// The characters that may separate, the likeliest first.
@@ -28,6 +28,11 @@ const PADDING: f64 = 8.0;
 
 /// The table of a file of separated values.
 pub fn read_csv(bytes: &[u8], name: &str) -> Result<ReadSheet, ReadError> {
+    read_csv_reach(bytes, name, Reach::default())
+}
+
+/// [`read_csv`] with [`ReadSheet::data`] as far as `reach` (spec 104).
+pub fn read_csv_reach(bytes: &[u8], name: &str, reach: Reach) -> Result<ReadSheet, ReadError> {
     if bytes.len() > MAX_FILE {
         return Err(ReadError::TooLarge);
     }
@@ -41,7 +46,10 @@ pub fn read_csv(bytes: &[u8], name: &str) -> Result<ReadSheet, ReadError> {
         Some((c, rest)) => (c, rest[c.len_utf8()..].trim_start_matches(['\r', '\n'])),
         None => (separator(&text), text.as_str()),
     };
-    let mut grid = Grid::default();
+    let mut grid = Grid {
+        reach,
+        ..Grid::default()
+    };
     split(body, separator, usize::MAX, |row| grid.add(row));
     grid.table(name)
 }
@@ -169,6 +177,8 @@ struct Grid {
     last: usize,
     left: usize,
     right: usize,
+    /// How much of the file the data keeps.
+    reach: Reach,
 }
 
 impl Grid {
@@ -177,7 +187,7 @@ impl Grid {
         self.count += 1;
         let filled = |c: &String| !c.trim().is_empty();
         let Some(left) = row.iter().position(filled) else {
-            if self.first.is_some() && self.rows.len() < MAX_DATA_ROWS {
+            if self.first.is_some() && self.rows.len() < self.reach.rows {
                 self.rows.push(Vec::new());
             }
             return;
@@ -190,9 +200,9 @@ impl Grid {
         self.left = self.left.min(left);
         self.right = self.right.max(right);
         self.last = at;
-        if self.rows.len() < MAX_DATA_ROWS {
+        if self.rows.len() < self.reach.rows {
             // Past the columns a table holds, whatever its first one is.
-            let most = left + TableNode::MAX_COLUMNS;
+            let most = left + self.reach.columns.max(TableNode::MAX_COLUMNS);
             self.rows
                 .push(row.iter().take(most).map(|c| clean(c)).collect());
         }
@@ -203,6 +213,7 @@ impl Grid {
         let used = (self.last + 1 - first, self.right + 1 - self.left);
         self.rows.truncate(used.0);
         let cols = used.1.min(TableNode::MAX_COLUMNS);
+        let data_cols = used.1.min(self.reach.columns);
         let word = |r: usize, c: usize| {
             let row = self.rows.get(r);
             row.and_then(|row| row.get(self.left + c))
@@ -257,7 +268,7 @@ impl Grid {
             size,
             used,
             data: (0..self.rows.len())
-                .map(|r| (0..cols).map(|c| word(r, c).to_owned()).collect())
+                .map(|r| (0..data_cols).map(|c| word(r, c).to_owned()).collect())
                 .collect(),
         })
     }

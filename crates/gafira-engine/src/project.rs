@@ -384,6 +384,20 @@ impl ProjectService {
         })
     }
 
+    /// A writer of a document that is not the session's (spec 104: the
+    /// editable `.gaf` of a bulk run, made off the window thread). It
+    /// writes under a new project id and with no versions; the session does
+    /// not change and nothing is accounted for. Its assets come from the
+    /// same store.
+    #[must_use]
+    pub fn document_saver(&self) -> DocumentSaver {
+        DocumentSaver {
+            writer: self.writer(),
+            temporary: self.temporaries.fetch_add(1, Ordering::SeqCst),
+            project_id: self.ids.project_id(),
+        }
+    }
+
     /// Account for a [`SaveJob`] that ran: on success the session is clean
     /// at the saved version, holds its versions and, after «Guardar como»,
     /// lives at its new file with the lock moved; a session replaced or
@@ -868,6 +882,33 @@ impl SaveJob {
             result,
             account: self.account,
         }
+    }
+}
+
+/// Writes one document that is not the session's (spec 104); `Send +
+/// 'static`, so it runs on the thread that made the document.
+pub struct DocumentSaver {
+    writer: Writer,
+    temporary: u64,
+    project_id: ProjectId,
+}
+
+impl std::fmt::Debug for DocumentSaver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocumentSaver").finish_non_exhaustive()
+    }
+}
+
+impl DocumentSaver {
+    /// Write `document` at `path` atomically, with its thumbnail and the
+    /// `.bak` of a file that was there (02 §7.2).
+    ///
+    /// # Errors
+    /// The first error of the repository or the file system.
+    pub fn run(self, document: Document, path: &Path) -> Result<(), EngineError> {
+        let document = document.with_project_id(self.project_id);
+        self.writer
+            .write_atomically(path, &document, &[], self.temporary)
     }
 }
 
@@ -1663,6 +1704,24 @@ mod tests {
         );
         engine.projects().save().expect("a save");
         assert_eq!(fs.file(TARGET), Some(new_bytes(&mut engine)), "same path");
+    }
+
+    // S104-40: the pages a bulk run made are saved at their own file under a
+    // new identity, and the session does not change.
+    #[test]
+    fn s104_40_a_generated_document_saves_beside_the_session() {
+        let (mut engine, fs, _repository) = opened_and_edited(false);
+        let generated = Document::default();
+        let saver = engine.projects().document_saver();
+        fn send_static<T: Send + 'static>(_: &T) {}
+        send_static(&saver);
+        saver
+            .run(generated.clone(), Path::new(COPY))
+            .expect("saved");
+        let copy = stored(&fs, COPY);
+        assert_eq!(copy, generated.with_project_id(id(2)));
+        assert_eq!(session_id(&mut engine), id(1), "the session keeps its id");
+        assert!(engine.projects().is_modified(), "the session is not saved");
     }
 
     // S12-07
