@@ -985,58 +985,71 @@ fn options_column(
                 );
                 ui.end_row();
             }
-            let Some(format) = dialog.format().cloned() else {
-                return;
-            };
-            let flatten = dialog.values.bool("flatten").unwrap_or(false);
-            for def in format.schema.params() {
-                // The resolution of a PDF only counts when it is flattened;
-                // the password only once «Proteger con contraseña» is on.
-                if format.id == "pdf" && def.id == SCALE && !flatten {
-                    continue;
-                }
-                if def.id == "password" {
-                    name(ui, &gafira_doc::msg!("export.pdf_protect"));
-                    ui.horizontal(|ui| {
-                        if widgets::toggle(ui, theme, &mut dialog.protect).changed()
-                            && !dialog.protect
-                        {
-                            dialog.values.set(def.id, ParamValue::Text(String::new()));
-                        }
-                        info(
-                            ui,
-                            theme,
-                            texts.t(&label(gafira_doc::msg::MessageKey(
-                                "export.pdf_password_hint",
-                            ))),
-                        );
-                    });
-                    ui.end_row();
-                    if !dialog.protect {
-                        continue;
-                    }
-                }
-                name(ui, &label(def.label));
-                control(ui, theme, texts, def, &mut dialog.values, WIDE);
-                ui.end_row();
-            }
-            // «Recordar esta configuración»: these settings next time this
-            // format is chosen (spec 074).
-            name(ui, &gafira_doc::msg!("export.remember"));
-            ui.horizontal(|ui| {
-                widgets::toggle(ui, theme, &mut dialog.remember);
-                info(
-                    ui,
-                    theme,
-                    texts.t(&label(gafira_doc::msg::MessageKey("export.remember_hint"))),
-                );
-            });
-            ui.end_row();
+            format_options(ui, theme, texts, dialog, WIDE);
         });
 }
 
+/// The options of the chosen format, rows of a two-column grid already open:
+/// the controls of its schema and «Recordar esta configuración» (spec 074).
+/// The bulk export dialog shows the same (spec 104).
+pub(crate) fn format_options(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    dialog: &mut Dialog,
+    wide: f32,
+) {
+    let name = |ui: &mut egui::Ui, key: &Message| {
+        ui.label(RichText::new(texts.t(key)).font(theme.font("ui-label")));
+    };
+    let Some(format) = dialog.format().cloned() else {
+        return;
+    };
+    let flatten = dialog.values.bool("flatten").unwrap_or(false);
+    for def in format.schema.params() {
+        // The resolution of a PDF only counts when it is flattened;
+        // the password only once «Proteger con contraseña» is on.
+        if format.id == "pdf" && def.id == SCALE && !flatten {
+            continue;
+        }
+        if def.id == "password" {
+            name(ui, &gafira_doc::msg!("export.pdf_protect"));
+            ui.horizontal(|ui| {
+                if widgets::toggle(ui, theme, &mut dialog.protect).changed() && !dialog.protect {
+                    dialog.values.set(def.id, ParamValue::Text(String::new()));
+                }
+                info(
+                    ui,
+                    theme,
+                    texts.t(&label(gafira_doc::msg::MessageKey(
+                        "export.pdf_password_hint",
+                    ))),
+                );
+            });
+            ui.end_row();
+            if !dialog.protect {
+                continue;
+            }
+        }
+        name(ui, &label(def.label));
+        control(ui, theme, texts, def, &mut dialog.values, wide);
+        ui.end_row();
+    }
+    // «Recordar esta configuración»: these settings next time this
+    // format is chosen (spec 074).
+    name(ui, &gafira_doc::msg!("export.remember"));
+    ui.horizontal(|ui| {
+        widgets::toggle(ui, theme, &mut dialog.remember);
+        info(
+            ui,
+            theme,
+            texts.t(&label(gafira_doc::msg::MessageKey("export.remember_hint"))),
+        );
+    });
+}
+
 /// The catalog key of the name of format `id`.
-fn format_label(id: &str) -> Message {
+pub(crate) fn format_label(id: &str) -> Message {
     match id {
         "png" => gafira_doc::msg!("export.png"),
         "jpeg" => gafira_doc::msg!("export.jpeg"),

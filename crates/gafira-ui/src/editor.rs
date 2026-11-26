@@ -8970,6 +8970,8 @@ impl Editor {
             Go::SaveVersion(name.clone())
         } else if asked.export {
             Go::Export(self.selected.page())
+        } else if asked.bulk.as_ref().is_some_and(|asks| asks.export) {
+            Go::BulkExport
         } else if asked.home {
             Go::Home
         } else if let Some(action) = asked.file {
@@ -15870,15 +15872,8 @@ impl Editor {
             }
         }
         let panel = self.bulk.get_mut();
-        if panel.pump() {
-            // The time and the counts move on.
-            ctx.request_repaint_after(std::time::Duration::from_millis(250));
-        }
         asked.bulk_data = panel.wide(ctx, theme, texts, document.and_then(Document::data));
         let shown = self.rail.open && TABS[self.rail.tab].0 == "tab.bulk";
-        if !shown {
-            self.bulk.get_mut().floating(ctx, theme, texts);
-        }
         // A file carried over the panel says it can be dropped there.
         let carried = ctx.input(|i| !i.raw.hovered_files.is_empty());
         if shown
@@ -15975,9 +15970,6 @@ impl Editor {
         if let Some(wanted) = asks.preview {
             self.bulk_picture(engine, document, wanted);
         }
-        if asks.generate {
-            self.start_bulk(engine, document, window);
-        }
     }
 
     /// Reads the spreadsheet at `path` on its own thread, every row.
@@ -16071,83 +16063,8 @@ impl Editor {
         (key, row, page): (u64, usize, PageId),
     ) {
         let Some(set) = document.data() else { return };
-        let resolved = gafira_bulk::resolve_with(
-            document,
-            set,
-            &[row],
-            &[page],
-            &mut |_| true,
-            &crate::bulk_run::fit_node,
-        );
-        let picture = match resolved {
-            Ok(Some(resolved)) => resolved.document.pages().first().and_then(|first| {
-                engine
-                    .export()
-                    .preview_document(&resolved.document, first.id, (720, 720))
-                    .ok()
-            }),
-            _ => None,
-        };
-        let image = match picture {
-            Some(p) => egui::ColorImage::from_rgba_unmultiplied(
-                [p.width as usize, p.height as usize],
-                &p.rgba,
-            ),
-            None => egui::ColorImage::filled([1, 1], Color32::TRANSPARENT),
-        };
+        let image = crate::bulk_run::row_picture(engine, (document, set), (row, page), (720, 720));
         self.bulk.get_mut().picture = Some((key, image));
-    }
-
-    /// «Generar»: where the files go, the checked export and the run on
-    /// its thread (§10).
-    fn start_bulk(
-        &mut self,
-        engine: &mut Gafira,
-        document: &Arc<Document>,
-        window: Option<&eframe::Frame>,
-    ) {
-        use crate::bulk_run::{Run, Status, Target};
-        use gafira_doc::BulkOutput;
-        let Some(set) = document.data_arc().cloned() else {
-            return;
-        };
-        if self.bulk.get_mut().run.is_some() {
-            return;
-        }
-        let rows = self.bulk.get_mut().rows(&set);
-        let output = set.profile.output;
-        let base = Some(gafira_bulk::sanitize(&set.name))
-            .filter(|b| !b.is_empty())
-            .unwrap_or_else(|| "lote".to_owned());
-        let picker = crate::files::picker(window);
-        let target = match output {
-            BulkOutput::PdfCombined => picker
-                .add_filter("PDF", &["pdf"])
-                .set_file_name(format!("{base}.pdf"))
-                .save_file()
-                .map(|p| Target::File(with_extension(p, "pdf"))),
-            BulkOutput::Gaf => picker
-                .add_filter("Gafira", &["gaf"])
-                .set_file_name(format!("{base}_lote.gaf"))
-                .save_file()
-                .map(|p| Target::File(with_extension(p, "gaf"))),
-            _ => picker.pick_folder().map(Target::Folder),
-        };
-        let Some(target) = target else { return };
-        let gaf = (set.profile.editable && output != BulkOutput::Gaf)
-            .then(|| editable_beside(&target, &base));
-        let job = crate::bulk_run::job(engine, document, rows, target, gaf);
-        let job = match job {
-            Ok(job) => job,
-            Err(error) => {
-                self.bulk.get_mut().report = Some(Status::refused(error.to_string()));
-                return;
-            }
-        };
-        let wake = self.waker();
-        let panel = self.bulk.get_mut();
-        panel.report = None;
-        panel.run = Some(Run::start(job, wake));
     }
 }
 
@@ -16436,44 +16353,6 @@ fn field_offer(
                 );
             });
         });
-}
-
-/// The editable `.gaf` of a run beside its files: never over a file that
-/// is there (AC 10).
-fn editable_beside(target: &crate::bulk_run::Target, base: &str) -> std::path::PathBuf {
-    use crate::bulk_run::Target;
-    let (folder, stem) = match target {
-        Target::File(path) => (
-            path.parent()
-                .map(std::path::Path::to_path_buf)
-                .unwrap_or_default(),
-            path.file_stem()
-                .map_or_else(|| base.to_owned(), |s| s.to_string_lossy().into_owned()),
-        ),
-        Target::Folder(folder) => (folder.clone(), format!("{base}_lote")),
-    };
-    let mut names = gafira_bulk::Names::default();
-    if let Ok(entries) = std::fs::read_dir(&folder) {
-        for entry in entries.flatten() {
-            names.take(&entry.file_name().to_string_lossy());
-        }
-    }
-    folder.join(names.unique(&stem, "gaf"))
-}
-
-/// `path` ending in `.extension`, added when it has another or none.
-fn with_extension(path: std::path::PathBuf, extension: &str) -> std::path::PathBuf {
-    if path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case(extension))
-    {
-        path
-    } else {
-        let mut name = path.into_os_string();
-        name.push(".");
-        name.push(extension);
-        std::path::PathBuf::from(name)
-    }
 }
 
 #[cfg(test)]
@@ -22237,11 +22116,11 @@ pub(crate) mod tests {
         for step in [
             crate::bulk::Step::Data,
             crate::bulk::Step::Connect,
-            crate::bulk::Step::Generate,
+            crate::bulk::Step::Review,
         ] {
             editor.bulk.get_mut().step = step;
             frame(&ctx, &mut editor, &mut engine, None);
-            if step == crate::bulk::Step::Generate {
+            if step == crate::bulk::Step::Review {
                 // The picture of the row was asked and drawn.
                 assert!(editor.bulk.get_mut().picture.is_some());
             }
