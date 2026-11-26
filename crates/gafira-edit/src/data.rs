@@ -33,6 +33,10 @@ impl Command for SetData {
     fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
         let old = doc.as_doc().data_arc().cloned();
         if old.as_deref() == self.data.as_deref() {
+            // A revert after it puts back the same table.
+            if self.old.is_none() {
+                self.old = Some(old);
+            }
             return Ok(Applied::Unchanged);
         }
         if self.data.as_deref().and_then(DataSet::problem).is_some() {
