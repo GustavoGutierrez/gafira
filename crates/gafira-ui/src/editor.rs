@@ -448,6 +448,9 @@ pub(crate) struct Editor {
     field_hint: Option<usize>,
     /// The menu of an element right-clicked on the canvas, where (spec 105).
     element_menu: Option<(PageId, NodeId, Pos2)>,
+    /// The menu has not been drawn yet: the click that opened it is not a
+    /// click outside it.
+    element_menu_new: bool,
     /// What «Copiar estilo» took, and whether the next click pastes it.
     painter: Option<crate::paint::Copied>,
     painting: bool,
@@ -648,6 +651,7 @@ impl Default for Editor {
             field_keys: Vec::new(),
             field_hint: None,
             element_menu: None,
+            element_menu_new: false,
             painter: None,
             painting: false,
             side_rect: std::cell::Cell::new(None),
@@ -7289,6 +7293,7 @@ impl Editor {
                                 asked.select = Some(Selection::one(page, node));
                             }
                             self.element_menu = Some((page, node, at));
+                            self.element_menu_new = true;
                             self.painting = false;
                         }
                         if self.painting && self.drawing_tool().is_none() {
@@ -16167,8 +16172,6 @@ impl Editor {
         let mut open = true;
         let room = ctx.content_rect().height() - 48.0;
         let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("element.menu"));
-        // The press that opened it does not close it.
-        let fresh = ctx.input(|i| i.pointer.any_click());
         egui::Popup::new(
             egui::Id::new("element.menu"),
             ctx.clone(),
@@ -16281,6 +16284,9 @@ impl Editor {
                     }
                 });
         });
+        // Only the click that opened it is not one outside it: any later
+        // click outside closes it, as Esc does (owner report).
+        let fresh = std::mem::take(&mut self.element_menu_new);
         let escaped = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if (!open && !fresh) || escaped {
             self.element_menu = None;
@@ -22433,6 +22439,28 @@ pub(crate) mod tests {
             Some((page, one))
         );
         assert_eq!(editor.selected.single(), Some((page, one)));
+        // Regression (owner report): a click outside the menu closes it.
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert!(editor.element_menu.is_some(), "it stays open by itself");
+        let away = rect.min + Vec2::new(4.0, 4.0);
+        for event in [
+            egui::Event::PointerMoved(away),
+            press(away, egui::PointerButton::Primary, true),
+            press(away, egui::PointerButton::Primary, false),
+        ] {
+            frame_events(
+                &ctx,
+                &mut editor,
+                &mut engine,
+                vec![event],
+                Modifiers::NONE,
+                &mut clip,
+            );
+        }
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert!(editor.element_menu.is_none(), "a click outside closes it");
+        // The click outside also left the selection; «Uno» is chosen again.
+        editor.selected = Selection::one(page, one);
         // «Copiar estilo» from the menu.
         let document = engine.edit().document();
         let asked = Asked {
