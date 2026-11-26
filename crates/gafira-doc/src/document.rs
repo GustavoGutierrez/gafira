@@ -27,6 +27,8 @@ pub struct Document {
     pub(crate) sequences: Vec<Arc<Sequence>>,
     /// The asset table the clips need (P9), keyed by the content hash.
     pub(crate) assets: AssetTable,
+    /// The connected data of bulk create (spec 104), if any.
+    pub(crate) data: Option<Arc<crate::DataSet>>,
 }
 
 impl Document {
@@ -59,6 +61,31 @@ impl Document {
     #[must_use]
     pub fn asset(&self, reference: &AssetRef) -> Option<&AssetEntry> {
         self.assets.get(reference)
+    }
+
+    /// The connected data of bulk create (spec 104), if any.
+    #[must_use]
+    pub fn data(&self) -> Option<&crate::DataSet> {
+        self.data.as_deref()
+    }
+
+    /// The connected data, shared.
+    #[must_use]
+    pub fn data_arc(&self) -> Option<&Arc<crate::DataSet>> {
+        self.data.as_ref()
+    }
+
+    /// The same document with `data` as its connected data, validated.
+    ///
+    /// # Errors
+    /// The first rule the document breaks with it.
+    pub fn with_data(
+        mut self,
+        data: Option<Arc<crate::DataSet>>,
+    ) -> Result<Self, crate::ValidationError> {
+        self.data = data;
+        self.validate()?;
+        Ok(self)
     }
 
     /// The schema version this build writes and reads.
@@ -119,6 +146,7 @@ impl Document {
             pages,
             sequences: Vec::new(),
             assets: BTreeMap::new(),
+            data: None,
         };
         doc.validate()?;
         Ok(doc)
@@ -141,6 +169,7 @@ impl Document {
             pages,
             sequences: Vec::new(),
             assets,
+            data: None,
         };
         doc.validate()?;
         Ok(doc)
@@ -165,6 +194,7 @@ impl Default for Document {
             pages: Vec::new(),
             sequences: Vec::new(),
             assets: BTreeMap::new(),
+            data: None,
         }
     }
 }
@@ -180,6 +210,7 @@ pub(crate) fn test_document(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Do
         pages,
         sequences: Vec::new(),
         assets: BTreeMap::new(),
+        data: None,
     }
 }
 

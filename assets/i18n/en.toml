@@ -2093,6 +2093,7 @@ exit = "Exit full screen"
 [grid]
 page_number = "Page {number}"
 duplicate_page = "Duplicate page"
+set_data = "Change the connected data"
 delete_page = "Delete page"
 hide_page = "Hide page"
 show_page = "Show page"

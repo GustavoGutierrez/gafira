@@ -12,6 +12,7 @@ mod background;
 mod blend;
 mod chart;
 mod content_hash;
+mod data;
 pub mod contract;
 mod document;
 mod dpi;
@@ -46,6 +47,9 @@ pub use background::{BackgroundFit, PageBackground, PatternKind};
 pub use blend::BlendMode;
 pub use chart::{ChartCombine, ChartKind, ChartLabels, ChartNode, ChartText, MAX_CHART_COLORS};
 pub use content_hash::ContentHash;
+pub use data::{
+    BulkOutput, BulkProfile, DataColumn, DataProblem, DataRow, DataSet, DataSource,
+};
 pub use document::Document;
 pub use dpi::Dpi;
 pub use edit::{DocMut, EditToken};

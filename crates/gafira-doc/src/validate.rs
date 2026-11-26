@@ -25,7 +25,16 @@ impl Document {
         self.check_reachability()?;
         self.check_clip_sources()?;
         self.check_image_sources()?;
-        self.check_timeline()
+        self.check_timeline()?;
+        self.check_data()
+    }
+
+    /// P9: the connected data of bulk create keeps its table rules (spec 104).
+    fn check_data(&self) -> Result<(), ValidationError> {
+        match self.data.as_deref().and_then(crate::DataSet::problem) {
+            Some(problem) => Err(ValidationError::InvalidData { problem }),
+            None => Ok(()),
+        }
     }
 
     /// P1: schema version, then DPI.

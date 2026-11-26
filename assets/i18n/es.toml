@@ -2093,6 +2093,7 @@ exit = "Salir de la pantalla completa"
 [grid]
 page_number = "Página {number}"
 duplicate_page = "Duplicar la página"
+set_data = "Cambiar los datos conectados"
 delete_page = "Eliminar la página"
 hide_page = "Ocultar página"
 show_page = "Mostrar página"

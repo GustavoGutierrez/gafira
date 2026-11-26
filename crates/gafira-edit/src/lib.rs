@@ -9,6 +9,7 @@
 mod assets;
 mod budget;
 mod command;
+mod data;
 mod dirty;
 mod error;
 mod history;
@@ -24,6 +25,7 @@ mod transaction;
 
 pub use assets::InsertAsset;
 pub use command::{Applied, Command, GestureId, MergeKey};
+pub use data::SetData;
 pub use dirty::DirtySet;
 pub use error::CommandError;
 pub use history::{DEFAULT_BUDGET, History};
