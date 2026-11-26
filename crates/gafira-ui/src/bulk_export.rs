@@ -383,6 +383,8 @@ fn choices(
         .id_salt("bulk_export.choices")
         .max_height(440.0)
         .show(ui, |ui| {
+            // Choices stay on one line each, as in «Exportar».
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             egui::Grid::new("bulk_export.grid")
                 .num_columns(2)
                 .spacing([16.0, 14.0])
@@ -458,11 +460,7 @@ fn choices(
                         name(ui, "bulk_export.editable");
                         ui.horizontal(|ui| {
                             widgets::toggle(ui, theme, &mut dialog.editable);
-                            ui.label(
-                                RichText::new(plain(texts, "bulk.also_gaf_hint"))
-                                    .font(theme.font("caption"))
-                                    .color(theme.c("text.secondary")),
-                            );
+                            export::info(ui, theme, plain(texts, "bulk.also_gaf_hint"));
                         });
                         ui.end_row();
                     }

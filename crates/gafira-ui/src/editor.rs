@@ -16127,6 +16127,7 @@ impl Editor {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .open_bool(&mut open)
         .show(|ui| {
+            crate::widgets::menu_style(ui, theme);
             ui.set_width(what.width);
             if menu_item(
                 ui,

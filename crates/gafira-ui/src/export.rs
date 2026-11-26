@@ -1046,6 +1046,8 @@ pub(crate) fn format_options(
             texts.t(&label(gafira_doc::msg::MessageKey("export.remember_hint"))),
         );
     });
+    // The row ends here: what the caller adds goes on a row of its own.
+    ui.end_row();
 }
 
 /// The catalog key of the name of format `id`.
@@ -1192,7 +1194,7 @@ fn hint_of(id: &str) -> Option<&'static str> {
 }
 
 /// A small «i» in a circle that shows `hint` on hover.
-fn info(ui: &mut egui::Ui, theme: &Theme, hint: String) {
+pub(crate) fn info(ui: &mut egui::Ui, theme: &Theme, hint: String) {
     let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(16.0), egui::Sense::hover());
     let colour = theme.c("text.secondary");
     let painter = ui.painter();
