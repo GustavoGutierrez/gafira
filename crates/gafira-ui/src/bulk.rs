@@ -949,6 +949,69 @@ impl Panel {
     }
 }
 
+// ---- Writing `{{` in a text (§7.3 rules 1 and 2) -------------------------
+
+/// The field being written before the cursor (a char index): the byte where
+/// its `{{` starts and the letters after it; `None` when the cursor is not
+/// inside an open `{{`.
+pub(crate) fn partial_field(text: &str, cursor: usize) -> Option<(usize, String)> {
+    let end = text
+        .char_indices()
+        .nth(cursor)
+        .map_or(text.len(), |(at, _)| at);
+    let before = &text[..end];
+    let start = before.rfind("{{")?;
+    let partial = &before[start + 2..];
+    let simple = partial
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_');
+    let escaped = before[..start].ends_with('\\');
+    (simple && !escaped).then(|| (start, partial.to_owned()))
+}
+
+/// The columns whose key or name match `partial`, without case or accents,
+/// those that start with it first; at most `most`.
+pub(crate) fn matching(
+    columns: &[(String, String)],
+    partial: &str,
+    most: usize,
+) -> Vec<(String, String)> {
+    let wanted = fold(partial);
+    let mut starts = Vec::new();
+    let mut inside = Vec::new();
+    for (key, name) in columns {
+        let (k, n) = (fold(key), fold(name));
+        if wanted.is_empty() || k.starts_with(&wanted) || n.starts_with(&wanted) {
+            starts.push((key.clone(), name.clone()));
+        } else if k.contains(&wanted) || n.contains(&wanted) {
+            inside.push((key.clone(), name.clone()));
+        }
+    }
+    starts.extend(inside);
+    starts.truncate(most);
+    starts
+}
+
+/// `text` with the field written from byte `start` up to the cursor (a
+/// char index) completed as `{{key}}`; the cursor after it, as a char index.
+pub(crate) fn complete_field(
+    text: &str,
+    (start, cursor): (usize, usize),
+    key: &str,
+) -> (String, usize) {
+    let end = text
+        .char_indices()
+        .nth(cursor)
+        .map_or(text.len(), |(at, _)| at);
+    let rest = &text[end..];
+    // A `}}` already there is not written twice.
+    let rest = rest.strip_prefix("}}").unwrap_or(rest);
+    let token = gafira_bulk::token(&FieldRef::Key(key.to_owned()));
+    let out = format!("{}{token}{rest}", &text[..start]);
+    let at = text[..start].chars().count() + token.chars().count();
+    (out, at)
+}
+
 /// A key of the picture of `row` on `page`: it changes with the page, its
 /// elements and the table, which are shared until they change.
 fn picture_key(doc: &Document, set: &DataSet, row: usize, page: PageId) -> u64 {
@@ -1754,6 +1817,35 @@ mod tests {
         let table = pending.table();
         assert_eq!(table.rows.len(), 3);
         assert_eq!(table.columns[0].name, "Columna A");
+    }
+
+    // S104-57: writing `{{` offers the fields; Tab writes the whole field
+    // (§7.3 rules 1, 2 and 7).
+    #[test]
+    fn s104_57_completing_a_field() {
+        assert_eq!(partial_field("Hola, {{no", 10), Some((6, "no".to_owned())));
+        assert_eq!(partial_field("Hola, {{", 8), Some((6, String::new())));
+        assert_eq!(partial_field("Hola, {{nombre}} y", 18), None);
+        assert_eq!(partial_field("{{a b", 5), None);
+        assert_eq!(partial_field("\\{{no", 5), None);
+        assert_eq!(partial_field("Año {{nó", 8), None);
+        let columns = vec![
+            ("curso".to_owned(), "Curso".to_owned()),
+            ("nombre".to_owned(), "Nombre".to_owned()),
+            ("apellido_nombre".to_owned(), "Apellido y nombre".to_owned()),
+        ];
+        let found = matching(&columns, "NOM", 5);
+        assert_eq!(found[0].0, "nombre");
+        assert_eq!(found[1].0, "apellido_nombre");
+        assert_eq!(matching(&columns, "", 2).len(), 2);
+        assert_eq!(
+            complete_field("Hola, {{no!", (6, 10), "nombre"),
+            ("Hola, {{nombre}}!".to_owned(), 16)
+        );
+        assert_eq!(
+            complete_field("Hola, {{no}}!", (6, 10), "nombre"),
+            ("Hola, {{nombre}}!".to_owned(), 16)
+        );
     }
 
     // S104-55: the rows of a run: every one, or a range from 1.

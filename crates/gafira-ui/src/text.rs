@@ -1950,6 +1950,7 @@ mod tests {
         "bulk.upload",
         "bulk.uses",
         "tab.bulk",
+        "bulk.offer_hint",
     ];
 
     #[test]

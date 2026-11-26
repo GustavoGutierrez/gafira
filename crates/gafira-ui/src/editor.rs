@@ -442,6 +442,10 @@ pub(crate) struct Editor {
     bulk: std::cell::RefCell<crate::bulk::Panel>,
     bulk_read: Option<crate::bulk_run::Reading>,
     bulk_ctx: Option<egui::Context>,
+    /// The fields of the connected data, by key and name, and the one
+    /// offered while `{{` is written in a text (§7.3).
+    field_keys: Vec<(String, String)>,
+    field_hint: Option<usize>,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -634,6 +638,8 @@ impl Default for Editor {
             bulk: std::cell::RefCell::default(),
             bulk_read: None,
             bulk_ctx: None,
+            field_keys: Vec::new(),
+            field_hint: None,
             studio: crate::vision::Studio::default(),
             eraser: None,
             chart_panel: std::cell::RefCell::default(),
@@ -5826,7 +5832,7 @@ impl Editor {
     fn edit_field(
         &mut self,
         ui: &mut egui::Ui,
-        theme: &Theme,
+        (theme, texts): (&Theme, &Texts),
         pages: &[Arc<Page>],
         page_rects: &[(PageId, Rect)],
         zoom: f32,
@@ -5920,6 +5926,23 @@ impl Editor {
         } else {
             field_rect
         };
+        // While a field is offered, its keys choose it (§7.3 rule 2).
+        let mut pick = false;
+        if let Some(chosen) = self.field_hint.as_mut() {
+            ui.input_mut(|i| {
+                pick = i.consume_key(Modifiers::NONE, Key::Tab)
+                    || i.consume_key(Modifiers::NONE, Key::Enter);
+                if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
+                    *chosen += 1;
+                }
+                if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
+                    *chosen = chosen.saturating_sub(1);
+                }
+            });
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                self.field_hint = None;
+            }
+        }
         let field = egui::TextEdit::multiline(&mut editing.words)
             .frame(false)
             .background_color(Color32::TRANSPARENT)
@@ -5929,11 +5952,45 @@ impl Editor {
             .vertical_align(vertical)
             .desired_width(field_rect.width());
         let mut height = None;
+        let mut cursor = None;
         let response = ui.put(field_rect, |ui: &mut egui::Ui| {
             let output = field.show(ui);
             height = Some(output.galley.size().y);
+            cursor = output.cursor_range.map(|r| r.primary.index);
             output.response
         });
+        let mut completed = false;
+        if !self.field_keys.is_empty()
+            && let Some(cursor) = cursor
+            && let Some((start, partial)) = crate::bulk::partial_field(&editing.words, cursor)
+        {
+            let found = crate::bulk::matching(&self.field_keys, &partial, 6);
+            let chosen = self
+                .field_hint
+                .unwrap_or(0)
+                .min(found.len().saturating_sub(1));
+            if found.is_empty() {
+                self.field_hint = None;
+            } else if pick {
+                let (words, at) =
+                    crate::bulk::complete_field(&editing.words, (start, cursor), &found[chosen].0);
+                editing.words = words;
+                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
+                    let place = egui::text::CCursor::new(at);
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(place)));
+                    state.store(ui.ctx(), response.id);
+                }
+                self.field_hint = None;
+                completed = true;
+            } else {
+                self.field_hint = Some(chosen);
+                field_offer(ui, (theme, texts), response.rect, &found, chosen);
+            }
+        } else {
+            self.field_hint = None;
+        }
         // The height of the words, for a text box that grows with them.
         if let (Some(height), gafira_doc::NodeKind::Text(_)) = (height, &node.kind) {
             asked.edit_height = Some(f64::from(height / zoom));
@@ -5944,7 +6001,7 @@ impl Editor {
         } else if response.lost_focus() {
             asked.end_edit = true;
         }
-        if response.changed() {
+        if response.changed() || completed {
             asked.edit_text = Some(editing.words.clone());
         }
     }
@@ -7170,7 +7227,7 @@ impl Editor {
                         }
                         // The field of a text being written on the
                         // canvas, over its element (spec 055).
-                        self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
+                        self.edit_field(ui, (theme, texts), pages, &page_rects, zoom, asked);
                         self.cell_field(ui, theme, pages, &page_rects, zoom, asked);
                         // Moving elements: Gafira's own move pointer in
                         // place of the system one (spec 095).
@@ -15683,6 +15740,15 @@ impl Editor {
         asked: &mut Asked,
     ) {
         self.bulk_ctx = Some(ctx.clone());
+        self.field_keys = document
+            .and_then(Document::data)
+            .map(|set| {
+                set.columns
+                    .iter()
+                    .map(|c| (c.key.clone(), c.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
         if let Some(found) = self
             .bulk_read
             .as_ref()
@@ -15932,6 +15998,41 @@ impl Editor {
         panel.report = None;
         panel.run = Some(Run::start(job, wake));
     }
+}
+
+/// The fields offered under a text being written, the chosen one lit;
+/// Enter writes it (§7.3 rule 2). Words only: a click would take
+/// the keyboard from the text.
+fn field_offer(
+    ui: &egui::Ui,
+    (theme, texts): (&Theme, &Texts),
+    under: Rect,
+    found: &[(String, String)],
+    chosen: usize,
+) {
+    egui::Area::new(egui::Id::new("editor.field_offer"))
+        .fixed_pos(under.left_bottom() + Vec2::new(0.0, 4.0))
+        .order(egui::Order::Tooltip)
+        .interactable(false)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                for (k, (key, name)) in found.iter().enumerate() {
+                    let words = format!("{{{{{key}}}}}  ·  {name}");
+                    let text = RichText::new(words).font(theme.font("body-sm"));
+                    let text = if k == chosen {
+                        text.color(theme.c("accent")).strong()
+                    } else {
+                        text.color(theme.c("text"))
+                    };
+                    ui.label(text);
+                }
+                ui.label(
+                    RichText::new(plain(texts, "bulk.offer_hint"))
+                        .font(theme.font("caption"))
+                        .color(theme.c("text.secondary")),
+                );
+            });
+        });
 }
 
 /// The editable `.gaf` of a run beside its files: never over a file that
@@ -21781,5 +21882,84 @@ pub(crate) mod tests {
         assert!(
             matches!(&document.pages()[0].nodes[&id].kind, gafira_doc::NodeKind::Text(t) if t.content.plain_text() == "{{nombre}}")
         );
+    }
+
+    // S104-58: writing `{{no` in a text on the canvas offers «nombre»; Enter
+    // writes the whole field (§7.3 rules 1 and 2).
+    #[test]
+    fn s104_58_typing_braces_offers_the_fields() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let set = gafira_doc::DataSet {
+            columns: vec![gafira_doc::DataColumn::new(1, "Nombre", "nombre")],
+            rows: vec![Arc::new(gafira_doc::DataRow::new(
+                2,
+                vec!["Ana".to_owned()],
+            ))],
+            next_id: 3,
+            ..gafira_doc::DataSet::default()
+        };
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetData::new(Some(Arc::new(set)))))
+            .expect("the data");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "Hola".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (page, node) = editor.selected.single().expect("the new text");
+        let document = engine.edit().document();
+        let asked = Asked {
+            begin_edit: Some((page, node)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut clip = None;
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, None);
+        let typed = vec![egui::Event::Text("{{no".to_owned())];
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            typed,
+            Modifiers::NONE,
+            &mut clip,
+        );
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.field_hint, Some(0));
+        // The person sees the offer before pressing Tab.
+        frame(&ctx, &mut editor, &mut engine, None);
+        let tab = vec![egui::Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }];
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            tab,
+            Modifiers::NONE,
+            &mut clip,
+        );
+        let words = editor
+            .editing
+            .as_ref()
+            .map(|e| e.words.clone())
+            .unwrap_or_default();
+        assert!(words.contains("{{nombre}}"), "{words}");
+        assert!(
+            !words.contains("{{no}") && words.matches("{{").count() == 1,
+            "{words}"
+        );
+        assert_eq!(editor.field_hint, None);
     }
 }
