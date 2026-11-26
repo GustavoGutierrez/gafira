@@ -2452,6 +2452,7 @@ dependencies = [
  "egui_extras",
  "flate2",
  "gafira-assets",
+ "gafira-bulk",
  "gafira-chart",
  "gafira-color",
  "gafira-doc",

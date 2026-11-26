@@ -291,6 +291,8 @@ pub struct Resolved {
     /// The elements of the result whose texts had fields, by page: the ones
     /// whose boxes may need to follow their new words.
     pub filled: Vec<(PageId, NodeId)>,
+    /// The elements whose words do not fit their box (§9), by page.
+    pub overflow: Vec<(PageId, NodeId)>,
 }
 
 /// A new document with the template pages `pages` of `doc` once per row of
@@ -309,12 +311,14 @@ pub fn resolve(
     pages: &[PageId],
 ) -> Result<Resolved, ValidationError> {
     let mut go_on = |_: usize| true;
-    resolve_with(doc, set, rows, pages, &mut go_on)
+    resolve_with(doc, set, rows, pages, &mut go_on, &|_| false)
         .map(|done| done.unwrap_or_else(|| unreachable!()))
 }
 
 /// [`resolve`], telling `go_on` how many rows are done before each row;
-/// `None` when it answers `false` (the run was cancelled).
+/// `None` when it answers `false` (the run was cancelled). `fit` is given
+/// each element whose texts had fields, once filled, to make its box follow
+/// its words; it answers whether they still do not fit.
 ///
 /// # Errors
 /// As [`resolve`].
@@ -324,6 +328,7 @@ pub fn resolve_with(
     rows: &[usize],
     pages: &[PageId],
     go_on: &mut dyn FnMut(usize) -> bool,
+    fit: &dyn Fn(&mut Node) -> bool,
 ) -> Result<Option<Resolved>, ValidationError> {
     let mut counter: u64 = 1;
     let mut next = || {
@@ -335,6 +340,7 @@ pub fn resolve_with(
     let mut out_rows = Vec::new();
     let mut missing = Vec::new();
     let mut filled = Vec::new();
+    let mut overflow = Vec::new();
     let mut last = None;
     let mut done = 0;
     for (row, page_id) in plan(rows, pages) {
@@ -384,6 +390,9 @@ pub fn resolve_with(
                     filled.push((id, map(old)));
                     let lost = resolve_node(&mut node, &value);
                     missing.extend(lost.into_iter().map(|f| (id, map(old), f)));
+                    if fit(&mut node) {
+                        overflow.push((id, map(old)));
+                    }
                 }
                 (map(old), Arc::new(node))
             })
@@ -398,5 +407,6 @@ pub fn resolve_with(
         rows: out_rows,
         missing,
         filled,
+        overflow,
     }))
 }

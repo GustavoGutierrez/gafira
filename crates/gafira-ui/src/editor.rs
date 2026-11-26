@@ -48,11 +48,13 @@ use crate::zoom::{self, Zoom, ZoomAsk};
 /// The tabs of the rail, in the order of 03 §2.3, with their icons.
 /// The tabs of the rail (owner request): Elementos first, the one open
 /// when a design opens; Marca (spec 093) and Plantillas (spec 091) last.
-const TABS: [(&str, Icon); 6] = [
+const TABS: [(&str, Icon); 7] = [
     ("tab.pieces", Icon::Pieces),
     ("tab.text", Icon::Text),
     ("tab.library", Icon::Library),
     ("tab.drawing", Icon::Drawing),
+    // «Crear en lote» (spec 104): a design per row of a table.
+    ("tab.bulk", Icon::Stack),
     ("tab.identity", Icon::Identity),
     ("tab.templates", Icon::Templates),
 ];
@@ -435,6 +437,11 @@ pub(crate) struct Editor {
     eraser: Option<crate::eraser::Eraser>,
     /// Spreadsheets waiting for the sheet to insert (spec 082).
     sheets: crate::sheets::Asks,
+    /// «Crear en lote» (spec 104): its panel, the file it reads and the
+    /// window to wake while it runs.
+    bulk: std::cell::RefCell<crate::bulk::Panel>,
+    bulk_read: Option<crate::bulk_run::Reading>,
+    bulk_ctx: Option<egui::Context>,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -624,6 +631,9 @@ impl Default for Editor {
             paste_seen: false,
             pending_svg: None,
             sheets: crate::sheets::Asks::default(),
+            bulk: std::cell::RefCell::default(),
+            bulk_read: None,
+            bulk_ctx: None,
             studio: crate::vision::Studio::default(),
             eraser: None,
             chart_panel: std::cell::RefCell::default(),
@@ -653,6 +663,10 @@ impl Default for Editor {
 /// panel holds the engine while another reads it.
 #[derive(Default)]
 struct Asked {
+    /// What «Crear en lote» asks (spec 104), and the table changed in its
+    /// wide grid.
+    bulk: Option<crate::bulk::Asks>,
+    bulk_data: Option<Option<gafira_doc::DataSet>>,
     /// An icon of the set to add (spec 103).
     icon_insert: Option<crate::icon_library::Picked>,
     /// Open or close the grid of pages (spec 102).
@@ -1851,6 +1865,7 @@ impl Editor {
             asked.sheet = self.sheets.show(ctx, theme, texts);
         }
         self.rail(ctx, theme, texts);
+        self.bulk_frame(ctx, (theme, texts), document.as_deref(), &mut asked);
         let editing = !self.font_panel
             && self.chart_panel_of(ctx, theme, texts, document.as_deref(), &mut asked);
         let editing = editing
@@ -2421,6 +2436,12 @@ impl Editor {
                             &mut catalogue.borrow_mut(),
                             (document, page),
                         );
+                    }
+                    return;
+                }
+                if TABS[self.rail.tab].0 == "tab.bulk" {
+                    if let Some(document) = document {
+                        self.bulk_panel(ui, (theme, texts), document, asked);
                     }
                     return;
                 }
@@ -8041,6 +8062,7 @@ impl Editor {
         {
             self.bring_sheet(engine, sheet, purpose, at);
         }
+        self.apply_bulk(engine, document, (asked, theme), window);
         if asked.import_frame_shape {
             self.import_frame_shape(engine, window);
         }
@@ -11104,6 +11126,10 @@ impl Editor {
         use crate::sheets::Purpose;
         match purpose {
             Purpose::Table => self.insert_sheet(engine, sheet, at),
+            Purpose::Bulk => {
+                let texts = Texts::new(engine.settings().locale().locale);
+                self.bring_bulk(sheet, &texts);
+            }
             Purpose::Chart => self.chart_from(engine, &sheet.data, sheet.name),
             Purpose::Data(page, node) => {
                 let document = engine.edit().document();
@@ -15601,6 +15627,349 @@ fn to_u8(value: f32) -> u8 {
         out += 1;
     }
     out
+}
+
+/// «Crear en lote» (spec 104): the panel, the file it reads, the run and
+/// what its asks change in the document.
+impl Editor {
+    /// The panel of the tab, in the side panel.
+    fn bulk_panel(
+        &self,
+        ui: &mut egui::Ui,
+        (theme, texts): (&Theme, &Texts),
+        document: &Document,
+        asked: &mut Asked,
+    ) {
+        let can_fill = self.selected.single().is_some_and(|(page, node)| {
+            document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .is_some_and(|n| {
+                    matches!(
+                        n.kind,
+                        gafira_doc::NodeKind::Text(_) | gafira_doc::NodeKind::Shape(_)
+                    )
+                })
+        });
+        let rects = self.page_rects.clone();
+        let zoom = self.zoom;
+        let drop_point = move |at: Pos2| canvas::drop_point(&rects, zoom, at);
+        let view = crate::bulk::View {
+            doc: document,
+            can_fill,
+            drop_point: &drop_point,
+        };
+        let mut asks = self.bulk.borrow_mut().show(ui, theme, texts, &view);
+        // A field comes in as a text of the panel Texto does (spec 061).
+        if let Some(token) = asks.insert.take() {
+            asked.insert_text = Some((canvas::TextPreset::Body, token));
+        }
+        if let Some((token, page, point)) = asks.drop.take() {
+            asked.drop_text = Some((canvas::TextPreset::Body, token, page, point));
+        }
+        if let Some((page, node)) = asks.go_to.take() {
+            asked.select = Some(Selection::one(page, node));
+        }
+        asked.bulk = Some(asks);
+    }
+
+    /// Every frame: the file being read, the run, the wide table and the
+    /// card of a run while the panel is closed.
+    fn bulk_frame(
+        &mut self,
+        ctx: &egui::Context,
+        (theme, texts): (&Theme, &Texts),
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        self.bulk_ctx = Some(ctx.clone());
+        if let Some(found) = self
+            .bulk_read
+            .as_ref()
+            .and_then(crate::bulk_run::Reading::poll)
+            && let Some(reading) = self.bulk_read.take()
+        {
+            self.bulk.get_mut().reading = None;
+            let purpose = (crate::sheets::Purpose::Bulk, None);
+            if let Some(sheet) = self.sheets.take(&reading.path, purpose, found) {
+                self.bring_bulk(sheet, texts);
+            }
+        }
+        let panel = self.bulk.get_mut();
+        if panel.pump() {
+            // The time and the counts move on.
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        asked.bulk_data = panel.wide(ctx, theme, texts, document.and_then(Document::data));
+        let shown = self.rail.open && TABS[self.rail.tab].0 == "tab.bulk";
+        if !shown {
+            self.bulk.get_mut().floating(ctx, theme, texts);
+        }
+    }
+
+    /// A sheet read for bulk create waits for its row of names (§5.2).
+    fn bring_bulk(&mut self, sheet: gafira_io_xlsx::ReadSheet, texts: &Texts) {
+        let panel = self.bulk.get_mut();
+        let (kind, file) = panel.source_file.clone().unwrap_or_default();
+        let name = std::path::Path::new(&file)
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| sheet.name.clone());
+        let source = gafira_doc::DataSource {
+            sheet: (kind != "csv").then(|| sheet.name.clone()),
+            kind,
+            file_name: file,
+            header_row: None,
+        };
+        panel.pending = Some(crate::bulk::Pending::new(sheet.data, source, name, texts));
+        panel.step = crate::bulk::Step::Data;
+    }
+
+    /// What «Crear en lote» asked, with the engine.
+    fn apply_bulk(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Option<Arc<Document>>,
+        (asked, theme): (&Asked, &Theme),
+        window: Option<&eframe::Frame>,
+    ) {
+        let data = asked
+            .bulk_data
+            .clone()
+            .or_else(|| asked.bulk.as_ref().and_then(|a| a.data.clone()));
+        if let Some(data) = data {
+            let command = gafira_edit::SetData::new(data.map(Arc::new));
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("set data: {error}");
+            }
+        }
+        let Some(asks) = &asked.bulk else { return };
+        if asks.import
+            && let Some(path) = Self::pick_sheet(window)
+        {
+            self.read_for_bulk(engine, path);
+        }
+        let Some(document) = document else { return };
+        for (token, append) in [(&asks.replace, false), (&asks.append, true)] {
+            if let Some(token) = token {
+                self.fill_selection(engine, (document, theme), token, append);
+            }
+        }
+        if let Some(wanted) = asks.preview {
+            self.bulk_picture(engine, document, wanted);
+        }
+        if asks.generate {
+            self.start_bulk(engine, document, window);
+        }
+    }
+
+    /// Reads the spreadsheet at `path` on its own thread, every row.
+    fn read_for_bulk(&mut self, engine: &mut Gafira, path: std::path::PathBuf) {
+        let texts = Texts::new(engine.settings().locale().locale);
+        let file = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let kind = match extension.as_str() {
+            "csv" | "tsv" => "csv",
+            _ => "xlsx",
+        };
+        let panel = self.bulk.get_mut();
+        panel.reading = Some(file.clone());
+        panel.source_file = Some((kind.to_owned(), file));
+        let wake = self.waker();
+        self.bulk_read = Some(crate::bulk_run::Reading::start(
+            path,
+            crate::sheets::marks(&texts),
+            wake,
+        ));
+    }
+
+    /// A closure that asks the window to draw again.
+    fn waker(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let ctx = self.bulk_ctx.clone();
+        Arc::new(move || {
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
+        })
+    }
+
+    /// The words of the selected text become `token`, or it goes after them.
+    fn fill_selection(
+        &self,
+        engine: &mut Gafira,
+        (document, theme): (&Document, &Theme),
+        token: &str,
+        append: bool,
+    ) {
+        let Some((page, node)) = self.selected.single() else {
+            return;
+        };
+        let Some(found) = document.page(page).and_then(|p| p.node(node)) else {
+            return;
+        };
+        let fallback = text_style(theme, canvas::TextPreset::Body);
+        let fill = |content: &gafira_doc::RichText| {
+            let style = content.first_style().cloned().unwrap_or(fallback.clone());
+            if !append || content.plain_text().is_empty() {
+                return gafira_doc::RichText::plain(token, &style);
+            }
+            let mut out = content.clone();
+            if let Some(span) = out.paragraphs.last_mut().and_then(|p| p.spans.last_mut()) {
+                if !span.text.ends_with(' ') {
+                    span.text.push(' ');
+                }
+                span.text.push_str(token);
+            }
+            out
+        };
+        let property = match &found.kind {
+            gafira_doc::NodeKind::Text(text) => Property::TextContent(fill(&text.content)),
+            gafira_doc::NodeKind::Shape(shape) => {
+                let mut text = shape
+                    .text
+                    .clone()
+                    .unwrap_or_else(|| gafira_doc::ShapeText::plain("", &fallback));
+                text.content = fill(&text.content);
+                Property::ShapeText(Some(text))
+            }
+            _ => return,
+        };
+        let command = SetProperty::new(page, vec![node], property, None);
+        if let Err(error) = engine.edit().execute(Box::new(command)) {
+            eprintln!("bulk field: {error}");
+        }
+    }
+
+    /// The picture of `row` on `page` for the preview of the panel.
+    fn bulk_picture(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        (key, row, page): (u64, usize, PageId),
+    ) {
+        let Some(set) = document.data() else { return };
+        let resolved = gafira_bulk::resolve_with(
+            document,
+            set,
+            &[row],
+            &[page],
+            &mut |_| true,
+            &crate::bulk_run::fit_node,
+        );
+        let picture = match resolved {
+            Ok(Some(resolved)) => resolved.document.pages().first().and_then(|first| {
+                engine
+                    .export()
+                    .preview_document(&resolved.document, first.id, (720, 720))
+                    .ok()
+            }),
+            _ => None,
+        };
+        let image = match picture {
+            Some(p) => egui::ColorImage::from_rgba_unmultiplied(
+                [p.width as usize, p.height as usize],
+                &p.rgba,
+            ),
+            None => egui::ColorImage::filled([1, 1], Color32::TRANSPARENT),
+        };
+        self.bulk.get_mut().picture = Some((key, image));
+    }
+
+    /// «Generar»: where the files go, the checked export and the run on
+    /// its thread (§10).
+    fn start_bulk(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Arc<Document>,
+        window: Option<&eframe::Frame>,
+    ) {
+        use crate::bulk_run::{Run, Status, Target};
+        use gafira_doc::BulkOutput;
+        let Some(set) = document.data_arc().cloned() else {
+            return;
+        };
+        if self.bulk.get_mut().run.is_some() {
+            return;
+        }
+        let rows = self.bulk.get_mut().rows(&set);
+        let output = set.profile.output;
+        let base = Some(gafira_bulk::sanitize(&set.name))
+            .filter(|b| !b.is_empty())
+            .unwrap_or_else(|| "lote".to_owned());
+        let picker = crate::files::picker(window);
+        let target = match output {
+            BulkOutput::PdfCombined => picker
+                .add_filter("PDF", &["pdf"])
+                .set_file_name(format!("{base}.pdf"))
+                .save_file()
+                .map(|p| Target::File(with_extension(p, "pdf"))),
+            BulkOutput::Gaf => picker
+                .add_filter("Gafira", &["gaf"])
+                .set_file_name(format!("{base}_lote.gaf"))
+                .save_file()
+                .map(|p| Target::File(with_extension(p, "gaf"))),
+            _ => picker.pick_folder().map(Target::Folder),
+        };
+        let Some(target) = target else { return };
+        let gaf = (set.profile.editable && output != BulkOutput::Gaf)
+            .then(|| editable_beside(&target, &base));
+        let job = crate::bulk_run::job(engine, document, rows, target, gaf);
+        let job = match job {
+            Ok(job) => job,
+            Err(error) => {
+                self.bulk.get_mut().report = Some(Status::refused(error.to_string()));
+                return;
+            }
+        };
+        let wake = self.waker();
+        let panel = self.bulk.get_mut();
+        panel.report = None;
+        panel.run = Some(Run::start(job, wake));
+    }
+}
+
+/// The editable `.gaf` of a run beside its files: never over a file that
+/// is there (AC 10).
+fn editable_beside(target: &crate::bulk_run::Target, base: &str) -> std::path::PathBuf {
+    use crate::bulk_run::Target;
+    let (folder, stem) = match target {
+        Target::File(path) => (
+            path.parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default(),
+            path.file_stem()
+                .map_or_else(|| base.to_owned(), |s| s.to_string_lossy().into_owned()),
+        ),
+        Target::Folder(folder) => (folder.clone(), format!("{base}_lote")),
+    };
+    let mut names = gafira_bulk::Names::default();
+    if let Ok(entries) = std::fs::read_dir(&folder) {
+        for entry in entries.flatten() {
+            names.take(&entry.file_name().to_string_lossy());
+        }
+    }
+    folder.join(names.unique(&stem, "gaf"))
+}
+
+/// `path` ending in `.extension`, added when it has another or none.
+fn with_extension(path: std::path::PathBuf, extension: &str) -> std::path::PathBuf {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(extension))
+    {
+        path
+    } else {
+        let mut name = path.into_os_string();
+        name.push(".");
+        name.push(extension);
+        std::path::PathBuf::from(name)
+    }
 }
 
 #[cfg(test)]

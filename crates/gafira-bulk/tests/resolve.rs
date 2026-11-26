@@ -222,9 +222,23 @@ fn s104_26_cancel_between_rows() {
         seen.push(done);
         done < 1
     };
-    let out = gafira_bulk::resolve_with(&doc, &set, &[0, 1], &pages, &mut go_on).unwrap();
+    let out =
+        gafira_bulk::resolve_with(&doc, &set, &[0, 1], &pages, &mut go_on, &|_| false).unwrap();
     assert!(out.is_none());
     assert_eq!(seen, [0, 1]);
     let all = resolve(&doc, &set, &[0], &pages).unwrap();
     assert_eq!(all.filled.len(), 2);
+    // The boxes are handed to `fit`; its answer marks what does not fit.
+    let mut go_on = |_: usize| true;
+    let narrow = |node: &mut Node| {
+        node.base.placement.w = 1.0;
+        true
+    };
+    let fitted = gafira_bulk::resolve_with(&doc, &set, &[0], &pages, &mut go_on, &narrow)
+        .unwrap()
+        .unwrap();
+    assert_eq!(fitted.overflow, fitted.filled);
+    let page = &fitted.document.pages()[0];
+    assert_eq!(page.nodes[&page.roots[0]].base.placement.w, 1.0);
+    assert_eq!(page.nodes[&page.roots[1]].base.placement.w, 200.0);
 }
