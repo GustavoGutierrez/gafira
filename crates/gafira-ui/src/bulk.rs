@@ -111,6 +111,8 @@ pub(crate) struct View<'a> {
     pub doc: &'a Document,
     /// A text, or a shape that holds one, is the only selection.
     pub can_fill: bool,
+    /// What that text says, to name it.
+    pub selected: Option<String>,
     /// The page and point under a screen point, if it is over a page.
     pub drop_point: &'a dyn Fn(Pos2) -> Option<(PageId, (f64, f64))>,
 }
@@ -140,6 +142,8 @@ pub(crate) struct Panel {
     pub source_file: Option<(String, String)>,
     /// A new table being written in the wide grid, not yet in the design.
     draft: Option<DataSet>,
+    /// The key of the field copied last, said on its button.
+    copied: Option<String>,
     /// The row shown as large as the window allows, and its picture.
     pub zoom: bool,
     big: Option<(u64, egui::TextureHandle)>,
@@ -503,6 +507,27 @@ impl Panel {
         ui.add_space(10.0);
         let pages = gafira_bulk::template_pages(view.doc, set);
         let usage = gafira_bulk::usage(view.doc, &pages);
+        // What «Reemplazar» and «Añadir al final» act on (owner report).
+        let target = match &view.selected {
+            Some(name) => texts.t(&gafira_doc::msg!(
+                "bulk.selected_text",
+                name = Text(name.clone())
+            )),
+            None => plain(texts, "bulk.no_selected_text"),
+        };
+        card(ui, theme, |ui| {
+            let color = if view.can_fill {
+                "text"
+            } else {
+                "text.secondary"
+            };
+            ui.label(
+                RichText::new(target)
+                    .font(theme.font("body-sm"))
+                    .color(theme.c(color)),
+            );
+        });
+        ui.add_space(8.0);
         ui.add(widgets::field(
             &mut self.search,
             plain(texts, "bulk.search"),
@@ -524,7 +549,18 @@ impl Panel {
                     .copied()
                     .unwrap_or(0);
             let example = set.value(row, column.id).unwrap_or_default();
-            chip(ui, theme, texts, view, (column, example, uses), asks);
+            let copied = self.copied.as_deref() == Some(column.key.as_str());
+            if chip(
+                ui,
+                theme,
+                texts,
+                view,
+                (column, example, uses),
+                copied,
+                asks,
+            ) {
+                self.copied = Some(column.key.clone());
+            }
             ui.add_space(6.0);
         }
         // The row number is a field too.
@@ -533,14 +569,18 @@ impl Panel {
             .get(&FieldRef::Key("fila".to_owned()))
             .copied()
             .unwrap_or(0);
-        chip(
+        let copied = self.copied.as_deref() == Some("fila");
+        if chip(
             ui,
             theme,
             texts,
             view,
             (&numbered, &(row + 1).to_string(), uses),
+            copied,
             asks,
-        );
+        ) {
+            self.copied = Some("fila".to_owned());
+        }
         ui.add_space(10.0);
         problems(ui, theme, texts, view.doc, set, &pages, asks);
         ui.add_space(12.0);
@@ -1099,15 +1139,20 @@ fn new_table(texts: &Texts) -> DataSet {
     }
 }
 
-/// A field to drag to the design, click to add, or put in the selection.
+/// A field: its head (name, field and the value of the row) is dragged to
+/// the design; under it, its buttons, which never start a drag (owner
+/// report: a drag over the whole card took their clicks). Whether «Copiar»
+/// was pressed.
 fn chip(
     ui: &mut Ui,
     theme: &Theme,
     texts: &Texts,
     view: &View<'_>,
     (column, example, uses): (&DataColumn, &str, usize),
+    copied: bool,
     asks: &mut Asks,
-) {
+) -> bool {
+    let mut copy = false;
     let token = gafira_bulk::token(&FieldRef::Key(column.key.clone()));
     let width = ui.available_width();
     let frame = egui::Frame::NONE
@@ -1115,36 +1160,80 @@ fn chip(
         .stroke(egui::Stroke::new(1.0, theme.c("border")))
         .corner_radius(theme.radius_md())
         .inner_margin(egui::Margin::same(8));
-    let inner = frame.show(ui, |ui| {
+    frame.show(ui, |ui| {
         // The inner margin and the line on each side: no wider than the room.
         ui.set_width(width - 18.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(&column.name).font(theme.font("ui-label")));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let used = texts.t(&gafira_doc::msg!("bulk.uses", count = Count(uses as u64)));
-                ui.label(
-                    RichText::new(used)
-                        .font(theme.font("caption"))
-                        .color(theme.c("text.secondary")),
+        let head = ui.scope(|ui| {
+            ui.horizontal(|ui| {
+                let grip = crate::icons::image(
+                    ui.ctx(),
+                    crate::icons::Icon::Move,
+                    crate::icons::Weight::Regular,
+                    14.0,
+                    theme.c("text.secondary"),
                 );
+                ui.add(grip);
+                ui.label(RichText::new(&column.name).font(theme.font("ui-label")));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let used = texts.t(&gafira_doc::msg!("bulk.uses", count = Count(uses as u64)));
+                    ui.label(
+                        RichText::new(used)
+                            .font(theme.font("caption"))
+                            .color(theme.c("text.secondary")),
+                    );
+                });
             });
+            ui.label(
+                RichText::new(&token)
+                    .font(theme.font("caption"))
+                    .color(theme.c("accent")),
+            );
+            let short: String = example.chars().take(40).collect();
+            let example = if short.is_empty() {
+                plain(texts, "bulk.empty_value")
+            } else {
+                short
+            };
+            ui.label(
+                RichText::new(example)
+                    .font(theme.font("body-sm"))
+                    .color(theme.c("text.secondary")),
+            );
         });
-        ui.label(
-            RichText::new(&token)
-                .font(theme.font("caption"))
-                .color(theme.c("accent")),
+        // Only the head carries the field (spec 061).
+        let response = ui.interact(
+            head.response.rect,
+            ui.id().with(("bulk.chip", &column.key)),
+            Sense::drag(),
         );
-        let short: String = example.chars().take(40).collect();
-        let example = if short.is_empty() {
-            plain(texts, "bulk.empty_value")
-        } else {
-            short
-        };
-        ui.label(
-            RichText::new(example)
-                .font(theme.font("body-sm"))
-                .color(theme.c("text.secondary")),
-        );
+        if response.hovered() && !response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        let response = response.on_hover_text(plain(texts, "bulk.drag_hint"));
+        let at = ui.input(|i| i.pointer.latest_pos());
+        if response.dragged()
+            && let Some(at) = at
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("bulk.ghost"),
+            ));
+            painter.text(
+                at,
+                egui::Align2::CENTER_CENTER,
+                &token,
+                theme.font("ui-label"),
+                theme.c("accent"),
+            );
+        }
+        if response.drag_stopped()
+            && let Some(at) = at
+            && let Some((page, point)) = (view.drop_point)(at)
+        {
+            asks.drop = Some((token.clone(), page, point));
+        }
+        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             if ui
                 .add(small(theme, plain(texts, "bulk.add_text")))
@@ -1175,47 +1264,18 @@ fn chip(
             {
                 asks.append = Some(token.clone());
             }
+            let key = if copied { "bulk.copied" } else { "bulk.copy" };
             if ui
-                .add(small(theme, plain(texts, "bulk.copy")))
+                .add(small(theme, plain(texts, key)))
                 .on_hover_text(plain(texts, "bulk.copy_hint"))
                 .clicked()
             {
                 ui.ctx().copy_text(token.clone());
+                copy = true;
             }
         });
     });
-    // A drag carries the field to where it is dropped (spec 061).
-    let response = ui.interact(
-        inner.response.rect,
-        ui.id().with(("bulk.chip", &column.key)),
-        Sense::drag(),
-    );
-    if response.hovered() && !response.dragged() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-    }
-    let at = ui.input(|i| i.pointer.latest_pos());
-    if response.dragged()
-        && let Some(at) = at
-    {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-        let painter = ui.ctx().layer_painter(egui::LayerId::new(
-            egui::Order::Tooltip,
-            egui::Id::new("bulk.ghost"),
-        ));
-        painter.text(
-            at,
-            egui::Align2::CENTER_CENTER,
-            &token,
-            theme.font("ui-label"),
-            theme.c("accent"),
-        );
-    }
-    if response.drag_stopped()
-        && let Some(at) = at
-        && let Some((page, point)) = (view.drop_point)(at)
-    {
-        asks.drop = Some((token, page, point));
-    }
+    copy
 }
 
 /// The fields with no column: they stop a run (§9). Whether there is any.
@@ -1927,6 +1987,7 @@ mod tests {
                             let view = View {
                                 doc: &document,
                                 can_fill: false,
+                                selected: None,
                                 drop_point: &none,
                             };
                             let _ = panel.show(ui, &theme, &texts, &view);

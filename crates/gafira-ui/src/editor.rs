@@ -15811,23 +15811,22 @@ impl Editor {
         document: &Document,
         asked: &mut Asked,
     ) {
-        let can_fill = self.selected.single().is_some_and(|(page, node)| {
-            document
-                .page(page)
-                .and_then(|p| p.node(node))
-                .is_some_and(|n| {
-                    matches!(
-                        n.kind,
-                        gafira_doc::NodeKind::Text(_) | gafira_doc::NodeKind::Shape(_)
-                    )
-                })
+        let filled = self.selected.single().and_then(|(page, node)| {
+            let found = document.page(page)?.node(node)?;
+            matches!(
+                found.kind,
+                gafira_doc::NodeKind::Text(_) | gafira_doc::NodeKind::Shape(_)
+            )
+            .then(|| crate::bulk_run::element_name(found))
         });
+        let can_fill = filled.is_some();
         let rects = self.page_rects.clone();
         let zoom = self.zoom;
         let drop_point = move |at: Pos2| canvas::drop_point(&rects, zoom, at);
         let view = crate::bulk::View {
             doc: document,
             can_fill,
+            selected: filled,
             drop_point: &drop_point,
         };
         let mut asks = self.bulk.borrow_mut().show(ui, theme, texts, &view);
