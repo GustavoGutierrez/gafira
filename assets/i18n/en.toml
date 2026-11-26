@@ -2266,4 +2266,6 @@ saved_in = "Saved in: {place}"
 failed_row = "Row {row}: {file} could not be created ({why})"
 overflow = { one = "The text «{element}» does not fit its box in {count} row: {rows}.", other = "The text «{element}» does not fit its box in {count} rows: {rows}." }
 close_report = "Close"
+close = "Close"
+use_table = "Use this table"
 offer_hint = "Enter to insert the field · arrows to choose · Esc to close"

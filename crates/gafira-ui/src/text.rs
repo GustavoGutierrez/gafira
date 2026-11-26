@@ -1951,6 +1951,8 @@ mod tests {
         "bulk.uses",
         "tab.bulk",
         "bulk.offer_hint",
+        "bulk.close",
+        "bulk.use_table",
     ];
 
     #[test]
