@@ -22,6 +22,11 @@ import occasions2 from '../assets/packs/occasions-2.webp';
 import occasions3 from '../assets/packs/occasions-3.webp';
 import occasions4 from '../assets/packs/occasions-4.webp';
 import occasions5 from '../assets/packs/occasions-5.webp';
+import plants1 from '../assets/packs/plants-1.webp';
+import plants2 from '../assets/packs/plants-2.webp';
+import plants3 from '../assets/packs/plants-3.webp';
+import plants4 from '../assets/packs/plants-4.webp';
+import plants5 from '../assets/packs/plants-5.webp';
 
 interface Props {
   locale: Locale;
@@ -60,6 +65,13 @@ const packs: Pack[] = [
     size: 30_706_871,
     tint: 'var(--text)',
     images: [occasions3, occasions1, occasions2, occasions4, occasions5],
+  },
+  {
+    id: 'plants',
+    url: 'https://cdn.gafira.com/packages/plants-leaves-shrubs-Free.gafpack',
+    size: 34_839_617,
+    tint: 'var(--mint)',
+    images: [plants1, plants2, plants3, plants4, plants5],
   },
 ];
 
@@ -100,7 +112,7 @@ const spots = [
                       class="piece"
                       style={`--x:${spot.x}cqw;--y:${spot.y}cqw;--r:${spot.r}deg;--s:${spot.s};--z:${5 - i};--i:${i};--bob:${i * -0.7}s`}
                     >
-                      <Image src={image} alt="" widths={[160, 240, 320]} sizes="(max-width: 960px) 40vw, 160px" loading="lazy" />
+                      <Image src={image} alt="" widths={[160, 240, 320]} sizes="(max-width: 960px) 40vw, 220px" loading="lazy" />
                     </span>
                   );
                 })}
@@ -178,10 +190,13 @@ const spots = [
 </script>
 
 <style>
+  /* Four packs: two by two, narrow enough that each stage stays card-sized. */
   .grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 24px;
+    max-width: 960px;
+    margin-inline: auto;
   }
 
   .pack {

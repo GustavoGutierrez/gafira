@@ -147,7 +147,7 @@ const es: Copy = {
       editor: 'Editor',
       packs: 'Ilustraciones',
       packsAlt:
-        'Gafira con los tres paquetes de ilustraciones instalados y una página llena de ellas: lazos, esquineros, un farol, un pastel, rosas, globos y un osito',
+        'Gafira con paquetes de ilustraciones instalados y una página llena de ellas: lazos, esquineros, un farol, un pastel, rosas, globos y un osito',
       pause: 'Pausar las capturas',
       play: 'Reanudar las capturas',
     },
@@ -379,6 +379,11 @@ const es: Copy = {
         text: 'Bodas, grados, cumpleaños y decoraciones para cualquier celebración.',
         alt: 'Un pastel de boda, un birrete de grado, un osito con globos, anillos de boda y un esquinero de girasoles',
       },
+      {
+        name: 'Plantas, hojas y arbustos',
+        text: 'Hojas, bambú, arbustos, hierbas medicinales y follaje navideño en estilo botánico realista.',
+        alt: 'Una hoja de monstera, una flor de Pascua, lavanda, un coleo y un hibisco',
+      },
     ],
     install: {
       title: 'Cómo usarlos',
@@ -429,6 +434,12 @@ const es: Copy = {
         text: 'Cumpleaños, bodas, grados, 32 esquineros, 16 emblemas temáticos, florales y más.',
         alt: 'Un pastel de cumpleaños, un osito con globos, un pastel de boda, un birrete y anillos de boda',
         samples: ['Un cupcake', 'Insignia «Feliz Cumpleaños»', 'Un arco de boda', 'Un libro con pluma', 'Una taza de café', 'Esquinero con luna y nube', 'Una pareja en un corazón', 'Un 50 dorado de aniversario'],
+      },
+      {
+        name: 'Plantas, hojas y arbustos',
+        text: 'Hojas, ramas, bambú, arbustos, hierbas medicinales y follaje navideño en 12 láminas botánicas.',
+        alt: 'Una hoja de monstera, una flor de Pascua, lavanda, un coleo, un hibisco y una hoja de arce',
+        samples: ['Bambú negro', 'Una rama de roble con bellotas', 'Un árbol de jade', 'Una pasiflora', 'Una cheflera variegada', 'Una flor de Pascua blanca', 'Un amarilis rojo', 'Caléndulas'],
       },
     ],
     points: ['Uso personal y comercial', 'Fondo transparente, listas para Gafira', 'Pago a través de Gumroad'],
@@ -485,7 +496,7 @@ const en: Copy = {
       editor: 'Editor',
       packs: 'Illustrations',
       packsAlt:
-        'Gafira with the three illustration packs installed and a page full of them: bows, corners, a lantern, a cake, roses, balloons and a teddy bear',
+        'Gafira with illustration packs installed and a page full of them: bows, corners, a lantern, a cake, roses, balloons and a teddy bear',
       pause: 'Pause the screenshots',
       play: 'Play the screenshots',
     },
@@ -717,6 +728,11 @@ const en: Copy = {
         text: 'Weddings, graduations, birthdays and decorations for any celebration.',
         alt: 'A wedding cake, a graduation cap, a teddy bear with balloons, wedding rings and a sunflower corner',
       },
+      {
+        name: 'Plants, leaves & shrubs',
+        text: 'Leaves, bamboo, shrubs, medicinal herbs and Christmas greenery in a realistic botanical style.',
+        alt: 'A monstera leaf, a poinsettia, lavender, a coleus and a hibiscus',
+      },
     ],
     install: {
       title: 'How to use them',
@@ -767,6 +783,12 @@ const en: Copy = {
         text: 'Birthdays, weddings, graduations, 32 corners, 16 theme emblems, florals and more.',
         alt: 'A birthday cake, a teddy bear with balloons, a wedding cake, a graduation cap and wedding rings',
         samples: ['A cupcake', '«Feliz Cumpleaños» badge', 'A wedding arch', 'A book with a quill', 'A cup of coffee', 'Corner with a moon and a cloud', 'A couple in a heart', 'A golden 50 for an anniversary'],
+      },
+      {
+        name: 'Plants, leaves & shrubs',
+        text: 'Leaves, branches, bamboo, shrubs, medicinal herbs and Christmas greenery across 12 botanical sheets.',
+        alt: 'A monstera leaf, a poinsettia, lavender, a coleus, a hibiscus and a maple leaf',
+        samples: ['Black bamboo', 'An oak branch with acorns', 'A jade plant', 'A passion flower', 'A variegated schefflera', 'A white poinsettia', 'A red amaryllis', 'Calendulas'],
       },
     ],
     points: ['Personal and commercial use', 'Transparent backgrounds, ready for Gafira', 'Checkout through Gumroad'],
