@@ -274,8 +274,24 @@ fn tab_of(
     active: bool,
     enabled: bool,
 ) -> Response {
+    // The label a size under the caption, with 6 px of room each side so it
+    // never touches the rail's edges (owner request); one too long for a
+    // line takes two, and the tab grows for it.
+    let mut font = theme.font("caption");
+    font.size = (font.size - 1.0).max(9.0);
+    let width = ui.available_width();
+    let room_width = width - 2.0 * RAIL_LABEL_ROOM;
+    let measure = |text: &str| {
+        ui.fonts_mut(|f| {
+            f.layout_no_wrap(text.to_owned(), font.clone(), egui::Color32::WHITE)
+                .size()
+                .x
+        })
+    };
+    let lines = rail_lines(label, room_width, &measure);
+    let extra = (lines.len() as f32 - 1.0) * (font.size + 2.0);
     let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), RAIL_TAB),
+        Vec2::new(width, RAIL_TAB + extra),
         if enabled {
             Sense::click()
         } else {
@@ -304,23 +320,40 @@ fn tab_of(
         Vec2::splat(size),
     );
     icons::paint(painter, glyph, icon, weight, color);
-    // The label a size under the caption, with 6 px of room each side so it
-    // never touches the rail's edges (owner request); a longer one is cut.
-    let mut font = theme.font("caption");
-    font.size = (font.size - 1.0).max(9.0);
     let room = rect.shrink2(Vec2::new(RAIL_LABEL_ROOM, 0.0));
-    painter.with_clip_rect(room).text(
-        egui::pos2(rect.center().x, rect.max.y - 6.0),
-        egui::Align2::CENTER_BOTTOM,
-        label,
-        font,
-        color,
-    );
+    let step = font.size + 2.0;
+    for (k, line) in lines.iter().rev().enumerate() {
+        painter.with_clip_rect(room).text(
+            egui::pos2(rect.center().x, rect.max.y - 6.0 - step * k as f32),
+            egui::Align2::CENTER_BOTTOM,
+            line,
+            font.clone(),
+            color,
+        );
+    }
     if response.has_focus() {
         focus_ring(painter, theme, rect.shrink(4.0));
     }
     response.widget_info(|| WidgetInfo::selected(WidgetType::Button, enabled, active, label));
     response
+}
+
+/// The lines of a rail label: one when it fits `room` px, else two cut at
+/// the space that leaves the longer line shortest; a single word stays one
+/// line (and is cut by the clip).
+fn rail_lines(label: &str, room: f32, width: &dyn Fn(&str) -> f32) -> Vec<String> {
+    if width(label) <= room {
+        return vec![label.to_owned()];
+    }
+    let cuts = label.match_indices(' ').map(|(at, _)| at);
+    let best = cuts.min_by(|a, b| {
+        let longer = |at: usize| width(&label[..at]).max(width(&label[at + 1..]));
+        longer(*a).total_cmp(&longer(*b))
+    });
+    match best {
+        Some(at) => vec![label[..at].to_owned(), label[at + 1..].to_owned()],
+        None => vec![label.to_owned()],
+    }
 }
 
 /// The height of a rail tab: icon, gap and caption.
@@ -817,5 +850,24 @@ mod glyph_tests {
             }
         }
         assert!(bad.is_empty(), "{bad:#?}");
+    }
+}
+
+#[cfg(test)]
+mod rail_label_tests {
+    use super::rail_lines;
+
+    // Owner request (spec 104): «Crear en lote» does not fit the rail on one
+    // line; it takes two, cut where the lines are most alike.
+    #[test]
+    fn s104_59_a_long_rail_label_takes_two_lines() {
+        let width = |text: &str| text.chars().count() as f32 * 6.0;
+        assert_eq!(rail_lines("Texto", 60.0, &width), ["Texto"]);
+        assert_eq!(
+            rail_lines("Crear en lote", 60.0, &width),
+            ["Crear", "en lote"]
+        );
+        assert_eq!(rail_lines("Bulk create", 60.0, &width), ["Bulk", "create"]);
+        assert_eq!(rail_lines("Elementosss", 60.0, &width), ["Elementosss"]);
     }
 }
