@@ -177,7 +177,7 @@ pub fn layout_box(
         return Err(TextError::NoFont);
     }
     let mut stack = Stack::new(fonts)?;
-    layout_with(&mut stack, text, style, size_px, &[], bounds.width())
+    layout_with(&mut stack, text, style, size_px, &[], bounds.width(), &[])
 }
 
 /// `layout_box` in the face `(bold, italic)` of the family of the first font
@@ -197,7 +197,74 @@ pub fn layout_box_face(
     }
     let mut stack = Stack::new(fonts)?;
     stack.face = face;
-    layout_with(&mut stack, text, style, size_px, &[], bounds.width())
+    layout_with(&mut stack, text, style, size_px, &[], bounds.width(), &[])
+}
+
+/// A part of the text in its own face and size (spec 106): its byte range,
+/// its size in px, the index in the stack of the first font of its family,
+/// and its weight and style.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FaceRun {
+    pub range: Range<usize>,
+    pub size_px: f32,
+    pub lead: usize,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+/// [`layout_box`] with parts in their own face and size (spec 106). The
+/// text outside every run is in the style of the call and the first font of
+/// the stack; a run names the font its family starts with, the others of
+/// the stack covering what it lacks. With no run it is [`layout_box_face`]
+/// with no bold or italic.
+pub fn layout_box_runs(
+    text: &str,
+    fonts: &[&[u8]],
+    style: &TextStyle,
+    dpi: f64,
+    bounds: Size,
+    runs: &[FaceRun],
+) -> Result<TextLayout, TextError> {
+    let size_px = check_input(style, dpi, bounds)?;
+    if fonts.is_empty() {
+        return Err(TextError::NoFont);
+    }
+    if runs
+        .iter()
+        .any(|r| !r.size_px.is_finite() || r.size_px <= 0.0 || r.lead >= fonts.len())
+    {
+        return Err(TextError::OutOfRange { field: "run" });
+    }
+    let mut stack = Stack::new(fonts)?;
+    let mut sizes: Vec<SizeRun> = runs
+        .iter()
+        .map(|r| SizeRun {
+            range: r.range.clone(),
+            size_px: r.size_px,
+        })
+        .collect();
+    // The text outside the runs keeps the size of the call: the size the
+    // layout is given is the largest, for the break (see `layout_with`).
+    let mut covered: Vec<Range<usize>> = runs.iter().map(|r| r.range.clone()).collect();
+    covered.sort_by_key(|r| r.start);
+    let mut at = 0;
+    for part in covered {
+        if part.start > at {
+            sizes.push(SizeRun {
+                range: at..part.start,
+                size_px,
+            });
+        }
+        at = at.max(part.end);
+    }
+    if at < text.len() {
+        sizes.push(SizeRun {
+            range: at..text.len(),
+            size_px,
+        });
+    }
+    let largest = runs.iter().map(|r| r.size_px).fold(size_px, f32::max);
+    layout_with(&mut stack, text, style, largest, &sizes, bounds.width(), runs)
 }
 
 /// Fonts ready to lay many texts out (spec 081): registering them is the
@@ -226,7 +293,7 @@ impl FontStack {
     ) -> Result<TextLayout, TextError> {
         let size_px = check_input(style, dpi, bounds)?;
         self.0.face = face;
-        layout_with(&mut self.0, text, style, size_px, &[], bounds.width())
+        layout_with(&mut self.0, text, style, size_px, &[], bounds.width(), &[])
     }
 }
 
@@ -289,6 +356,7 @@ pub(crate) fn layout_with(
     size_px: f32,
     runs: &[SizeRun],
     width: f64,
+    faces: &[FaceRun],
 ) -> Result<TextLayout, TextError> {
     let Stack {
         fcx,
@@ -366,6 +434,34 @@ pub(crate) fn layout_with(
             if from < to {
                 here.push((from - range.start..to - range.start, run.size_px));
             }
+        }
+        // The parts in their own face (spec 106): their family first, the
+        // others of the stack after it for what it lacks.
+        for run in faces {
+            let (from, to) = (run.range.start.max(range.start), run.range.end.min(range.end));
+            if from >= to {
+                continue;
+            }
+            let part = from - range.start..to - range.start;
+            let mut list: Vec<FontFamilyName<'static>> = Vec::with_capacity(names.len());
+            list.extend(names[run.lead..].iter().cloned());
+            list.extend(names[..run.lead].iter().cloned());
+            builder.push(
+                StyleProperty::FontFamily(FontFamily::List(Cow::Owned(list))),
+                part.clone(),
+            );
+            let weight = if run.bold {
+                parley::FontWeight::BOLD
+            } else {
+                parley::FontWeight::NORMAL
+            };
+            builder.push(StyleProperty::FontWeight(weight), part.clone());
+            let slant = if run.italic {
+                parley::FontStyle::Italic
+            } else {
+                parley::FontStyle::Normal
+            };
+            builder.push(StyleProperty::FontStyle(slant), part.clone());
         }
         for (part, px) in &here {
             builder.push(StyleProperty::FontSize(*px), part.clone());
