@@ -1276,8 +1276,6 @@ mod tests {
         "text.arc_down",
         "text.curved_words",
         "text.pairings",
-        "text.pairing_heading",
-        "text.pairing_body",
         "pairing.welcome",
         "pairing.romantic",
         "pairing.invitation",
