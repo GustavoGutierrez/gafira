@@ -2304,9 +2304,3 @@ all_rows = { one = "Todas ({count} fila)", many = "Todas ({count} de filas)", ot
 details = "Ver detalles"
 hide_details = "Ocultar detalles"
 
-[range]
-bold = "Negrita para las letras elegidas"
-italic = "Cursiva para las letras elegidas"
-smaller = "Más pequeñas"
-larger = "Más grandes"
-color = "Color para las letras elegidas"

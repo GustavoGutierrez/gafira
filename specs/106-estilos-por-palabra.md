@@ -54,6 +54,8 @@ Pruebas `s106_*`, una exportación PNG con dos colores en el mismo texto y los g
 - Motor: `gafira_text::layout_box_runs` con `FaceRun` (familia, negrita, cursiva y tamaño por rango sobre parley) (S106-05).
 - Renderizador: un texto de varios estilos se compone por tramos y sus letras salen por color, con sus glifos, en operaciones `Text` separadas; las exportaciones PNG, JPEG, PDF y SVG las heredan. `text_parts` da las letras por color al lienzo (S106-06).
 - Lienzo: un texto de varios estilos cuenta como `styled()` y se dibuja desde su contorno, cada color aparte.
-- Editor: escribir conserva los estilos (`edited`); el campo muestra los estilos mientras se escribe; con letras elegidas aparece una barra sobre el texto con Negrita, Cursiva, A-, A+ y ocho colores, que actúa solo sobre ellas sin terminar la escritura (S106-07).
+- Editor: escribir conserva los estilos (`edited`); el campo muestra los estilos mientras se escribe. Con letras elegidas, los controles de siempre (Propiedades: tamaño, negrita, cursiva, color y degradado; panel «Fuente») actúan solo sobre ellas, y la escritura vuelve con las mismas letras elegidas para el siguiente cambio (S106-08).
+- Degradado por tramo: `SpanStyle.gradient` (aditivo, solo se escribe si existe); el renderizador lo pinta sobre la caja como el degradado de todo el texto (S106-09, S106-10).
+- Se quitó la barra flotante sobre el texto (pedido del titular: no funcionaba y el panel hace lo mismo).
 - Fuera de esta entrega: elegir otra fuente para unas letras (el panel «Fuente» sigue cambiando todo el texto), subrayado y tachado.
 

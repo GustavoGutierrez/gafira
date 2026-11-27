@@ -787,12 +787,22 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                                 && text.gradient.is_none()
                                 && !parts.is_empty()
                             {
-                                for (part, part_color, part_runs) in &parts {
-                                    sub.ops.push(RenderOp::Text {
-                                        path: Arc::new(part.clone()),
-                                        color: *part_color,
-                                        transform,
-                                        runs: Arc::new(part_runs.clone()),
+                                for part in &parts {
+                                    sub.ops.push(match &part.gradient {
+                                        // A gradient over the box, as for a
+                                        // whole text (spec 070).
+                                        Some(gradient) => RenderOp::FillGradient {
+                                            path: Arc::new(part.path.clone()),
+                                            gradient: Arc::new(gradient.clone()),
+                                            size,
+                                            transform,
+                                        },
+                                        None => RenderOp::Text {
+                                            path: Arc::new(part.path.clone()),
+                                            color: part.color,
+                                            transform,
+                                            runs: Arc::new(part.runs.clone()),
+                                        },
                                     });
                                 }
                                 continue;
@@ -1941,13 +1951,7 @@ fn text_path(
     text: &TextNode,
     placement: &Placement,
     fonts: &FontBook,
-) -> Option<(
-    BezPath,
-    Color,
-    String,
-    Vec<GlyphRun>,
-    Vec<(BezPath, Color, Vec<GlyphRun>)>,
-)> {
+) -> Option<(BezPath, Color, String, Vec<GlyphRun>, Vec<TextPart>)> {
     let bounds = gafira_geom::Size::new(placement.w.abs(), placement.h.abs());
     let laid = laid_text(&text.content, Laid::of(text), bounds, fonts)?;
     Some((laid.path, laid.color, laid.canonical, laid.runs, laid.parts))
@@ -1963,9 +1967,20 @@ struct LaidText {
     canonical: String,
     height: f64,
     runs: Vec<GlyphRun>,
-    /// A text of several styles (spec 106): its letters by colour, with
-    /// their glyph runs; empty for a text of one style, all in `color`.
-    parts: Vec<(BezPath, Color, Vec<GlyphRun>)>,
+    /// A text of several styles (spec 106): its letters by colour or
+    /// gradient, with their glyph runs; empty for a text of one style, all
+    /// in `color`.
+    parts: Vec<TextPart>,
+}
+
+/// Letters of a text in one colour, or one gradient over the box of the
+/// text (spec 106), with their glyphs.
+#[derive(Clone, Debug)]
+pub(crate) struct TextPart {
+    pub(crate) path: BezPath,
+    pub(crate) color: Color,
+    pub(crate) gradient: Option<gafira_doc::Gradient>,
+    pub(crate) runs: Vec<GlyphRun>,
 }
 
 /// How a text is laid out besides its words: alignment, bend, letter
@@ -2181,13 +2196,17 @@ fn laid_text(
     };
     let mut path = BezPath::new();
     // Spec 106: the letters of each colour, by the span of their cluster.
-    let mut by_color: Vec<(Color, BezPath)> = Vec::new();
-    let color_at = |line: usize, cluster: usize| -> Option<Color> {
-        let at = layout.lines.get(line)?.clusters.get(cluster)?.range.start;
+    type Paint = (Color, Option<gafira_doc::Gradient>);
+    let mut by_color: Vec<(Paint, BezPath)> = Vec::new();
+    let paint_at = |at: usize| -> Option<Paint> {
         spans
             .iter()
             .find(|(range, _)| range.contains(&at))
-            .map(|(_, span)| span.color)
+            .map(|(_, span)| (span.color, span.gradient.clone()))
+    };
+    let color_at = |line: usize, cluster: usize| -> Option<Paint> {
+        let at = layout.lines.get(line)?.clusters.get(cluster)?.range.start;
+        paint_at(at)
     };
     // The top of the straight letters: a curved text starts there too, so a
     // cup, whose ends rise, stays in its box.
@@ -2267,7 +2286,7 @@ fn laid_text(
     let text: Arc<str> = Arc::from(words.as_str());
     let mut runs: Vec<GlyphRun> = Vec::new();
     // The colour of each run, for a text of several styles.
-    let mut run_colors: Vec<Option<Color>> = Vec::new();
+    let mut run_colors: Vec<Option<(Color, Option<gafira_doc::Gradient>)>> = Vec::new();
     if curved.is_none() {
         for line in &layout.lines {
             let mut current: Option<GlyphRun> = None;
@@ -2276,21 +2295,18 @@ fn laid_text(
                     continue;
                 };
                 let color = if mixed {
-                    spans
-                        .iter()
-                        .find(|(range, _)| range.contains(&cluster.range.start))
-                        .map(|(_, span)| span.color)
+                    paint_at(cluster.range.start)
                 } else {
                     None
                 };
                 let same = current.as_ref().is_some_and(|run| {
                     Arc::ptr_eq(&run.font, font)
                         && run.size == cluster.size_px
-                        && run_colors.last().copied().flatten() == color
+                        && run_colors.last().cloned().flatten() == color
                 });
                 if !same {
                     runs.extend(current.take());
-                    run_colors.push(color);
+                    run_colors.push(color.clone());
                     current = Some(GlyphRun {
                         font: Arc::clone(font),
                         index: 0,
@@ -2326,14 +2342,19 @@ fn laid_text(
     }
     let parts = by_color
         .into_iter()
-        .map(|(color, part)| {
+        .map(|(paint, part)| {
             let own: Vec<GlyphRun> = runs
                 .iter()
                 .zip(&run_colors)
-                .filter(|(_, c)| **c == Some(color))
+                .filter(|(_, c)| c.as_ref() == Some(&paint))
                 .map(|(run, _)| run.clone())
                 .collect();
-            (part, color, own)
+            TextPart {
+                path: part,
+                color: paint.0,
+                gradient: paint.1,
+                runs: own,
+            }
         })
         .collect();
     Some(LaidText {
@@ -2368,20 +2389,25 @@ fn span_ranges(
     out
 }
 
-/// The letters of `text` by colour (spec 106), laid out in a box of
-/// `width` × `height` px: one part for a text of one style.
+/// The letters of `text` by colour or gradient (spec 106), laid out in a
+/// box of `width` × `height` px: one part for a text of one style.
 #[must_use]
 pub fn text_parts(
     text: &TextNode,
     (width, height): (f64, f64),
     fonts: &FontBook,
-) -> Option<Vec<(BezPath, Color)>> {
+) -> Option<Vec<(BezPath, Color, Option<gafira_doc::Gradient>)>> {
     let bounds = gafira_geom::Size::new(width.abs(), height.abs());
     let laid = laid_text(&text.content, Laid::of(text), bounds, fonts)?;
     if laid.parts.is_empty() {
-        return Some(vec![(laid.path, laid.color)]);
+        return Some(vec![(laid.path, laid.color, None)]);
     }
-    Some(laid.parts.into_iter().map(|(p, c, _)| (p, c)).collect())
+    Some(
+        laid.parts
+            .into_iter()
+            .map(|p| (p.path, p.color, p.gradient))
+            .collect(),
+    )
 }
 
 /// The check of ARQ-110: a number that is not finite is an error that names
@@ -3039,9 +3065,9 @@ mod tests {
         let placement = Placement::new(0.0, 0.0, 1000.0, 100.0);
         let fonts = fonts();
         let (_, _, key, _, parts) = text_path(&text, &placement, &fonts).expect("laid out");
-        let colors: Vec<Color> = parts.iter().map(|(_, c, _)| *c).collect();
+        let colors: Vec<Color> = parts.iter().map(|p| p.color).collect();
         assert_eq!(colors, vec![ink, red]);
-        assert!(parts.iter().all(|(_, _, runs)| !runs.is_empty()));
+        assert!(parts.iter().all(|p| !p.runs.is_empty()));
         let (_, _, plain_key, _, plain_parts) =
             text_path(&plain, &placement, &fonts).expect("laid out");
         assert!(plain_parts.is_empty(), "one style draws as before");
@@ -3054,6 +3080,39 @@ mod tests {
         assert!(wide(&text) > wide(&plain) + 1.0);
         let parts = text_parts(&text, (1000.0, 100.0), &fonts).expect("parts");
         assert_eq!(parts.len(), 2);
+    }
+
+    // S106-10: letters in a gradient (owner request) fill with it over the
+    // box; the others keep their colour and glyphs.
+    #[test]
+    fn s106_10_a_gradient_on_some_letters() {
+        let ink = Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let stop = |offset, r| gafira_doc::GradientStop {
+            offset,
+            color: Color::Srgb(gafira_color::Rgba::new(r, 0.2, 0.7, 1.0)),
+        };
+        let gradient = gafira_doc::Gradient {
+            kind: gafira_doc::GradientKind::Linear { angle_deg: 0.0 },
+            stops: vec![stop(0.0, 1.0), stop(1.0, 0.0)],
+        };
+        let base = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 40.0,
+            color: ink,
+            bold: false,
+            italic: false,
+            gradient: None,
+        };
+        let mut text = TextNode::plain("Agregar algo de texto", &base);
+        text.content
+            .restyle(8..12, &|s: &mut gafira_doc::SpanStyle| {
+                s.gradient = Some(gradient.clone());
+            });
+        let placement = Placement::new(0.0, 0.0, 1000.0, 100.0);
+        let (_, _, _, _, parts) = text_path(&text, &placement, &fonts()).expect("laid out");
+        assert_eq!(parts.len(), 2);
+        assert!(parts.iter().any(|p| p.gradient.as_ref() == Some(&gradient)));
+        assert!(parts.iter().any(|p| p.gradient.is_none() && p.color == ink));
     }
 
     // S81-12: a table draws the fills, the borders and, each cell a text

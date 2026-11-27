@@ -3120,8 +3120,16 @@ pub(crate) fn curved_text_image(
                 if text.gradient.is_none() && text.content.mixed() =>
             {
                 let parts = gafira_render::text_parts(text, (w, h), text_fonts());
-                for (part, part_color) in parts.unwrap_or_default() {
-                    fill(&mut pixmap, &part, &painted(part_color));
+                for (part, part_color, gradient) in parts.unwrap_or_default() {
+                    let mut paint = painted(part_color);
+                    // A gradient on some letters, over the box (spec 106).
+                    if let Some(shader) = gradient
+                        .as_ref()
+                        .and_then(|g| gradient_shader(g, (w, h), (margin, scale)))
+                    {
+                        paint.shader = shader;
+                    }
+                    fill(&mut pixmap, &part, &paint);
                 }
             }
             gafira_render::TextPiece::Letters(other) => {
