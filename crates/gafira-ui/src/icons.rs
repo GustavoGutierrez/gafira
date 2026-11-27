@@ -144,6 +144,8 @@ pub(crate) enum Icon {
     /// Spec 101: presenting.
     CaretLeft,
     CaretRight,
+    /// The cross that closes a tab (spec 111).
+    Close,
     CornersIn,
     PenTool,
     MarkerTool,
@@ -155,7 +157,7 @@ pub(crate) enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 98] = [
+    pub(crate) const ALL: [Self; 99] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -247,6 +249,7 @@ impl Icon {
         Self::Camera,
         Self::CaretLeft,
         Self::CaretRight,
+        Self::Close,
         Self::CornersIn,
         Self::PenTool,
         Self::MarkerTool,
@@ -350,6 +353,7 @@ impl Icon {
             Self::Camera => "camera",
             Self::CaretLeft => "caret-left",
             Self::CaretRight => "caret-right",
+            Self::Close => "x",
             Self::CornersIn => "corners-in",
             Self::PenTool => "pen",
             Self::MarkerTool => "marker-circle",

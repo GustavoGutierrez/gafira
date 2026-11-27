@@ -342,6 +342,12 @@ license_text = "Gafira is free software: you can use, study, share and change it
 license_full = "Full text of the licence"
 
 [tabs]
+close = "Close"
+close_all = "Close all"
+close_others = "Close others"
+new_document = "New document…"
+open = "Open…"
+reveal = "Show in folder"
 new = "Open or create another project"
 
 [resize]

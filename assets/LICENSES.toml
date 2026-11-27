@@ -1088,6 +1088,19 @@ version = "2.1.1"
 source_file = "assets/regular/circle-notch.svg"
 
 [[asset]]
+path = "assets/icons/phosphor/regular/x.svg"
+hash = "60e66cd353541401c66a4b304678414668d3a649a716a2a40091a015e41aa8c2"
+license = "MIT"
+"autoría" = "Copyright (c) 2023 Phosphor Icons"
+origin = "npm @phosphor-icons/core 2.1.1, assets/regular/x.svg (https://github.com/phosphor-icons/core)"
+"exige atribución" = "true"
+modificado = "false"
+license_file = "assets/icons/phosphor/LICENSE"
+upstream = "https://github.com/phosphor-icons/core"
+version = "2.1.1"
+source_file = "assets/regular/x.svg"
+
+[[asset]]
 path = "assets/icons/phosphor/regular/sun.svg"
 hash = "f5b42ea6b2d8ed2b78fca1899a4d94f8820b8c271064bdf3f68706763ad6c5b3"
 license = "MIT"

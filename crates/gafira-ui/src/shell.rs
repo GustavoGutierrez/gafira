@@ -211,6 +211,9 @@ struct Shell {
     parked: std::collections::BTreeMap<String, Box<Editor>>,
     /// The tabs, in the order of the strip: session keys (spec 111).
     tabs: Vec<String>,
+    /// The tabs still to close of «Cerrar todo» or «Cerrar otros», one
+    /// after the other, each asking when it has changes.
+    closing: Vec<String>,
     /// «Exportar» while its dialog is open (spec 030).
     export: Option<export::Dialog>,
     /// The export running on its thread (spec 035).
@@ -332,6 +335,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 leaving: None,
                 parked: std::collections::BTreeMap::new(),
                 tabs: Vec::new(),
+                closing: Vec::new(),
                 export: None,
                 exporting: None,
                 exported: None,
@@ -526,6 +530,7 @@ impl Shell {
                         .unwrap_or_else(|| self.texts.t(&gafira_doc::msg!("editor.untitled"))),
                     modified: s.modified,
                     active: s.active && in_editor,
+                    saved: s.path.is_some(),
                 })
             })
             .collect()
@@ -919,7 +924,11 @@ impl Shell {
         if let Some(to) = self.leaving.clone() {
             match dialogs::leave(ctx, &self.theme, &self.texts) {
                 LeaveChoice::None => {}
-                LeaveChoice::Cancel => self.leaving = None,
+                LeaveChoice::Cancel => {
+                    // Cancelling one question stops «Cerrar todo» too.
+                    self.leaving = None;
+                    self.closing.clear();
+                }
                 LeaveChoice::Discard => {
                     self.leaving = None;
                     self.proceed(to);
@@ -1119,8 +1128,29 @@ impl eframe::App for Shell {
         // (spec 111), and their shortcuts.
         self.sync_tabs();
         let mut tab_ask = None;
+        // The top bar of each screen draws them under itself (owner request).
+        let views = if matches!(self.screen, Screen::Splash) {
+            Vec::new()
+        } else {
+            self.tab_views()
+        };
+        let t = |key: &'static str| {
+            self.texts.t(&gafira_doc::msg::Message {
+                key: gafira_doc::msg::MessageKey(key),
+                args: Vec::new(),
+            })
+        };
+        let words = crate::tabs::Words {
+            new: t("tabs.new"),
+            close: t("tabs.close"),
+            close_all: t("tabs.close_all"),
+            close_others: t("tabs.close_others"),
+            new_document: t("tabs.new_document"),
+            open: t("tabs.open"),
+            reveal: t("tabs.reveal"),
+        };
+        crate::tabs::offer(ctx, views, words);
         if !self.tabs.is_empty() && !matches!(self.screen, Screen::Splash) {
-            tab_ask = crate::tabs::strip(ctx, &self.theme, &self.texts, &self.tab_views());
             let (next, back, close) = ctx.input_mut(|i| {
                 (
                     i.consume_shortcut(&TAB_NEXT),
@@ -1196,6 +1226,11 @@ impl eframe::App for Shell {
                 (self.notice.as_deref(), Some(frame)),
             ),
         };
+        // What the strip under the top bar was asked, unless a shortcut asked
+        // first.
+        if tab_ask.is_none() {
+            tab_ask = crate::tabs::take_ask(ctx);
+        }
         // A package uninstalled from a panel of the editor (spec 098).
         if let Screen::Editor(editor) = &mut self.screen
             && std::mem::take(&mut editor.packs_touched)
@@ -1230,10 +1265,43 @@ impl eframe::App for Shell {
             match ask {
                 crate::tabs::TabAsk::Show(key) => self.switch_to(&key),
                 crate::tabs::TabAsk::Close(key) => self.close_tab(&key),
+                crate::tabs::TabAsk::Move(key, to) => crate::tabs::moved(&mut self.tabs, &key, to),
+                crate::tabs::TabAsk::CloseAll => self.closing = self.tabs.clone(),
+                crate::tabs::TabAsk::CloseOthers(key) => {
+                    self.closing = self.tabs.iter().filter(|k| **k != key).cloned().collect();
+                }
+                crate::tabs::TabAsk::Open => {
+                    let before = self.park_current();
+                    self.file(FileAction::Open, None, Some(frame));
+                    self.back_to(before);
+                }
+                crate::tabs::TabAsk::Reveal(key) => {
+                    let path = self
+                        .engine
+                        .projects()
+                        .sessions()
+                        .into_iter()
+                        .find(|s| s.key == key)
+                        .and_then(|s| s.path);
+                    if let Some(path) = path
+                        && let Err(error) = (self.show_in_folder)(&path)
+                    {
+                        eprintln!("show in folder {}: {error}", path.display());
+                    }
+                }
                 crate::tabs::TabAsk::New => {
                     self.park_current();
                     self.screen = self.home();
                 }
+            }
+            ctx.request_repaint();
+        }
+        // «Cerrar todo» / «Cerrar otros»: the next tab, once no question is
+        // open.
+        if self.leaving.is_none() && !self.closing.is_empty() {
+            let key = self.closing.remove(0);
+            if self.tabs.contains(&key) {
+                self.close_tab(&key);
             }
             ctx.request_repaint();
         }

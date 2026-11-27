@@ -518,6 +518,11 @@ pub(crate) fn topbar(ctx: &egui::Context, theme: &Theme, id: &str, add: impl FnO
         .show(ctx, |ui| {
             ui.horizontal_centered(add);
         });
+    // The tabs of the open projects, right under the menus (spec 111);
+    // Ajustes covers the window and shows none.
+    if id != "settings.topbar" {
+        crate::tabs::under_topbar(ctx, theme);
+    }
 }
 
 #[cfg(test)]

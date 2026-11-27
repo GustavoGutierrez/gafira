@@ -23,7 +23,7 @@ use crate::canvas::{self, Shape};
 use crate::charts;
 use crate::clipboard::{self, Clip};
 use crate::elements::{self, Category, Move, Rail};
-use crate::files::{FileAction, project_name};
+use crate::files::FileAction;
 use crate::format::{fit_width, fit_zoom};
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
@@ -1142,7 +1142,6 @@ struct Header<'a> {
     can_undo: bool,
     can_redo: bool,
     modified: bool,
-    name: Option<String>,
     notice: Option<&'a str>,
 }
 
@@ -1693,7 +1692,6 @@ impl Editor {
             can_undo,
             can_redo,
             modified: engine.projects().is_modified(),
-            name: project_name(engine.projects().path().as_deref()),
             notice,
         };
         if !self.shown_loaded {
@@ -2385,6 +2383,26 @@ impl Editor {
                     ui.close();
                 }
             });
+            // «Redimensionar» (spec 108): its panel under the button.
+            let popup = egui::Id::new("editor.resize");
+            let open = egui::Popup::is_id_open(ui.ctx(), popup);
+            let button =
+                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
+            let place = document.as_deref().and_then(|document| {
+                let page = self.current_page(document)?;
+                Some((page.id, page.size, document.pages().len()))
+            });
+            if let Some(place) = place {
+                egui::Popup::menu(&button)
+                    .id(popup)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        if let Some(resize) = self.resize.show(ui, theme, texts, place) {
+                            asked.resize_design = Some(resize);
+                            ui.close();
+                        }
+                    });
+            }
             // «Ayuda» (owner request).
             widgets::topbar_menu(ui, theme, plain(texts, "menu.help"), |ui| {
                 ui.set_min_width(220.0);
@@ -2415,37 +2433,8 @@ impl Editor {
                     ui.close();
                 }
             });
-            // «Redimensionar» (spec 108): its panel under the button.
-            let popup = egui::Id::new("editor.resize");
-            let open = egui::Popup::is_id_open(ui.ctx(), popup);
-            let button =
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
-            let place = document.as_deref().and_then(|document| {
-                let page = self.current_page(document)?;
-                Some((page.id, page.size, document.pages().len()))
-            });
-            if let Some(place) = place {
-                egui::Popup::menu(&button)
-                    .id(popup)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .show(|ui| {
-                        if let Some(resize) = self.resize.show(ui, theme, texts, place) {
-                            asked.resize_design = Some(resize);
-                            ui.close();
-                        }
-                    });
-            }
+            // The file's name is on its tab now (owner request).
             ui.add_space(24.0);
-            ui.label(
-                RichText::new(
-                    header
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| texts.t(&gafira_doc::msg!("editor.untitled"))),
-                )
-                .font(theme.font("ui-label"))
-                .color(theme.c("topbar.fg")),
-            );
             ui.add_space(16.0);
             for (icon, key, shortcut, enabled, flag) in [
                 (

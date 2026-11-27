@@ -342,6 +342,12 @@ license_text = "Gafira es software libre: puedes usarlo, estudiarlo, compartirlo
 license_full = "Texto completo de la licencia (en inglés)"
 
 [tabs]
+close = "Cerrar"
+close_all = "Cerrar todo"
+close_others = "Cerrar otros"
+new_document = "Documento nuevo…"
+open = "Abrir…"
+reveal = "Mostrar en la carpeta"
 new = "Abrir o crear otro proyecto"
 
 [resize]
