@@ -116,6 +116,177 @@ impl RichText {
     pub fn spans(&self) -> impl Iterator<Item = &Span> {
         self.paragraphs.iter().flat_map(|p| &p.spans)
     }
+    /// The characters of the text, a line break between paragraphs
+    /// counting as one (the indices of [`RichText::restyle`]).
+    #[must_use]
+    pub fn char_count(&self) -> usize {
+        let letters: usize = self.spans().map(|s| s.text.chars().count()).sum();
+        letters + self.paragraphs.len().saturating_sub(1)
+    }
+
+    /// The style of the character at `at` (a line break has the style of the
+    /// letter before it); `None` past the end.
+    #[must_use]
+    pub fn style_at(&self, at: usize) -> Option<&SpanStyle> {
+        let mut left = at;
+        for (k, paragraph) in self.paragraphs.iter().enumerate() {
+            for span in &paragraph.spans {
+                let count = span.text.chars().count();
+                if left < count {
+                    return Some(&span.style);
+                }
+                left -= count;
+            }
+            if k + 1 < self.paragraphs.len() {
+                if left == 0 {
+                    return paragraph
+                        .spans
+                        .last()
+                        .map(|s| &s.style)
+                        .or(self.first_style());
+                }
+                left -= 1;
+            }
+        }
+        None
+    }
+
+    /// Changes with `change` the style of the characters in `range` (spec
+    /// 106): spans are cut where the range starts and ends, and spans of
+    /// one style next to each other become one. An empty range changes
+    /// nothing.
+    pub fn restyle(&mut self, range: std::ops::Range<usize>, change: &dyn Fn(&mut SpanStyle)) {
+        if range.start >= range.end {
+            return;
+        }
+        let mut letters = self.letters();
+        for (at, letter) in letters.iter_mut().enumerate() {
+            if range.contains(&at)
+                && let Letter::Char(_, style) = letter
+            {
+                change(style);
+            }
+        }
+        *self = Self::from_letters(&letters, self.first_style().cloned());
+    }
+
+    /// The text with `words` as its letters (spec 106): what stayed of the
+    /// old words keeps its styles, what was typed takes the style of the
+    /// letter before it (or after it, at the start), and a line break starts
+    /// a paragraph. The words are compared from both ends, as an edit at
+    /// one place changes them.
+    #[must_use]
+    pub fn edited(&self, words: &str) -> RichText {
+        let old = self.letters();
+        let new: Vec<char> = words.chars().collect();
+        let as_char = |l: &Letter| match l {
+            Letter::Char(c, _) => *c,
+            Letter::Break => '\n',
+        };
+        let same_start = old
+            .iter()
+            .zip(&new)
+            .take_while(|(a, b)| as_char(a) == **b)
+            .count();
+        let room = old.len().min(new.len()) - same_start;
+        let same_end = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(room)
+            .take_while(|(a, b)| as_char(a) == **b)
+            .count();
+        let style_of = |l: &Letter| match l {
+            Letter::Char(_, s) => Some(s.clone()),
+            Letter::Break => None,
+        };
+        // The style typed letters take: the letter before, else after.
+        let typed = old[..same_start]
+            .iter()
+            .rev()
+            .find_map(style_of)
+            .or_else(|| old[old.len() - same_end..].iter().find_map(style_of))
+            .or_else(|| self.first_style().cloned());
+        let mut letters: Vec<Letter> = old[..same_start].to_vec();
+        for c in &new[same_start..new.len() - same_end] {
+            letters.push(match (c, &typed) {
+                ('\n', _) => Letter::Break,
+                (c, Some(style)) => Letter::Char(*c, style.clone()),
+                (_, None) => continue,
+            });
+        }
+        letters.extend_from_slice(&old[old.len() - same_end..]);
+        Self::from_letters(&letters, self.first_style().cloned())
+    }
+
+    /// Every character with its style, paragraphs apart by a break.
+    fn letters(&self) -> Vec<Letter> {
+        let mut out = Vec::new();
+        for (k, paragraph) in self.paragraphs.iter().enumerate() {
+            if k > 0 {
+                out.push(Letter::Break);
+            }
+            for span in &paragraph.spans {
+                out.extend(
+                    span.text
+                        .chars()
+                        .map(|c| Letter::Char(c, span.style.clone())),
+                );
+            }
+        }
+        out
+    }
+
+    /// The text of `letters`, one span per run of one style; an empty
+    /// paragraph keeps one empty span in the style around it, or `fallback`.
+    fn from_letters(letters: &[Letter], fallback: Option<SpanStyle>) -> Self {
+        let mut paragraphs = vec![Paragraph::default()];
+        let mut last = fallback;
+        for letter in letters {
+            match letter {
+                Letter::Break => {
+                    if let (Some(current), Some(style)) = (paragraphs.last_mut(), &last)
+                        && current.spans.is_empty()
+                    {
+                        current.spans.push(Span {
+                            text: String::new(),
+                            style: style.clone(),
+                        });
+                    }
+                    paragraphs.push(Paragraph::default());
+                }
+                Letter::Char(c, style) => {
+                    last = Some(style.clone());
+                    let Some(current) = paragraphs.last_mut() else {
+                        continue;
+                    };
+                    match current.spans.last_mut() {
+                        Some(span) if span.style == *style => span.text.push(*c),
+                        _ => current.spans.push(Span {
+                            text: c.to_string(),
+                            style: style.clone(),
+                        }),
+                    }
+                }
+            }
+        }
+        if let (Some(current), Some(style)) = (paragraphs.last_mut(), &last)
+            && current.spans.is_empty()
+        {
+            current.spans.push(Span {
+                text: String::new(),
+                style: style.clone(),
+            });
+        }
+        Self { paragraphs }
+    }
+}
+
+/// A character of a rich text and its style, or a break between paragraphs.
+#[derive(Clone)]
+enum Letter {
+    Char(char, SpanStyle),
+    Break,
 }
 
 /// How the box follows the text (02 §3.1).
