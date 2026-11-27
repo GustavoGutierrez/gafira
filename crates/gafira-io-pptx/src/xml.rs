@@ -507,6 +507,7 @@ impl Writer<'_, '_, '_> {
                 color: style.color,
                 bold: style.bold,
                 italic: style.italic,
+                gradient: None,
             },
         );
         let body = self

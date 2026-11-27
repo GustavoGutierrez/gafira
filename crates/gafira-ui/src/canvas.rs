@@ -2176,6 +2176,7 @@ mod tests {
             color: document_color(Color32::BLACK),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let spec = new_text(Vec2::new(1000.0, 1000.0), "Hola", &style);
         // As wide as «Hola» (spec 095), centred on the page.
@@ -2646,6 +2647,7 @@ mod s41_tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let spec = text_at(Vec2::new(1000.0, 800.0), "Hola", &style, (300.0, 100.0));
         let p = spec.placement;
@@ -2660,6 +2662,7 @@ mod s41_tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         }
     }
 

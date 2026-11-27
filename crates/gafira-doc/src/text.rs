@@ -23,6 +23,10 @@ pub struct SpanStyle {
     /// The italic face of the family (spec 062). Written only when set.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub italic: bool,
+    /// A gradient for the letters of this span instead of its colour (spec
+    /// 106), over the box of the text. Written only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<crate::Gradient>,
 }
 
 /// The name a face is registered under for the render and the canvas (spec 062):
@@ -410,6 +414,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         }
     }
 

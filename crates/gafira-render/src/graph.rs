@@ -1412,6 +1412,7 @@ fn chart_pieces(
             color: chart.text.color,
             bold,
             italic: chart.text.italic,
+            gradient: None,
         };
         let content = gafira_doc::RichText::plain(text, &style);
         let wide = gafira_geom::Size::new(WIDE, 1.0);
@@ -1520,6 +1521,7 @@ fn cell_text(
             color: style.color,
             bold: style.bold,
             italic: style.italic,
+            gradient: None,
         },
     );
     let pad_x = padding.min(w / 2.0 - 0.5).max(0.0);
@@ -3024,6 +3026,7 @@ mod tests {
             color: ink,
             bold: false,
             italic: false,
+            gradient: None,
         };
         let mut text = TextNode::plain("Agregar algo de texto", &base);
         let plain = text.clone();
@@ -3150,6 +3153,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
         shape.fill = Some(RED);
@@ -3210,6 +3214,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 200.0, 60.0));
         let kind = NodeKind::Text(TextNode::plain(words, &style));
@@ -3230,6 +3235,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let fonts = fonts();
         let band = |curve: f64| {
@@ -3286,6 +3292,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let fonts = fonts();
         let measure = |letters: f64, lines: Option<f64>| {

@@ -1665,6 +1665,7 @@ mod tests {
             color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let page_px = Vec2::new(size.width() as f32, size.height() as f32);
         let spec = crate::canvas::new_text(page_px, "Hola, {{nombre}}", &style);

@@ -265,6 +265,7 @@ pub(crate) fn style(face: Face) -> SpanStyle {
         color: crate::colors::hex(face.color),
         bold: face.bold,
         italic: false,
+        gradient: None,
     }
 }
 

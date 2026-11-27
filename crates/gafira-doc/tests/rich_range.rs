@@ -16,6 +16,7 @@ fn style(bold: bool, red: bool) -> SpanStyle {
         color: ink,
         bold,
         italic: false,
+        gradient: None,
     }
 }
 
@@ -133,4 +134,30 @@ fn s106_04_style_of_a_range() {
     let before = text.clone();
     text.restyle(2..2, &|s: &mut SpanStyle| s.italic = true);
     assert_eq!(text, before);
+}
+
+// S106-09: a part of a text in a gradient (owner request): it travels with
+// its span, is written only when set, and a broken one is refused.
+#[test]
+fn s106_09_a_gradient_on_some_letters() {
+    use gafira_doc::{Gradient, GradientKind, GradientStop, TextNode};
+    let stop = |offset, r| GradientStop {
+        offset,
+        color: Color::Srgb(Rgba::new(r, 0.2, 0.6, 1.0)),
+    };
+    let gradient = Gradient {
+        kind: GradientKind::Linear { angle_deg: 0.0 },
+        stops: vec![stop(0.0, 1.0), stop(1.0, 0.0)],
+    };
+    let mut text = TextNode::plain("Agregar algo de texto", &style(false, false));
+    text.content.restyle(8..12, &|s: &mut SpanStyle| {
+        s.gradient = Some(gradient.clone());
+    });
+    assert!(text.content.mixed());
+    let json = serde_json::to_string(&text).expect("json");
+    assert_eq!(json.matches("\"gradient\"").count(), 1, "{json}");
+    let back: TextNode = serde_json::from_str(&json).expect("back");
+    assert_eq!(back, text);
+    let plain = serde_json::to_string(&TextNode::plain("x", &style(false, false))).unwrap();
+    assert!(!plain.contains("gradient"));
 }

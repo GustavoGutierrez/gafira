@@ -475,6 +475,24 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     if let Some(problem) = gradient.and_then(crate::Gradient::problem) {
         return Err(ValidationError::InvalidGradient { node: id, problem });
     }
+    // The gradients of some letters (spec 106).
+    let spans = match &node.kind {
+        NodeKind::Text(text) => Some(&text.content),
+        NodeKind::Shape(shape) => shape.text.as_ref().map(|t| &t.content),
+        _ => None,
+    };
+    let span_problem = spans
+        .into_iter()
+        .flat_map(crate::RichText::spans)
+        .find_map(|span| {
+            span.style
+                .gradient
+                .as_ref()
+                .and_then(crate::Gradient::problem)
+        });
+    if let Some(problem) = span_problem {
+        return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
     if let NodeKind::Qr(qr) = &node.kind
         && !qr.is_valid()
     {
@@ -1476,6 +1494,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let check = |size: f64, a: f32| {
             let mut page = page(1, &[]);

@@ -464,6 +464,10 @@ pub(crate) struct Editor {
     /// Where the bar of the letters chosen was drawn last (spec 106): a
     /// press on it does not end the writing.
     range_bar: Option<Rect>,
+    /// The letters chosen last in the text being written (spec 106): the
+    /// usual controls act on them, and the writing comes back with them.
+    last_range: Option<(PageId, NodeId, std::ops::Range<usize>)>,
+    back_to: Option<(PageId, NodeId, std::ops::Range<usize>)>,
     /// What «Copiar estilo» took, and whether the next click pastes it.
     painter: Option<crate::paint::Copied>,
     painting: bool,
@@ -669,6 +673,8 @@ impl Default for Editor {
             element_menu: None,
             element_menu_new: false,
             range_bar: None,
+            last_range: None,
+            back_to: None,
             painter: None,
             painting: false,
             side_rect: std::cell::Cell::new(None),
@@ -3095,6 +3101,7 @@ impl Editor {
                         color: text.color,
                         bold: text.bold,
                         italic: text.italic,
+                        gradient: None,
                     })
                 })
                 .or_else(|| {
@@ -5798,6 +5805,7 @@ impl Editor {
             color: ink,
             bold: false,
             italic: false,
+            gradient: None,
         };
         if let Some((page, node)) = asked.begin_edit {
             if self.editing.take().is_some_and(|e| e.gesture.is_some()) {
@@ -5908,7 +5916,7 @@ impl Editor {
                 }
             }
         }
-        if let Some(change) = asked.range_style {
+        if let Some(change) = asked.range_style.clone() {
             self.style_range(engine, change);
         }
         if asked.end_edit
@@ -6106,6 +6114,10 @@ impl Editor {
         // The letters chosen, kept while the bar takes the pointer.
         if let Some(range) = chosen {
             editing.selection = (!range.is_empty()).then_some(range);
+            self.last_range = editing
+                .selection
+                .clone()
+                .map(|range| (editing.page, editing.node, range));
         }
         let mut completed = false;
         if !self.field_keys.is_empty()
@@ -6151,6 +6163,18 @@ impl Editor {
         if !editing.focused {
             response.request_focus();
             editing.focused = true;
+            // Back from a control with the letters it changed (spec 106).
+            if let (Some(range), Some(mut state)) = (
+                editing.selection.clone(),
+                egui::TextEdit::load_state(ui.ctx(), response.id),
+            ) {
+                let ends = egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(range.start),
+                    egui::text::CCursor::new(range.end),
+                );
+                state.cursor.set_char_range(Some(ends));
+                state.store(ui.ctx(), response.id);
+            }
         } else if response.lost_focus() && on_bar {
             response.request_focus();
             if let (Some(range), Some(mut state)) = (
@@ -8660,8 +8684,15 @@ impl Editor {
                 self.fit_pending = self.selected.single();
             }
         }
-        self.text_styles(engine, asked);
-        if let (Some(text), Some((page, node))) = (&asked.text, self.selected.single()) {
+        // Spec 106: with letters chosen in the selected text, the usual
+        // controls change those letters only.
+        let ranged = self.ranged_change(engine, asked);
+        if !ranged {
+            self.text_styles(engine, asked);
+        }
+        if let (false, Some(text), Some((page, node))) =
+            (ranged, &asked.text, self.selected.single())
+        {
             let command =
                 SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
             log("text", engine.edit().execute(Box::new(command)).map(drop));
@@ -9035,7 +9066,10 @@ impl Editor {
         if let Some(open) = asked.font_panel {
             self.font_panel = open;
         }
-        if let Some((family, bold, italic)) = &asked.font {
+        if let Some((page, node, range)) = self.back_to.take() {
+            self.write_again(engine, (page, node, range));
+        }
+        if let (false, Some((family, bold, italic))) = (ranged, &asked.font) {
             self.apply_font(engine, (family, *bold, *italic));
             // Another face may change the height of the words (spec 061).
             self.fit_pending = self.selected.single();
@@ -13251,6 +13285,7 @@ fn span_of(style: &gafira_doc::CellStyle) -> gafira_doc::SpanStyle {
         color: style.color,
         bold: style.bold,
         italic: style.italic,
+        gradient: None,
     }
 }
 
@@ -13621,6 +13656,7 @@ fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyl
         color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
         bold: false,
         italic: false,
+        gradient: None,
     }
 }
 
@@ -16462,13 +16498,109 @@ impl Editor {
         let Some(range) = editing.selection.clone() else {
             return;
         };
+        let at = (editing.page, editing.node, range);
+        Self::style_range_at(engine, at, &change);
+    }
+
+    /// The change of the usual controls (Propiedades: size, bold, italic,
+    /// colour; «Fuente») on the letters chosen last in the selected text,
+    /// if there are any; the writing then comes back with them. Whether it
+    /// was so.
+    fn ranged_change(&mut self, engine: &mut Gafira, asked: &Asked) -> bool {
+        let Some((page, node, range)) = self
+            .last_range
+            .clone()
+            .filter(|(p, n, _)| self.selected.single() == Some((*p, *n)))
+        else {
+            return false;
+        };
+        let Some(document) = engine.edit().document() else {
+            return false;
+        };
+        let old = document
+            .page(page)
+            .and_then(|p| p.node(node))
+            .and_then(|n| match &n.kind {
+                gafira_doc::NodeKind::Text(t) => t.content.first_style().cloned(),
+                gafira_doc::NodeKind::Shape(s) => s
+                    .text
+                    .as_ref()
+                    .and_then(|t| t.content.first_style().cloned()),
+                _ => None,
+            });
+        let patch = if let (Some(text), Some(old)) = (&asked.text, &old) {
+            text.first_style().map(|new| StylePatch::between(old, new))
+        } else if let Some(TextFill::Solid(color)) = &asked.text_fill {
+            Some(StylePatch {
+                color: Some(*color),
+                ..StylePatch::default()
+            })
+        } else {
+            asked
+                .font
+                .as_ref()
+                .map(|(family, bold, italic)| StylePatch {
+                    font: Some(family.clone()),
+                    bold: Some(*bold),
+                    italic: Some(*italic),
+                    ..StylePatch::default()
+                })
+        };
+        let Some(patch) = patch.filter(|p| *p != StylePatch::default()) else {
+            return false;
+        };
+        Self::style_range_at(engine, (page, node, range.clone()), &RangeStyle::Set(patch));
+        self.back_to = Some((page, node, range));
+        true
+    }
+
+    /// Write again in `node` of `page` with `range` chosen (spec 106).
+    fn write_again(
+        &mut self,
+        engine: &mut Gafira,
+        (page, node, range): (PageId, NodeId, std::ops::Range<usize>),
+    ) {
         let Some(document) = engine.edit().document() else {
             return;
         };
-        let Some(node) = document
-            .page(editing.page)
-            .and_then(|p| p.node(editing.node))
-        else {
+        let words = match document
+            .page(page)
+            .and_then(|p| p.node(node))
+            .map(|n| &n.kind)
+        {
+            Some(gafira_doc::NodeKind::Text(text)) => text.content.plain_text(),
+            Some(gafira_doc::NodeKind::Shape(shape)) => shape
+                .text
+                .as_ref()
+                .map(|t| t.content.plain_text())
+                .unwrap_or_default(),
+            _ => return,
+        };
+        if self.editing.take().is_some_and(|e| e.gesture.is_some()) {
+            let _ = engine.edit().end_gesture();
+        }
+        let gesture = engine.edit().begin_gesture().ok();
+        self.editing = Some(Editing {
+            page,
+            node,
+            words,
+            selection: Some(range),
+            gesture,
+            focused: false,
+        });
+    }
+
+    /// `change` on the letters `range` of the text `node` of `page`, one
+    /// undo step (spec 106).
+    fn style_range_at(
+        engine: &mut Gafira,
+        (page, id, range): (PageId, NodeId, std::ops::Range<usize>),
+        change: &RangeStyle,
+    ) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(node) = document.page(page).and_then(|p| p.node(id)) else {
             return;
         };
         let restyle = |content: &gafira_doc::RichText| {
@@ -16485,12 +16617,12 @@ impl Editor {
                             .round()
                             .clamp(1.0, gafira_doc::TextNode::MAX_SIZE);
                     }
-                    RangeStyle::Color(color) => style.color = color,
+                    RangeStyle::Color(color) => style.color = *color,
+                    RangeStyle::Set(patch) => patch.apply(style),
                 },
             );
             out
         };
-        let (page, id) = (editing.page, editing.node);
         let commands: Vec<Box<dyn Command>> = match &node.kind {
             gafira_doc::NodeKind::Text(text) => {
                 let content = restyle(&text.content);
@@ -16541,13 +16673,57 @@ impl Editor {
 }
 
 /// A change of the letters chosen in a text being written (spec 106).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum RangeStyle {
     Bold,
     Italic,
     /// The size times this.
     Size(f64),
     Color(gafira_color::Color),
+    /// What the usual controls set (Propiedades, «Fuente»): only what is
+    /// given changes.
+    Set(StylePatch),
+}
+
+/// A change of some fields of a style (spec 106).
+#[derive(Clone, Debug, Default, PartialEq)]
+struct StylePatch {
+    font: Option<String>,
+    size: Option<f64>,
+    bold: Option<bool>,
+    italic: Option<bool>,
+    color: Option<gafira_color::Color>,
+}
+
+impl StylePatch {
+    /// What differs from `old` in `new`.
+    fn between(old: &gafira_doc::SpanStyle, new: &gafira_doc::SpanStyle) -> Self {
+        Self {
+            font: (new.font != old.font).then(|| new.font.clone()),
+            size: (new.size != old.size).then_some(new.size),
+            bold: (new.bold != old.bold).then_some(new.bold),
+            italic: (new.italic != old.italic).then_some(new.italic),
+            color: (new.color != old.color).then_some(new.color),
+        }
+    }
+
+    fn apply(&self, style: &mut gafira_doc::SpanStyle) {
+        if let Some(font) = &self.font {
+            style.font.clone_from(font);
+        }
+        if let Some(size) = self.size {
+            style.size = size;
+        }
+        if let Some(bold) = self.bold {
+            style.bold = bold;
+        }
+        if let Some(italic) = self.italic {
+            style.italic = italic;
+        }
+        if let Some(color) = self.color {
+            style.color = color;
+        }
+    }
 }
 
 /// The colours of the bar of the letters chosen: the ink, white and the
@@ -19771,6 +19947,7 @@ pub(crate) mod tests {
             color: canvas::document_color(Color32::BLACK),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let text = gafira_doc::TextNode::plain("Hola", &style);
         let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
@@ -22634,6 +22811,7 @@ pub(crate) mod tests {
             color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.8, 0.1, 0.1, 1.0)),
             bold: true,
             italic: false,
+            gradient: None,
         };
         engine
             .edit()
@@ -23002,5 +23180,83 @@ pub(crate) mod tests {
         theme().apply(&ctx);
         frame(&ctx, &mut editor, &mut engine, None);
         assert!(editor.editing.is_some(), "still writing");
+    }
+
+    // S106-08 (owner report): letters chosen while writing, then «Negrita»
+    // and a colour of Propiedades, which end the writing: only those
+    // letters change, the rest keeps its style, and the writing comes back
+    // with the letters chosen for the next change.
+    #[test]
+    fn s106_08_the_usual_controls_style_the_chosen_letters() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "Agregar algo de texto".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (page, node) = editor.selected.single().expect("the text");
+        let document = engine.edit().document();
+        let asked = Asked {
+            begin_edit: Some((page, node)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        // What the field records when «algo» is chosen.
+        editor.editing.as_mut().expect("writing").selection = Some(8..12);
+        editor.last_range = Some((page, node, 8..12));
+        let content = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("a document");
+            match &document.pages()[0].nodes[&node].kind {
+                gafira_doc::NodeKind::Text(t) => t.content.clone(),
+                _ => gafira_doc::RichText::default(),
+            }
+        };
+        // «Negrita» of Propiedades: the whole text in bold, as it asks, and
+        // the click ends the writing.
+        let before = content(&mut engine);
+        let mut bold = before.first_style().expect("a style").clone();
+        bold.bold = true;
+        let document = engine.edit().document();
+        let asked = Asked {
+            text: Some(gafira_doc::RichText::plain(&before.plain_text(), &bold)),
+            end_edit: true,
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let after = content(&mut engine);
+        assert!(after.style_at(9).expect("a style").bold, "«algo» bold");
+        assert!(!after.style_at(2).expect("a style").bold, "the rest is not");
+        let back = editor.editing.as_ref().expect("writing again");
+        assert_eq!((back.node, back.selection.clone()), (node, Some(8..12)));
+        // A colour of Propiedades: «algo» red, the rest as it was.
+        let red = gafira_color::Color::Srgb(gafira_color::Rgba::new(0.9, 0.1, 0.1, 1.0));
+        let document = engine.edit().document();
+        let asked = Asked {
+            text_fill: Some(TextFill::Solid(red)),
+            end_edit: true,
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let after = content(&mut engine);
+        let algo = after.style_at(9).expect("a style");
+        assert!(algo.bold && algo.color == red);
+        assert_ne!(after.style_at(2).expect("a style").color, red);
+        assert_eq!(after.plain_text(), "Agregar algo de texto");
+        // With no letters chosen, the controls change the whole text.
+        editor.last_range = None;
+        editor.editing = None;
+        let document = engine.edit().document();
+        let asked = Asked {
+            text_fill: Some(TextFill::Solid(red)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        assert_eq!(
+            content(&mut engine).style_at(2).expect("a style").color,
+            red
+        );
     }
 }
