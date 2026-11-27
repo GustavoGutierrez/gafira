@@ -414,10 +414,12 @@ pub(crate) struct Editor {
     model3d_note: Option<(&'static str, f64, bool)>,
     /// The box each curved text texture covers, by its key (FD-44).
     curved_covers: std::cell::RefCell<std::collections::BTreeMap<u64, Placement>>,
-    /// The headings with effects of the font pairings, drawn once for
-    /// their cards: the picture and its size on the card.
-    pairing_samples:
-        std::cell::RefCell<std::collections::BTreeMap<usize, Option<(egui::TextureHandle, Vec2)>>>,
+    /// The font pairings drawn for their cards, once per wording, by
+    /// their index in [`pairings::PAIRINGS`].
+    pairing_samples: std::cell::RefCell<std::collections::BTreeMap<usize, Option<PairingSample>>>,
+    /// How many font pairing cards the Texto panel lists: more come in as
+    /// the list is scrolled to its end (owner request).
+    pairings_shown: std::cell::Cell<usize>,
     /// The text being written on the canvas (spec 055).
     editing: Option<Editing>,
     /// Crop mode of a frame (S66-07): the photo moves inside it, the whole
@@ -660,6 +662,7 @@ impl Default for Editor {
             model3d_note: None,
             curved_covers: std::cell::RefCell::default(),
             pairing_samples: std::cell::RefCell::default(),
+            pairings_shown: std::cell::Cell::new(PAIRINGS_PAGE),
             editing: None,
             cropping: None,
             paste_seen: false,
@@ -925,7 +928,7 @@ struct Asked {
     /// A font pairing from the Texto panel, by its index in
     /// [`pairings::PAIRINGS`], in the middle of the page or where it was
     /// dropped: a group of a heading and a body line.
-    insert_pairing: Option<(usize, (String, String), Option<Dropped>)>,
+    insert_pairing: Option<(usize, Vec<String>, Option<Dropped>)>,
     /// «Curva» of the selected texts (FD-44).
     text_curve: Option<f64>,
     /// An illustration to insert as vector shapes (spec 072): its SVG, its
@@ -3979,101 +3982,155 @@ impl Editor {
         });
         ui.add_space(16.0);
         section_title(ui, theme, texts, "text.pairings");
-        let heading_words = plain(texts, "text.pairing_heading");
-        let body_words = plain(texts, "text.pairing_body");
-        for (index, pairing) in pairings::PAIRINGS.iter().enumerate() {
-            let (rect, response) = ui.allocate_exact_size(
-                Vec2::new(ui.available_width(), 92.0),
-                egui::Sense::click_and_drag(),
-            );
-            card_frame(ui, theme, rect, response.hovered());
-            let clip = ui.painter().with_clip_rect(rect.shrink(1.0));
-            let left = rect.left() + 14.0;
-            clip.text(
-                Pos2::new(left, rect.top() + 10.0),
-                Align2::LEFT_TOP,
-                plain(texts, pairing.key),
-                theme.font("body-sm"),
-                theme.c("text.secondary"),
-            );
-            // A heading with effects is drawn as the canvas draws it.
-            let sample = (!(pairing.heading.effects)().is_empty())
-                .then(|| self.pairing_sample(ui.ctx(), index, &heading_words))
-                .flatten();
-            if let Some((texture, size)) = &sample {
-                let room = Vec2::new(rect.width() - 28.0, 36.0);
-                let k = (room.x / size.x).min(room.y / size.y).min(1.0);
-                let place = Rect::from_min_size(Pos2::new(left, rect.top() + 28.0), *size * k);
-                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                clip.image(texture.id(), place, uv, Color32::WHITE);
-            }
-            for (face, words, y, size) in [
-                (pairing.heading, &heading_words, rect.top() + 30.0, 24.0),
-                (pairing.body, &body_words, rect.top() + 66.0, 12.0),
-            ] {
-                if sample.is_some() && y < rect.top() + 60.0 {
-                    continue;
+        // Two columns of square cards, as the page would show each
+        // composition; more load as the list is scrolled to its end, and
+        // only cards in sight are drawn, a few a frame (owner request).
+        let count = pairings::PAIRINGS.len();
+        let shown = self
+            .pairings_shown
+            .get()
+            .clamp(PAIRINGS_PAGE.min(count), count);
+        let gap = 8.0;
+        let side = ((ui.available_width() - gap) / 2.0).max(40.0);
+        let mut drawn = 0;
+        for row in (0..shown).step_by(2) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for index in row..(row + 2).min(shown) {
+                    self.pairing_card(ui, theme, texts, asked, (index, side), &mut drawn);
                 }
-                let style = pairings::style(face);
-                let family = text_family(ui.ctx(), theme, &style);
-                clip.text(
-                    Pos2::new(left, y),
-                    Align2::LEFT_TOP,
-                    pairings::words(face, words),
-                    egui::FontId::new(size, family),
-                    canvas::screen_color(style.color),
-                );
+            });
+            ui.add_space(gap);
+        }
+        if shown < count {
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::hover());
+            if ui.is_rect_visible(rect) {
+                self.pairings_shown.set(shown + PAIRINGS_PAGE);
+                ui.ctx().request_repaint();
             }
-            let words = (heading_words.clone(), body_words.clone());
-            if response.clicked() {
-                asked.insert_pairing = Some((index, words.clone(), None));
-            }
-            self.carry(
-                ui,
-                theme,
-                &response,
-                &plain(texts, pairing.key),
-                |page, point| {
-                    asked.insert_pairing = Some((index, words, Some((page, point))));
-                },
-            );
-            ui.add_space(8.0);
         }
     }
 
-    /// The heading with effects of pairing `index`, drawn once at the size
-    /// of a card (owner request: pairings with effects).
+    /// The card of font pairing `index`, `side` px square: the composition
+    /// drawn as the canvas draws it, scaled to fit, its alignment and
+    /// proportions as they come onto the page. `drawn` counts the samples
+    /// drawn this frame, so a fast scroll draws a few a frame.
+    fn pairing_card(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        asked: &mut Asked,
+        (index, side): (usize, f32),
+        drawn: &mut usize,
+    ) {
+        let Some(pairing) = pairings::PAIRINGS.get(index) else {
+            return;
+        };
+        let name = plain(texts, pairing.key);
+        let words = pairings::split(pairing, &plain(texts, pairing.words));
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click_and_drag());
+        if ui.is_rect_visible(rect) {
+            // A sheet of paper, as the page: the compositions are drawn in
+            // their own colours whatever the theme.
+            let border = if response.hovered() {
+                theme.c("primary.bg")
+            } else {
+                theme.c("border")
+            };
+            ui.painter().rect(
+                rect,
+                theme.radius_md(),
+                PAIRING_PAPER,
+                Stroke::new(1.0, border),
+                egui::StrokeKind::Inside,
+            );
+            let ready = self
+                .pairing_samples
+                .borrow()
+                .get(&index)
+                .is_some_and(|s| s.as_ref().is_none_or(|s| s.words == words));
+            let sample = if ready || *drawn < PAIRINGS_PER_FRAME {
+                if !ready {
+                    *drawn += 1;
+                }
+                self.pairing_sample(ui.ctx(), index, &words)
+            } else {
+                ui.ctx().request_repaint();
+                None
+            };
+            if let Some(sample) = sample {
+                let room = rect.shrink(side * 0.1);
+                let k = (room.width() / sample.size.x)
+                    .min(room.height() / sample.size.y)
+                    .min(1.0);
+                let origin = room.center() - sample.size * k / 2.0;
+                let clip = ui.painter().with_clip_rect(rect.shrink(1.0));
+                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                for (texture, at) in &sample.parts {
+                    let place = Rect::from_min_size(origin + at.min.to_vec2() * k, at.size() * k);
+                    clip.image(texture.id(), place, uv, Color32::WHITE);
+                }
+            }
+        }
+        let response = response.on_hover_text(&name);
+        if response.clicked() {
+            asked.insert_pairing = Some((index, words.clone(), None));
+        }
+        self.carry(ui, theme, &response, &name, |page, point| {
+            asked.insert_pairing = Some((index, words, Some((page, point))));
+        });
+    }
+
+    /// Font pairing `index` saying `words`, drawn once with the outline
+    /// the canvas and the export use, each text apart: its pictures and
+    /// where they go in the group, and the group's size.
     fn pairing_sample(
         &self,
         ctx: &egui::Context,
         index: usize,
-        words: &str,
-    ) -> Option<(egui::TextureHandle, Vec2)> {
+        words: &[String],
+    ) -> Option<PairingSample> {
         let mut samples = self.pairing_samples.borrow_mut();
+        let stale = samples
+            .get(&index)
+            .is_some_and(|s| s.as_ref().is_some_and(|s| s.words != words));
+        if stale {
+            samples.remove(&index);
+        }
         samples
             .entry(index)
             .or_insert_with(|| {
                 let pairing = pairings::PAIRINGS.get(index)?;
-                let face = pairing.heading;
-                let mut text = gafira_doc::TextNode::plain(
-                    &pairings::words(face, words),
-                    &pairings::style(face),
-                );
-                text.sizing = gafira_doc::TextSizing::AutoWidth;
-                text.effects = (face.effects)();
-                let w = canvas::natural_width(&text)?;
-                let h = face.size * 1.3;
-                // Twice the size it is shown at, for sharp edges.
-                let shown = 36.0 / h;
-                let placement = Placement::new(0.0, 0.0, w, h);
-                let (image, cover) =
-                    canvas::curved_text_image(&text, &placement, (shown * 2.0) as f32)?;
-                let size = Vec2::new((cover.w * shown) as f32, (cover.h * shown) as f32);
-                let options = egui::TextureOptions::LINEAR;
-                Some((
-                    ctx.load_texture(format!("pairing-{index}"), image, options),
-                    size,
-                ))
+                let spec = pairings::group(1000.0, (0.0, 0.0), pairing, words);
+                let g = spec.placement;
+                // Twice the size of the card, for sharp edges.
+                let zoom = (2.0 * PAIRING_SAMPLE_PX / g.w.max(g.h)).clamp(0.05, 2.0) as f32;
+                let mut parts = Vec::new();
+                for (n, child) in spec.children.iter().enumerate() {
+                    let gafira_doc::NodeKind::Text(text) = &child.kind else {
+                        continue;
+                    };
+                    let Some((image, cover)) =
+                        canvas::curved_text_image(text, &child.placement, zoom)
+                    else {
+                        continue;
+                    };
+                    let at = Rect::from_min_size(
+                        Pos2::new((cover.x - g.x) as f32, (cover.y - g.y) as f32),
+                        Vec2::new(cover.w as f32, cover.h as f32),
+                    );
+                    let options = egui::TextureOptions::LINEAR;
+                    let texture = ctx.load_texture(format!("pairing-{index}-{n}"), image, options);
+                    parts.push((texture, at));
+                }
+                (!parts.is_empty()).then(|| PairingSample {
+                    words: words.to_vec(),
+                    size: Vec2::new(g.w as f32, g.h as f32),
+                    parts,
+                })
             })
             .clone()
     }
@@ -4174,7 +4231,7 @@ impl Editor {
         &mut self,
         engine: &mut Gafira,
         document: &Document,
-        (index, (heading, body)): (usize, &(String, String)),
+        (index, words): (usize, &[String]),
         (page, at): (PageId, Option<(f64, f64)>),
     ) {
         let (Some(on), Some(pairing)) = (document.page(page), pairings::PAIRINGS.get(index)) else {
@@ -4185,7 +4242,7 @@ impl Editor {
         };
         let (w, h) = (size.width(), size.height());
         let centre = at.unwrap_or((w / 2.0, h / 2.0));
-        let spec = pairings::group(w, centre, *pairing, (heading, body));
+        let spec = pairings::group(w, centre, pairing, words);
         let next = NodeId::new(document.next_id());
         let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
         match engine.edit().execute(Box::new(command)) {
@@ -14843,6 +14900,29 @@ fn section_title(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, key: &'static 
 }
 
 /// The rounded card of a side panel at `rect`, lighter under the pointer.
+/// How many font pairing cards come in at a time as the list scrolls.
+const PAIRINGS_PAGE: usize = 12;
+
+/// How many font pairing samples are drawn in one frame.
+const PAIRINGS_PER_FRAME: usize = 2;
+
+/// The size, in px, a font pairing sample is drawn for.
+const PAIRING_SAMPLE_PX: f64 = 160.0;
+
+/// The paper of the font pairing cards: the page they show, whatever the
+/// theme.
+const PAIRING_PAPER: Color32 = Color32::from_rgb(0xF4, 0xF5, 0xF8);
+
+/// A font pairing drawn for its card: the wording it shows, the size of
+/// its group in px of page and each text's picture with the box it covers
+/// in the group.
+#[derive(Clone)]
+struct PairingSample {
+    words: Vec<String>,
+    size: Vec2,
+    parts: Vec<(egui::TextureHandle, Rect)>,
+}
+
 fn card_frame(ui: &egui::Ui, theme: &Theme, rect: Rect, hovered: bool) {
     let fill = if hovered {
         theme.c("surface.sunken")
@@ -18680,7 +18760,11 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                insert_pairing: Some((1, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                insert_pairing: Some((
+                    1,
+                    vec!["Título".to_owned(), "Cuerpo".to_owned(), "Texto".to_owned()],
+                    None,
+                )),
                 ..Asked::default()
             },
         );
@@ -18690,7 +18774,7 @@ pub(crate) mod tests {
         let node = page.node(group).expect("the group");
         assert!(matches!(node.kind, gafira_doc::NodeKind::Group(_)));
         let children = node.children.clone();
-        assert_eq!(children.len(), 2);
+        assert_eq!(children.len(), pairings::PAIRINGS[1].lines.len());
         assert!(children.iter().all(|c| matches!(
             page.node(*c).map(|n| &n.kind),
             Some(gafira_doc::NodeKind::Text(_))
@@ -19678,7 +19762,11 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                insert_pairing: Some((0, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                insert_pairing: Some((
+                    0,
+                    vec!["Título".to_owned(), "Cuerpo".to_owned(), "Texto".to_owned()],
+                    None,
+                )),
                 ..Asked::default()
             },
         );
@@ -22966,32 +23054,24 @@ pub(crate) mod tests {
         assert_eq!(editor.selected.single(), Some((page, node)));
     }
 
-    // Owner request: the cards of the pairings with effects show them, drawn
-    // as the canvas draws them.
+    // Owner request: every font pairing card shows its whole composition,
+    // each text drawn as the canvas draws it, in a group as wide as it is.
     #[test]
-    fn pairing_cards_show_their_effects() {
-        let mut engine = engine();
-        start(&mut engine, StartFormat::Social).expect("a new document");
-        let mut editor = Editor::default();
-        let tab = TABS
-            .iter()
-            .position(|(key, _)| *key == "tab.text")
-            .expect("the tab");
-        editor.rail.click_tab(tab);
+    fn pairing_cards_show_their_compositions() {
+        let editor = Editor::default();
         let ctx = egui::Context::default();
         theme().apply(&ctx);
-        // The panel scrolls: draw the samples straight, as the cards do.
-        frame(&ctx, &mut editor, &mut engine, None);
-        let lit: Vec<usize> = pairings::PAIRINGS
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| !(p.heading.effects)().is_empty())
-            .map(|(i, _)| i)
-            .collect();
-        for index in lit {
-            let sample = editor.pairing_sample(&ctx, index, "Añade un título");
-            let (_, size) = sample.expect("drawn");
-            assert!(size.x > size.y && size.y > 0.0, "{index}: {size:?}");
+        for (index, pairing) in pairings::PAIRINGS.iter().enumerate() {
+            let words: Vec<String> = (0..pairing.lines.len())
+                .map(|n| format!("Línea {n}"))
+                .collect();
+            let sample = editor.pairing_sample(&ctx, index, &words).expect("drawn");
+            assert_eq!(sample.parts.len(), pairing.lines.len(), "{}", pairing.key);
+            assert!(
+                sample.size.x > 0.0 && sample.size.y > 0.0,
+                "{}",
+                pairing.key
+            );
         }
     }
 

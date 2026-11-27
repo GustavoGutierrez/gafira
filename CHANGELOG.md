@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- Eight more font families, now 56: high-contrast display serifs (Abril Fatface, Yeseva One), scripts (Lobster, Pinyon Script), a rounded heavy face (Lilita One), a stencil (Black Ops One), a textured face (Rubik Dirt) and a marker (Permanent Marker).
+
+### Changed
+
+- «Combinaciones de fuentes» redesigned: forty-two compositions of two or three texts with display, script, brush, blackletter, sketched, stencil and outlined families, letter spacing, line height, curves and effects, some with a full headline, subtitle and paragraph to rewrite. The panel shows them in two columns, drawn as the canvas draws them, and loads more as it scrolls. Added to a page, each keeps the alignment and proportions its card shows.
+
 ## [0.5.0] - 2026-11-26
 
 Bulk create from a spreadsheet, styles on chosen words, a right-click menu with a style painter, and fifteen more fonts.

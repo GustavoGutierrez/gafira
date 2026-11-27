@@ -38,6 +38,8 @@ Thirty-three families from [google/fonts](https://github.com/google/fonts), comm
 
 Fifteen more families from the same repository, commit `5026800714d07231937d92eb4cceabf06e05d74e`, all under the SIL Open Font License 1.1 with their `OFL.txt` next to their files and all unmodified: Londrina Outline, Rubik Bubbles, Sniglet, Cabin Sketch, Michroma, Rye, Mr Dafoe, Damion, Mrs Saint Delafield, Herr Von Muellerhoff, Monsieur La Doulaise, Meddon, UnifrakturMaguntia, UnifrakturCook and Pirata One. UnifrakturCook ships only its bold file, used as the family's single face.
 
+Eight more families from the same repository and commit, all unmodified with their licence text next to their files: Abril Fatface, Yeseva One, Lobster, Pinyon Script, Lilita One, Black Ops One and Rubik Dirt under the SIL Open Font License 1.1 (`OFL.txt`), and Permanent Marker under the Apache License 2.0 (`assets/fonts/library/permanentmarker/LICENSE.txt`).
+
 ## Open Peeps and Open Doodles (spec 072)
 
 - Illustrations by Pablo Stanley: 93 characters of Open Peeps (<https://www.openpeeps.com>) in `assets/illustrations/openpeeps/` and 33 drawings of Open Doodles (<https://www.opendoodles.com>) in `assets/illustrations/opendoodles/`, as published on their sites on 2026-11-21, unmodified (Open Doodles file names in lower case).
