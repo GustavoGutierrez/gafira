@@ -209,12 +209,27 @@ const es: Copy = {
       {
         icon: 'shapes',
         title: 'Formas, líneas y comillas',
-        text: '215 formas: polígonos, estrellas, flechas, diagramas, globos de diálogo, nubes y comillas. Líneas que se conectan a las formas.',
+        text: '265 formas: polígonos, estrellas, flechas, diagramas, globos de diálogo, nubes, comillas, pinceladas grunge, salpicaduras y rasgaduras. Líneas que se conectan a las formas.',
       },
       {
         icon: 'text-aa',
         title: 'Texto con estilo',
-        text: '48 familias tipográficas incluidas, también de firma y góticas para diplomas; combinaciones de fuentes con efectos, texto curvo y efectos de texto.',
+        text: '56 familias tipográficas incluidas, también de firma y góticas para diplomas; 43 combinaciones de fuentes artísticas, texto curvo y efectos de texto.',
+      },
+      {
+        icon: 'tabs',
+        title: 'Varios proyectos en pestañas',
+        text: 'Abre varios diseños a la vez, cada uno en su pestaña con su nombre. Reordénalas, ciérralas o cambia de una a otra con Ctrl+Tab.',
+      },
+      {
+        icon: 'arrows-out',
+        title: 'Redimensionar el diseño',
+        text: 'Pasa todo el diseño a otro tamaño del catálogo o a medida, con su contenido ajustado, en el mismo diseño o en una copia.',
+      },
+      {
+        icon: 'sparkle',
+        title: 'Efectos de luz',
+        text: 'Catorce luces personalizables: destellos, bokeh, luz de luna, foco, aurora boreal, estela de cometa, fuga de luz y anillo luminoso.',
       },
       {
         icon: 'text-b',
@@ -627,12 +642,27 @@ const en: Copy = {
       {
         icon: 'shapes',
         title: 'Shapes, lines and quotes',
-        text: '215 shapes: polygons, stars, arrows, diagrams, speech bubbles, clouds and quote marks. Lines that connect to shapes.',
+        text: '265 shapes: polygons, stars, arrows, diagrams, speech bubbles, clouds, quote marks, grunge brush strokes, splatters and claw marks. Lines that connect to shapes.',
       },
       {
         icon: 'text-aa',
         title: 'Text with style',
-        text: '48 bundled font families, signature and blackletter ones for diplomas included; font pairings with effects, curved text and text effects.',
+        text: '56 bundled font families, signature and blackletter ones for diplomas included; 43 artistic font pairings, curved text and text effects.',
+      },
+      {
+        icon: 'tabs',
+        title: 'Several projects in tabs',
+        text: 'Open several designs at once, each in its own tab with its name. Reorder them, close them or switch with Ctrl+Tab.',
+      },
+      {
+        icon: 'arrows-out',
+        title: 'Resize the design',
+        text: 'Take the whole design to another catalogue or custom size with its content fitted, in place or in a copy.',
+      },
+      {
+        icon: 'sparkle',
+        title: 'Light effects',
+        text: 'Fourteen customisable lights: flares, bokeh, moonlight, spotlight, northern lights, comet trail, light leak and a ring of light.',
       },
       {
         icon: 'text-b',
