@@ -23,7 +23,7 @@
 
 Gafira es un programa de diseño gráfico local para todas las personas y creadores de contenido, escrito en Rust (egui). Elige una plantilla, personalízala y compártela. Funciona en Windows, macOS y Linux, en español e inglés. Es software libre y de código abierto bajo la GPL, versión 3 o posterior.
 
-Versión actual: `0.5.0` (ver `CHANGELOG.md`).
+Versión actual: `0.6.0` (ver `CHANGELOG.md`).
 
 Web: <https://gafira.com> (español) · <https://gafira.com/en/> (inglés). Su código está en `website/`.
 
@@ -36,11 +36,13 @@ Web: <https://gafira.com> (español) · <https://gafira.com/en/> (inglés). Su c
 ## Qué hace
 
 - **Empezar:** Inicio con búsqueda, diseños recientes y 75 plantillas por idioma (redes sociales, presentaciones, impresos, invitaciones, documentos, web y correo), o un diseño con tu propio tamaño.
-- **Diseñar:** 215 formas en 17 secciones (líneas, polígonos, estrellas, flechas, diagramas, bocadillos, nubes, comillas), líneas que se conectan a las formas, texto con 48 familias tipográficas incluidas (también de firma y góticas), estilos en palabras elegidas (negrita, cursiva, tamaño, color y degradado), texto curvo, texto dentro de formas y efectos de texto, dibujo a mano alzada con 16 pinceles, marcos y collage de fotos, tablas (importación de Excel y CSV), gráficos y códigos QR.
+- **Diseñar:** 265 formas en 20 secciones (líneas, polígonos, estrellas, flechas, diagramas, bocadillos, nubes, comillas, pinceladas grunge, salpicaduras y rasgaduras), líneas que se conectan a las formas, texto con 56 familias tipográficas incluidas (también de firma y góticas) y 43 combinaciones de fuentes artísticas, estilos en palabras elegidas (negrita, cursiva, tamaño, color y degradado), texto curvo, texto dentro de formas y efectos de texto, dibujo a mano alzada con 16 pinceles, marcos y collage de fotos, tablas (importación de Excel y CSV), gráficos y códigos QR.
 - **Color:** un mismo campo de color en todas partes, con cuentagotas y lupa, colores sólidos y degradados, colores del diseño y paletas predefinidas; fondos de página con color, degradado, patrón o imagen.
 - **Iconos:** unos 5.100 iconos Tabler (línea y relleno) por categoría, con búsqueda, que se añaden como formas vectoriales.
 - **Imágenes:** ajustes no destructivos, filtros, sombras y recortes con formas; quitar el fondo, aumentar la resolución y el borrador mágico con modelos locales (CPU o GPU); fotos e ilustraciones libres desde el panel Elementos.
 - **Objetos 3D:** importa modelos `.glb` y `.obj` y colócalos como cualquier elemento; con doble clic los giras, mueves, escalas y rodeas con controles sobre el lienzo, vistas rápidas e iluminación, y aplicas. Se dibujan por CPU, se guardan dentro del `.gaf` y se exportan tal como los ve su cámara.
+- **Trabajar:** varios proyectos abiertos a la vez en pestañas (reordenar, clic derecho, Ctrl+Tab); redimensionar todo el diseño a un tamaño del catálogo o a medida con su contenido encajado, en el mismo diseño o en una copia; paneles laterales plegables y Ctrl+. para ver solo el lienzo; «Ayuda» con todos los atajos.
+- **Efectos de luz:** catorce luces personalizables, desde el destello de lente y el bokeh hasta la luz de luna, el foco, la aurora boreal, la estela de cometa, la fuga de luz y el anillo luminoso.
 - **Organizar:** Capas con arrastrar y soltar, bloquear y ocultar; guías, ajuste magnético, reglas, alinear y distribuir; versiones dentro del archivo `.gaf` y recuperación tras un cierre inesperado.
 - **Marca y paquetes:** kits de marca (logotipos, colores, estilos de texto, fuentes) que se comparten como `.gafkit`; paquetes de recursos (`.gafpack`) que se instalan desde Inicio y se desinstalan desde Ajustes o desde su panel.
 - **Crear en lote:** conecta una tabla CSV, Excel o pegada a un diseño, pon sus campos en los textos como `{{campo}}` (arrastrando, con botones, desde el clic derecho o con autocompletado) y genera un diseño por fila: un PDF con todo, un PDF por fila, imágenes en cualquier formato de exportación y un `.gaf` editable, en segundo plano con progreso y cancelación. La tabla se guarda dentro del `.gaf`.

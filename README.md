@@ -23,7 +23,7 @@
 
 Gafira is a local-first graphic design app for everyone and for content creators, written in Rust (egui). Pick a template, make it yours and share it. It runs on Windows, macOS and Linux, in Spanish and English. It is free and open source software under the GPL, version 3 or later.
 
-Current version: `0.5.0` (see `CHANGELOG.md`).
+Current version: `0.6.0` (see `CHANGELOG.md`).
 
 Website: <https://gafira.com> (Spanish) · <https://gafira.com/en/> (English). Its source is in `website/`.
 
@@ -36,11 +36,13 @@ Website: <https://gafira.com> (Spanish) · <https://gafira.com/en/> (English). I
 ## What it does
 
 - **Start:** Home with search, recent designs and 75 templates per language (social media, presentations, prints, invitations, documents, web and email), or a design at your own size.
-- **Design:** 215 shapes in 17 sections (lines, polygons, stars, arrows, diagrams, speech bubbles, clouds, quotes), lines that connect to shapes, text with 48 bundled font families (signatures and blackletter included), styles on chosen words (bold, italic, size, colour, gradient), curved text, text inside shapes and text effects, freehand drawing with 16 brushes, frames and photo collage, tables (Excel and CSV import), charts and QR codes.
+- **Design:** 265 shapes in 20 sections (lines, polygons, stars, arrows, diagrams, speech bubbles, clouds, quotes, grunge brush strokes, splatters and claw marks), lines that connect to shapes, text with 56 bundled font families (signatures and blackletter included) and 43 artistic font pairings, styles on chosen words (bold, italic, size, colour, gradient), curved text, text inside shapes and text effects, freehand drawing with 16 brushes, frames and photo collage, tables (Excel and CSV import), charts and QR codes.
 - **Colour:** one colour field everywhere, with an eyedropper and loupe, solid colours and gradients, design colours and preset palettes; page backgrounds with colour, gradient, pattern or image.
 - **Icons:** about 5,100 Tabler icons (line and filled) by category, with search, added as vector shapes.
 - **Images:** non-destructive adjustments, filters, shadows and crops with shapes; background removal, upscaling and the magic eraser with local models (CPU or GPU); free photos and illustrations from the Elements panel.
 - **3D objects:** import `.glb` and `.obj` models and place them like any element; double-click to rotate, move, scale and orbit them with on-canvas gizmos, quick views and lighting presets, then apply. They are drawn on the CPU, saved inside the `.gaf` and exported as the view their camera sees.
+- **Work:** several projects open at once in tabs (reorder, right-click, Ctrl+Tab); resize the whole design to any catalogue or custom size with its content fitted, in place or in a copy; side panels that fold away and Ctrl+. for the canvas alone; «Ayuda» with every shortcut.
+- **Light effects:** fourteen customisable lights, from lens flare and bokeh to moonlight, spotlight, aurora, comet trail, light leak and a ring of light.
 - **Organise:** Layers with drag and drop, lock and hide; guides, snapping, rulers, align and distribute; versions inside the `.gaf` file and crash recovery.
 - **Brand and packages:** brand kits (logos, colours, text styles, fonts) shared as `.gafkit`; asset packages (`.gafpack`) installed from Home and uninstalled from Settings or from their panel.
 - **Bulk create:** connect a CSV, Excel or pasted table to a design, put its fields in the texts as `{{field}}` (drag, buttons or autocomplete) and generate one design per row as a combined PDF, a PDF per row, images in any export format and an editable `.gaf`, in the background with progress and cancel. The table is saved inside the `.gaf`.

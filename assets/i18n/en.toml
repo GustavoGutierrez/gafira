@@ -328,6 +328,7 @@ size = "Size"
 resize = "Resize"
 
 [help]
+group_file = "File"
 shortcuts = "Keyboard shortcuts"
 notices = "Third-party licences"
 website = "Gafira website"
@@ -340,6 +341,15 @@ group_view = "View"
 license_title = "Gafira licence"
 license_text = "Gafira is free software: you can use, study, share and change it under the GNU General Public License, version 3 or later. The Gafira name and logo are reserved trademarks."
 license_full = "Full text of the licence"
+
+[tabs]
+close = "Close"
+close_all = "Close all"
+close_others = "Close others"
+new_document = "New document…"
+open = "Open…"
+reveal = "Show in folder"
+new = "Open or create another project"
 
 [resize]
 search = "Search options to resize designs"

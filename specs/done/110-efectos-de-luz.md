@@ -1,6 +1,6 @@
 # 110 — «Efectos de luz»: nueve luces nuevas y tarjetas planas
 
-> **Estado:** in-progress — 2026-11-27 — pedida por el titular; en implementación.
+> **Estado:** done — 2026-11-27 — aceptada por el titular en la app; «Luces y efectos» pasa a «Efectos de luz»; tarjetas planas; Luz de luna, Foco, Resplandor, Estrellas, Polvo de estrellas, Estela de cometa, Aurora boreal, Fuga de luz y Anillo luminoso; S110-01/02/04 con pruebas.
 
 ## Objetivo
 

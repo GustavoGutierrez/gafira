@@ -23,7 +23,7 @@ use crate::canvas::{self, Shape};
 use crate::charts;
 use crate::clipboard::{self, Clip};
 use crate::elements::{self, Category, Move, Rail};
-use crate::files::{FileAction, project_name};
+use crate::files::FileAction;
 use crate::format::{fit_width, fit_zoom};
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
@@ -79,6 +79,13 @@ const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key:
 const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
 const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
 const ZOOM_WIDTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2);
+/// The shortcuts of Archivo (owner request: shown in the menu).
+const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
+const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
+const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
+const SAVE_AS: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S);
+const SETTINGS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma);
 /// «Atajos de teclado» of «Ayuda» (owner request).
 const HELP_KEYS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Slash);
 /// Fold both side panels away, or bring them back (owner request).
@@ -334,6 +341,9 @@ pub(crate) struct Editor {
     /// A package was uninstalled here; the shell reads the templates again
     /// and clears it.
     pub(crate) packs_touched: bool,
+    /// Names this editor among the tabs, so egui keeps the scroll of its
+    /// canvas apart from the other tabs' (spec 111).
+    tab_id: u64,
     /// The installed packages, read once until they change.
     pack_list: std::cell::RefCell<Option<Vec<crate::InstalledPack>>>,
     /// The package filter and search of each panel (spec 097).
@@ -641,6 +651,10 @@ impl Default for Editor {
             brand: None,
             packs: None,
             packs_touched: false,
+            tab_id: {
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
             pack_list: std::cell::RefCell::new(None),
             pack_filters: std::cell::RefCell::new(BTreeMap::new()),
             quiet: std::cell::Cell::new(false),
@@ -1135,7 +1149,6 @@ struct Header<'a> {
     can_undo: bool,
     can_redo: bool,
     modified: bool,
-    name: Option<String>,
     notice: Option<&'a str>,
 }
 
@@ -1573,6 +1586,19 @@ impl Editor {
         }
     }
 
+    /// The editor goes behind another tab (spec 111): it keeps its view,
+    /// its selection and its panels, and lets go of the pictures it can
+    /// draw again, so a tab out of sight holds little memory.
+    pub(crate) fn park(&mut self) {
+        self.textures.clear();
+        self.photos.clear();
+        self.path_textures.borrow_mut().clear();
+        self.curved_covers.borrow_mut().clear();
+        self.library_previews.borrow_mut().clear();
+        self.pairing_samples.borrow_mut().clear();
+        self.drag = None;
+    }
+
     /// The page of the selection, or the first page.
     fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
         let ids: Vec<PageId> = document.pages().iter().map(|page| page.id).collect();
@@ -1673,7 +1699,6 @@ impl Editor {
             can_undo,
             can_redo,
             modified: engine.projects().is_modified(),
-            name: project_name(engine.projects().path().as_deref()),
             notice,
         };
         if !self.shown_loaded {
@@ -1705,6 +1730,13 @@ impl Editor {
             }
             if i.modifiers.command && i.key_pressed(egui::Key::O) {
                 asked.file = Some(FileAction::Open);
+            }
+            // Nuevo goes to Inicio to create; Ajustes opens over the window.
+            if i.modifiers.command && i.key_pressed(egui::Key::N) {
+                asked.home = true;
+            }
+            if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
+                asked.settings = true;
             }
             if i.modifiers.command && i.key_pressed(egui::Key::Z) {
                 if i.modifiers.shift {
@@ -2177,17 +2209,33 @@ impl Editor {
             ui.add_space(12.0);
             widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.file")), |ui| {
                 ui.set_min_width(200.0);
-                if ui.button(texts.t(&gafira_doc::msg!("file.new"))).clicked() {
+                let keys =
+                    |ui: &egui::Ui, shortcut: KeyboardShortcut| keys_text(ui.ctx(), &shortcut);
+                let new = egui::Button::new(texts.t(&gafira_doc::msg!("file.new")))
+                    .shortcut_text(keys(ui, NEW));
+                if ui.add(new).clicked() {
                     asked.home = true;
                     ui.close();
                 }
-                for (key, action) in [
-                    (gafira_doc::msg!("file.open"), FileAction::Open),
-                    (gafira_doc::msg!("file.save"), FileAction::Save),
-                    (gafira_doc::msg!("file.save_as"), FileAction::SaveAs),
-                    (gafira_doc::msg!("file.save_copy"), FileAction::SaveCopy),
+                for (key, action, shortcut) in [
+                    (gafira_doc::msg!("file.open"), FileAction::Open, Some(OPEN)),
+                    (gafira_doc::msg!("file.save"), FileAction::Save, Some(SAVE)),
+                    (
+                        gafira_doc::msg!("file.save_as"),
+                        FileAction::SaveAs,
+                        Some(SAVE_AS),
+                    ),
+                    (
+                        gafira_doc::msg!("file.save_copy"),
+                        FileAction::SaveCopy,
+                        None,
+                    ),
                 ] {
-                    if ui.button(texts.t(&key)).clicked() {
+                    let mut button = egui::Button::new(texts.t(&key));
+                    if let Some(shortcut) = shortcut {
+                        button = button.shortcut_text(keys(ui, shortcut));
+                    }
+                    if ui.add(button).clicked() {
                         asked.file = Some(action);
                         ui.close();
                     }
@@ -2211,10 +2259,9 @@ impl Editor {
                     ui.close();
                 }
                 ui.separator();
-                if ui
-                    .button(texts.t(&gafira_doc::msg!("settings.title")))
-                    .clicked()
-                {
+                let settings = egui::Button::new(texts.t(&gafira_doc::msg!("settings.title")))
+                    .shortcut_text(keys_text(ui.ctx(), &SETTINGS));
+                if ui.add(settings).clicked() {
                     asked.settings = true;
                     ui.close();
                 }
@@ -2365,6 +2412,26 @@ impl Editor {
                     ui.close();
                 }
             });
+            // «Redimensionar» (spec 108): its panel under the button.
+            let popup = egui::Id::new("editor.resize");
+            let open = egui::Popup::is_id_open(ui.ctx(), popup);
+            let button =
+                widgets::topbar_button(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
+            let place = document.as_deref().and_then(|document| {
+                let page = self.current_page(document)?;
+                Some((page.id, page.size, document.pages().len()))
+            });
+            if let Some(place) = place {
+                egui::Popup::menu(&button)
+                    .id(popup)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        if let Some(resize) = self.resize.show(ui, theme, texts, place) {
+                            asked.resize_design = Some(resize);
+                            ui.close();
+                        }
+                    });
+            }
             // «Ayuda» (owner request).
             widgets::topbar_menu(ui, theme, plain(texts, "menu.help"), |ui| {
                 ui.set_min_width(220.0);
@@ -2395,37 +2462,8 @@ impl Editor {
                     ui.close();
                 }
             });
-            // «Redimensionar» (spec 108): its panel under the button.
-            let popup = egui::Id::new("editor.resize");
-            let open = egui::Popup::is_id_open(ui.ctx(), popup);
-            let button =
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
-            let place = document.as_deref().and_then(|document| {
-                let page = self.current_page(document)?;
-                Some((page.id, page.size, document.pages().len()))
-            });
-            if let Some(place) = place {
-                egui::Popup::menu(&button)
-                    .id(popup)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .show(|ui| {
-                        if let Some(resize) = self.resize.show(ui, theme, texts, place) {
-                            asked.resize_design = Some(resize);
-                            ui.close();
-                        }
-                    });
-            }
+            // The file's name is on its tab now (owner request).
             ui.add_space(24.0);
-            ui.label(
-                RichText::new(
-                    header
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| texts.t(&gafira_doc::msg!("editor.untitled"))),
-                )
-                .font(theme.font("ui-label"))
-                .color(theme.c("topbar.fg")),
-            );
             ui.add_space(16.0);
             for (icon, key, shortcut, enabled, flag) in [
                 (
@@ -6584,7 +6622,9 @@ impl Editor {
                     + CANVAS_MARGIN
                     + ADD_PAGE_ROOM;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
-                    let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
+                    let mut scroll = egui::ScrollArea::both()
+                        .id_salt(("editor.canvas", self.tab_id))
+                        .auto_shrink([false, false]);
                     if let Some(offset) = anchored {
                         scroll = scroll.scroll_offset(offset);
                     }
@@ -15161,6 +15201,16 @@ fn shortcut_groups() -> Vec<crate::help::Group> {
             ],
         ),
         (
+            "help.group_file",
+            vec![
+                ("file.new", NEW),
+                ("file.open", OPEN),
+                ("file.save", SAVE),
+                ("file.save_as", SAVE_AS),
+                ("settings.title", SETTINGS),
+            ],
+        ),
+        (
             "help.group_edit",
             vec![
                 ("editor.select_all", SELECT_ALL),
@@ -23504,6 +23554,34 @@ pub(crate) mod tests {
         frame(&ctx, &mut editor, &mut engine, None);
         assert_eq!(editor.view, Zoom::FitWidth);
         assert!(editor.zoom >= whole, "{} then {}", whole, editor.zoom);
+    }
+
+    // S111-08: an editor parked behind another tab keeps its view and its
+    // selection, and drops the pictures it can draw again; each editor's
+    // canvas scrolls apart.
+    #[test]
+    fn s111_08_a_parked_editor_keeps_its_view() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, vec!["Título".to_owned(), "Cuerpo".to_owned()], None)),
+                ..Asked::default()
+            },
+        );
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num2));
+        frame(&ctx, &mut editor, &mut engine, None);
+        let (view, zoom, selected) = (editor.view, editor.zoom, editor.selected.clone());
+        editor.park();
+        assert!(editor.textures.is_empty() && editor.path_textures.borrow().is_empty());
+        assert_eq!((editor.view, editor.zoom), (view, zoom));
+        assert_eq!(editor.selected, selected);
+        assert_ne!(Editor::default().tab_id, Editor::default().tab_id);
     }
 
     // Owner request («Ayuda»): Ctrl+/ shows the shortcuts; every one it

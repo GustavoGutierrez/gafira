@@ -51,7 +51,7 @@ impl EditService {
     /// Bump and publish `dirty`, and mark the session pending since `at`
     /// unless an earlier change already did (P13).
     fn bumped(session: &mut Session, shared: &Shared, dirty: DirtySet, at: Duration) {
-        shared.changed(dirty);
+        session.version = shared.changed(dirty);
         session.autosave.pending_since.get_or_insert(at);
     }
 

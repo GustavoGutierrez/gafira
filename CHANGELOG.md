@@ -6,8 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-27
+
+Document tabs, resizing the whole design, grunge shapes, fourteen light effects, artistic font pairings, foldable panels and a Help menu.
+
 ### Added
 
+- Document tabs (spec 111): several projects open at once, each in a tab with its file name and a mark when it has unsaved changes. Opening, creating or «Copiar y redimensionar» open a new tab; a file already open shows its tab; Inicio keeps the tabs; closing a tab with changes asks first. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+W closes one; each tab keeps its zoom, scroll and selection.
 - «Ayuda» in the editor's top bar: keyboard shortcuts (Ctrl+/), the licence of Gafira and of what it ships, the website, reporting a problem and «Acerca de».
 - Nine more lights (spec 110): «Luz de luna», «Foco», «Resplandor», «Estrellas», «Polvo de estrellas», «Estela de cometa», «Aurora boreal», «Fuga de luz» and «Anillo luminoso», customisable like the others.
 - Grunge shapes in Formas (spec 109): 26 brush strokes, 13 splatters and 11 claw marks, ten of them drawn by hand, as vector paths you can colour, resize and turn.

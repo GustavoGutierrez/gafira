@@ -163,11 +163,15 @@ impl ProjectService {
         if !self.filesystem.exists(&self.recovery)? {
             return Ok(Vec::new());
         }
-        let current = self
-            .shared
-            .lock()
-            .as_ref()
-            .map(|session| session.history.document().project_id());
+        // Every open session's project, active or parked (spec 111).
+        let open: Vec<ProjectId> = {
+            let cell = self.shared.lock();
+            let parked = self.shared.parked();
+            cell.iter()
+                .chain(parked.iter())
+                .map(|session| session.history.document().project_id())
+                .collect()
+        };
         let mut entries = Vec::new();
         for folder in self.filesystem.read_dir(&self.recovery)? {
             let Some(project_id) = folder
@@ -177,7 +181,7 @@ impl ProjectService {
             else {
                 continue;
             };
-            if Some(project_id) == current {
+            if open.contains(&project_id) {
                 continue;
             }
             if let Some(marker) = self.marker(project_id) {
@@ -564,7 +568,7 @@ impl ProjectService {
     fn snapshot_of(&self, session: &Session) -> Snapshot {
         Snapshot {
             document: Arc::clone(session.history.document()),
-            version: self.shared.version(),
+            version: session.version,
             key: session.session_key.clone(),
             versions: session.versions.clone(),
         }
@@ -575,26 +579,30 @@ impl ProjectService {
     /// replaced meanwhile is left alone.
     fn saved(&self, snapshot: &Snapshot, path: Option<&Path>) {
         let (key, version) = (snapshot.key.as_str(), snapshot.version);
-        let mut cell = self.shared.lock();
-        let Some(session) = cell.as_mut().filter(|s| s.session_key == key) else {
+        // The session may be parked behind another by now (spec 111).
+        let Some((moved_lock, project_id, all_saved)) = self.with_key(key, |session| {
+            session.versions.clone_from(&snapshot.versions);
+            let moved_lock = path.map(|path| {
+                session.path = Some(path.to_owned());
+                session.read_only = false;
+                session.locked_by = None;
+                session.lock.take()
+            });
+            session.clean_version = version;
+            // The file holds every change up to the snapshot; one made while
+            // it was written stays pending for autosave.
+            let all_saved = session.version == version;
+            if all_saved {
+                session.autosave.pending_since = None;
+            }
+            (
+                moved_lock,
+                session.history.document().project_id(),
+                all_saved,
+            )
+        }) else {
             return;
         };
-        session.versions.clone_from(&snapshot.versions);
-        let moved_lock = path.map(|path| {
-            session.path = Some(path.to_owned());
-            session.read_only = false;
-            session.locked_by = None;
-            session.lock.take()
-        });
-        session.clean_version = version;
-        let project_id = session.history.document().project_id();
-        // The file holds every change up to the snapshot; one made while it
-        // was written stays pending for autosave.
-        let all_saved = self.shared.version() == version;
-        if all_saved {
-            session.autosave.pending_since = None;
-        }
-        drop(cell);
         // `save_as` moved the session to `path`: its lock moves too
         // (spec 028).
         if let (Some(old), Some(path)) = (moved_lock, path) {
@@ -642,6 +650,7 @@ impl ProjectService {
             path,
             read_only,
             clean_version,
+            version: clean_version,
             session_key: session_key.clone(),
             autosave: Autosave::default(),
             lock: None,
@@ -695,14 +704,10 @@ impl ProjectService {
             let _ = self.filesystem.remove(&tmp);
             return;
         }
-        let mut cell = self.shared.lock();
-        match cell.as_mut().filter(|s| s.session_key == key) {
-            Some(session) => session.lock = Some(lock),
-            None => {
-                // The session ended meanwhile: its lock must not outlive it.
-                drop(cell);
-                let _ = self.filesystem.remove(&lock);
-            }
+        let taken = self.with_key(key, |session| session.lock = Some(lock.clone()));
+        if taken.is_none() {
+            // The session ended meanwhile: its lock must not outlive it.
+            let _ = self.filesystem.remove(&lock);
         }
     }
 
@@ -725,18 +730,24 @@ impl ProjectService {
     #[must_use]
     pub fn autosave_due(&self) -> Option<AutosaveJob> {
         let now = self.clock.monotonic();
+        let due = |session: &Session| {
+            session.autosave.pending_since.is_some_and(|since| {
+                !session.autosave.in_flight && now.saturating_sub(since) >= self.autosave_interval
+            })
+        };
+        // The active session first, then any parked one (spec 111).
         let mut cell = self.shared.lock();
-        let session = cell.as_mut()?;
-        let since = session.autosave.pending_since?;
-        if session.autosave.in_flight || now.saturating_sub(since) < self.autosave_interval {
-            return None;
-        }
+        let mut parked = self.shared.parked();
+        let session = match cell.as_mut().filter(|s| due(s)) {
+            Some(session) => session,
+            None => parked.iter_mut().find(|s| due(s))?,
+        };
         session.autosave.pending_since = None;
         session.autosave.in_flight = true;
         Some(AutosaveJob {
             snapshot: Arc::clone(session.history.document()),
             versions: session.versions.clone(),
-            version: self.shared.version(),
+            version: session.version,
             slot: session.autosave.slot,
             folder: self
                 .recovery
@@ -759,19 +770,15 @@ impl ProjectService {
     /// "modified" nor bumps the version: the user's file did not change.
     pub fn autosave_finished(&self, outcome: AutosaveOutcome) {
         let now = self.clock.monotonic();
-        let mut cell = self.shared.lock();
-        let Some(session) = cell
-            .as_mut()
-            .filter(|session| session.session_key == outcome.session_key)
-        else {
-            return;
-        };
-        let autosave = &mut session.autosave;
-        autosave.in_flight = false;
-        match outcome.result {
-            Ok(()) => autosave.slot = (autosave.slot + 1) % SLOTS,
-            Err(_) => autosave.pending_since = Some(now),
-        }
+        let key = outcome.session_key.clone();
+        self.with_key(&key, |session| {
+            let autosave = &mut session.autosave;
+            autosave.in_flight = false;
+            match outcome.result {
+                Ok(()) => autosave.slot = (autosave.slot + 1) % SLOTS,
+                Err(_) => autosave.pending_since = Some(now),
+            }
+        });
     }
 
     /// The file the session lives in: the one `open` read or `save_as`
@@ -806,8 +813,106 @@ impl ProjectService {
         self.shared
             .lock()
             .as_ref()
-            .is_some_and(|session| session.clean_version != self.shared.version())
+            .is_some_and(|session| session.clean_version != session.version)
     }
+
+    /// Run `f` over the session named `key`, active or parked (spec 111);
+    /// `None` when no open session has that key.
+    fn with_key<T>(&self, key: &str, f: impl FnOnce(&mut Session) -> T) -> Option<T> {
+        let mut cell = self.shared.lock();
+        if let Some(session) = cell.as_mut().filter(|s| s.session_key == key) {
+            return Some(f(session));
+        }
+        let mut parked = self.shared.parked();
+        parked.iter_mut().find(|s| s.session_key == key).map(f)
+    }
+
+    /// The key of the active session, if any (spec 111).
+    #[must_use]
+    pub fn active_key(&self) -> Option<String> {
+        self.shared.lock().as_ref().map(|s| s.session_key.clone())
+    }
+
+    /// Move the active session behind, open with its history, file, lock
+    /// and autosave, so a `new_document` or `open` starts another one next
+    /// to it (spec 111). Nothing is published.
+    pub fn park(&self) {
+        let mut cell = self.shared.lock();
+        if let Some(session) = cell.take() {
+            self.shared.parked().push(session);
+        }
+    }
+
+    /// Make the session named `key` the active one, parking the one that
+    /// was (spec 111). The document on display changes: the version moves
+    /// and every page and node is published as changed.
+    ///
+    /// # Errors
+    /// [`EngineError::NoSession`] when no open session has that key;
+    /// nothing changes then.
+    pub fn activate(&self, key: &str) -> Result<(), EngineError> {
+        let mut cell = self.shared.lock();
+        if cell.as_ref().is_some_and(|s| s.session_key == key) {
+            return Ok(());
+        }
+        let mut parked = self.shared.parked();
+        let at = parked
+            .iter()
+            .position(|s| s.session_key == key)
+            .ok_or(EngineError::NoSession)?;
+        let next = parked.remove(at);
+        if let Some(current) = cell.take() {
+            parked.push(current);
+        }
+        drop(parked);
+        let dirty = every_page_and_node(next.history.document());
+        *cell = Some(next);
+        self.shared.changed(dirty);
+        Ok(())
+    }
+
+    /// Every open session, the active one first (spec 111).
+    #[must_use]
+    pub fn sessions(&self) -> Vec<SessionInfo> {
+        let cell = self.shared.lock();
+        let parked = self.shared.parked();
+        let info = |session: &Session, active: bool| SessionInfo {
+            key: session.session_key.clone(),
+            path: session.path.clone(),
+            modified: session.clean_version != session.version,
+            read_only: session.read_only,
+            active,
+        };
+        cell.iter()
+            .map(|s| info(s, true))
+            .chain(parked.iter().map(|s| info(s, false)))
+            .collect()
+    }
+
+    /// The key of the open session that lives in `path`, if any: the UI
+    /// shows it instead of opening the file twice (spec 111).
+    #[must_use]
+    pub fn key_of(&self, path: &Path) -> Option<String> {
+        self.sessions()
+            .into_iter()
+            .find(|s| s.path.as_deref() == Some(path))
+            .map(|s| s.key)
+    }
+}
+
+/// An open session as the tabs show it (spec 111).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionInfo {
+    /// Names the session while it is open.
+    pub key: String,
+    /// The file it lives in; `None` for a document never saved.
+    pub path: Option<PathBuf>,
+    /// Whether it holds changes no save accounted for.
+    pub modified: bool,
+    /// Whether it may not be saved over.
+    pub read_only: bool,
+    /// Whether it is the one edits go to.
+    pub active: bool,
 }
 
 /// What a save writes, taken under the session lock: the document, the
@@ -1388,6 +1493,7 @@ mod tests {
                 path: None,
                 read_only: false,
                 clean_version,
+                version: clean_version,
                 session_key: "another".to_owned(),
                 autosave: Default::default(),
                 lock: None,
@@ -2516,5 +2622,189 @@ mod tests {
         assert!(fs.file(OTHER).is_some());
         assert!(engine.projects().is_modified());
         assert_eq!(engine.projects().path().as_deref(), Some(Path::new(TARGET)));
+    }
+
+    // --- Spec 111: several open sessions, one per document tab.
+
+    const SECOND: &str = "/work/flyer.gaf";
+
+    /// [`TARGET`] and [`SECOND`], two files of [`two_page_document`].
+    fn two_files() -> MemoryFs {
+        let fs = target_fs();
+        let json = two_page_document().to_json().expect("json");
+        fs.put(SECOND, json.as_bytes());
+        fs
+    }
+
+    fn page_count(engine: &mut Gafira) -> usize {
+        engine.edit().document().expect("a session").pages().len()
+    }
+
+    /// [`TARGET`] opened and edited, parked, and [`SECOND`] opened: two
+    /// sessions, the second active. Returns the keys, first then second.
+    fn two_open(engine: &mut Gafira) -> (String, String) {
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        append_page(engine);
+        let first = engine.projects().active_key().expect("a session");
+        engine.projects().park();
+        assert_eq!(engine.projects().active_key(), None, "parked");
+        engine.projects().open(Path::new(SECOND)).expect("an open");
+        let second = engine.projects().active_key().expect("a session");
+        assert_ne!(first, second);
+        (first, second)
+    }
+
+    fn modified_of(engine: &Gafira, key: &str) -> bool {
+        engine
+            .projects()
+            .sessions()
+            .into_iter()
+            .find(|s| s.key == key)
+            .expect("listed")
+            .modified
+    }
+
+    // S111-01: a parked session keeps its document and its history; it comes
+    // back by its key; an unknown key changes nothing.
+    #[test]
+    fn s111_01_parked_sessions_keep_their_history() {
+        let fs = two_files();
+        let (mut engine, _clock) = rig_on(&fs);
+        let (first, second) = two_open(&mut engine);
+        assert_eq!(engine.projects().sessions().len(), 2);
+        assert_eq!(page_count(&mut engine), 2, "the second as it was read");
+        engine
+            .projects()
+            .activate(&first)
+            .expect("back to the first");
+        assert_eq!(
+            engine.projects().active_key().as_deref(),
+            Some(first.as_str())
+        );
+        assert_eq!(page_count(&mut engine), 3, "with its page");
+        assert!(
+            engine.edit().undo().expect("an undo").is_some(),
+            "its history"
+        );
+        assert_eq!(page_count(&mut engine), 2);
+        assert!(engine.projects().activate("nope").is_err());
+        assert_eq!(
+            engine.projects().active_key().as_deref(),
+            Some(first.as_str())
+        );
+        let listed = engine.projects().sessions();
+        assert!(listed.iter().any(|s| s.key == second && !s.active));
+        assert!(listed.iter().any(|s| s.key == first && s.active));
+    }
+
+    // S111-02: editing one session does not make another modified.
+    #[test]
+    fn s111_02_each_session_is_modified_by_itself() {
+        let fs = two_files();
+        let (mut engine, _clock) = rig_on(&fs);
+        let (first, second) = two_open(&mut engine);
+        assert!(modified_of(&engine, &first), "its page");
+        assert!(!modified_of(&engine, &second), "just opened");
+        assert!(!engine.projects().is_modified());
+        engine.projects().activate(&first).expect("the first");
+        assert!(engine.projects().is_modified());
+        assert!(!modified_of(&engine, &second), "nothing done to it");
+        engine.projects().activate(&second).expect("the second");
+        assert!(!engine.projects().is_modified(), "still clean when back");
+        append_page(&mut engine);
+        assert!(engine.projects().is_modified());
+    }
+
+    // S111-03: a save that finishes with its session parked makes that
+    // session clean; a parked session with a pending change is autosaved.
+    #[test]
+    fn s111_03_parked_sessions_are_saved_and_autosaved() {
+        let fs = two_files();
+        let (mut engine, clock) = rig_on(&fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        append_page(&mut engine);
+        let first = engine.projects().active_key().expect("a session");
+        let job = engine
+            .projects()
+            .prepare_save(super::SaveRequest::Save)
+            .expect("prepares");
+        engine.projects().park();
+        engine.projects().open(Path::new(SECOND)).expect("an open");
+        engine.projects().save_finished(job.run()).expect("saved");
+        assert!(!modified_of(&engine, &first), "the parked first is clean");
+        // A change pending on a parked session is written to its slots.
+        engine.projects().activate(&first).expect("the first");
+        append_page(&mut engine);
+        let project = session_id(&mut engine);
+        engine.projects().park();
+        engine
+            .projects()
+            .open(Path::new(SECOND))
+            .expect("back to a second");
+        clock.set(Duration::from_secs(60));
+        let job = engine
+            .projects()
+            .autosave_due()
+            .expect("the parked one is due");
+        let outcome = job.run();
+        assert!(outcome.error().is_none());
+        engine.projects().autosave_finished(outcome);
+        assert!(
+            fs.file(&format!(
+                "/data/gafira/recovery/{project}/slot-0.gaf-journal"
+            ))
+            .is_some(),
+            "its slot"
+        );
+        assert!(
+            engine.projects().autosave_due().is_none(),
+            "nothing else due"
+        );
+    }
+
+    // S111-04: no open session is offered for recovery, parked or active.
+    #[test]
+    fn s111_04_open_sessions_are_not_recoverable() {
+        let fs = two_files();
+        let (mut engine, clock) = rig_on(&fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        append_page(&mut engine);
+        clock.set(Duration::from_secs(60));
+        let job = engine.projects().autosave_due().expect("a job");
+        engine.projects().autosave_finished(job.run());
+        engine.projects().park();
+        engine.projects().open(Path::new(SECOND)).expect("an open");
+        assert_eq!(engine.projects().recoverable().expect("listed"), Vec::new());
+    }
+
+    // S111-05: the session that holds a file is found by its path.
+    #[test]
+    fn s111_05_an_open_file_is_found_by_its_path() {
+        let fs = two_files();
+        let (mut engine, _clock) = rig_on(&fs);
+        let (first, second) = two_open(&mut engine);
+        let projects = engine.projects();
+        assert_eq!(projects.key_of(Path::new(TARGET)), Some(first));
+        assert_eq!(projects.key_of(Path::new(SECOND)), Some(second));
+        assert_eq!(projects.key_of(Path::new("/work/other.gaf")), None);
+    }
+
+    // S111-06: closing the active session releases its lock and leaves the
+    // parked one, lock and all, as it was.
+    #[test]
+    fn s111_06_closing_one_session_leaves_the_others() {
+        let fs = two_files();
+        let (mut engine, _clock) = rig_on(&fs);
+        let (first, _second) = two_open(&mut engine);
+        let lock = |path: &str| fs.file(&crate::lock::lock_path(Path::new(path)).to_string_lossy());
+        assert!(lock(TARGET).is_some() && lock(SECOND).is_some());
+        engine.projects().close();
+        assert!(lock(SECOND).is_none(), "the closed one's lock");
+        assert!(lock(TARGET).is_some(), "the parked one keeps its lock");
+        assert_eq!(engine.projects().active_key(), None);
+        let listed = engine.projects().sessions();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].key, first);
+        assert!(listed[0].modified);
     }
 }
