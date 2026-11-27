@@ -2299,7 +2299,7 @@ source_file = "ofl/pirataone/PirataOne-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/abrilfatface/AbrilFatface-Regular.ttf"
-hash = "5971d4a3758a922a9fedc7f6fb825a96341a2e718c45a4b2c9a6b417c8c4dbe9"
+hash = "4162a5f50d503fca4e8280601b3a7bd9d4a63d2081f9afe2b3422bf03f90620b"
 license = "OFL-1.1"
 "autoría" = "Copyright (c) 2011, TypeTogether (www.type-together.com),"
 origin = "https://github.com/google/fonts, ofl/abrilfatface/AbrilFatface-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2312,7 +2312,7 @@ source_file = "ofl/abrilfatface/AbrilFatface-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/yesevaone/YesevaOne-Regular.ttf"
-hash = "88362b33820f0011e163e67b1d570fecd442aa8c05eaac89d5162f9c40d9dac3"
+hash = "872a8de82e1d05d352d58ddda62295dbc74a5d4fe48b52ef864c324d07ac05eb"
 license = "OFL-1.1"
 "autoría" = "Copyright 2012 The Yeseva One Project Authors (lemonad@jovanny.ru), with Reserved Font Name \"Yeseva\"."
 origin = "https://github.com/google/fonts, ofl/yesevaone/YesevaOne-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2325,7 +2325,7 @@ source_file = "ofl/yesevaone/YesevaOne-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/lobster/Lobster-Regular.ttf"
-hash = "d6568e697fd50cedc0be04d8aae4127fe95add607e7bff954ca88604be80c205"
+hash = "1d94260c4bfa9e30b50e7f25e11a653dd8b34cf33d7eb07a772079d5a7af094f"
 license = "OFL-1.1"
 "autoría" = "Copyright 2010 The Lobster Project Authors (https://github.com/impallari/The-Lobster-Font), with Reserved Font Name \"Lobster\"."
 origin = "https://github.com/google/fonts, ofl/lobster/Lobster-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2338,7 +2338,7 @@ source_file = "ofl/lobster/Lobster-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/pinyonscript/PinyonScript-Regular.ttf"
-hash = "4aab130a6ed27f8b8117738c84a5602edf9300cdcc0651a9a65bf96f451ac29a"
+hash = "809e0265986231d692d115dc89a1626bf30dd855953c7dba399abef963e1d74e"
 license = "OFL-1.1"
 "autoría" = "Copyright 2024 The Pinyon Project Authors (https://github.com/SorkinType/Pinyon)"
 origin = "https://github.com/google/fonts, ofl/pinyonscript/PinyonScript-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2351,7 +2351,7 @@ source_file = "ofl/pinyonscript/PinyonScript-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/lilitaone/LilitaOne-Regular.ttf"
-hash = "f5b641c45c69d772ee4eda687bc9fda411d5cad6b0b45371491da4580cbc8d59"
+hash = "836ace01fbf2169173fff107331b1b2a58d3f097395f003f5414c651a9296a2f"
 license = "OFL-1.1"
 "autoría" = "Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz),"
 origin = "https://github.com/google/fonts, ofl/lilitaone/LilitaOne-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2364,7 +2364,7 @@ source_file = "ofl/lilitaone/LilitaOne-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/blackopsone/BlackOpsOne-Regular.ttf"
-hash = "282a825b5f294377387e3969f765408157dbea8da0f5d0aae68c6bc704b145b3"
+hash = "005db4bf09e6c8067d0b0bc250898cf6f68b7d4afb405d4319cf5c2838b81094"
 license = "OFL-1.1"
 "autoría" = "Copyright 2022 The Black-Ops Project Authors (https://github.com/googlefonts/googlefonts-project-template)"
 origin = "https://github.com/google/fonts, ofl/blackopsone/BlackOpsOne-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2377,7 +2377,7 @@ source_file = "ofl/blackopsone/BlackOpsOne-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/rubikdirt/RubikDirt-Regular.ttf"
-hash = "9de3d928e434a47ec85d759012c8a0ebfeab0860076eea4e3989a47c5e213123"
+hash = "597df6e1f83a9c3633bce778b98f71305d700713fc5903e24b1dc450d76b796c"
 license = "OFL-1.1"
 "autoría" = "Copyright 2020 The Rubik Filtered Project Authors (https://https://github.com/NaN-xyz/Rubik-Filtered)"
 origin = "https://github.com/google/fonts, ofl/rubikdirt/RubikDirt-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
@@ -2390,7 +2390,7 @@ source_file = "ofl/rubikdirt/RubikDirt-Regular.ttf"
 
 [[asset]]
 path = "assets/fonts/library/permanentmarker/PermanentMarker-Regular.ttf"
-hash = "28f82c8a7943cb8e9d599f8554da1d4fc75dbcf69b9885ad6c0611d20c6946c5"
+hash = "7314161e7f445fc531357a01e143eabda2a8b1924b5398734e5aeaeb485cc6d2"
 license = "Apache-2.0"
 "autoría" = "Copyright (c) 2010 by Font Diner, Inc DBA Sideshow. All rights reserved."
 origin = "https://github.com/google/fonts, apache/permanentmarker/PermanentMarker-Regular.ttf, commit 5026800714d07231937d92eb4cceabf06e05d74e"
