@@ -73,23 +73,6 @@ pub(crate) fn secondary(ui: &mut Ui, theme: &Theme, text: String) -> Response {
     ui.add(button)
 }
 
-/// A flat button on the graphite top bar.
-pub(crate) fn on_topbar(ui: &mut Ui, theme: &Theme, text: String, active: bool) -> Response {
-    let color = if active {
-        theme.c("topbar.fg")
-    } else {
-        theme.c("topbar.fg.muted")
-    };
-    let button = Button::new(
-        RichText::new(text)
-            .font(theme.font("ui-label"))
-            .color(color),
-    )
-    .frame(false)
-    .min_size(Vec2::new(0.0, px(theme.tokens.size.control.md)));
-    ui.add(button)
-}
-
 /// The coral button with an icon before its label («Exportar», 03 §2.2).
 pub(crate) fn primary_icon(ui: &mut Ui, theme: &Theme, icon: Icon, text: String) -> Response {
     let color = theme.c("primary.fg");
@@ -392,6 +375,22 @@ pub(crate) fn topbar_menu(
             add(ui);
         })
         .response
+    })
+    .inner
+}
+
+/// A button of the top bar that looks like its menus (owner request:
+/// «Redimensionar» like Archivo, Edición, Ver): the same hover and, while
+/// what it opens is open, the same lit state.
+pub(crate) fn topbar_button(ui: &mut Ui, theme: &Theme, text: String, open: bool) -> Response {
+    ui.scope(|ui| {
+        topbar_menu_visuals(ui.visuals_mut(), theme);
+        if open {
+            let lit = ui.visuals().widgets.open;
+            ui.visuals_mut().widgets.inactive = lit;
+        }
+        let label = RichText::new(text).font(theme.font("ui-label"));
+        ui.button(label)
     })
     .inner
 }

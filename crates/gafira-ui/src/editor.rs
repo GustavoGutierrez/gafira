@@ -79,6 +79,13 @@ const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key:
 const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
 const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
 const ZOOM_WIDTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2);
+/// The shortcuts of Archivo (owner request: shown in the menu).
+const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
+const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
+const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
+const SAVE_AS: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S);
+const SETTINGS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma);
 /// «Atajos de teclado» of «Ayuda» (owner request).
 const HELP_KEYS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Slash);
 /// Fold both side panels away, or bring them back (owner request).
@@ -1724,6 +1731,13 @@ impl Editor {
             if i.modifiers.command && i.key_pressed(egui::Key::O) {
                 asked.file = Some(FileAction::Open);
             }
+            // Nuevo goes to Inicio to create; Ajustes opens over the window.
+            if i.modifiers.command && i.key_pressed(egui::Key::N) {
+                asked.home = true;
+            }
+            if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
+                asked.settings = true;
+            }
             if i.modifiers.command && i.key_pressed(egui::Key::Z) {
                 if i.modifiers.shift {
                     asked.redo = true;
@@ -2195,17 +2209,33 @@ impl Editor {
             ui.add_space(12.0);
             widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.file")), |ui| {
                 ui.set_min_width(200.0);
-                if ui.button(texts.t(&gafira_doc::msg!("file.new"))).clicked() {
+                let keys =
+                    |ui: &egui::Ui, shortcut: KeyboardShortcut| keys_text(ui.ctx(), &shortcut);
+                let new = egui::Button::new(texts.t(&gafira_doc::msg!("file.new")))
+                    .shortcut_text(keys(ui, NEW));
+                if ui.add(new).clicked() {
                     asked.home = true;
                     ui.close();
                 }
-                for (key, action) in [
-                    (gafira_doc::msg!("file.open"), FileAction::Open),
-                    (gafira_doc::msg!("file.save"), FileAction::Save),
-                    (gafira_doc::msg!("file.save_as"), FileAction::SaveAs),
-                    (gafira_doc::msg!("file.save_copy"), FileAction::SaveCopy),
+                for (key, action, shortcut) in [
+                    (gafira_doc::msg!("file.open"), FileAction::Open, Some(OPEN)),
+                    (gafira_doc::msg!("file.save"), FileAction::Save, Some(SAVE)),
+                    (
+                        gafira_doc::msg!("file.save_as"),
+                        FileAction::SaveAs,
+                        Some(SAVE_AS),
+                    ),
+                    (
+                        gafira_doc::msg!("file.save_copy"),
+                        FileAction::SaveCopy,
+                        None,
+                    ),
                 ] {
-                    if ui.button(texts.t(&key)).clicked() {
+                    let mut button = egui::Button::new(texts.t(&key));
+                    if let Some(shortcut) = shortcut {
+                        button = button.shortcut_text(keys(ui, shortcut));
+                    }
+                    if ui.add(button).clicked() {
                         asked.file = Some(action);
                         ui.close();
                     }
@@ -2229,10 +2259,9 @@ impl Editor {
                     ui.close();
                 }
                 ui.separator();
-                if ui
-                    .button(texts.t(&gafira_doc::msg!("settings.title")))
-                    .clicked()
-                {
+                let settings = egui::Button::new(texts.t(&gafira_doc::msg!("settings.title")))
+                    .shortcut_text(keys_text(ui.ctx(), &SETTINGS));
+                if ui.add(settings).clicked() {
                     asked.settings = true;
                     ui.close();
                 }
@@ -2387,7 +2416,7 @@ impl Editor {
             let popup = egui::Id::new("editor.resize");
             let open = egui::Popup::is_id_open(ui.ctx(), popup);
             let button =
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
+                widgets::topbar_button(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
             let place = document.as_deref().and_then(|document| {
                 let page = self.current_page(document)?;
                 Some((page.id, page.size, document.pages().len()))
@@ -15169,6 +15198,16 @@ fn shortcut_groups() -> Vec<crate::help::Group> {
                 ("bottom.present", PRESENT),
                 ("view.panels", PANELS),
                 ("help.shortcuts", HELP_KEYS),
+            ],
+        ),
+        (
+            "help.group_file",
+            vec![
+                ("file.new", NEW),
+                ("file.open", OPEN),
+                ("file.save", SAVE),
+                ("file.save_as", SAVE_AS),
+                ("settings.title", SETTINGS),
             ],
         ),
         (

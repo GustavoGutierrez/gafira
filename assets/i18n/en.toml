@@ -328,6 +328,7 @@ size = "Size"
 resize = "Resize"
 
 [help]
+group_file = "File"
 shortcuts = "Keyboard shortcuts"
 notices = "Third-party licences"
 website = "Gafira website"

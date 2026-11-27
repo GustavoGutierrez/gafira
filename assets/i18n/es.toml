@@ -328,6 +328,7 @@ size = "Tamaño"
 resize = "Redimensionar"
 
 [help]
+group_file = "Archivo"
 shortcuts = "Atajos de teclado"
 notices = "Licencias de terceros"
 website = "Sitio web de Gafira"

@@ -267,6 +267,7 @@ mod tests {
         "help.report",
         "help.about",
         "help.group_general",
+        "help.group_file",
         "help.group_edit",
         "help.group_arrange",
         "help.group_view",
