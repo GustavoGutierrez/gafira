@@ -36,7 +36,7 @@ Website: <https://gafira.com> (Spanish) · <https://gafira.com/en/> (English). I
 ## What it does
 
 - **Start:** Home with search, recent designs and 75 templates per language (social media, presentations, prints, invitations, documents, web and email), or a design at your own size.
-- **Design:** 215 shapes in 17 sections (lines, polygons, stars, arrows, diagrams, speech bubbles, clouds, quotes), lines that connect to shapes, text with 33 bundled font families, curved text, text inside shapes and text effects, freehand drawing with 16 brushes, frames and photo collage, tables (Excel and CSV import), charts and QR codes.
+- **Design:** 215 shapes in 17 sections (lines, polygons, stars, arrows, diagrams, speech bubbles, clouds, quotes), lines that connect to shapes, text with 48 bundled font families (signatures and blackletter included), styles on chosen words (bold, italic, size, colour), curved text, text inside shapes and text effects, freehand drawing with 16 brushes, frames and photo collage, tables (Excel and CSV import), charts and QR codes.
 - **Colour:** one colour field everywhere, with an eyedropper and loupe, solid colours and gradients, design colours and preset palettes; page backgrounds with colour, gradient, pattern or image.
 - **Icons:** about 5,100 Tabler icons (line and filled) by category, with search, added as vector shapes.
 - **Images:** non-destructive adjustments, filters, shadows and crops with shapes; background removal, upscaling and the magic eraser with local models (CPU or GPU); free photos and illustrations from the Elements panel.
