@@ -55,6 +55,9 @@ pub(crate) struct DocumentWire {
     sequences: Vec<Arc<Sequence>>,
     #[serde(default)]
     assets: AssetTable,
+    /// Spec 104: additive, written only when there is a table.
+    #[serde(default)]
+    connected_data: Option<Arc<crate::DataSet>>,
 }
 
 impl TryFrom<DocumentWire> for Document {
@@ -69,6 +72,7 @@ impl TryFrom<DocumentWire> for Document {
             pages: w.pages,
             sequences: w.sequences,
             assets: w.assets,
+            data: w.connected_data,
         };
         doc.validate()?;
         Ok(doc)
@@ -97,7 +101,8 @@ impl Serialize for Document {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut out = serializer.serialize_struct("Document", 7)?;
+        let fields = 7 + usize::from(self.data.is_some());
+        let mut out = serializer.serialize_struct("Document", fields)?;
         out.serialize_field("schema_version", &self.schema_version)?;
         out.serialize_field("next_id", &self.next_id)?;
         out.serialize_field("project_id", &self.project_id)?;
@@ -105,6 +110,11 @@ impl Serialize for Document {
         out.serialize_field("pages", &self.pages)?;
         out.serialize_field("sequences", &self.sequences)?;
         out.serialize_field("assets", &self.assets)?;
+        // Spec 104: only a document with connected data carries the block,
+        // so every other document keeps its bytes.
+        if let Some(data) = &self.data {
+            out.serialize_field("connected_data", data)?;
+        }
         out.end()
     }
 }

@@ -106,6 +106,7 @@ fn document() -> Document {
         color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
         bold: true,
         italic: false,
+        gradient: None,
     };
     let nodes = [
         node(

@@ -130,6 +130,9 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 050 | [Borde de la página activa](done/050-active-page-border.md) | Un clic en una página la activa y la bordea con 2 px `canvas.selection`; fuera de las páginas se quita; la página actual es la de la selección, si no la activa, si no la primera; 2 tests nuevos |
 | 051 | [Mover elementos entre páginas](done/051-move-between-pages.md) | Soltar un arrastre sobre otra página pasa los elementos a ella en un paso de deshacer; cada página recorta lo suyo y la selección va encima (D-92); se toma también en el espacio entre páginas; lo que se suelta totalmente fuera se elimina (D-93); 7 tests nuevos |
 | 052 | [Formas: el nombre y arrastrar desde el panel](done/052-shapes-drag-from-panel.md) | «Piezas» pasa a «Formas» (D-94); arrastrar una forma del panel con vista previa semitransparente y soltarla centrada donde se suelta; 3 tests nuevos, 3192 tests |
+| 104 | [Creación en lote con datos conectados](done/104-creacion-en-lote.md) | Pestaña «Crear en lote» (Datos, Conectar, Revisar), CSV/XLSX/pegar/tabla guardada en el `.gaf`, campos `{{clave}}` con arrastre, menú y autocompletado, vista ampliada, diálogo «Exportar en lote» con los formatos de «Exportar», tarjeta de progreso y `.gaf` editable; pruebas `s104_*`; aceptada por el titular; lo pendiente en la 107 |
+| 105 | [Menú contextual de los elementos y copiar estilo](done/105-menu-contextual-y-copiar-estilo.md) | Clic derecho con las acciones comunes, copiar y pegar estilo, efectos y propiedades con pincel y Ctrl+Mayús+C/V; pruebas `s105_*`; aceptada por el titular |
+| 106 | [Estilos por palabra dentro de un texto](done/106-estilos-por-palabra.md) | Letras elegidas con tamaño, negrita, cursiva, color, degradado y fuente desde Propiedades y «Fuente»; composición por tramos (`FaceRun`), dibujo y exportación por color; escribir conserva los estilos; pruebas `s106_*`; aceptada por el titular |
 
 ### Historial del flujo anterior
 
@@ -146,5 +149,6 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
+| 107 | [Creación en lote: ampliaciones](backlog/107-creacion-en-lote-ampliaciones.md) | Lo que quedó fuera de la 104: imágenes conectadas, texto que no cabe, formatos, pausar y reanudar, filtros, mediciones; falta priorizar |
 
-Siguiente ID libre: **104**.
+Siguiente ID libre: **108**.

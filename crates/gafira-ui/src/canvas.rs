@@ -2176,6 +2176,7 @@ mod tests {
             color: document_color(Color32::BLACK),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let spec = new_text(Vec2::new(1000.0, 1000.0), "Hola", &style);
         // As wide as «Hola» (spec 095), centred on the page.
@@ -2646,6 +2647,7 @@ mod s41_tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let spec = text_at(Vec2::new(1000.0, 800.0), "Hola", &style, (300.0, 100.0));
         let p = spec.placement;
@@ -2660,6 +2662,7 @@ mod s41_tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         }
     }
 
@@ -3111,6 +3114,23 @@ pub(crate) fn curved_text_image(
                     ..tiny_skia::PixmapPaint::default()
                 };
                 pixmap.draw_pixmap(0, 0, soft.as_ref(), &paint, t, None);
+            }
+            // Spec 106: a text of several styles, each colour apart.
+            gafira_render::TextPiece::Letters(None)
+                if text.gradient.is_none() && text.content.mixed() =>
+            {
+                let parts = gafira_render::text_parts(text, (w, h), text_fonts());
+                for (part, part_color, gradient) in parts.unwrap_or_default() {
+                    let mut paint = painted(part_color);
+                    // A gradient on some letters, over the box (spec 106).
+                    if let Some(shader) = gradient
+                        .as_ref()
+                        .and_then(|g| gradient_shader(g, (w, h), (margin, scale)))
+                    {
+                        paint.shader = shader;
+                    }
+                    fill(&mut pixmap, &part, &paint);
+                }
             }
             gafira_render::TextPiece::Letters(other) => {
                 let mut paint = painted(other.unwrap_or(color));

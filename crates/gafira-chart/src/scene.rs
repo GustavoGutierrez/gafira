@@ -434,6 +434,7 @@ pub fn parts(chart: &ChartNode, placement: &Placement) -> Vec<(NodeKind, Placeme
                     color: words.color,
                     bold: words.bold,
                     italic: chart.text.italic,
+                    gradient: None,
                 };
                 let mut text = TextNode::plain(&words.text, &style);
                 let (wide, tall) = measure(&words.text, words.size, words.bold);

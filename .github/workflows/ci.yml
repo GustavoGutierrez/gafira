@@ -146,6 +146,7 @@ jobs:
           gafira-audio   gafira-geom gafira-color gafira-doc gafira-time
           gafira-segment gafira-geom gafira-color gafira-doc gafira-raster gafira-time
           gafira-qr      gafira-geom gafira-color gafira-doc gafira-time
+          gafira-bulk    gafira-geom gafira-color gafira-doc gafira-time
           gafira-table   gafira-geom gafira-color gafira-doc gafira-time
           gafira-chart   gafira-geom gafira-color gafira-doc gafira-time gafira-table
           gafira-ports   gafira-geom gafira-color gafira-doc gafira-time gafira-raster

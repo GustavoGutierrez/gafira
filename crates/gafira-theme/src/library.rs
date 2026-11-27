@@ -1,4 +1,4 @@
-//! The font library (spec 062, D-100): twenty-five free families, each in its
+//! The font library (spec 062, D-100): forty-eight free families, each in its
 //! regular face and, when the family has them, bold, italic and bold
 //! italic, compiled into the binary. Their licences and origins are in
 //! `assets/LICENSES.toml`.
@@ -14,7 +14,7 @@ pub struct LibraryFace {
     pub bytes: &'static [u8],
 }
 
-const FACES: [LibraryFace; 70] = [
+const FACES: [LibraryFace; 87] = [
     LibraryFace {
         family: "Open Sans",
         bold: false,
@@ -533,6 +533,139 @@ const FACES: [LibraryFace; 70] = [
         path: "assets/fonts/library/courgette/Courgette-Regular.ttf",
         bytes: include_bytes!("../../../assets/fonts/library/courgette/Courgette-Regular.ttf"),
     },
+    LibraryFace {
+        family: "Londrina Outline",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/londrinaoutline/LondrinaOutline-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/londrinaoutline/LondrinaOutline-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Rubik Bubbles",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/rubikbubbles/RubikBubbles-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/rubikbubbles/RubikBubbles-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Sniglet",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/sniglet/Sniglet-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/sniglet/Sniglet-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Sniglet",
+        bold: true,
+        italic: false,
+        path: "assets/fonts/library/sniglet/Sniglet-ExtraBold.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/sniglet/Sniglet-ExtraBold.ttf"),
+    },
+    LibraryFace {
+        family: "Cabin Sketch",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/cabinsketch/CabinSketch-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/cabinsketch/CabinSketch-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Cabin Sketch",
+        bold: true,
+        italic: false,
+        path: "assets/fonts/library/cabinsketch/CabinSketch-Bold.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/cabinsketch/CabinSketch-Bold.ttf"),
+    },
+    LibraryFace {
+        family: "Michroma",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/michroma/Michroma-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/michroma/Michroma-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Rye",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/rye/Rye-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/rye/Rye-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Mr Dafoe",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/mrdafoe/MrDafoe-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/mrdafoe/MrDafoe-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Damion",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/damion/Damion-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/damion/Damion-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Mrs Saint Delafield",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/mrssaintdelafield/MrsSaintDelafield-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/mrssaintdelafield/MrsSaintDelafield-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Herr Von Muellerhoff",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/herrvonmuellerhoff/HerrVonMuellerhoff-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/herrvonmuellerhoff/HerrVonMuellerhoff-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Monsieur La Doulaise",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/monsieurladoulaise/MonsieurLaDoulaise-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/monsieurladoulaise/MonsieurLaDoulaise-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Meddon",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/meddon/Meddon.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/meddon/Meddon.ttf"),
+    },
+    LibraryFace {
+        family: "UnifrakturMaguntia",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/unifrakturmaguntia/UnifrakturMaguntia-Book.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/unifrakturmaguntia/UnifrakturMaguntia-Book.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "UnifrakturCook",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/unifrakturcook/UnifrakturCook-Bold.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/unifrakturcook/UnifrakturCook-Bold.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Pirata One",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/pirataone/PirataOne-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/pirataone/PirataOne-Regular.ttf"),
+    },
 ];
 
 /// Every face of the library, family by family, regular first.
@@ -564,7 +697,7 @@ mod tests {
     #[test]
     fn s62_02_library_faces() {
         let families = library_families();
-        assert_eq!(families.len(), 33);
+        assert_eq!(families.len(), 48);
         assert_eq!(families[0], "Open Sans");
         for family in &families {
             assert!(
@@ -574,7 +707,7 @@ mod tests {
                 "{family}"
             );
         }
-        assert_eq!(library().len(), 70, "every face of the library");
+        assert_eq!(library().len(), 87, "every face of the library");
         assert_eq!(face_key("Lato", false, false), "Lato");
         assert_eq!(face_key("Lato", true, false), "Lato Bold");
         assert_eq!(face_key("Lato", false, true), "Lato Italic");

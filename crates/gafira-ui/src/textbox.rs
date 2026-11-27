@@ -77,6 +77,7 @@ mod tests {
                             )),
                             bold: false,
                             italic: false,
+                            gradient: None,
                         },
                     })
                     .collect(),

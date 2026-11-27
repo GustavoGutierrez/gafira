@@ -731,7 +731,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         });
                     }
                     RecordKind::Text(ref text) => {
-                        let Some((path, color, canonical, runs)) =
+                        let Some((path, color, canonical, runs, parts)) =
                             text_path(text, &record.base.placement, &self.fonts)
                         else {
                             // No words, no fonts or no glyph: nothing to draw.
@@ -782,6 +782,31 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         for piece in
                             effect_pieces(text, (&path, color), &runs, density_of(&transform))
                         {
+                            // Spec 106: the letters of each colour apart.
+                            if matches!(piece, TextPiece::Letters(None))
+                                && text.gradient.is_none()
+                                && !parts.is_empty()
+                            {
+                                for part in &parts {
+                                    sub.ops.push(match &part.gradient {
+                                        // A gradient over the box, as for a
+                                        // whole text (spec 070).
+                                        Some(gradient) => RenderOp::FillGradient {
+                                            path: Arc::new(part.path.clone()),
+                                            gradient: Arc::new(gradient.clone()),
+                                            size,
+                                            transform,
+                                        },
+                                        None => RenderOp::Text {
+                                            path: Arc::new(part.path.clone()),
+                                            color: part.color,
+                                            transform,
+                                            runs: Arc::new(part.runs.clone()),
+                                        },
+                                    });
+                                }
+                                continue;
+                            }
                             sub.ops.push(match (piece, &text.gradient) {
                                 (TextPiece::Fill { path, color }, _) => RenderOp::FillPath {
                                     path: Arc::new(path),
@@ -1397,6 +1422,7 @@ fn chart_pieces(
             color: chart.text.color,
             bold,
             italic: chart.text.italic,
+            gradient: None,
         };
         let content = gafira_doc::RichText::plain(text, &style);
         let wide = gafira_geom::Size::new(WIDE, 1.0);
@@ -1505,6 +1531,7 @@ fn cell_text(
             color: style.color,
             bold: style.bold,
             italic: style.italic,
+            gradient: None,
         },
     );
     let pad_x = padding.min(w / 2.0 - 0.5).max(0.0);
@@ -1919,14 +1946,15 @@ const TEXT_SIZE_PT: std::ops::RangeInclusive<f64> = 1.0..=1000.0;
 /// so the size is kept in that range and the dpi carries the rest: the glyphs
 /// come out at the size in px of the document. A text that does not lay out
 /// (no font covers it, a number out of range) draws nothing.
+#[allow(clippy::type_complexity)]
 fn text_path(
     text: &TextNode,
     placement: &Placement,
     fonts: &FontBook,
-) -> Option<(BezPath, Color, String, Vec<GlyphRun>)> {
+) -> Option<(BezPath, Color, String, Vec<GlyphRun>, Vec<TextPart>)> {
     let bounds = gafira_geom::Size::new(placement.w.abs(), placement.h.abs());
     let laid = laid_text(&text.content, Laid::of(text), bounds, fonts)?;
-    Some((laid.path, laid.color, laid.canonical, laid.runs))
+    Some((laid.path, laid.color, laid.canonical, laid.runs, laid.parts))
 }
 
 /// A text laid out: its outline, colour, the canonical string of its key,
@@ -1939,6 +1967,20 @@ struct LaidText {
     canonical: String,
     height: f64,
     runs: Vec<GlyphRun>,
+    /// A text of several styles (spec 106): its letters by colour or
+    /// gradient, with their glyph runs; empty for a text of one style, all
+    /// in `color`.
+    parts: Vec<TextPart>,
+}
+
+/// Letters of a text in one colour, or one gradient over the box of the
+/// text (spec 106), with their glyphs.
+#[derive(Clone, Debug)]
+pub(crate) struct TextPart {
+    pub(crate) path: BezPath,
+    pub(crate) color: Color,
+    pub(crate) gradient: Option<gafira_doc::Gradient>,
+    pub(crate) runs: Vec<GlyphRun>,
 }
 
 /// How a text is laid out besides its words: alignment, bend, letter
@@ -2078,8 +2120,15 @@ fn laid_text(
     if words.trim().is_empty() || !style.size.is_finite() || style.size <= 0.0 {
         return None;
     }
+    let mixed = content.mixed();
     let face = fonts.face(&style.font, style.bold, style.italic);
-    let owned = fonts.stack(&face);
+    let mut owned = fonts.stack(&face);
+    // The spans by their bytes in `words`, for a text of several styles.
+    let spans = if mixed {
+        span_ranges(content)
+    } else {
+        Vec::new()
+    };
     let stack: Vec<&[u8]> = owned.iter().map(AsRef::as_ref).collect();
     if stack.is_empty() {
         return None;
@@ -2098,17 +2147,47 @@ fn laid_text(
         ..gafira_text::TextStyle::default()
     };
     let dpi = 72.0 * style.size / size_pt;
-    let layout = fonts.lay(&face, &stack, |stack| {
-        stack
-            .layout_box_face(
-                &words,
-                &layout_style,
-                (style.bold, style.italic),
-                dpi,
-                bounds,
-            )
-            .ok()
-    })?;
+    let layout = if mixed {
+        // Spec 106: every span in its own face and size; the faces of the
+        // stack are those of every span, then the others of the book.
+        let mut runs = Vec::with_capacity(spans.len());
+        for (range, span) in &spans {
+            let key = fonts.face(&span.font, span.bold, span.italic);
+            let lead = fonts.stack(&key).into_iter().next()?;
+            let at = match owned.iter().position(|f| Arc::ptr_eq(f, &lead)) {
+                Some(at) => at,
+                None => {
+                    owned.push(lead);
+                    owned.len() - 1
+                }
+            };
+            if !span.size.is_finite() || span.size <= 0.0 {
+                return None;
+            }
+            runs.push(gafira_text::FaceRun {
+                range: range.clone(),
+                size_px: span.size as f32,
+                lead: at,
+                bold: span.bold,
+                italic: span.italic,
+            });
+        }
+        let stack: Vec<&[u8]> = owned.iter().map(AsRef::as_ref).collect();
+        gafira_text::layout_box_runs(&words, &stack, &layout_style, dpi, bounds, &runs).ok()?
+    } else {
+        fonts.lay(&face, &stack, |stack| {
+            stack
+                .layout_box_face(
+                    &words,
+                    &layout_style,
+                    (style.bold, style.italic),
+                    dpi,
+                    bounds,
+                )
+                .ok()
+        })?
+    };
+    let stack: Vec<&[u8]> = owned.iter().map(AsRef::as_ref).collect();
     let outlines = gafira_text::outline_text(&layout, &stack).ok()?;
     let curved = if curve == 0.0 {
         None
@@ -2116,6 +2195,19 @@ fn laid_text(
         Some(gafira_text::curve_layout(&layout, bounds.width(), curve).ok()?)
     };
     let mut path = BezPath::new();
+    // Spec 106: the letters of each colour, by the span of their cluster.
+    type Paint = (Color, Option<gafira_doc::Gradient>);
+    let mut by_color: Vec<(Paint, BezPath)> = Vec::new();
+    let paint_at = |at: usize| -> Option<Paint> {
+        spans
+            .iter()
+            .find(|(range, _)| range.contains(&at))
+            .map(|(_, span)| (span.color, span.gradient.clone()))
+    };
+    let color_at = |line: usize, cluster: usize| -> Option<Paint> {
+        let at = layout.lines.get(line)?.clusters.get(cluster)?.range.start;
+        paint_at(at)
+    };
     // The top of the straight letters: a curved text starts there too, so a
     // cup, whose ends rise, stays in its box.
     let mut straight_top = f64::MAX;
@@ -2145,6 +2237,12 @@ fn laid_text(
                     * Affine::translate((-centre, -f64::from(line.baseline))),
             );
         }
+        if mixed && let Some(color) = color_at(outline.line, outline.cluster) {
+            match by_color.iter_mut().find(|(c, _)| *c == color) {
+                Some((_, part)) => part.extend(glyph.elements().iter().copied()),
+                None => by_color.push((color, glyph.clone())),
+            }
+        }
         path.extend(glyph.elements().iter().copied());
     }
     if path.elements().is_empty() {
@@ -2161,8 +2259,16 @@ fn laid_text(
         TextAlign::Right => 'r',
         TextAlign::Justify => 'j',
     };
+    let styles = if mixed {
+        format!(
+            "\u{0}{:?}",
+            spans.iter().map(|(r, s)| (r, s)).collect::<Vec<_>>()
+        )
+    } else {
+        String::new()
+    };
     let canonical = format!(
-        "{}\u{0}{:016x}\u{0}{align}{}\u{0}{words}",
+        "{}\u{0}{:016x}\u{0}{align}{}\u{0}{words}{styles}",
         face,
         style.size.to_bits(),
         if curve == 0.0 && letter_spacing == 0.0 && line_height.is_none() {
@@ -2179,6 +2285,8 @@ fn laid_text(
     // The glyphs by line and font, where the outline put them (spec 073).
     let text: Arc<str> = Arc::from(words.as_str());
     let mut runs: Vec<GlyphRun> = Vec::new();
+    // The colour of each run, for a text of several styles.
+    let mut run_colors: Vec<Option<(Color, Option<gafira_doc::Gradient>)>> = Vec::new();
     if curved.is_none() {
         for line in &layout.lines {
             let mut current: Option<GlyphRun> = None;
@@ -2186,11 +2294,19 @@ fn laid_text(
                 let Some(font) = owned.get(cluster.font) else {
                     continue;
                 };
-                let same = current
-                    .as_ref()
-                    .is_some_and(|run| Arc::ptr_eq(&run.font, font) && run.size == cluster.size_px);
+                let color = if mixed {
+                    paint_at(cluster.range.start)
+                } else {
+                    None
+                };
+                let same = current.as_ref().is_some_and(|run| {
+                    Arc::ptr_eq(&run.font, font)
+                        && run.size == cluster.size_px
+                        && run_colors.last().cloned().flatten() == color
+                });
                 if !same {
                     runs.extend(current.take());
+                    run_colors.push(color.clone());
                     current = Some(GlyphRun {
                         font: Arc::clone(font),
                         index: 0,
@@ -2224,13 +2340,74 @@ fn laid_text(
             runs.extend(current);
         }
     }
+    let parts = by_color
+        .into_iter()
+        .map(|(paint, part)| {
+            let own: Vec<GlyphRun> = runs
+                .iter()
+                .zip(&run_colors)
+                .filter(|(_, c)| c.as_ref() == Some(&paint))
+                .map(|(run, _)| run.clone())
+                .collect();
+            TextPart {
+                path: part,
+                color: paint.0,
+                gradient: paint.1,
+                runs: own,
+            }
+        })
+        .collect();
     Some(LaidText {
         path,
         color: style.color,
         canonical,
         height: f64::from(layout.height),
         runs,
+        parts,
     })
+}
+
+/// The bytes of `content.plain_text()` each span takes, with its style;
+/// paragraph breaks belong to no span.
+fn span_ranges(
+    content: &gafira_doc::RichText,
+) -> Vec<(std::ops::Range<usize>, gafira_doc::SpanStyle)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    for (k, paragraph) in content.paragraphs.iter().enumerate() {
+        if k > 0 {
+            at += 1;
+        }
+        for span in &paragraph.spans {
+            let end = at + span.text.len();
+            if end > at {
+                out.push((at..end, span.style.clone()));
+            }
+            at = end;
+        }
+    }
+    out
+}
+
+/// The letters of `text` by colour or gradient (spec 106), laid out in a
+/// box of `width` × `height` px: one part for a text of one style.
+#[must_use]
+pub fn text_parts(
+    text: &TextNode,
+    (width, height): (f64, f64),
+    fonts: &FontBook,
+) -> Option<Vec<(BezPath, Color, Option<gafira_doc::Gradient>)>> {
+    let bounds = gafira_geom::Size::new(width.abs(), height.abs());
+    let laid = laid_text(&text.content, Laid::of(text), bounds, fonts)?;
+    if laid.parts.is_empty() {
+        return Some(vec![(laid.path, laid.color, None)]);
+    }
+    Some(
+        laid.parts
+            .into_iter()
+            .map(|p| (p.path, p.color, p.gradient))
+            .collect(),
+    )
 }
 
 /// The check of ARQ-110: a number that is not finite is an error that names
@@ -2863,6 +3040,81 @@ mod tests {
         );
     }
 
+    // S106-06: a text with «algo» bold and red draws its letters in two
+    // colours, each with its glyphs for the PDF; «algo» is wider in bold.
+    #[test]
+    fn s106_06_a_text_of_two_styles() {
+        let ink = Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let red = Color::Srgb(gafira_color::Rgba::new(1.0, 0.0, 0.0, 1.0));
+        let base = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 40.0,
+            color: ink,
+            bold: false,
+            italic: false,
+            gradient: None,
+        };
+        let mut text = TextNode::plain("Agregar algo de texto", &base);
+        let plain = text.clone();
+        text.content
+            .restyle(8..12, &|s: &mut gafira_doc::SpanStyle| {
+                s.bold = true;
+                s.color = red;
+            });
+        assert!(text.styled(), "drawn from its outline on the canvas");
+        let placement = Placement::new(0.0, 0.0, 1000.0, 100.0);
+        let fonts = fonts();
+        let (_, _, key, _, parts) = text_path(&text, &placement, &fonts).expect("laid out");
+        let colors: Vec<Color> = parts.iter().map(|p| p.color).collect();
+        assert_eq!(colors, vec![ink, red]);
+        assert!(parts.iter().all(|p| !p.runs.is_empty()));
+        let (_, _, plain_key, _, plain_parts) =
+            text_path(&plain, &placement, &fonts).expect("laid out");
+        assert!(plain_parts.is_empty(), "one style draws as before");
+        assert_ne!(key, plain_key, "the styles are in the key");
+        let wide = |t: &TextNode| {
+            text_outline(t, (1000.0, 100.0), &fonts)
+                .map(|(path, _, _)| path.bounding_box().width())
+                .unwrap_or_default()
+        };
+        assert!(wide(&text) > wide(&plain) + 1.0);
+        let parts = text_parts(&text, (1000.0, 100.0), &fonts).expect("parts");
+        assert_eq!(parts.len(), 2);
+    }
+
+    // S106-10: letters in a gradient (owner request) fill with it over the
+    // box; the others keep their colour and glyphs.
+    #[test]
+    fn s106_10_a_gradient_on_some_letters() {
+        let ink = Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let stop = |offset, r| gafira_doc::GradientStop {
+            offset,
+            color: Color::Srgb(gafira_color::Rgba::new(r, 0.2, 0.7, 1.0)),
+        };
+        let gradient = gafira_doc::Gradient {
+            kind: gafira_doc::GradientKind::Linear { angle_deg: 0.0 },
+            stops: vec![stop(0.0, 1.0), stop(1.0, 0.0)],
+        };
+        let base = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 40.0,
+            color: ink,
+            bold: false,
+            italic: false,
+            gradient: None,
+        };
+        let mut text = TextNode::plain("Agregar algo de texto", &base);
+        text.content
+            .restyle(8..12, &|s: &mut gafira_doc::SpanStyle| {
+                s.gradient = Some(gradient.clone());
+            });
+        let placement = Placement::new(0.0, 0.0, 1000.0, 100.0);
+        let (_, _, _, _, parts) = text_path(&text, &placement, &fonts()).expect("laid out");
+        assert_eq!(parts.len(), 2);
+        assert!(parts.iter().any(|p| p.gradient.as_ref() == Some(&gradient)));
+        assert!(parts.iter().any(|p| p.gradient.is_none() && p.color == ink));
+    }
+
     // S81-12: a table draws the fills, the borders and, each cell a text
     // with its glyphs, the words; a cell a merge hides draws nothing.
     #[test]
@@ -2960,6 +3212,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
         shape.fill = Some(RED);
@@ -3020,6 +3273,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 200.0, 60.0));
         let kind = NodeKind::Text(TextNode::plain(words, &style));
@@ -3040,6 +3294,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let fonts = fonts();
         let band = |curve: f64| {
@@ -3096,6 +3351,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let fonts = fonts();
         let measure = |letters: f64, lines: Option<f64>| {

@@ -57,3 +57,18 @@ fn arq_105_the_check_reports_a_character_the_fonts_lack() {
         assert!(face.charmap().map('ñ').is_some(), "{}", font.family);
     }
 }
+
+#[test]
+fn s62_02_every_library_face_draws_spanish() {
+    // A family of the font library must write Spanish text: accents, eñe,
+    // the opening marks and the angle quotes.
+    for face in gafira_theme::library() {
+        let font = FontRef::new(face.bytes).expect("a valid font");
+        let charmap = font.charmap();
+        let missing: String = "áéíóúüÁÉÍÓÚÜñÑ¿¡«»"
+            .chars()
+            .filter(|c| charmap.map(*c).is_none())
+            .collect();
+        assert!(missing.is_empty(), "{} lacks {missing}", face.path);
+    }
+}

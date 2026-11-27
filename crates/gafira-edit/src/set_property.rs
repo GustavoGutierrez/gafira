@@ -1339,6 +1339,7 @@ mod tests {
             color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         {
             let token = EditToken::__new_for_gafira_edit_only();
@@ -1390,6 +1391,7 @@ mod tests {
             color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let hola = ShapeText::plain("Hola", &style);
         let mut set_it = set(&[A], Property::ShapeText(Some(hola.clone())));

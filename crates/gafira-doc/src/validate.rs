@@ -25,7 +25,16 @@ impl Document {
         self.check_reachability()?;
         self.check_clip_sources()?;
         self.check_image_sources()?;
-        self.check_timeline()
+        self.check_timeline()?;
+        self.check_data()
+    }
+
+    /// P9: the connected data of bulk create keeps its table rules (spec 104).
+    fn check_data(&self) -> Result<(), ValidationError> {
+        match self.data.as_deref().and_then(crate::DataSet::problem) {
+            Some(problem) => Err(ValidationError::InvalidData { problem }),
+            None => Ok(()),
+        }
     }
 
     /// P1: schema version, then DPI.
@@ -464,6 +473,24 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
         _ => None,
     };
     if let Some(problem) = gradient.and_then(crate::Gradient::problem) {
+        return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
+    // The gradients of some letters (spec 106).
+    let spans = match &node.kind {
+        NodeKind::Text(text) => Some(&text.content),
+        NodeKind::Shape(shape) => shape.text.as_ref().map(|t| &t.content),
+        _ => None,
+    };
+    let span_problem = spans
+        .into_iter()
+        .flat_map(crate::RichText::spans)
+        .find_map(|span| {
+            span.style
+                .gradient
+                .as_ref()
+                .and_then(crate::Gradient::problem)
+        });
+    if let Some(problem) = span_problem {
         return Err(ValidationError::InvalidGradient { node: id, problem });
     }
     if let NodeKind::Qr(qr) = &node.kind
@@ -1467,6 +1494,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a)),
             bold: false,
             italic: false,
+            gradient: None,
         };
         let check = |size: f64, a: f32| {
             let mut page = page(1, &[]);

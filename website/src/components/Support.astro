@@ -20,6 +20,9 @@ import { copy, type Locale } from '../i18n/ui';
 import christmasCover from '../assets/packs/full-christmas-clip-art.webp';
 import ornamentsCover from '../assets/packs/full-christmas-ornaments.webp';
 import occasionsCover from '../assets/packs/full-ornaments-for-every-occasion.webp';
+import plantsCover from '../assets/packs/full-plants-leaves-shrubs.webp';
+import flowersCover from '../assets/packs/full-botanical-flowers.webp';
+import branchesCover from '../assets/packs/full-branches-bouquets-arrangements.webp';
 
 interface Props {
   locale: Locale;
@@ -110,6 +113,63 @@ const packs: FullPack[] = [
       'ocasiones_20_aniversario-50',
     ],
   },
+  {
+    id: 'plants',
+    url: 'https://gusdev.gumroad.com/l/plants-leaves-shrubs-full',
+    price: 3,
+    count: 144,
+    added: 114,
+    tint: 'var(--mint)',
+    cover: plantsCover,
+    samples: [
+      'bambu_05_bambu-negro',
+      'elementos-verdes_05_roble-con-bellotas',
+      'follajes_07_arbol-de-jade',
+      'hierbas-medicinales_11_pasiflora',
+      'hojas-arbustos_11_cheflera-variegada',
+      'navidad-plantas_05_flor-de-pascua-blanca',
+      'navidad-plantas_10_amarilis',
+      'plantas_12_calendula',
+    ],
+  },
+  {
+    id: 'flowers',
+    url: 'https://gusdev.gumroad.com/l/botanical-flowers-full',
+    price: 5,
+    count: 180,
+    added: 150,
+    tint: 'var(--coral)',
+    cover: flowersCover,
+    samples: [
+      'capullos_12_capullo-de-loto',
+      'flores-azules_03_dalia-azul',
+      'flores-botanicas_02_ranunculo',
+      'flores-clasicas_06_hibisco',
+      'flores-colombianas_03_orquidea-lluvia-de-oro',
+      'flores-iridiscentes_05_iris-iridiscente',
+      'flores-variadas_05_gloriosa',
+      'girasoles-ornamentales_05_girasol-bicolor',
+    ],
+  },
+  {
+    id: 'branches',
+    url: 'https://gusdev.gumroad.com/l/branches-bouquets-arrangements-full',
+    price: 5,
+    count: 159,
+    added: 129,
+    tint: 'var(--mint)',
+    cover: branchesCover,
+    samples: [
+      'arreglos-tropicales_03_jengibres-rojos',
+      'composiciones-tropicales_05_pasifloras',
+      'enredaderas-en-cascada_01_cascada-de-rosas',
+      'hierbas-florales_03_salvia',
+      'pampas-tonos-suaves_02_pampas-beige',
+      'ramas-blancas_04_lirios-blancos',
+      'ramas-verde-lima_01_rosas-verde-lima',
+      'ramos-de-rosas-clasicos_04_ramo-de-rosas-burdeos-y-lilas',
+    ],
+  },
 ];
 
 interface Slide {
@@ -155,6 +215,10 @@ const drift = [
   { image: sample('christmas', 'gouache_07_petirrojo-gorro'), x: 2, y: 70, size: 100, depth: 14, r: 10 },
   { image: sample('occasions', 'cumpleanos_03_cupcake'), x: 20, y: 90, size: 84, depth: 22, r: -6 },
   { image: sample('ornaments', 'hoja-dorada_03_bastones-caramelo'), x: 74, y: 92, size: 90, depth: 12, r: -12 },
+  { image: sample('plants', 'hierbas-medicinales_11_pasiflora'), x: 6, y: 40, size: 104, depth: 20, r: 8 },
+  { image: sample('plants', 'follajes_07_arbol-de-jade'), x: 91, y: 34, size: 96, depth: 16, r: -8 },
+  { image: sample('flowers', 'flores-variadas_05_gloriosa'), x: 4, y: 55, size: 96, depth: 18, r: -8 },
+  { image: sample('branches', 'ramas-blancas_04_lirios-blancos'), x: 90, y: 80, size: 100, depth: 24, r: 10 },
 ];
 
 const points = ['briefcase', 'image-square', 'lock-simple'];
@@ -205,7 +269,7 @@ const g = t.gallery;
                       src={slide.image}
                       alt=""
                       widths={slide.cover ? [400, 600, 800] : [300, 450, 600]}
-                      sizes={slide.cover ? '(max-width: 960px) 90vw, 360px' : '(max-width: 960px) 60vw, 260px'}
+                      sizes={slide.cover ? '(max-width: 720px) 90vw, (max-width: 1100px) 45vw, 380px' : '(max-width: 720px) 60vw, (max-width: 1100px) 30vw, 270px'}
                       loading={i === 0 ? 'eager' : 'lazy'}
                     />
                   </button>
@@ -577,10 +641,13 @@ const g = t.gallery;
     color: rgb(255 255 255 / 0.8);
   }
 
+  /* Two columns, narrow enough that each card keeps its proportions; three on wide screens (see below). */
   .grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 24px;
+    max-width: 960px;
+    margin-inline: auto;
   }
 
   .card {
@@ -607,6 +674,8 @@ const g = t.gallery;
   .media {
     position: relative;
     aspect-ratio: 4 / 3;
+    /* Clip so tall slides cannot stretch the box past 4:3 and unbalance a row. */
+    overflow: hidden;
     background: #fafaf7;
   }
 
@@ -1135,13 +1204,29 @@ const g = t.gallery;
     }
   }
 
-  @media (max-width: 960px) {
+  /* Wide screens: six packs read as two rows of three, using the full container. */
+  @media (min-width: 1100px) {
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      max-width: none;
+    }
+
+    .card h3 {
+      font-size: 22px;
+      line-height: 30px;
+      text-wrap: balance;
+    }
+  }
+
+  @media (max-width: 720px) {
     .grid {
       grid-template-columns: 1fr;
       max-width: 520px;
       margin-inline: auto;
     }
+  }
 
+  @media (max-width: 960px) {
     /* On a phone the reassurance reads as a short left-aligned list. */
     .points {
       flex-direction: column;

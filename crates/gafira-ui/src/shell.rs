@@ -148,6 +148,8 @@ pub(crate) enum Go {
     Settings,
     /// Open «Exportar» for the page of the selection, if any (spec 030).
     Export(Option<gafira_doc::PageId>),
+    /// Open «Exportar en lote» for the connected data (spec 104).
+    BulkExport,
     /// Save a named version (spec 031), on its thread (spec 036).
     SaveVersion(String),
 }
@@ -207,6 +209,11 @@ struct Shell {
     /// The first file of the last export that ended well, while its card
     /// offers «Mostrar en carpeta» (spec 039).
     exported: Option<PathBuf>,
+    /// «Exportar en lote» (spec 104): its dialog, its run and the card of
+    /// the run that ended, with its details open or not.
+    bulk_dialog: Option<crate::bulk_export::Dialog>,
+    bulk_run: Option<crate::bulk_run::Run>,
+    bulk_done: Option<(crate::bulk_run::Status, bool)>,
     show_in_folder: ShowInFolder,
     /// The save running on its thread and what follows it (spec 036).
     saving: Option<(Saving, AfterSave)>,
@@ -317,6 +324,9 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 export: None,
                 exporting: None,
                 exported: None,
+                bulk_dialog: None,
+                bulk_run: None,
+                bulk_done: None,
                 show_in_folder: config.show_in_folder,
                 saving: None,
                 waker: cc.egui_ctx.clone(),
@@ -652,8 +662,116 @@ impl Shell {
         }
     }
 
+    /// «Exportar en lote»: the dialog, then where the files go and the run
+    /// on its thread (spec 104).
+    fn bulk_export(&mut self, ctx: &egui::Context, window: &eframe::Frame) {
+        use crate::bulk_export::{Answer, show, target};
+        let Some(dialog) = self.bulk_dialog.as_mut() else {
+            return;
+        };
+        match show(ctx, &self.theme, &self.texts, &mut self.engine, dialog) {
+            Answer::Open => {}
+            Answer::Cancel => self.bulk_dialog = None,
+            Answer::Export => {
+                let Some(dialog) = self.bulk_dialog.take() else {
+                    return;
+                };
+                if self.bulk_run.is_some() {
+                    self.notice = Some(self.texts.t(&gafira_doc::msg!("export.busy")));
+                    return;
+                }
+                if let Some((format, kept)) = dialog.preset() {
+                    self.export_presets.save(&format, kept);
+                }
+                let Some(document) = self.engine.edit().document() else {
+                    return;
+                };
+                let Some(set) = document.data() else { return };
+                // The choices stay with the document for next time (§11.1).
+                let mut kept = set.clone();
+                kept.profile = dialog.profile();
+                kept.template_pages.clone_from(&dialog.pages);
+                if kept != *set {
+                    let command = gafira_edit::SetData::new(Some(std::sync::Arc::new(kept)));
+                    if let Err(error) = self.engine.edit().execute(Box::new(command)) {
+                        eprintln!("bulk profile: {error}");
+                    }
+                }
+                let Some(document) = self.engine.edit().document() else {
+                    return;
+                };
+                let Some(set) = document.data() else { return };
+                let Some((to, gaf)) = target(Some(window), &dialog, set) else {
+                    return;
+                };
+                let rows = dialog.rows(set);
+                let job = crate::bulk_run::job(
+                    &self.engine,
+                    &document,
+                    (rows, to, gaf),
+                    dialog.written(),
+                );
+                match job {
+                    Ok(job) => {
+                        let ctx = ctx.clone();
+                        let wake = std::sync::Arc::new(move || ctx.request_repaint());
+                        self.bulk_done = None;
+                        self.bulk_run = Some(crate::bulk_run::Run::start(job, wake));
+                    }
+                    Err(error) => {
+                        eprintln!("bulk export: {error}");
+                        self.notice = Some(self.texts.t(&gafira_doc::msg!("export.failed")));
+                    }
+                }
+            }
+        }
+    }
+
+    /// The card of «Exportar en lote» while it runs and once it ended, until
+    /// it is closed (spec 104 §10.3).
+    fn pump_bulk(&mut self, ctx: &egui::Context) {
+        let above = self.exporting.is_some() || self.exported.is_some();
+        let pair = (&self.theme, &self.texts);
+        if let Some(run) = self.bulk_run.as_mut() {
+            if run.poll() {
+                let mut status = run.status();
+                status.took = Some(status.started.elapsed());
+                self.bulk_run = None;
+                self.bulk_done = Some((status, false));
+            } else {
+                let status = run.status();
+                if crate::bulk_export::running(ctx, pair, &status, (run.is_cancelling(), above)) {
+                    run.cancel();
+                }
+                // The time and the counts move on.
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+                return;
+            }
+        }
+        let Some((status, details)) = self.bulk_done.as_mut() else {
+            return;
+        };
+        match crate::bulk_export::finished(ctx, pair, status, (details, above)) {
+            crate::bulk_export::Finished::Open => {}
+            crate::bulk_export::Finished::Close => self.bulk_done = None,
+            crate::bulk_export::Finished::ShowInFolder => {
+                if let Some(path) = status.first.clone()
+                    && let Err(error) = (self.show_in_folder)(&path)
+                {
+                    eprintln!("show in folder {}: {error}", path.display());
+                    self.notice = Some(self.texts.t(&gafira_doc::msg!("export.folder_failed")));
+                }
+                self.bulk_done = None;
+            }
+        }
+    }
+
     /// The dialogs over the screen; `true` when one is open.
     fn dialogs(&mut self, ctx: &egui::Context, window: &eframe::Frame) -> bool {
+        if self.bulk_dialog.is_some() {
+            self.bulk_export(ctx, window);
+            return true;
+        }
         if self.export.is_some() {
             self.export(ctx, window);
             return true;
@@ -821,6 +939,9 @@ impl Shell {
 impl eframe::App for Shell {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // A closing window stops its export: no temporary is left behind.
+        if let Some(run) = self.bulk_run.take() {
+            run.stop();
+        }
         if let Some(running) = self.exporting.take() {
             running.stop();
         }
@@ -934,6 +1055,7 @@ impl eframe::App for Shell {
         self.show_pack(ctx);
         let blocked = self.dialogs(ctx, frame);
         self.pump_export(ctx);
+        self.pump_bulk(ctx);
         self.pump_save(ctx, Some(frame));
         let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
@@ -977,6 +1099,17 @@ impl eframe::App for Shell {
                 let settings = self.engine.settings().get().with_appearance(appearance);
                 if let Err(error) = self.engine.settings().set(settings) {
                     eprintln!("settings: {error}");
+                }
+            }
+            Go::BulkExport => {
+                self.notice = None;
+                let document = self.engine.edit().document();
+                if let Some(set) = document.as_deref().and_then(gafira_doc::Document::data) {
+                    self.bulk_dialog = Some(crate::bulk_export::Dialog::new(
+                        export::formats(&self.engine),
+                        self.export_presets.as_ref(),
+                        set,
+                    ));
                 }
             }
             Go::Export(page) => {

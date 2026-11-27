@@ -49,6 +49,26 @@ impl ReadSheet {
 /// The most rows of [`ReadSheet::data`].
 pub const MAX_DATA_ROWS: usize = 201;
 
+/// How much of a sheet [`ReadSheet::data`] holds: rows (the first one
+/// included) and columns. The table of a sheet is never larger than a
+/// [`TableNode`] holds, whatever the reach.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reach {
+    pub rows: usize,
+    pub columns: usize,
+}
+
+impl Default for Reach {
+    /// What a table and a chart take: [`MAX_DATA_ROWS`] rows and the
+    /// columns of a table.
+    fn default() -> Self {
+        Self {
+            rows: MAX_DATA_ROWS,
+            columns: TableNode::MAX_COLUMNS,
+        }
+    }
+}
+
 /// The rows and columns of the largest sheet.
 const SHEET_ROWS: usize = 1_048_576;
 const SHEET_COLUMNS: usize = 16_384;
@@ -65,6 +85,7 @@ const LINES: u32 = 0xD4_D4D4;
 
 /// What every sheet of a workbook shares.
 struct Book<'l> {
+    reach: Reach,
     strings: Vec<String>,
     looks: Vec<Look>,
     palette: Palette,
@@ -75,6 +96,12 @@ struct Book<'l> {
 /// The sheets with something to show: the hidden ones only when there is no
 /// other.
 pub fn read(bytes: &[u8], locale: Locale) -> Result<Vec<ReadSheet>, ReadError> {
+    read_reach(bytes, locale, Reach::default())
+}
+
+/// [`read`] with [`ReadSheet::data`] as far as `reach` (spec 104: bulk
+/// create takes every row of a sheet).
+pub fn read_reach(bytes: &[u8], locale: Locale, reach: Reach) -> Result<Vec<ReadSheet>, ReadError> {
     let mut package = Package::open(bytes)?;
     let book_part = package
         .relations("")?
@@ -92,6 +119,7 @@ pub fn read(bytes: &[u8], locale: Locale) -> Result<Vec<ReadSheet>, ReadError> {
     }
     let relations = package.relations(&book_part)?;
     let mut book = Book {
+        reach,
         strings: Vec::new(),
         looks: Vec::new(),
         palette: Palette::default(),
@@ -476,13 +504,14 @@ fn sheet(
     let used_rows = area.rows.1 + 1 - area.rows.0 - in_area;
     let all_rows: Vec<usize> = (area.rows.0..=area.rows.1)
         .filter(shown)
-        .take(MAX_DATA_ROWS)
+        .take(book.reach.rows.max(1))
         .collect();
     let rows = &all_rows[..all_rows.len().min(TableNode::MAX_ROWS)];
     let all_cols: Vec<usize> = (area.cols.0..=area.cols.1)
         .filter(|c| !sizes.col_hidden(*c))
         .collect();
     let used = (used_rows, all_cols.len());
+    let data_cols: Vec<usize> = all_cols.iter().copied().take(book.reach.columns).collect();
     let cols: Vec<usize> = all_cols.into_iter().take(TableNode::MAX_COLUMNS).collect();
     if rows.is_empty() || cols.is_empty() {
         return Ok(None);
@@ -517,7 +546,7 @@ fn sheet(
                 let cell = cells.get(&(*r, *c));
                 cell.map_or_else(String::new, |cell| book.shown(cell, code).0)
             };
-            cols.iter().map(word).collect()
+            data_cols.iter().map(word).collect()
         })
         .collect();
     for r in rows {

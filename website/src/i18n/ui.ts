@@ -35,7 +35,18 @@ export interface Copy {
     features: string;
     platforms: string;
     screenAlt: string;
-    slides: { label: string; editor: string; packs: string; packsAlt: string; pause: string; play: string };
+    slides: {
+      label: string;
+      editor: string;
+      packs: string;
+      packsAlt: string;
+      flowers: string;
+      flowersAlt: string;
+      model3d: string;
+      model3dAlt: string;
+      pause: string;
+      play: string;
+    };
     chips: { background: string; colors: string; exported: string };
   };
   how: {
@@ -147,7 +158,12 @@ const es: Copy = {
       editor: 'Editor',
       packs: 'Ilustraciones',
       packsAlt:
-        'Gafira con los tres paquetes de ilustraciones instalados y una página llena de ellas: lazos, esquineros, un farol, un pastel, rosas, globos y un osito',
+        'Gafira con paquetes de ilustraciones instalados y una página llena de ellas: lazos, esquineros, un farol, un pastel, rosas, globos y un osito',
+      flowers: 'Flores',
+      flowersAlt:
+        'Gafira con el paquete Flores botánicas abierto y una página llena de flores: rosas de varios colores, girasoles, un anturio, una fucsia y una heliconia',
+      model3d: 'Modelos 3D',
+      model3dAlt: 'Gafira girando un modelo 3D de un dragón de cristal, con las vistas rápidas y los controles de cámara',
       pause: 'Pausar las capturas',
       play: 'Reanudar las capturas',
     },
@@ -193,7 +209,12 @@ const es: Copy = {
       {
         icon: 'text-aa',
         title: 'Texto con estilo',
-        text: '33 familias tipográficas incluidas, combinaciones de fuentes, texto curvo, texto dentro de las formas y efectos de texto.',
+        text: '48 familias tipográficas incluidas, también de firma y góticas para diplomas; combinaciones de fuentes con efectos, texto curvo y efectos de texto.',
+      },
+      {
+        icon: 'text-b',
+        title: 'Estilo en parte del texto',
+        text: 'Elige unas palabras y cámbiales el color, el degradado, la fuente, el tamaño, la negrita o la cursiva sin tocar el resto de la caja.',
       },
       {
         icon: 'eyedropper',
@@ -216,6 +237,11 @@ const es: Copy = {
         text: 'Tablas editables (importa Excel o CSV), gráficos con su editor de datos y códigos QR con colores y logotipo.',
       },
       {
+        icon: 'table',
+        title: 'Crear en lote',
+        text: 'Conecta un Excel o CSV a tu diseño y genera un diseño por fila: certificados, tarjetas o invitaciones en PDF, imágenes o un .gaf editable.',
+      },
+      {
         icon: 'palette',
         title: 'Kits de marca',
         text: 'Guarda logotipos, colores, estilos de texto y fuentes en un kit y aplícalos a cualquier diseño. Compártelo en un archivo .gafkit.',
@@ -229,6 +255,11 @@ const es: Copy = {
         icon: 'stack',
         title: 'Capas y precisión',
         text: 'Capas que se arrastran, bloquean y ocultan; guías, imán, reglas, alinear y distribuir.',
+      },
+      {
+        icon: 'cursor-click',
+        title: 'Clic derecho y copiar estilo',
+        text: 'Un menú con las acciones comunes en cada elemento, y un pincel para copiar el estilo, los efectos o las propiedades de uno y pegarlos en otro.',
       },
       {
         icon: 'export',
@@ -379,6 +410,21 @@ const es: Copy = {
         text: 'Bodas, grados, cumpleaños y decoraciones para cualquier celebración.',
         alt: 'Un pastel de boda, un birrete de grado, un osito con globos, anillos de boda y un esquinero de girasoles',
       },
+      {
+        name: 'Plantas, hojas y arbustos',
+        text: 'Hojas, bambú, arbustos, hierbas medicinales y follaje navideño en estilo botánico realista.',
+        alt: 'Una hoja de monstera, una flor de Pascua, lavanda, un coleo y un hibisco',
+      },
+      {
+        name: 'Flores botánicas',
+        text: 'Rosas, girasoles, orquídeas, capullos y flores tropicales en estilo botánico realista.',
+        alt: 'Un girasol, una rosa roja, una orquídea, una dalia y un ave del paraíso',
+      },
+      {
+        name: 'Ramas, ramos y arreglos',
+        text: 'Ramos de rosas, ramas florales, enredaderas, pampas y arreglos tropicales en estilo botánico realista.',
+        alt: 'Un ramo de rosas de colores, una rama de peonías, hortensias azules, heliconias y una rama de eucalipto',
+      },
     ],
     install: {
       title: 'Cómo usarlos',
@@ -429,6 +475,24 @@ const es: Copy = {
         text: 'Cumpleaños, bodas, grados, 32 esquineros, 16 emblemas temáticos, florales y más.',
         alt: 'Un pastel de cumpleaños, un osito con globos, un pastel de boda, un birrete y anillos de boda',
         samples: ['Un cupcake', 'Insignia «Feliz Cumpleaños»', 'Un arco de boda', 'Un libro con pluma', 'Una taza de café', 'Esquinero con luna y nube', 'Una pareja en un corazón', 'Un 50 dorado de aniversario'],
+      },
+      {
+        name: 'Plantas, hojas y arbustos',
+        text: 'Hojas, ramas, bambú, arbustos, hierbas medicinales y follaje navideño en 12 láminas botánicas.',
+        alt: 'Una hoja de monstera, una flor de Pascua, lavanda, un coleo, un hibisco y una hoja de arce',
+        samples: ['Bambú negro', 'Una rama de roble con bellotas', 'Un árbol de jade', 'Una pasiflora', 'Una cheflera variegada', 'Una flor de Pascua blanca', 'Un amarilis rojo', 'Caléndulas'],
+      },
+      {
+        name: 'Flores botánicas',
+        text: 'Clásicas de jardín, más de 30 girasoles, capullos, orquídeas, flores colombianas y series por color en 21 láminas botánicas.',
+        alt: 'Una rosa roja, un girasol, una peonía, una dalia iridiscente, una orquídea, un ave del paraíso y una camelia',
+        samples: ['Un capullo de loto', 'Una dalia azul', 'Un ranúnculo', 'Un hibisco', 'Una orquídea lluvia de oro', 'Un iris iridiscente', 'Una gloriosa', 'Un girasol bicolor'],
+      },
+      {
+        name: 'Ramas, ramos y arreglos',
+        text: 'Ramos de rosas con lazo, ramas florales, enredaderas, hierbas, pampas y arreglos tropicales en 30 láminas botánicas.',
+        alt: 'Un ramo de rosas de colores con lazo, un ramo de rosas rojas, rosas verde jade, orquídeas, bastones del emperador y peonías',
+        samples: ['Jengibres rojos', 'Una rama de pasifloras', 'Una cascada de rosas', 'Salvia en flor', 'Pampas beige', 'Lirios blancos', 'Rosas verde lima', 'Un ramo de rosas burdeos y lilas'],
       },
     ],
     points: ['Uso personal y comercial', 'Fondo transparente, listas para Gafira', 'Pago a través de Gumroad'],
@@ -485,7 +549,12 @@ const en: Copy = {
       editor: 'Editor',
       packs: 'Illustrations',
       packsAlt:
-        'Gafira with the three illustration packs installed and a page full of them: bows, corners, a lantern, a cake, roses, balloons and a teddy bear',
+        'Gafira with illustration packs installed and a page full of them: bows, corners, a lantern, a cake, roses, balloons and a teddy bear',
+      flowers: 'Flowers',
+      flowersAlt:
+        'Gafira with the Botanical Flowers pack open and a page full of flowers: roses in several colours, sunflowers, an anthurium, a fuchsia and a heliconia',
+      model3d: '3D models',
+      model3dAlt: 'Gafira rotating a 3D model, with the camera and rotation controls',
       pause: 'Pause the screenshots',
       play: 'Play the screenshots',
     },
@@ -531,7 +600,12 @@ const en: Copy = {
       {
         icon: 'text-aa',
         title: 'Text with style',
-        text: '33 bundled font families, font pairings, curved text, text inside shapes and text effects.',
+        text: '48 bundled font families, signature and blackletter ones for diplomas included; font pairings with effects, curved text and text effects.',
+      },
+      {
+        icon: 'text-b',
+        title: 'Style part of a text',
+        text: 'Pick some words and change their colour, gradient, font, size, bold or italic without touching the rest of the box.',
       },
       {
         icon: 'eyedropper',
@@ -554,6 +628,11 @@ const en: Copy = {
         text: 'Editable tables (import Excel or CSV), charts with their data editor, and QR codes with colours and a logo.',
       },
       {
+        icon: 'table',
+        title: 'Bulk create',
+        text: 'Connect an Excel or CSV file to your design and make one design per row: certificates, cards or invitations as PDF, images or an editable .gaf.',
+      },
+      {
         icon: 'palette',
         title: 'Brand kits',
         text: 'Keep logos, colours, text styles and fonts in a kit and apply them to any design. Share it as a .gafkit file.',
@@ -567,6 +646,11 @@ const en: Copy = {
         icon: 'stack',
         title: 'Layers and precision',
         text: 'Layers you drag, lock and hide; guides, snapping, rulers, align and distribute.',
+      },
+      {
+        icon: 'cursor-click',
+        title: 'Right-click and copy style',
+        text: 'A menu with the usual actions on every element, and a painter to copy the style, effects or properties of one and paste them on another.',
       },
       {
         icon: 'export',
@@ -717,6 +801,21 @@ const en: Copy = {
         text: 'Weddings, graduations, birthdays and decorations for any celebration.',
         alt: 'A wedding cake, a graduation cap, a teddy bear with balloons, wedding rings and a sunflower corner',
       },
+      {
+        name: 'Plants, leaves & shrubs',
+        text: 'Leaves, bamboo, shrubs, medicinal herbs and Christmas greenery in a realistic botanical style.',
+        alt: 'A monstera leaf, a poinsettia, lavender, a coleus and a hibiscus',
+      },
+      {
+        name: 'Botanical flowers',
+        text: 'Roses, sunflowers, orchids, buds and tropical blooms in a realistic botanical style.',
+        alt: 'A sunflower, a red rose, an orchid, a dahlia and a bird of paradise',
+      },
+      {
+        name: 'Branches, bouquets & arrangements',
+        text: 'Rose bouquets, flowering branches, vines, pampas grass and tropical arrangements in a realistic botanical style.',
+        alt: 'A bouquet of colourful roses, a peony branch, blue hydrangeas, heliconias and a eucalyptus branch',
+      },
     ],
     install: {
       title: 'How to use them',
@@ -767,6 +866,24 @@ const en: Copy = {
         text: 'Birthdays, weddings, graduations, 32 corners, 16 theme emblems, florals and more.',
         alt: 'A birthday cake, a teddy bear with balloons, a wedding cake, a graduation cap and wedding rings',
         samples: ['A cupcake', '«Feliz Cumpleaños» badge', 'A wedding arch', 'A book with a quill', 'A cup of coffee', 'Corner with a moon and a cloud', 'A couple in a heart', 'A golden 50 for an anniversary'],
+      },
+      {
+        name: 'Plants, leaves & shrubs',
+        text: 'Leaves, branches, bamboo, shrubs, medicinal herbs and Christmas greenery across 12 botanical sheets.',
+        alt: 'A monstera leaf, a poinsettia, lavender, a coleus, a hibiscus and a maple leaf',
+        samples: ['Black bamboo', 'An oak branch with acorns', 'A jade plant', 'A passion flower', 'A variegated schefflera', 'A white poinsettia', 'A red amaryllis', 'Calendulas'],
+      },
+      {
+        name: 'Botanical flowers',
+        text: 'Garden classics, more than 30 sunflowers, buds, orchids, Colombian flowers and colour sets across 21 botanical sheets.',
+        alt: 'A red rose, a sunflower, a peony, an iridescent dahlia, an orchid, a bird of paradise and a camellia',
+        samples: ['A lotus bud', 'A blue dahlia', 'A ranunculus', 'A hibiscus', 'A golden shower orchid', 'An iridescent iris', 'A flame lily', 'A two-tone sunflower'],
+      },
+      {
+        name: 'Branches, bouquets & arrangements',
+        text: 'Rose bouquets with ribbons, flowering branches, hanging vines, herbs, pampas grass and tropical arrangements across 30 botanical sheets.',
+        alt: 'A bouquet of colourful roses with a ribbon, a bouquet of red roses, jade green roses, orchids, torch ginger and peonies',
+        samples: ['Red ginger', 'A passion flower branch', 'A cascade of roses', 'Flowering sage', 'Beige pampas grass', 'White lilies', 'Lime green roses', 'A bouquet of burgundy and lilac roses'],
       },
     ],
     points: ['Personal and commercial use', 'Transparent backgrounds, ready for Gafira', 'Checkout through Gumroad'],

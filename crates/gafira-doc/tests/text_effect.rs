@@ -22,6 +22,7 @@ fn document(effects: Vec<TextEffect>) -> Result<Document, ValidationError> {
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
         bold: false,
         italic: false,
+        gradient: None,
     };
     let mut text = TextNode::plain("Hola", &style);
     text.effects = effects;
