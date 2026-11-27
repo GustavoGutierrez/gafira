@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-26
+
+Bulk create from a spreadsheet, styles on chosen words, a right-click menu with a style painter, and fifteen more fonts.
+
+### Added
+
+- Bulk create (spec 104): a «Crear en lote» tab connects a CSV, Excel or pasted table to a design. Its columns become fields written in the texts as `{{field}}`, by dragging a card, with buttons, from the right-click menu or with autocomplete while typing `{{`. The «Revisar» step shows each row as it will look, also enlarged, and «Exportar en lote» writes one design per row in any export format, with its options: one PDF with every row, a PDF per row, images, and an editable `.gaf`. Progress, cancel and the result show in a card like the one of «Exportar». A spreadsheet dropped on the panel loads it, and the table is kept inside the `.gaf`.
+- Styles on chosen words (spec 106): choose some letters while writing and change their colour, gradient, font, size, bold or italic from Propiedades and «Fuente», keeping the rest of the box. They are drawn, written and exported in their own style.
+- Right-click menu (spec 105): every element on the canvas has a menu with cut, copy, paste, duplicate, delete, order, align, lock, hide, group and ungroup, and «Conectar datos» on texts. «Copiar estilo», «Copiar efectos» and «Copiar propiedades» turn the pointer into a painter: the next click pastes them on another element (Ctrl+Shift+C / Ctrl+Shift+V).
+- Fifteen more font families (OFL), now 48: signatures (Mrs Saint Delafield, Herr Von Muellerhoff, Monsieur La Doulaise, Meddon), blackletter for diplomas (UnifrakturMaguntia, UnifrakturCook, Pirata One), brush scripts (Mr Dafoe, Damion) and display faces (Londrina Outline, Rubik Bubbles, Sniglet, Cabin Sketch, Michroma, Rye).
+- Ten more font pairings with text effects (neon, gold, retro, sticker, screen, outline, echo, label, laser, night), shown with their effects in the Texto panel.
+
+### Changed
+
+- Font pairings come in as wide as their words, and grow sideways as they are written.
+- Menus show their shortcuts and arrows on the right edge, and a long label of the rail takes two lines.
+- The data grid of charts is shared with bulk create.
+
 ## [0.4.0] - 2026-11-25
 
 Present your designs full screen, see all the pages in a grid, and six lights for 3D objects.
