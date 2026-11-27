@@ -116,6 +116,16 @@ impl RichText {
     pub fn spans(&self) -> impl Iterator<Item = &Span> {
         self.paragraphs.iter().flat_map(|p| &p.spans)
     }
+    /// Whether its spans have more than one style (spec 106).
+    #[must_use]
+    pub fn mixed(&self) -> bool {
+        let mut spans = self.spans().filter(|s| !s.text.is_empty());
+        let Some(first) = spans.next() else {
+            return false;
+        };
+        spans.any(|s| s.style != first.style)
+    }
+
     /// The characters of the text, a line break between paragraphs
     /// counting as one (the indices of [`RichText::restyle`]).
     #[must_use]
@@ -368,6 +378,7 @@ impl TextNode {
             || self.line_height.is_some()
             || self.gradient.is_some()
             || !self.effects.is_empty()
+            || self.content.mixed()
     }
 
     /// `text` in one style, left aligned, growing downwards.

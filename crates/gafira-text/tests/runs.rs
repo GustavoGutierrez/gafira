@@ -30,8 +30,7 @@ fn s106_05_parts_in_their_own_face_and_size() {
     };
     let bounds = Size::new(2000.0, 400.0);
     let text = "Agregar algo de texto";
-    let plain =
-        layout_box_face(text, &stack, &style, (false, false), 72.0, bounds).expect("plain");
+    let plain = layout_box_face(text, &stack, &style, (false, false), 72.0, bounds).expect("plain");
     let runs = [FaceRun {
         range: 8..12,
         size_px: 36.0,

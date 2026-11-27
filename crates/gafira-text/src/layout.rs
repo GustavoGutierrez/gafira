@@ -264,7 +264,15 @@ pub fn layout_box_runs(
         });
     }
     let largest = runs.iter().map(|r| r.size_px).fold(size_px, f32::max);
-    layout_with(&mut stack, text, style, largest, &sizes, bounds.width(), runs)
+    layout_with(
+        &mut stack,
+        text,
+        style,
+        largest,
+        &sizes,
+        bounds.width(),
+        runs,
+    )
 }
 
 /// Fonts ready to lay many texts out (spec 081): registering them is the
@@ -438,7 +446,10 @@ pub(crate) fn layout_with(
         // The parts in their own face (spec 106): their family first, the
         // others of the stack after it for what it lacks.
         for run in faces {
-            let (from, to) = (run.range.start.max(range.start), run.range.end.min(range.end));
+            let (from, to) = (
+                run.range.start.max(range.start),
+                run.range.end.min(range.end),
+            );
             if from >= to {
                 continue;
             }

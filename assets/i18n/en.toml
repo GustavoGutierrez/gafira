@@ -2303,3 +2303,10 @@ editable = "Also an editable .gaf"
 all_rows = { one = "Every row ({count} row)", other = "Every row ({count} rows)" }
 details = "Show details"
 hide_details = "Hide details"
+
+[range]
+bold = "Bold for the chosen letters"
+italic = "Italic for the chosen letters"
+smaller = "Smaller"
+larger = "Larger"
+color = "Colour for the chosen letters"

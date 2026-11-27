@@ -1,6 +1,6 @@
 # 106 — Estilos por palabra dentro de un texto
 
-> **Estado:** in-progress — 2026-11-26 — pedido del titular; lógica del modelo hecha (S106-01 a 04), falta dibujarlo y editarlo.
+> **Estado:** in-progress — 2026-11-26 — implementado y probado (S106-01 a 07); falta la revisión del titular en la app.
 
 ## Objetivo
 
@@ -47,3 +47,13 @@ Pruebas `s106_*`, una exportación PNG con dos colores en el mismo texto y los g
 ## Riesgos y decisiones abiertas
 
 - El motor de texto compone hoy un solo estilo por texto; componer por tramos toca `gafira-text` y `gafira-render`, la parte más grande del trabajo.
+
+## Implementación (2026-11-26)
+
+- Modelo: `RichText::{restyle, edited, style_at, char_count, mixed}` (S106-01 a 04).
+- Motor: `gafira_text::layout_box_runs` con `FaceRun` (familia, negrita, cursiva y tamaño por rango sobre parley) (S106-05).
+- Renderizador: un texto de varios estilos se compone por tramos y sus letras salen por color, con sus glifos, en operaciones `Text` separadas; las exportaciones PNG, JPEG, PDF y SVG las heredan. `text_parts` da las letras por color al lienzo (S106-06).
+- Lienzo: un texto de varios estilos cuenta como `styled()` y se dibuja desde su contorno, cada color aparte.
+- Editor: escribir conserva los estilos (`edited`); el campo muestra los estilos mientras se escribe; con letras elegidas aparece una barra sobre el texto con Negrita, Cursiva, A-, A+ y ocho colores, que actúa solo sobre ellas sin terminar la escritura (S106-07).
+- Fuera de esta entrega: elegir otra fuente para unas letras (el panel «Fuente» sigue cambiando todo el texto), subrayado y tachado.
+
