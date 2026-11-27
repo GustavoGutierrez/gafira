@@ -95,15 +95,33 @@ pub(crate) enum LightItem {
     Streak,
     SunRays,
     Bokeh,
+    Moon,
+    Spotlight,
+    Glow,
+    Stars,
+    Stardust,
+    Comet,
+    Aurora,
+    LightLeak,
+    Ring,
 }
 
 impl LightItem {
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::Sparkle,
         Self::LensFlare,
         Self::Streak,
         Self::SunRays,
         Self::Bokeh,
+        Self::Moon,
+        Self::Spotlight,
+        Self::Glow,
+        Self::Stars,
+        Self::Stardust,
+        Self::Comet,
+        Self::Aurora,
+        Self::LightLeak,
+        Self::Ring,
     ];
 
     /// The kind of `effect`.
@@ -114,6 +132,15 @@ impl LightItem {
             ShapeEffect::Streak(_) => Self::Streak,
             ShapeEffect::SunRays(_) => Self::SunRays,
             ShapeEffect::Bokeh(_) => Self::Bokeh,
+            ShapeEffect::Moon(_) => Self::Moon,
+            ShapeEffect::Spotlight(_) => Self::Spotlight,
+            ShapeEffect::Glow(_) => Self::Glow,
+            ShapeEffect::Stars(_) => Self::Stars,
+            ShapeEffect::Stardust(_) => Self::Stardust,
+            ShapeEffect::Comet(_) => Self::Comet,
+            ShapeEffect::Aurora(_) => Self::Aurora,
+            ShapeEffect::LightLeak(_) => Self::LightLeak,
+            ShapeEffect::Ring(_) => Self::Ring,
         }
     }
 
@@ -124,6 +151,15 @@ impl LightItem {
             Self::Streak => "elements.streak",
             Self::SunRays => "elements.sun_rays",
             Self::Bokeh => "elements.bokeh",
+            Self::Moon => "elements.moon",
+            Self::Spotlight => "elements.spotlight",
+            Self::Glow => "elements.glow",
+            Self::Stars => "elements.stars",
+            Self::Stardust => "elements.stardust",
+            Self::Comet => "elements.comet",
+            Self::Aurora => "elements.aurora",
+            Self::LightLeak => "elements.light_leak",
+            Self::Ring => "elements.ring",
         }
     }
 
@@ -134,6 +170,15 @@ impl LightItem {
             Self::Streak => Icon::Streak,
             Self::SunRays => Icon::SunRays,
             Self::Bokeh => Icon::Bokeh,
+            Self::Moon => Icon::MoonLight,
+            Self::Spotlight => Icon::Spotlight,
+            Self::Glow => Icon::GlowLight,
+            Self::Stars => Icon::Stars,
+            Self::Stardust => Icon::Stardust,
+            Self::Comet => Icon::Comet,
+            Self::Aurora => Icon::Aurora,
+            Self::LightLeak => Icon::LightLeak,
+            Self::Ring => Icon::LightRing,
         }
     }
 
@@ -145,6 +190,15 @@ impl LightItem {
             Self::Streak => ShapeEffect::Streak(light),
             Self::SunRays => ShapeEffect::SunRays(light),
             Self::Bokeh => ShapeEffect::Bokeh(light),
+            Self::Moon => ShapeEffect::Moon(light),
+            Self::Spotlight => ShapeEffect::Spotlight(light),
+            Self::Glow => ShapeEffect::Glow(light),
+            Self::Stars => ShapeEffect::Stars(light),
+            Self::Stardust => ShapeEffect::Stardust(light),
+            Self::Comet => ShapeEffect::Comet(light),
+            Self::Aurora => ShapeEffect::Aurora(light),
+            Self::LightLeak => ShapeEffect::LightLeak(light),
+            Self::Ring => ShapeEffect::Ring(light),
         }
     }
 
@@ -156,6 +210,15 @@ impl LightItem {
             Self::Streak => Light::STREAK,
             Self::SunRays => Light::SUN_RAYS,
             Self::Bokeh => Light::BOKEH,
+            Self::Moon => Light::MOON,
+            Self::Spotlight => Light::SPOTLIGHT,
+            Self::Glow => Light::GLOW,
+            Self::Stars => Light::STARS,
+            Self::Stardust => Light::STARDUST,
+            Self::Comet => Light::COMET,
+            Self::Aurora => Light::AURORA,
+            Self::LightLeak => Light::LIGHT_LEAK,
+            Self::Ring => Light::RING,
         })
     }
 
@@ -163,9 +226,15 @@ impl LightItem {
     /// page: the light of the page-wide ones is small, bokeh needs room.
     pub(crate) fn share(self) -> f64 {
         match self {
-            Self::LensFlare | Self::Streak | Self::SunRays => 1.0 / 8.0,
-            Self::Sparkle => 1.0 / 4.0,
-            Self::Bokeh => 1.0 / 2.0,
+            Self::LensFlare
+            | Self::Streak
+            | Self::SunRays
+            | Self::Spotlight
+            | Self::Aurora
+            | Self::LightLeak => 1.0 / 8.0,
+            Self::Sparkle | Self::Moon => 1.0 / 4.0,
+            Self::Glow | Self::Ring => 1.0 / 3.0,
+            Self::Bokeh | Self::Stars | Self::Stardust | Self::Comet => 1.0 / 2.0,
         }
     }
 }
@@ -251,7 +320,7 @@ pub(crate) fn fan(t: f32) -> [(Vec2, f32); 3] {
 /// The grid of categories (S64-02, S64-03); the one clicked, if any.
 pub(crate) fn grid(ui: &mut Ui, theme: &Theme, texts: &Texts) -> Option<Category> {
     let items = Category::ALL.map(|c| (c, c.icon(), plain(texts, c.key())));
-    cards(ui, theme, &items, Sense::click())
+    cards(ui, theme, &items, Sense::click(), Look::Stack)
         .filter(|(_, response)| response.clicked())
         .map(|(category, _)| category)
 }
@@ -261,7 +330,15 @@ pub(crate) fn grid(ui: &mut Ui, theme: &Theme, texts: &Texts) -> Option<Category
 /// panel, a click adds it and a drag carries it to the canvas (D-105).
 pub(crate) fn lights(ui: &mut Ui, theme: &Theme, texts: &Texts) -> Option<(LightItem, Response)> {
     let items = LightItem::ALL.map(|i| (i, i.icon(), plain(texts, i.key())));
-    cards(ui, theme, &items, Sense::click_and_drag())
+    cards(ui, theme, &items, Sense::click_and_drag(), Look::Flat)
+}
+
+/// How a card of the panel is drawn: a fanning stack for the categories of
+/// the grid, one plain card for the elements of a category (owner request).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Look {
+    Stack,
+    Flat,
 }
 
 /// Cards in rows of three, each sensing `sense`; the item and response of
@@ -271,6 +348,7 @@ fn cards<T: Copy>(
     theme: &Theme,
     items: &[(T, Icon, String)],
     sense: Sense,
+    look: Look,
 ) -> Option<(T, Response)> {
     let column = (ui.available_width() - 2.0 * GAP) / 3.0;
     let mut hit = None;
@@ -278,7 +356,7 @@ fn cards<T: Copy>(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::splat(GAP);
             for (item, icon, name) in row {
-                let response = card(ui, theme, column, *icon, name, sense);
+                let response = card(ui, theme, column, (*icon, name), sense, look);
                 if response.clicked() || response.dragged() || response.drag_stopped() {
                     hit = Some((*item, response));
                 }
@@ -320,7 +398,14 @@ pub(crate) fn soon(ui: &mut Ui, theme: &Theme, texts: &Texts) {
 
 /// One card of the grid: a stack of three light cards with `icon` on the
 /// front one and `name` under it, opening like a fan under the pointer.
-fn card(ui: &mut Ui, theme: &Theme, width: f32, icon: Icon, name: &str, sense: Sense) -> Response {
+fn card(
+    ui: &mut Ui,
+    theme: &Theme,
+    width: f32,
+    (icon, name): (Icon, &str),
+    sense: Sense,
+    look: Look,
+) -> Response {
     let side = (width - 2.0 * GAP).min(CARD_MAX);
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(width, side + 2.0 * GAP + LABEL), sense);
@@ -338,7 +423,20 @@ fn card(ui: &mut Ui, theme: &Theme, width: f32, icon: Icon, name: &str, sense: S
         theme.c("surface"),
     ];
     let mut front = (centre, 0.0);
-    for (index, (offset, degrees)) in fan(t).into_iter().enumerate() {
+    // A plain card lies still and only darkens a little under the pointer.
+    let stack = if look == Look::Flat {
+        let fill = theme
+            .c("surface")
+            .lerp_to_gamma(theme.c("surface.sunken"), t);
+        vec![(Vec2::ZERO, 0.0, fill)]
+    } else {
+        fan(t)
+            .into_iter()
+            .zip(fills)
+            .map(|((offset, degrees), fill)| (offset, degrees, fill))
+            .collect()
+    };
+    for (offset, degrees, fill) in stack {
         let at = centre + offset * side;
         let angle = degrees.to_radians();
         let mut points = Vec::new();
@@ -351,7 +449,7 @@ fn card(ui: &mut Ui, theme: &Theme, width: f32, icon: Icon, name: &str, sense: S
         for point in &mut points {
             *point = at + turn * (*point - at);
         }
-        painter.add(Shape::convex_polygon(points, fills[index], border));
+        painter.add(Shape::convex_polygon(points, fill, border));
         front = (at, angle);
     }
     let color = theme.c("text");

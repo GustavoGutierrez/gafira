@@ -315,6 +315,9 @@ impl PhotosPanel {
             self.ctx = Some(ui.ctx().clone());
         }
         let mut wanted = Wanted::default();
+        // The width of the panel, read before anything is drawn: a row that
+        // overflows cannot widen the grid (owner report).
+        let full = ui.available_width();
         let now = ui.input(|i| i.time);
         // The words: searched 400 ms after the last key, or at once on Enter.
         let field = ui.add(crate::widgets::field(
@@ -365,11 +368,17 @@ impl PhotosPanel {
             ),
         ];
         let lists = if orientations.is_empty() { 2.0 } else { 3.0 };
-        let width = ((ui.available_width() - 6.0 * (lists - 1.0)) / lists).max(60.0);
+        // The width of each list less its arrow and padding, so the row
+        // fits the panel and never widens it.
+        let arrow = ui.spacing().icon_width
+            + ui.spacing().icon_spacing
+            + 2.0 * ui.spacing().button_padding.x;
+        let width = ((ui.available_width() - 6.0 * (lists - 1.0)) / lists - arrow).max(40.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let shown = short_source(self.source);
             egui::ComboBox::from_id_salt("photos.source")
+                .wrap_mode(egui::TextWrapMode::Truncate)
                 .width(width)
                 .selected_text(shown)
                 .show_ui(ui, |ui| {
@@ -387,6 +396,7 @@ impl PhotosPanel {
                 .copied()
                 .unwrap_or(rights[0]);
             egui::ComboBox::from_id_salt("photos.rights")
+                .wrap_mode(egui::TextWrapMode::Truncate)
                 .width(width)
                 .selected_text(plain(texts, key))
                 .show_ui(ui, |ui| {
@@ -408,6 +418,7 @@ impl PhotosPanel {
                     Some(PhotoOrientation::Square) => plain(texts, "photos.square"),
                 };
                 egui::ComboBox::from_id_salt("photos.orientation")
+                    .wrap_mode(egui::TextWrapMode::Truncate)
                     .width(width)
                     .selected_text(label(self.orientation))
                     .show_ui(ui, |ui| {
@@ -449,7 +460,7 @@ impl PhotosPanel {
         if let Some(error) = &self.insert_error {
             note(ui, theme, plain(texts, error_key(error, true)));
         }
-        self.grid(ui, theme, texts, can_drop, &mut wanted);
+        self.grid(ui, (theme, texts, full), can_drop, &mut wanted);
         if self.loading {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -483,13 +494,12 @@ impl PhotosPanel {
     fn grid(
         &mut self,
         ui: &mut egui::Ui,
-        theme: &Theme,
-        texts: &Texts,
+        (theme, texts, full): (&Theme, &Texts, f32),
         can_drop: &dyn Fn(Pos2) -> bool,
         wanted: &mut Wanted,
     ) {
         let gap = 8.0;
-        let width = ((ui.available_width() - gap) / 2.0).max(60.0);
+        let width = ((full.min(ui.available_width()) - gap) / 2.0).max(60.0);
         let photos = self.results.clone();
         let look = Look {
             theme,

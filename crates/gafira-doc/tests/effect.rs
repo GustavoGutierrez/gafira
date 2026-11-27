@@ -40,6 +40,16 @@ fn s65_01_effect_round_trip() {
         ShapeEffect::Streak(Light::STREAK),
         ShapeEffect::SunRays(Light::SUN_RAYS),
         ShapeEffect::Bokeh(Light::BOKEH),
+        // S110-01: the lights of spec 110.
+        ShapeEffect::Moon(Light::MOON),
+        ShapeEffect::Spotlight(Light::SPOTLIGHT),
+        ShapeEffect::Glow(Light::GLOW),
+        ShapeEffect::Stars(Light::STARS),
+        ShapeEffect::Stardust(Light::STARDUST),
+        ShapeEffect::Comet(Light::COMET),
+        ShapeEffect::Aurora(Light::AURORA),
+        ShapeEffect::LightLeak(Light::LIGHT_LEAK),
+        ShapeEffect::Ring(Light::RING),
     ] {
         let doc = document(Some(effect.clone())).expect("valid");
         let json = doc.to_json().expect("json");

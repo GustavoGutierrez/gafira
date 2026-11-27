@@ -146,12 +146,17 @@ pub(crate) enum Go {
     Dark(bool),
     /// Open Ajustes over the current screen (03 §7.8, spec 034).
     Settings,
+    /// Open Ajustes on «Acerca de» (owner request: «Ayuda»).
+    About,
     /// Open «Exportar» for the page of the selection, if any (spec 030).
     Export(Option<gafira_doc::PageId>),
     /// Open «Exportar en lote» for the connected data (spec 104).
     BulkExport,
     /// Save a named version (spec 031), on its thread (spec 036).
     SaveVersion(String),
+    /// «Copiar y redimensionar» (spec 108): open the copy saved at this
+    /// path as a new design and resize it.
+    CopyResized(PathBuf, crate::design_resize::Resize),
 }
 
 /// What to do once a save on its thread succeeded (spec 036).
@@ -350,6 +355,8 @@ enum Leave {
     Home,
     Open,
     Recent(PathBuf),
+    /// Open the resized copy (spec 108).
+    CopyResized(PathBuf, crate::design_resize::Resize),
 }
 
 impl Shell {
@@ -415,7 +422,32 @@ impl Shell {
             Leave::Home => {}
             Leave::Open => self.file(FileAction::Open, None, window),
             Leave::Recent(path) => self.open_recent(&path),
+            Leave::CopyResized(path, resize) => self.open_resized_copy(&path, resize),
         }
+    }
+
+    /// The copy saved at `path` as a new design without a file, resized as
+    /// `resize` asks in its first undo step (S108-07); the copy file is
+    /// removed.
+    fn open_resized_copy(&mut self, path: &std::path::Path, resize: crate::design_resize::Resize) {
+        self.notice = None;
+        let opened = self.engine.projects().new_document_from_template(path);
+        let _ = std::fs::remove_file(path);
+        if let Err(error) = opened {
+            eprintln!("resized copy {}: {error}", path.display());
+            return;
+        }
+        let command = self
+            .engine
+            .edit()
+            .document()
+            .and_then(|document| crate::design_resize::command(&document, resize));
+        if let Some(command) = command
+            && let Err(error) = self.engine.edit().execute(Box::new(command))
+        {
+            eprintln!("resize copy: {error}");
+        }
+        self.screen = Screen::Editor(self.new_editor());
     }
 
     /// Inicio with the recent projects as they are now, and the thumbnails
@@ -1088,6 +1120,12 @@ impl eframe::App for Shell {
             }
             Go::OpenRecent(path) => self.open_recent(&path),
             Go::Settings => self.settings = Some(SettingsView::default()),
+            Go::About => {
+                self.settings = Some(SettingsView {
+                    section: crate::settings::Section::About,
+                    ..SettingsView::default()
+                });
+            }
             Go::Dark(dark) => {
                 self.theme.dark = dark;
                 self.theme.apply(ctx);
@@ -1143,6 +1181,13 @@ impl eframe::App for Shell {
                     self.brand.as_ref(),
                     kit,
                 )));
+            }
+            Go::CopyResized(path, resize) if in_editor && modified => {
+                self.leaving = Some(Leave::CopyResized(path, resize));
+            }
+            Go::CopyResized(path, resize) => {
+                self.engine.projects().close();
+                self.open_resized_copy(&path, resize);
             }
             Go::FromTemplate(path) => {
                 self.notice = None;
