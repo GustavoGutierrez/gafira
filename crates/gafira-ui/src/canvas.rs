@@ -3112,6 +3112,15 @@ pub(crate) fn curved_text_image(
                 };
                 pixmap.draw_pixmap(0, 0, soft.as_ref(), &paint, t, None);
             }
+            // Spec 106: a text of several styles, each colour apart.
+            gafira_render::TextPiece::Letters(None)
+                if text.gradient.is_none() && text.content.mixed() =>
+            {
+                let parts = gafira_render::text_parts(text, (w, h), text_fonts());
+                for (part, part_color) in parts.unwrap_or_default() {
+                    fill(&mut pixmap, &part, &painted(part_color));
+                }
+            }
             gafira_render::TextPiece::Letters(other) => {
                 let mut paint = painted(other.unwrap_or(color));
                 // A gradient over the box, as the export fills it (spec 070).

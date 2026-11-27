@@ -108,7 +108,7 @@ pub fn fit_box(
         } else {
             (largest_any, to_px(largest_any, dpi)?)
         };
-        let layout = layout_with(&mut stack, "", style, px, &[], width)?;
+        let layout = layout_with(&mut stack, "", style, px, &[], width, &[])?;
         return Ok(FitResult {
             sizes_pt: runs.iter().map(|r| r.size_pt).collect(),
             size_pt,
@@ -144,7 +144,7 @@ pub fn fit_box(
                 })
             })
             .collect::<Result<_, TextError>>()?;
-        layout_with(&mut stack, &text, style, to_px(r, dpi)?, &runs, width)
+        layout_with(&mut stack, &text, style, to_px(r, dpi)?, &runs, width, &[])
     };
     let mut probe = |r: f64| -> Result<(Option<TextLayout>, bool), TextError> {
         match lay(r) {

@@ -28,7 +28,8 @@ pub use fonts::{FontBook, FontLoader};
 pub use frame::{BackendSelector, Degradation, FrameLoop, FrameOutcome, FrameRequest};
 pub use graph::{
     GraphError, GraphNode, GraphNodeId, GraphNodeKind, GraphParams, RenderGraph,
-    RenderGraphBuilder, SourceKind, cell_outline, chart_outlines, text_outline, text_pieces,
+    RenderGraphBuilder, SourceKind, cell_outline, chart_outlines, text_outline, text_parts,
+    text_pieces,
 };
 pub use key::{DOMAIN, KeyParam, NodeType, canonical_description, content_key};
 pub use page::{BackendFactory, GraphPageRenderer, GraphPageRenderers, PAGE_BACKGROUND};
