@@ -253,6 +253,7 @@ mod tests {
         "menu.view",
         "menu.size",
         "menu.resize",
+        "tabs.new",
         "menu.help",
         "help.shortcuts",
         "help.notices",

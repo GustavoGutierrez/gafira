@@ -207,6 +207,10 @@ struct Shell {
     recovery_failure: Option<String>,
     /// The destination «¿Guardar los cambios?» holds back.
     leaving: Option<Leave>,
+    /// The editors of the tabs out of sight, by session key (spec 111).
+    parked: std::collections::BTreeMap<String, Box<Editor>>,
+    /// The tabs, in the order of the strip: session keys (spec 111).
+    tabs: Vec<String>,
     /// «Exportar» while its dialog is open (spec 030).
     export: Option<export::Dialog>,
     /// The export running on its thread (spec 035).
@@ -326,6 +330,8 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 confirm_discard: None,
                 recovery_failure: None,
                 leaving: None,
+                parked: std::collections::BTreeMap::new(),
+                tabs: Vec::new(),
                 export: None,
                 exporting: None,
                 exported: None,
@@ -349,14 +355,13 @@ pub fn run(config: UiConfig) -> eframe::Result {
     )
 }
 
-/// Where the person was going when «¿Guardar los cambios?» stopped them.
+/// Where the person was going when «¿Guardar los cambios?» stopped them:
+/// with tabs (spec 111), only closing one asks; going to Inicio or opening
+/// another project keeps every tab open.
 #[derive(Clone)]
 enum Leave {
-    Home,
-    Open,
-    Recent(PathBuf),
-    /// Open the resized copy (spec 108).
-    CopyResized(PathBuf, crate::design_resize::Resize),
+    /// Close the tab of this session.
+    CloseTab(String),
 }
 
 impl Shell {
@@ -414,16 +419,116 @@ impl Shell {
         ctx.request_repaint_after(Duration::from_secs(1));
     }
 
-    /// Leave the editor for `to`, closing the session (its slots go with it).
-    fn proceed(&mut self, to: Leave, window: Option<&eframe::Frame>) {
-        self.engine.projects().close();
-        self.screen = self.home();
+    /// Go on to `to`, past «¿Guardar los cambios?»: the session ends and
+    /// its slots go with it.
+    fn proceed(&mut self, to: Leave) {
         match to {
-            Leave::Home => {}
-            Leave::Open => self.file(FileAction::Open, None, window),
-            Leave::Recent(path) => self.open_recent(&path),
-            Leave::CopyResized(path, resize) => self.open_resized_copy(&path, resize),
+            Leave::CloseTab(key) => self.close_tab_now(&key),
         }
+    }
+
+    /// Put the active project behind, its editor kept for when its tab is
+    /// shown again (spec 111); its key, if there was one.
+    fn park_current(&mut self) -> Option<String> {
+        let key = self.engine.projects().active_key()?;
+        if matches!(self.screen, Screen::Editor(_)) {
+            let screen = std::mem::replace(&mut self.screen, Screen::Splash);
+            if let Screen::Editor(mut editor) = screen {
+                editor.park();
+                self.parked.insert(key.clone(), editor);
+            }
+            self.screen = self.home();
+        }
+        self.engine.projects().park();
+        Some(key)
+    }
+
+    /// Show the tab of `key`, parking the one on display (spec 111).
+    fn switch_to(&mut self, key: &str) {
+        let showing = matches!(self.screen, Screen::Editor(_));
+        if showing && self.engine.projects().active_key().as_deref() == Some(key) {
+            return;
+        }
+        self.park_current();
+        match self.engine.projects().activate(key) {
+            Ok(()) => {
+                let editor = self.parked.remove(key).unwrap_or_else(|| self.new_editor());
+                self.screen = Screen::Editor(editor);
+            }
+            Err(error) => eprintln!("tab {key}: {error}"),
+        }
+    }
+
+    /// After something that may have opened a project in a new tab: when
+    /// nothing opened, the tab of `before` comes back (spec 111).
+    fn back_to(&mut self, before: Option<String>) {
+        if self.engine.projects().active_key().is_none()
+            && let Some(key) = before
+        {
+            self.switch_to(&key);
+        }
+    }
+
+    /// Close the tab of `key`, asking first when it has unsaved changes.
+    fn close_tab(&mut self, key: &str) {
+        self.switch_to(key);
+        if self.engine.projects().is_modified() {
+            self.leaving = Some(Leave::CloseTab(key.to_owned()));
+        } else {
+            self.close_tab_now(key);
+        }
+    }
+
+    /// Close the tab of `key` (its session ends, its slots go) and show the
+    /// one on its left, or Inicio when it was the last.
+    fn close_tab_now(&mut self, key: &str) {
+        self.switch_to(key);
+        let at = self.tabs.iter().position(|k| k == key).unwrap_or(0);
+        self.engine.projects().close();
+        self.parked.remove(key);
+        self.tabs.retain(|k| k != key);
+        self.screen = self.home();
+        if let Some(next) = crate::tabs::after_close(&self.tabs, at) {
+            self.switch_to(&next);
+        }
+    }
+
+    /// The strip follows the engine: a tab for every open session, in the
+    /// order they opened, none for a session that ended.
+    fn sync_tabs(&mut self) {
+        let open: Vec<String> = self
+            .engine
+            .projects()
+            .sessions()
+            .into_iter()
+            .map(|s| s.key)
+            .collect();
+        self.tabs.retain(|k| open.contains(k));
+        for key in &open {
+            if !self.tabs.contains(key) {
+                self.tabs.push(key.clone());
+            }
+        }
+        self.parked.retain(|k, _| open.contains(k));
+    }
+
+    /// The tabs as the strip draws them.
+    fn tab_views(&self) -> Vec<crate::tabs::TabView> {
+        let sessions = self.engine.projects().sessions();
+        let in_editor = matches!(self.screen, Screen::Editor(_));
+        self.tabs
+            .iter()
+            .filter_map(|key| {
+                let s = sessions.iter().find(|s| &s.key == key)?;
+                Some(crate::tabs::TabView {
+                    key: key.clone(),
+                    name: files::project_name(s.path.as_deref())
+                        .unwrap_or_else(|| self.texts.t(&gafira_doc::msg!("editor.untitled"))),
+                    modified: s.modified,
+                    active: s.active && in_editor,
+                })
+            })
+            .collect()
     }
 
     /// The copy saved at `path` as a new design without a file, resized as
@@ -512,6 +617,7 @@ impl Shell {
                 self.remember();
                 self.screen = Screen::Editor(self.new_editor());
             }
+            files::Plan::Opened(Outcome::Shown(key)) => self.switch_to(&key),
             files::Plan::Opened(Outcome::Failed(message, detail)) => {
                 eprintln!("{action:?}: {detail}");
                 self.notice = Some(self.texts.t(&message));
@@ -570,7 +676,7 @@ impl Shell {
 
     /// The save on its thread (spec 036): its card while it runs; when it
     /// ends the engine accounts for it, and what waited for it follows.
-    fn pump_save(&mut self, ctx: &egui::Context, window: Option<&eframe::Frame>) {
+    fn pump_save(&mut self, ctx: &egui::Context) {
         let Some((running, _)) = self.saving.as_mut() else {
             return;
         };
@@ -579,13 +685,13 @@ impl Shell {
             return;
         };
         if let Some((_, after)) = self.saving.take() {
-            self.save_ended(ended, after, window);
+            self.save_ended(ended, after);
         }
         ctx.request_repaint();
     }
 
     /// Account for a save that ended, then do what waited for it.
-    fn save_ended(&mut self, ended: Ended, after: AfterSave, window: Option<&eframe::Frame>) {
+    fn save_ended(&mut self, ended: Ended, after: AfterSave) {
         let result = match ended {
             Ended::Ran(outcome) => self
                 .engine
@@ -600,7 +706,7 @@ impl Shell {
                     self.remember();
                 }
                 if let Some(to) = after.then {
-                    self.proceed(to, window);
+                    self.proceed(to);
                 }
             }
             Err(detail) => {
@@ -667,6 +773,8 @@ impl Shell {
                     eprintln!("export: {detail}");
                     Some(self.texts.t(&message))
                 }
+                // Only «Abrir» shows a tab already open.
+                Outcome::Shown(_) => None,
             };
             ctx.request_repaint();
             return;
@@ -814,7 +922,7 @@ impl Shell {
                 LeaveChoice::Cancel => self.leaving = None,
                 LeaveChoice::Discard => {
                     self.leaving = None;
-                    self.proceed(to, Some(window));
+                    self.proceed(to);
                 }
                 LeaveChoice::Save => {
                     self.leaving = None;
@@ -987,7 +1095,6 @@ impl eframe::App for Shell {
                     then: None,
                     ..after
                 },
-                None,
             );
         }
     }
@@ -1007,6 +1114,30 @@ impl eframe::App for Shell {
             self.show_settings(ctx, frame);
             self.show_pack(ctx);
             return;
+        }
+        // The tabs of the open projects, over every screen but the splash
+        // (spec 111), and their shortcuts.
+        self.sync_tabs();
+        let mut tab_ask = None;
+        if !self.tabs.is_empty() && !matches!(self.screen, Screen::Splash) {
+            tab_ask = crate::tabs::strip(ctx, &self.theme, &self.texts, &self.tab_views());
+            let (next, back, close) = ctx.input_mut(|i| {
+                (
+                    i.consume_shortcut(&TAB_NEXT),
+                    i.consume_shortcut(&TAB_BACK),
+                    i.consume_shortcut(&TAB_CLOSE),
+                )
+            });
+            let active = self.engine.projects().active_key();
+            if let Some(active) = &active {
+                if next || back {
+                    if let Some(key) = crate::tabs::next(&self.tabs, active, next) {
+                        tab_ask = Some(crate::tabs::TabAsk::Show(key));
+                    }
+                } else if close && matches!(self.screen, Screen::Editor(_)) {
+                    tab_ask = Some(crate::tabs::TabAsk::Close(active.clone()));
+                }
+            }
         }
         let go = match &mut self.screen {
             Screen::Splash => {
@@ -1088,20 +1219,29 @@ impl eframe::App for Shell {
         let blocked = self.dialogs(ctx, frame);
         self.pump_export(ctx);
         self.pump_bulk(ctx);
-        self.pump_save(ctx, Some(frame));
+        self.pump_save(ctx);
         let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request
             // it would wait for the next input event.
             ctx.request_repaint();
         }
-        let in_editor = matches!(self.screen, Screen::Editor(_));
-        let modified = self.engine.projects().is_modified();
+        if !blocked && let Some(ask) = tab_ask {
+            match ask {
+                crate::tabs::TabAsk::Show(key) => self.switch_to(&key),
+                crate::tabs::TabAsk::Close(key) => self.close_tab(&key),
+                crate::tabs::TabAsk::New => {
+                    self.park_current();
+                    self.screen = self.home();
+                }
+            }
+            ctx.request_repaint();
+        }
         match go {
             Go::Stay => {}
-            Go::Home if in_editor && modified => self.leaving = Some(Leave::Home),
-            Go::Home if in_editor => self.proceed(Leave::Home, Some(frame)),
             Go::Home => {
+                // The projects stay open in their tabs (spec 111).
+                self.park_current();
                 self.screen = self.home();
                 // Once, as Inicio first appears (03 §6.1).
                 if !self.scanned {
@@ -1112,13 +1252,22 @@ impl eframe::App for Shell {
                     }
                 }
             }
-            Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
+            Go::File(FileAction::Open) => {
+                // A new tab; the one on display comes back if nothing opens.
+                let before = self.park_current();
+                self.file(FileAction::Open, None, Some(frame));
+                self.back_to(before);
+            }
             Go::File(action) => self.file(action, None, Some(frame)),
             Go::SaveVersion(name) => self.save_version(name, Some(frame)),
-            Go::OpenRecent(path) if in_editor && modified => {
-                self.leaving = Some(Leave::Recent(path));
-            }
-            Go::OpenRecent(path) => self.open_recent(&path),
+            Go::OpenRecent(path) => match self.engine.projects().key_of(&path) {
+                Some(key) => self.switch_to(&key),
+                None => {
+                    let before = self.park_current();
+                    self.open_recent(&path);
+                    self.back_to(before);
+                }
+            },
             Go::Settings => self.settings = Some(SettingsView::default()),
             Go::About => {
                 self.settings = Some(SettingsView {
@@ -1157,10 +1306,14 @@ impl eframe::App for Shell {
                         .with_presets(self.export_presets.as_ref()),
                 );
             }
-            Go::Create(page) => match self.engine.projects().new_document_from(*page) {
-                Ok(()) => self.screen = Screen::Editor(self.new_editor()),
-                Err(error) => eprintln!("new document: {error}"),
-            },
+            Go::Create(page) => {
+                let before = self.park_current();
+                match self.engine.projects().new_document_from(*page) {
+                    Ok(()) => self.screen = Screen::Editor(self.new_editor()),
+                    Err(error) => eprintln!("new document: {error}"),
+                }
+                self.back_to(before);
+            }
             Go::CreateIn(category) => {
                 let (list, thumbs) = self.recents();
                 self.screen = Screen::Create(Create::new(list, thumbs, category));
@@ -1182,16 +1335,18 @@ impl eframe::App for Shell {
                     kit,
                 )));
             }
-            Go::CopyResized(path, resize) if in_editor && modified => {
-                self.leaving = Some(Leave::CopyResized(path, resize));
-            }
             Go::CopyResized(path, resize) => {
-                self.engine.projects().close();
+                // The copy opens in a tab of its own (spec 111).
+                let before = self.park_current();
                 self.open_resized_copy(&path, resize);
+                self.back_to(before);
             }
             Go::FromTemplate(path) => {
                 self.notice = None;
-                match self.engine.projects().new_document_from_template(&path) {
+                let before = self.park_current();
+                let opened = self.engine.projects().new_document_from_template(&path);
+                self.back_to(before.filter(|_| opened.is_err()));
+                match opened {
                     Ok(()) => self.screen = Screen::Editor(self.new_editor()),
                     Err(error) => {
                         eprintln!("template {}: {error}", path.display());
@@ -1202,6 +1357,16 @@ impl eframe::App for Shell {
         }
     }
 }
+
+/// The shortcuts of the tabs (spec 111): the next, the one before, close.
+const TAB_NEXT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Tab);
+const TAB_BACK: egui::KeyboardShortcut = egui::KeyboardShortcut::new(
+    egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+    egui::Key::Tab,
+);
+const TAB_CLOSE: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::W);
 
 /// A new document whose first page has the size of `format` (03 §6.2,
 /// «Elegir»); the page is part of the document, so undo keeps it (spec 016).

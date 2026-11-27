@@ -17,9 +17,10 @@ Alcance:
   - La recuperación no ofrece los proyectos que están abiertos en otra pestaña.
   - Un archivo ya abierto no se abre dos veces: se activa su pestaña.
 - Interfaz:
-  - Tira de pestañas bajo la barra superior: nombre del archivo («Sin título» si no tiene), marca de cambios sin guardar, botón de cerrar, botón «+» que lleva a Inicio para crear o abrir.
+  - Tira de pestañas en lo alto de la ventana, sobre la barra superior y en todas las pantallas (como un navegador): nombre del archivo («Sin título» si no tiene), marca de cambios sin guardar, botón de cerrar, botón «+» que lleva a Inicio para crear o abrir.
   - Abrir, abrir un reciente, crear, crear desde plantilla y «Copiar y redimensionar» abren una pestaña nueva y conservan las demás.
-  - Cerrar una pestaña con cambios pregunta «¿Guardar los cambios?»; Inicio deja las pestañas abiertas; cerrar la ventana pregunta por cada una con cambios.
+  - Cerrar una pestaña con cambios pregunta «¿Guardar los cambios?»; ir a Inicio, abrir o crear otro proyecto dejan las pestañas abiertas, sin preguntar.
+  - Cerrar la ventana no pregunta, como hasta ahora: lo que cada pestaña no guardó queda en sus ranuras de recuperación (spec 016) y se ofrece al volver.
   - Cada pestaña conserva su zoom, su desplazamiento, su selección y su panel.
   - Ctrl+Tab y Ctrl+Mayús+Tab cambian de pestaña; Ctrl+W cierra la activa.
   - Las pestañas inactivas sueltan sus texturas de caché.

@@ -24,6 +24,9 @@ pub(crate) enum Outcome {
     /// The action failed; the message is for the status line, the error for
     /// the log.
     Failed(Message, String),
+    /// The file chosen is open already, in the tab of this session (spec
+    /// 111): it is shown, not opened twice.
+    Shown(String),
 }
 
 /// `path` with the `.gaf` extension, added when the person typed none.
@@ -80,6 +83,9 @@ pub(crate) fn plan(engine: &Gafira, action: FileAction, window: Option<&eframe::
     match action {
         FileAction::Open => Plan::Opened(match dialog(window).pick_file() {
             None => Outcome::Cancelled,
+            Some(path) if engine.projects().key_of(&path).is_some() => {
+                Outcome::Shown(engine.projects().key_of(&path).unwrap_or_default())
+            }
             Some(path) => match engine.projects().open(&path) {
                 Ok(()) => Outcome::Done,
                 Err(e) => Outcome::Failed(gafira_doc::msg!("file.open_failed"), e.to_string()),

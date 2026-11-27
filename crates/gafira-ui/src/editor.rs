@@ -334,6 +334,9 @@ pub(crate) struct Editor {
     /// A package was uninstalled here; the shell reads the templates again
     /// and clears it.
     pub(crate) packs_touched: bool,
+    /// Names this editor among the tabs, so egui keeps the scroll of its
+    /// canvas apart from the other tabs' (spec 111).
+    tab_id: u64,
     /// The installed packages, read once until they change.
     pack_list: std::cell::RefCell<Option<Vec<crate::InstalledPack>>>,
     /// The package filter and search of each panel (spec 097).
@@ -641,6 +644,10 @@ impl Default for Editor {
             brand: None,
             packs: None,
             packs_touched: false,
+            tab_id: {
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
             pack_list: std::cell::RefCell::new(None),
             pack_filters: std::cell::RefCell::new(BTreeMap::new()),
             quiet: std::cell::Cell::new(false),
@@ -1571,6 +1578,19 @@ impl Editor {
             }
             Err(error) => eprintln!("resize design: {error}"),
         }
+    }
+
+    /// The editor goes behind another tab (spec 111): it keeps its view,
+    /// its selection and its panels, and lets go of the pictures it can
+    /// draw again, so a tab out of sight holds little memory.
+    pub(crate) fn park(&mut self) {
+        self.textures.clear();
+        self.photos.clear();
+        self.path_textures.borrow_mut().clear();
+        self.curved_covers.borrow_mut().clear();
+        self.library_previews.borrow_mut().clear();
+        self.pairing_samples.borrow_mut().clear();
+        self.drag = None;
     }
 
     /// The page of the selection, or the first page.
@@ -6584,7 +6604,9 @@ impl Editor {
                     + CANVAS_MARGIN
                     + ADD_PAGE_ROOM;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
-                    let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
+                    let mut scroll = egui::ScrollArea::both()
+                        .id_salt(("editor.canvas", self.tab_id))
+                        .auto_shrink([false, false]);
                     if let Some(offset) = anchored {
                         scroll = scroll.scroll_offset(offset);
                     }
@@ -23504,6 +23526,34 @@ pub(crate) mod tests {
         frame(&ctx, &mut editor, &mut engine, None);
         assert_eq!(editor.view, Zoom::FitWidth);
         assert!(editor.zoom >= whole, "{} then {}", whole, editor.zoom);
+    }
+
+    // S111-08: an editor parked behind another tab keeps its view and its
+    // selection, and drops the pictures it can draw again; each editor's
+    // canvas scrolls apart.
+    #[test]
+    fn s111_08_a_parked_editor_keeps_its_view() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, vec!["Título".to_owned(), "Cuerpo".to_owned()], None)),
+                ..Asked::default()
+            },
+        );
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num2));
+        frame(&ctx, &mut editor, &mut engine, None);
+        let (view, zoom, selected) = (editor.view, editor.zoom, editor.selected.clone());
+        editor.park();
+        assert!(editor.textures.is_empty() && editor.path_textures.borrow().is_empty());
+        assert_eq!((editor.view, editor.zoom), (view, zoom));
+        assert_eq!(editor.selected, selected);
+        assert_ne!(Editor::default().tab_id, Editor::default().tab_id);
     }
 
     // Owner request («Ayuda»): Ctrl+/ shows the shortcuts; every one it

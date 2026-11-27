@@ -341,6 +341,9 @@ license_title = "Licencia de Gafira"
 license_text = "Gafira es software libre: puedes usarlo, estudiarlo, compartirlo y modificarlo según la GNU General Public License, versión 3 o posterior. El nombre y el logotipo de Gafira son marcas reservadas."
 license_full = "Texto completo de la licencia (en inglés)"
 
+[tabs]
+new = "Abrir o crear otro proyecto"
+
 [resize]
 search = "Buscar opciones para redimensionar diseños"
 suggestions = "Sugerencias"
