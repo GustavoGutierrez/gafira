@@ -24,15 +24,15 @@ use crate::text::Texts;
 use crate::widgets;
 
 /// The units «Elegir el tamaño» offers.
-const UNITS: [Unit; 4] = [Unit::Px, Unit::In, Unit::Mm, Unit::Cm];
+pub(crate) const UNITS: [Unit; 4] = [Unit::Px, Unit::In, Unit::Mm, Unit::Cm];
 
 /// The fields of «Elegir el tamaño».
-struct Custom {
-    width: String,
-    height: String,
-    unit: Unit,
+pub(crate) struct Custom {
+    pub(crate) width: String,
+    pub(crate) height: String,
+    pub(crate) unit: Unit,
     /// Width over height while the lock is closed.
-    locked: Option<f64>,
+    pub(crate) locked: Option<f64>,
 }
 
 /// The state of «Crear un diseño»: the category, group and search the
@@ -60,7 +60,7 @@ fn t(texts: &Texts, key: &'static str) -> String {
 }
 
 /// A number typed with a comma or a point, if it is one above zero.
-fn number(text: &str) -> Option<f64> {
+pub(crate) fn number(text: &str) -> Option<f64> {
     text.trim()
         .replace(',', ".")
         .parse::<f64>()
@@ -69,7 +69,7 @@ fn number(text: &str) -> Option<f64> {
 }
 
 /// `v` written short, with the decimal mark of the language.
-fn written(v: f64, texts: &Texts) -> String {
+pub(crate) fn written(v: f64, texts: &Texts) -> String {
     let text = format!("{v:.2}");
     let text = text.trim_end_matches('0').trim_end_matches('.').to_owned();
     if matches!(texts.locale, gafira_ports::i18n::Locale::Es) {
@@ -124,13 +124,13 @@ fn grouped(v: f64, texts: &Texts) -> String {
 
 impl Custom {
     /// Whether a side typed as `v` in the chosen unit is allowed.
-    fn allowed(&self, v: f64) -> bool {
+    pub(crate) fn allowed(&self, v: f64) -> bool {
         let (least, most) = limits(self.unit);
         (least..=most).contains(&v)
     }
 
     /// The page the fields describe, when it is one Gafira can make.
-    fn page(&self) -> Option<gafira_doc::Page> {
+    pub(crate) fn page(&self) -> Option<gafira_doc::Page> {
         let (w, h) = (number(&self.width)?, number(&self.height)?);
         if !self.allowed(w) || !self.allowed(h) {
             return None;
@@ -685,7 +685,7 @@ pub(crate) fn start_keys(ctx: &egui::Context) -> Option<Go> {
     None
 }
 
-fn unit_name(unit: Unit) -> &'static str {
+pub(crate) fn unit_name(unit: Unit) -> &'static str {
     match unit {
         Unit::In => "in",
         Unit::Mm => "mm",

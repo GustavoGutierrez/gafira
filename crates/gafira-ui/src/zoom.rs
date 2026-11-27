@@ -26,14 +26,18 @@ pub(crate) enum Zoom {
     Fit,
     /// A fixed scale, 1.0 being 100 %.
     Fixed(f32),
+    /// The first page as wide as the canvas allows (owner request).
+    FitWidth,
 }
 
 impl Zoom {
-    /// The scale in force, given the one that fits.
-    pub(crate) fn resolve(self, fit: f32) -> f32 {
+    /// The scale in force, given the one that fits the whole page and the
+    /// one that fits its width.
+    pub(crate) fn resolve(self, fit: f32, width: f32) -> f32 {
         match self {
             Self::Fit => clamp(fit),
             Self::Fixed(scale) => clamp(scale),
+            Self::FitWidth => clamp(width),
         }
     }
 }
@@ -44,6 +48,7 @@ pub(crate) enum ZoomAsk {
     In,
     Out,
     Fit,
+    FitWidth,
     To(f32),
 }
 
@@ -54,12 +59,14 @@ impl ZoomAsk {
             Self::In => Zoom::Fixed(step_in(current)),
             Self::Out => Zoom::Fixed(step_out(current)),
             Self::Fit => Zoom::Fit,
+            Self::FitWidth => Zoom::FitWidth,
             Self::To(scale) => Zoom::Fixed(clamp(scale)),
         }
     }
 
     /// The shortcut of 03 §9.2 for `key` with Ctrl/Cmd held: Ctrl+= (or +)
-    /// acercar, Ctrl+- alejar, Ctrl+0 ajustar, Ctrl+1 100 %.
+    /// acercar, Ctrl+- alejar, Ctrl+0 ajustar, Ctrl+1 100 %; Ctrl+2 ajustar
+    /// al ancho (owner request).
     pub(crate) fn from_shortcut(command: bool, key: Key) -> Option<Self> {
         if !command {
             return None;
@@ -69,6 +76,7 @@ impl ZoomAsk {
             Key::Minus => Some(Self::Out),
             Key::Num0 => Some(Self::Fit),
             Key::Num1 => Some(Self::To(1.0)),
+            Key::Num2 => Some(Self::FitWidth),
             _ => None,
         }
     }
@@ -203,8 +211,11 @@ mod tests {
         ] {
             let scale = clamp(value);
             assert!((MIN..=MAX).contains(&scale), "{value} -> {scale}");
-            for zoom in [Zoom::Fit, Zoom::Fixed(value)] {
-                assert!((MIN..=MAX).contains(&zoom.resolve(value)), "{zoom:?}");
+            for zoom in [Zoom::Fit, Zoom::Fixed(value), Zoom::FitWidth] {
+                assert!(
+                    (MIN..=MAX).contains(&zoom.resolve(value, value)),
+                    "{zoom:?}"
+                );
             }
         }
         assert_eq!(clamp(f32::NAN), 1.0);
@@ -215,8 +226,10 @@ mod tests {
 
     #[test]
     fn s37_06_fit_follows_the_window_and_fixed_does_not() {
-        assert_eq!(Zoom::Fit.resolve(0.4), 0.4);
-        assert_eq!(Zoom::Fixed(2.0).resolve(0.4), 2.0);
+        assert_eq!(Zoom::Fit.resolve(0.4, 0.9), 0.4);
+        assert_eq!(Zoom::Fixed(2.0).resolve(0.4, 0.9), 2.0);
+        // Owner request: «Ajustar al ancho» follows the width.
+        assert_eq!(Zoom::FitWidth.resolve(0.4, 0.9), 0.9);
         assert_eq!(Zoom::default(), Zoom::Fit);
         assert_eq!(ZoomAsk::Fit.apply(3.0), Zoom::Fit);
         assert_eq!(ZoomAsk::To(0.5).apply(3.0), Zoom::Fixed(0.5));

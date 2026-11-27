@@ -1,4 +1,4 @@
-//! The font library (spec 062, D-100): forty-eight free families, each in its
+//! The font library (spec 062, D-100): fifty-six free families, each in its
 //! regular face and, when the family has them, bold, italic and bold
 //! italic, compiled into the binary. Their licences and origins are in
 //! `assets/LICENSES.toml`.
@@ -14,7 +14,7 @@ pub struct LibraryFace {
     pub bytes: &'static [u8],
 }
 
-const FACES: [LibraryFace; 87] = [
+const FACES: [LibraryFace; 95] = [
     LibraryFace {
         family: "Open Sans",
         bold: false,
@@ -666,6 +666,68 @@ const FACES: [LibraryFace; 87] = [
         path: "assets/fonts/library/pirataone/PirataOne-Regular.ttf",
         bytes: include_bytes!("../../../assets/fonts/library/pirataone/PirataOne-Regular.ttf"),
     },
+    LibraryFace {
+        family: "Abril Fatface",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/abrilfatface/AbrilFatface-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/abrilfatface/AbrilFatface-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Yeseva One",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/yesevaone/YesevaOne-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/yesevaone/YesevaOne-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Lobster",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/lobster/Lobster-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/lobster/Lobster-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Pinyon Script",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/pinyonscript/PinyonScript-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/pinyonscript/PinyonScript-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Lilita One",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/lilitaone/LilitaOne-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/lilitaone/LilitaOne-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Black Ops One",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/blackopsone/BlackOpsOne-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/blackopsone/BlackOpsOne-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Rubik Dirt",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/rubikdirt/RubikDirt-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/rubikdirt/RubikDirt-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Permanent Marker",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/permanentmarker/PermanentMarker-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/permanentmarker/PermanentMarker-Regular.ttf"
+        ),
+    },
 ];
 
 /// Every face of the library, family by family, regular first.
@@ -697,7 +759,7 @@ mod tests {
     #[test]
     fn s62_02_library_faces() {
         let families = library_families();
-        assert_eq!(families.len(), 48);
+        assert_eq!(families.len(), 56);
         assert_eq!(families[0], "Open Sans");
         for family in &families {
             assert!(
@@ -707,7 +769,7 @@ mod tests {
                 "{family}"
             );
         }
-        assert_eq!(library().len(), 87, "every face of the library");
+        assert_eq!(library().len(), 95, "every face of the library");
         assert_eq!(face_key("Lato", false, false), "Lato");
         assert_eq!(face_key("Lato", true, false), "Lato Bold");
         assert_eq!(face_key("Lato", false, true), "Lato Italic");

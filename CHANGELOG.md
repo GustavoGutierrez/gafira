@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-27
+
+Document tabs, resizing the whole design, grunge shapes, fourteen light effects, artistic font pairings, foldable panels and a Help menu.
+
+### Added
+
+- Document tabs (spec 111): several projects open at once, each in a tab with its file name and a mark when it has unsaved changes. Opening, creating or «Copiar y redimensionar» open a new tab; a file already open shows its tab; Inicio keeps the tabs; closing a tab with changes asks first. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+W closes one; each tab keeps its zoom, scroll and selection.
+- «Ayuda» in the editor's top bar: keyboard shortcuts (Ctrl+/), the licence of Gafira and of what it ships, the website, reporting a problem and «Acerca de».
+- Nine more lights (spec 110): «Luz de luna», «Foco», «Resplandor», «Estrellas», «Polvo de estrellas», «Estela de cometa», «Aurora boreal», «Fuga de luz» and «Anillo luminoso», customisable like the others.
+- Grunge shapes in Formas (spec 109): 26 brush strokes, 13 splatters and 11 claw marks, ten of them drawn by hand, as vector paths you can colour, resize and turn.
+- «Redimensionar» in the editor's top bar (spec 108): search the size catalogue, pick a suggestion, a category or a custom size, and resize every page or the one in view with their content scaled and centred to fit, in one undo step, or open a resized copy of the design.
+- Eight more font families, now 56: high-contrast display serifs (Abril Fatface, Yeseva One), scripts (Lobster, Pinyon Script), a rounded heavy face (Lilita One), a stencil (Black Ops One), a textured face (Rubik Dirt) and a marker (Permanent Marker).
+
+### Changed
+
+- Fotos: the lists of the filters cut their text and the photos keep two whole columns with Openverse too.
+- The side panel of the tools keeps a fixed width (Fotos no longer widens it), and both side panels fold away with a handle on their edge; Ctrl+. hides or shows both for the canvas alone, and Ctrl+2 («Ajustar al ancho», also in Ver and the zoom menu) makes the page as wide as the canvas.
+- «Luces y efectos» is now «Efectos de luz», and its list shows each light on a plain card (spec 110).
+- «Combinaciones de fuentes» redesigned: forty-two compositions of two or three texts with display, script, brush, blackletter, sketched, stencil and outlined families, letter spacing, line height, curves and effects, some with a full headline, subtitle and paragraph to rewrite. The panel shows them in two columns, drawn as the canvas draws them, and loads more as it scrolls. Added to a page, each keeps the alignment and proportions its card shows.
+
 ## [0.5.0] - 2026-11-26
 
 Bulk create from a spreadsheet, styles on chosen words, a right-click menu with a style painter, and fifteen more fonts.

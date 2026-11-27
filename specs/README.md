@@ -133,6 +133,10 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 104 | [Creación en lote con datos conectados](done/104-creacion-en-lote.md) | Pestaña «Crear en lote» (Datos, Conectar, Revisar), CSV/XLSX/pegar/tabla guardada en el `.gaf`, campos `{{clave}}` con arrastre, menú y autocompletado, vista ampliada, diálogo «Exportar en lote» con los formatos de «Exportar», tarjeta de progreso y `.gaf` editable; pruebas `s104_*`; aceptada por el titular; lo pendiente en la 107 |
 | 105 | [Menú contextual de los elementos y copiar estilo](done/105-menu-contextual-y-copiar-estilo.md) | Clic derecho con las acciones comunes, copiar y pegar estilo, efectos y propiedades con pincel y Ctrl+Mayús+C/V; pruebas `s105_*`; aceptada por el titular |
 | 106 | [Estilos por palabra dentro de un texto](done/106-estilos-por-palabra.md) | Letras elegidas con tamaño, negrita, cursiva, color, degradado y fuente desde Propiedades y «Fuente»; composición por tramos (`FaceRun`), dibujo y exportación por color; escribir conserva los estilos; pruebas `s106_*`; aceptada por el titular |
+| 108 | [Redimensionar el diseño](done/108-redimensionar-diseno.md) | «Redimensionar» en la barra superior con búsqueda, sugerencias, categorías con chips y tarjetas, y tamaño a medida; `ResizePages` en un paso de deshacer y encaje escalado y centrado; copia redimensionada en pestaña nueva; S108-04/05/07 con pruebas (`git grep s108_`) |
+| 109 | [Formas grunge: pinceladas, salpicaduras y rasgaduras](done/109-formas-grunge.md) | 26 pinceladas (simuladas cerda a cerda y vectorizadas), 13 salpicaduras y 11 rasgaduras, 10 de ellas dibujadas por el titular (GPL, en `assets/LICENSES.toml`); S109-02/03 con pruebas |
+| 110 | [«Efectos de luz»: nueve luces nuevas y tarjetas planas](done/110-efectos-de-luz.md) | «Luces y efectos» pasa a «Efectos de luz»; tarjetas planas; Luz de luna, Foco, Resplandor, Estrellas, Polvo de estrellas, Estela de cometa, Aurora boreal, Fuga de luz y Anillo luminoso; S110-01/02/04 con pruebas |
+| 111 | [Pestañas de documentos](done/111-pestanas-de-documentos.md) | Varias sesiones en el motor (activa y aparcadas, modificado por sesión, guardado y autoguardado por clave, recuperación y archivo duplicado); tira bajo los menús con nombre, marca, ✕, reordenar, clic derecho y Ctrl+Tab/Ctrl+W; S111-01..09 con pruebas |
 
 ### Historial del flujo anterior
 
@@ -151,4 +155,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
 | 107 | [Creación en lote: ampliaciones](backlog/107-creacion-en-lote-ampliaciones.md) | Lo que quedó fuera de la 104: imágenes conectadas, texto que no cabe, formatos, pausar y reanudar, filtros, mediciones; falta priorizar |
 
-Siguiente ID libre: **108**.
+Siguiente ID libre: **112**.

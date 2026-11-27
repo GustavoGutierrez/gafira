@@ -23,8 +23,8 @@ use crate::canvas::{self, Shape};
 use crate::charts;
 use crate::clipboard::{self, Clip};
 use crate::elements::{self, Category, Move, Rail};
-use crate::files::{FileAction, project_name};
-use crate::format::fit_zoom;
+use crate::files::FileAction;
+use crate::format::{fit_width, fit_zoom};
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
 use crate::layers::{self, Flag};
@@ -78,6 +78,18 @@ const REDO: KeyboardShortcut =
 const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals);
 const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
 const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
+const ZOOM_WIDTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2);
+/// The shortcuts of Archivo (owner request: shown in the menu).
+const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
+const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
+const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
+const SAVE_AS: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S);
+const SETTINGS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma);
+/// «Atajos de teclado» of «Ayuda» (owner request).
+const HELP_KEYS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Slash);
+/// Fold both side panels away, or bring them back (owner request).
+const PANELS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Period);
 const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
 const FLIP_H: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::H);
 const FLIP_V: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::V);
@@ -329,6 +341,9 @@ pub(crate) struct Editor {
     /// A package was uninstalled here; the shell reads the templates again
     /// and clears it.
     pub(crate) packs_touched: bool,
+    /// Names this editor among the tabs, so egui keeps the scroll of its
+    /// canvas apart from the other tabs' (spec 111).
+    tab_id: u64,
     /// The installed packages, read once until they change.
     pack_list: std::cell::RefCell<Option<Vec<crate::InstalledPack>>>,
     /// The package filter and search of each panel (spec 097).
@@ -414,10 +429,17 @@ pub(crate) struct Editor {
     model3d_note: Option<(&'static str, f64, bool)>,
     /// The box each curved text texture covers, by its key (FD-44).
     curved_covers: std::cell::RefCell<std::collections::BTreeMap<u64, Placement>>,
-    /// The headings with effects of the font pairings, drawn once for
-    /// their cards: the picture and its size on the card.
-    pairing_samples:
-        std::cell::RefCell<std::collections::BTreeMap<usize, Option<(egui::TextureHandle, Vec2)>>>,
+    /// The font pairings drawn for their cards, once per wording, by
+    /// their index in [`pairings::PAIRINGS`].
+    pairing_samples: std::cell::RefCell<std::collections::BTreeMap<usize, Option<PairingSample>>>,
+    /// How many font pairing cards the Texto panel lists: more come in as
+    /// the list is scrolled to its end (owner request).
+    pairings_shown: std::cell::Cell<usize>,
+    /// «Redimensionar» of the top bar (spec 108).
+    resize: crate::design_resize::Panel,
+    /// A copy of the design saved for «Copiar y redimensionar», for the
+    /// shell to open and resize (spec 108).
+    resized_copy: Option<(std::path::PathBuf, crate::design_resize::Resize)>,
     /// The text being written on the canvas (spec 055).
     editing: Option<Editing>,
     /// Crop mode of a frame (S66-07): the photo moves inside it, the whole
@@ -473,6 +495,8 @@ pub(crate) struct Editor {
     painting: bool,
     /// The box of the side panel, for files dropped on it.
     side_rect: std::cell::Cell<Option<Rect>>,
+    /// The room the side panel took in the window last frame.
+    side_taken: std::cell::Cell<Option<Rect>>,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -493,6 +517,10 @@ pub(crate) struct Editor {
     /// the selected text and the families the document uses, as the
     /// Inspector last saw them.
     font_panel: bool,
+    /// Whether the Inspector shows (owner request: it folds away).
+    inspector_open: bool,
+    /// The dialog of «Ayuda» on display, if any.
+    help: Option<crate::help::Dialog>,
     selection_font: Option<(String, bool, bool)>,
     document_fonts: Vec<String>,
     /// The families of the system already installed in egui.
@@ -623,6 +651,10 @@ impl Default for Editor {
             brand: None,
             packs: None,
             packs_touched: false,
+            tab_id: {
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
             pack_list: std::cell::RefCell::new(None),
             pack_filters: std::cell::RefCell::new(BTreeMap::new()),
             quiet: std::cell::Cell::new(false),
@@ -660,6 +692,9 @@ impl Default for Editor {
             model3d_note: None,
             curved_covers: std::cell::RefCell::default(),
             pairing_samples: std::cell::RefCell::default(),
+            pairings_shown: std::cell::Cell::new(PAIRINGS_PAGE),
+            resize: crate::design_resize::Panel::default(),
+            resized_copy: None,
             editing: None,
             cropping: None,
             paste_seen: false,
@@ -677,6 +712,7 @@ impl Default for Editor {
             painter: None,
             painting: false,
             side_rect: std::cell::Cell::new(None),
+            side_taken: std::cell::Cell::new(None),
             studio: crate::vision::Studio::default(),
             eraser: None,
             chart_panel: std::cell::RefCell::default(),
@@ -695,6 +731,8 @@ impl Default for Editor {
             piece_rows: std::cell::RefCell::new(HashMap::new()),
             piece_section: std::cell::Cell::new(None),
             font_panel: false,
+            inspector_open: true,
+            help: None,
             selection_font: None,
             document_fonts: Vec::new(),
             loaded_fonts: std::cell::RefCell::default(),
@@ -751,6 +789,17 @@ struct Asked {
     brand_template: Option<(String, String)>,
     /// A template to put on the page in view (spec 091).
     apply_template: Option<std::path::PathBuf>,
+    /// «Redimensionar el diseño» or «Copiar y redimensionar» (spec 108).
+    resize_design: Option<crate::design_resize::Resize>,
+    /// The handle on the edge of the side panel: fold it away or bring it
+    /// back.
+    toggle_side: bool,
+    /// The handle on the edge of the Inspector.
+    toggle_inspector: bool,
+    /// Ctrl+.: both panels away, or back.
+    toggle_panels: bool,
+    /// «Acerca de Gafira» of «Ayuda».
+    about: bool,
     /// A freehand stroke to add to its page (spec 079).
     draw_stroke: Option<(PageId, gafira_edit::NodeSpec)>,
     /// Strokes the eraser went over, to remove in one step (spec 079).
@@ -925,7 +974,7 @@ struct Asked {
     /// A font pairing from the Texto panel, by its index in
     /// [`pairings::PAIRINGS`], in the middle of the page or where it was
     /// dropped: a group of a heading and a body line.
-    insert_pairing: Option<(usize, (String, String), Option<Dropped>)>,
+    insert_pairing: Option<(usize, Vec<String>, Option<Dropped>)>,
     /// «Curva» of the selected texts (FD-44).
     text_curve: Option<f64>,
     /// An illustration to insert as vector shapes (spec 072): its SVG, its
@@ -1100,7 +1149,6 @@ struct Header<'a> {
     can_undo: bool,
     can_redo: bool,
     modified: bool,
-    name: Option<String>,
     notice: Option<&'a str>,
 }
 
@@ -1504,6 +1552,53 @@ impl Editor {
         }
     }
 
+    /// «Redimensionar el diseño» (S108-05, S108-06): the pages at their new
+    /// size with their content fitted, in one undo step; or, for «Copiar y
+    /// redimensionar» (S108-07), a copy of the design kept for the shell
+    /// to open and resize, the design itself unchanged.
+    fn resize_design(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        resize: crate::design_resize::Resize,
+    ) {
+        if resize.copy {
+            let tmp = std::env::temp_dir().join(format!(
+                "gafira-resized-copy-{}-{}.gaf",
+                std::process::id(),
+                document.next_id()
+            ));
+            match engine.projects().save_copy(&tmp) {
+                Ok(()) => self.resized_copy = Some((tmp, resize)),
+                Err(error) => eprintln!("copy to resize: {error}"),
+            }
+            return;
+        }
+        let Some(command) = crate::design_resize::command(document, resize) else {
+            return;
+        };
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::default();
+                self.scope = None;
+            }
+            Err(error) => eprintln!("resize design: {error}"),
+        }
+    }
+
+    /// The editor goes behind another tab (spec 111): it keeps its view,
+    /// its selection and its panels, and lets go of the pictures it can
+    /// draw again, so a tab out of sight holds little memory.
+    pub(crate) fn park(&mut self) {
+        self.textures.clear();
+        self.photos.clear();
+        self.path_textures.borrow_mut().clear();
+        self.curved_covers.borrow_mut().clear();
+        self.library_previews.borrow_mut().clear();
+        self.pairing_samples.borrow_mut().clear();
+        self.drag = None;
+    }
+
     /// The page of the selection, or the first page.
     fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
         let ids: Vec<PageId> = document.pages().iter().map(|page| page.id).collect();
@@ -1604,7 +1699,6 @@ impl Editor {
             can_undo,
             can_redo,
             modified: engine.projects().is_modified(),
-            name: project_name(engine.projects().path().as_deref()),
             notice,
         };
         if !self.shown_loaded {
@@ -1637,6 +1731,13 @@ impl Editor {
             if i.modifiers.command && i.key_pressed(egui::Key::O) {
                 asked.file = Some(FileAction::Open);
             }
+            // Nuevo goes to Inicio to create; Ajustes opens over the window.
+            if i.modifiers.command && i.key_pressed(egui::Key::N) {
+                asked.home = true;
+            }
+            if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
+                asked.settings = true;
+            }
             if i.modifiers.command && i.key_pressed(egui::Key::Z) {
                 if i.modifiers.shift {
                     asked.redo = true;
@@ -1662,6 +1763,7 @@ impl Editor {
                 egui::Key::Minus,
                 egui::Key::Num0,
                 egui::Key::Num1,
+                egui::Key::Num2,
             ] {
                 if i.key_pressed(key) {
                     asked.zoom = ZoomAsk::from_shortcut(i.modifiers.command, key).or(asked.zoom);
@@ -1671,6 +1773,10 @@ impl Editor {
         // Presentar en pantalla completa (spec 101): the event's own modifiers count, so a
         // quick Ctrl+Alt+P is not lost.
         asked.present |= ctx.input_mut(|i| i.consume_shortcut(&PRESENT));
+        asked.toggle_panels |= ctx.input_mut(|i| i.consume_shortcut(&PANELS));
+        if ctx.input_mut(|i| i.consume_shortcut(&HELP_KEYS)) {
+            self.help = Some(crate::help::Dialog::Shortcuts);
+        }
         // A turned text maps its glyphs with the atlas size of the last
         // frame; if the atlas grew after that, draw once more (spec 041).
         if let Some(used) = self.font_atlas.take()
@@ -1914,6 +2020,7 @@ impl Editor {
         self.studio.models_panel(ctx, theme, texts);
         self.can = CanArrange::of(document.as_deref(), &self.selected);
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
+        crate::help::show(ctx, theme, texts, &mut self.help, &shortcut_groups());
         if let Some(ask) = asked.zoom {
             self.view = ask.apply(self.zoom);
         }
@@ -2102,17 +2209,33 @@ impl Editor {
             ui.add_space(12.0);
             widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.file")), |ui| {
                 ui.set_min_width(200.0);
-                if ui.button(texts.t(&gafira_doc::msg!("file.new"))).clicked() {
+                let keys =
+                    |ui: &egui::Ui, shortcut: KeyboardShortcut| keys_text(ui.ctx(), &shortcut);
+                let new = egui::Button::new(texts.t(&gafira_doc::msg!("file.new")))
+                    .shortcut_text(keys(ui, NEW));
+                if ui.add(new).clicked() {
                     asked.home = true;
                     ui.close();
                 }
-                for (key, action) in [
-                    (gafira_doc::msg!("file.open"), FileAction::Open),
-                    (gafira_doc::msg!("file.save"), FileAction::Save),
-                    (gafira_doc::msg!("file.save_as"), FileAction::SaveAs),
-                    (gafira_doc::msg!("file.save_copy"), FileAction::SaveCopy),
+                for (key, action, shortcut) in [
+                    (gafira_doc::msg!("file.open"), FileAction::Open, Some(OPEN)),
+                    (gafira_doc::msg!("file.save"), FileAction::Save, Some(SAVE)),
+                    (
+                        gafira_doc::msg!("file.save_as"),
+                        FileAction::SaveAs,
+                        Some(SAVE_AS),
+                    ),
+                    (
+                        gafira_doc::msg!("file.save_copy"),
+                        FileAction::SaveCopy,
+                        None,
+                    ),
                 ] {
-                    if ui.button(texts.t(&key)).clicked() {
+                    let mut button = egui::Button::new(texts.t(&key));
+                    if let Some(shortcut) = shortcut {
+                        button = button.shortcut_text(keys(ui, shortcut));
+                    }
+                    if ui.add(button).clicked() {
                         asked.file = Some(action);
                         ui.close();
                     }
@@ -2136,10 +2259,9 @@ impl Editor {
                     ui.close();
                 }
                 ui.separator();
-                if ui
-                    .button(texts.t(&gafira_doc::msg!("settings.title")))
-                    .clicked()
-                {
+                let settings = egui::Button::new(texts.t(&gafira_doc::msg!("settings.title")))
+                    .shortcut_text(keys_text(ui.ctx(), &SETTINGS));
+                if ui.add(settings).clicked() {
                     asked.settings = true;
                     ui.close();
                 }
@@ -2265,6 +2387,24 @@ impl Editor {
                     }
                 }
                 ui.separator();
+                // Only the canvas, and the page as wide as it (owner request).
+                let panels = self.rail.open || self.font_panel || self.inspector_open;
+                let shortcut = keys_text(ui.ctx(), &PANELS);
+                if widgets::check_item(ui, panels, plain(texts, "view.panels"), Some(shortcut))
+                    .clicked()
+                {
+                    asked.toggle_panels = true;
+                    ui.close();
+                }
+                let width = self.view == Zoom::FitWidth;
+                let shortcut = keys_text(ui.ctx(), &ZOOM_WIDTH);
+                if widgets::check_item(ui, width, plain(texts, "zoom.fit_width"), Some(shortcut))
+                    .clicked()
+                {
+                    asked.zoom = Some(ZoomAsk::FitWidth);
+                    ui.close();
+                }
+                ui.separator();
                 let dark = theme.dark;
                 let text = texts.t(&gafira_doc::msg!("view.dark_mode"));
                 if widgets::check_item(ui, dark, text, None).clicked() {
@@ -2272,21 +2412,58 @@ impl Editor {
                     ui.close();
                 }
             });
-            // «Tamaño» stays hidden until it does something (spec 098).
-            if SHOW_UNFINISHED {
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.size")), false);
+            // «Redimensionar» (spec 108): its panel under the button.
+            let popup = egui::Id::new("editor.resize");
+            let open = egui::Popup::is_id_open(ui.ctx(), popup);
+            let button =
+                widgets::topbar_button(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
+            let place = document.as_deref().and_then(|document| {
+                let page = self.current_page(document)?;
+                Some((page.id, page.size, document.pages().len()))
+            });
+            if let Some(place) = place {
+                egui::Popup::menu(&button)
+                    .id(popup)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        if let Some(resize) = self.resize.show(ui, theme, texts, place) {
+                            asked.resize_design = Some(resize);
+                            ui.close();
+                        }
+                    });
             }
+            // «Ayuda» (owner request).
+            widgets::topbar_menu(ui, theme, plain(texts, "menu.help"), |ui| {
+                ui.set_min_width(220.0);
+                let shortcut = keys_text(ui.ctx(), &HELP_KEYS);
+                let keys =
+                    egui::Button::new(plain(texts, "help.shortcuts")).shortcut_text(shortcut);
+                if ui.add(keys).clicked() {
+                    self.help = Some(crate::help::Dialog::Shortcuts);
+                    ui.close();
+                }
+                if ui.button(plain(texts, "help.notices")).clicked() {
+                    self.help = Some(crate::help::Dialog::Notices);
+                    ui.close();
+                }
+                ui.separator();
+                for (key, url) in [
+                    ("help.website", crate::help::WEBSITE),
+                    ("help.report", crate::help::ISSUES),
+                ] {
+                    if ui.button(plain(texts, key)).clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                if ui.button(plain(texts, "help.about")).clicked() {
+                    asked.about = true;
+                    ui.close();
+                }
+            });
+            // The file's name is on its tab now (owner request).
             ui.add_space(24.0);
-            ui.label(
-                RichText::new(
-                    header
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| texts.t(&gafira_doc::msg!("editor.untitled"))),
-                )
-                .font(theme.font("ui-label"))
-                .color(theme.c("topbar.fg")),
-            );
             ui.add_space(16.0);
             for (icon, key, shortcut, enabled, flag) in [
                 (
@@ -2461,21 +2638,46 @@ impl Editor {
         document: Option<&Document>,
         asked: &mut Asked,
     ) -> Option<Move> {
-        // Hidden from the rail (S64-06); «Fuente» shows all the same.
+        // Hidden from the rail (S64-06); «Fuente» shows all the same. Folded
+        // away, a handle by the rail brings it back.
         if !self.rail.open && !self.font_panel {
+            let screen = ctx.content_rect();
+            let handle = Handle {
+                id: "editor.side.handle",
+                x: px(theme.tokens.size.rail) + 12.0,
+                y: screen.center().y,
+                left: false,
+                hint: "editor.unfold_panel",
+            };
+            if collapse_handle(ctx, theme, texts, handle) {
+                asked.toggle_side = true;
+            }
             return None;
         }
         let mut go = None;
-        egui::SidePanel::left("editor.side")
-            .default_width(px(theme.tokens.size.panel_left))
-            .width_range(280.0..=480.0)
+        // As wide as it is, whatever it shows (owner request): its content
+        // fits it and never widens it.
+        let shown = egui::SidePanel::left("editor.side")
+            .exact_width(px(theme.tokens.size.panel_left))
+            .resizable(false)
             .frame(
                 egui::Frame::NONE
                     .fill(theme.c("bg"))
                     .stroke(Stroke::new(1.0, theme.c("border")))
                     .inner_margin(egui::Margin::same(16)),
             )
-            .show(ctx, |ui| {
+            .show(ctx, |outer| {
+                // Whatever a panel draws, it takes this room and no more: it
+                // is cut to it and never widens the panel (owner request).
+                let room = outer.max_rect();
+                outer.advance_cursor_after_rect(room);
+                let mut inside = outer.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(room)
+                        .layout(*outer.layout()),
+                );
+                inside.set_clip_rect(room.expand(1.0).intersect(outer.clip_rect()));
+                let ui = &mut inside;
                 self.side_rect.set(Some(ui.max_rect()));
                 if self.font_panel {
                     self.fonts_panel(ui, theme, texts, asked);
@@ -3069,6 +3271,19 @@ impl Editor {
                     }
                 });
             });
+        // The handle on its edge that folds it away (owner request).
+        let edge = shown.response.rect;
+        self.side_taken.set(Some(edge));
+        let handle = Handle {
+            id: "editor.side.handle",
+            x: edge.right(),
+            y: edge.center().y,
+            left: true,
+            hint: "editor.fold_panel",
+        };
+        if collapse_handle(ctx, theme, texts, handle) {
+            asked.toggle_side = true;
+        }
         go
     }
 
@@ -3110,7 +3325,22 @@ impl Editor {
         });
         self.document_fonts = document.map(document_fonts).unwrap_or_default();
         self.load_system_fonts(ctx);
-        egui::SidePanel::right("editor.inspector")
+        // Folded away, a handle by the right edge brings it back.
+        if !self.inspector_open {
+            let screen = ctx.content_rect();
+            let handle = Handle {
+                id: "editor.inspector.handle",
+                x: screen.right() - 12.0,
+                y: screen.center().y,
+                left: true,
+                hint: "editor.unfold_panel",
+            };
+            if collapse_handle(ctx, theme, texts, handle) {
+                asked.toggle_inspector = true;
+            }
+            return;
+        }
+        let shown = egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
             .frame(
@@ -3428,6 +3658,18 @@ impl Editor {
                         ui.add_space(16.0);
                     });
             });
+        // The handle on its edge that folds it away (owner request).
+        let edge = shown.response.rect;
+        let handle = Handle {
+            id: "editor.inspector.handle",
+            x: edge.left(),
+            y: edge.center().y,
+            left: false,
+            hint: "editor.fold_panel",
+        };
+        if collapse_handle(ctx, theme, texts, handle) {
+            asked.toggle_inspector = true;
+        }
     }
 
     /// Propiedades of an image (S88-05).
@@ -3979,101 +4221,155 @@ impl Editor {
         });
         ui.add_space(16.0);
         section_title(ui, theme, texts, "text.pairings");
-        let heading_words = plain(texts, "text.pairing_heading");
-        let body_words = plain(texts, "text.pairing_body");
-        for (index, pairing) in pairings::PAIRINGS.iter().enumerate() {
-            let (rect, response) = ui.allocate_exact_size(
-                Vec2::new(ui.available_width(), 92.0),
-                egui::Sense::click_and_drag(),
-            );
-            card_frame(ui, theme, rect, response.hovered());
-            let clip = ui.painter().with_clip_rect(rect.shrink(1.0));
-            let left = rect.left() + 14.0;
-            clip.text(
-                Pos2::new(left, rect.top() + 10.0),
-                Align2::LEFT_TOP,
-                plain(texts, pairing.key),
-                theme.font("body-sm"),
-                theme.c("text.secondary"),
-            );
-            // A heading with effects is drawn as the canvas draws it.
-            let sample = (!(pairing.heading.effects)().is_empty())
-                .then(|| self.pairing_sample(ui.ctx(), index, &heading_words))
-                .flatten();
-            if let Some((texture, size)) = &sample {
-                let room = Vec2::new(rect.width() - 28.0, 36.0);
-                let k = (room.x / size.x).min(room.y / size.y).min(1.0);
-                let place = Rect::from_min_size(Pos2::new(left, rect.top() + 28.0), *size * k);
-                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                clip.image(texture.id(), place, uv, Color32::WHITE);
-            }
-            for (face, words, y, size) in [
-                (pairing.heading, &heading_words, rect.top() + 30.0, 24.0),
-                (pairing.body, &body_words, rect.top() + 66.0, 12.0),
-            ] {
-                if sample.is_some() && y < rect.top() + 60.0 {
-                    continue;
+        // Two columns of square cards, as the page would show each
+        // composition; more load as the list is scrolled to its end, and
+        // only cards in sight are drawn, a few a frame (owner request).
+        let count = pairings::PAIRINGS.len();
+        let shown = self
+            .pairings_shown
+            .get()
+            .clamp(PAIRINGS_PAGE.min(count), count);
+        let gap = 8.0;
+        let side = ((ui.available_width() - gap) / 2.0).max(40.0);
+        let mut drawn = 0;
+        for row in (0..shown).step_by(2) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for index in row..(row + 2).min(shown) {
+                    self.pairing_card(ui, theme, texts, asked, (index, side), &mut drawn);
                 }
-                let style = pairings::style(face);
-                let family = text_family(ui.ctx(), theme, &style);
-                clip.text(
-                    Pos2::new(left, y),
-                    Align2::LEFT_TOP,
-                    pairings::words(face, words),
-                    egui::FontId::new(size, family),
-                    canvas::screen_color(style.color),
-                );
+            });
+            ui.add_space(gap);
+        }
+        if shown < count {
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::hover());
+            if ui.is_rect_visible(rect) {
+                self.pairings_shown.set(shown + PAIRINGS_PAGE);
+                ui.ctx().request_repaint();
             }
-            let words = (heading_words.clone(), body_words.clone());
-            if response.clicked() {
-                asked.insert_pairing = Some((index, words.clone(), None));
-            }
-            self.carry(
-                ui,
-                theme,
-                &response,
-                &plain(texts, pairing.key),
-                |page, point| {
-                    asked.insert_pairing = Some((index, words, Some((page, point))));
-                },
-            );
-            ui.add_space(8.0);
         }
     }
 
-    /// The heading with effects of pairing `index`, drawn once at the size
-    /// of a card (owner request: pairings with effects).
+    /// The card of font pairing `index`, `side` px square: the composition
+    /// drawn as the canvas draws it, scaled to fit, its alignment and
+    /// proportions as they come onto the page. `drawn` counts the samples
+    /// drawn this frame, so a fast scroll draws a few a frame.
+    fn pairing_card(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        asked: &mut Asked,
+        (index, side): (usize, f32),
+        drawn: &mut usize,
+    ) {
+        let Some(pairing) = pairings::PAIRINGS.get(index) else {
+            return;
+        };
+        let name = plain(texts, pairing.key);
+        let words = pairings::split(pairing, &plain(texts, pairing.words));
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::splat(side), egui::Sense::click_and_drag());
+        if ui.is_rect_visible(rect) {
+            // A sheet of paper, as the page: the compositions are drawn in
+            // their own colours whatever the theme.
+            let border = if response.hovered() {
+                theme.c("primary.bg")
+            } else {
+                theme.c("border")
+            };
+            ui.painter().rect(
+                rect,
+                theme.radius_md(),
+                PAIRING_PAPER,
+                Stroke::new(1.0, border),
+                egui::StrokeKind::Inside,
+            );
+            let ready = self
+                .pairing_samples
+                .borrow()
+                .get(&index)
+                .is_some_and(|s| s.as_ref().is_none_or(|s| s.words == words));
+            let sample = if ready || *drawn < PAIRINGS_PER_FRAME {
+                if !ready {
+                    *drawn += 1;
+                }
+                self.pairing_sample(ui.ctx(), index, &words)
+            } else {
+                ui.ctx().request_repaint();
+                None
+            };
+            if let Some(sample) = sample {
+                let room = rect.shrink(side * 0.1);
+                let k = (room.width() / sample.size.x)
+                    .min(room.height() / sample.size.y)
+                    .min(1.0);
+                let origin = room.center() - sample.size * k / 2.0;
+                let clip = ui.painter().with_clip_rect(rect.shrink(1.0));
+                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                for (texture, at) in &sample.parts {
+                    let place = Rect::from_min_size(origin + at.min.to_vec2() * k, at.size() * k);
+                    clip.image(texture.id(), place, uv, Color32::WHITE);
+                }
+            }
+        }
+        let response = response.on_hover_text(&name);
+        if response.clicked() {
+            asked.insert_pairing = Some((index, words.clone(), None));
+        }
+        self.carry(ui, theme, &response, &name, |page, point| {
+            asked.insert_pairing = Some((index, words, Some((page, point))));
+        });
+    }
+
+    /// Font pairing `index` saying `words`, drawn once with the outline
+    /// the canvas and the export use, each text apart: its pictures and
+    /// where they go in the group, and the group's size.
     fn pairing_sample(
         &self,
         ctx: &egui::Context,
         index: usize,
-        words: &str,
-    ) -> Option<(egui::TextureHandle, Vec2)> {
+        words: &[String],
+    ) -> Option<PairingSample> {
         let mut samples = self.pairing_samples.borrow_mut();
+        let stale = samples
+            .get(&index)
+            .is_some_and(|s| s.as_ref().is_some_and(|s| s.words != words));
+        if stale {
+            samples.remove(&index);
+        }
         samples
             .entry(index)
             .or_insert_with(|| {
                 let pairing = pairings::PAIRINGS.get(index)?;
-                let face = pairing.heading;
-                let mut text = gafira_doc::TextNode::plain(
-                    &pairings::words(face, words),
-                    &pairings::style(face),
-                );
-                text.sizing = gafira_doc::TextSizing::AutoWidth;
-                text.effects = (face.effects)();
-                let w = canvas::natural_width(&text)?;
-                let h = face.size * 1.3;
-                // Twice the size it is shown at, for sharp edges.
-                let shown = 36.0 / h;
-                let placement = Placement::new(0.0, 0.0, w, h);
-                let (image, cover) =
-                    canvas::curved_text_image(&text, &placement, (shown * 2.0) as f32)?;
-                let size = Vec2::new((cover.w * shown) as f32, (cover.h * shown) as f32);
-                let options = egui::TextureOptions::LINEAR;
-                Some((
-                    ctx.load_texture(format!("pairing-{index}"), image, options),
-                    size,
-                ))
+                let spec = pairings::group(1000.0, (0.0, 0.0), pairing, words);
+                let g = spec.placement;
+                // Twice the size of the card, for sharp edges.
+                let zoom = (2.0 * PAIRING_SAMPLE_PX / g.w.max(g.h)).clamp(0.05, 2.0) as f32;
+                let mut parts = Vec::new();
+                for (n, child) in spec.children.iter().enumerate() {
+                    let gafira_doc::NodeKind::Text(text) = &child.kind else {
+                        continue;
+                    };
+                    let Some((image, cover)) =
+                        canvas::curved_text_image(text, &child.placement, zoom)
+                    else {
+                        continue;
+                    };
+                    let at = Rect::from_min_size(
+                        Pos2::new((cover.x - g.x) as f32, (cover.y - g.y) as f32),
+                        Vec2::new(cover.w as f32, cover.h as f32),
+                    );
+                    let options = egui::TextureOptions::LINEAR;
+                    let texture = ctx.load_texture(format!("pairing-{index}-{n}"), image, options);
+                    parts.push((texture, at));
+                }
+                (!parts.is_empty()).then(|| PairingSample {
+                    words: words.to_vec(),
+                    size: Vec2::new(g.w as f32, g.h as f32),
+                    parts,
+                })
             })
             .clone()
     }
@@ -4174,7 +4470,7 @@ impl Editor {
         &mut self,
         engine: &mut Gafira,
         document: &Document,
-        (index, (heading, body)): (usize, &(String, String)),
+        (index, words): (usize, &[String]),
         (page, at): (PageId, Option<(f64, f64)>),
     ) {
         let (Some(on), Some(pairing)) = (document.page(page), pairings::PAIRINGS.get(index)) else {
@@ -4185,7 +4481,7 @@ impl Editor {
         };
         let (w, h) = (size.width(), size.height());
         let centre = at.unwrap_or((w / 2.0, h / 2.0));
-        let spec = pairings::group(w, centre, *pairing, (heading, body));
+        let spec = pairings::group(w, centre, pairing, words);
         let next = NodeId::new(document.next_id());
         let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
         match engine.edit().execute(Box::new(command)) {
@@ -6288,11 +6584,14 @@ impl Editor {
                 let Some(first) = sizes.first().copied() else {
                     return;
                 };
-                self.zoom = self.view.resolve(fit_zoom(
-                    (first.x, first.y),
-                    (area.width(), area.height()),
-                    CANVAS_MARGIN,
-                ));
+                self.zoom = self.view.resolve(
+                    fit_zoom(
+                        (first.x, first.y),
+                        (area.width(), area.height()),
+                        CANVAS_MARGIN,
+                    ),
+                    fit_width(first.x, area.width(), CANVAS_MARGIN),
+                );
                 let zoom = self.zoom;
                 // Back from the grid: the page chosen at the top of the view (spec 102).
                 if let Some(page) = self.scroll_to.take()
@@ -6323,7 +6622,9 @@ impl Editor {
                     + CANVAS_MARGIN
                     + ADD_PAGE_ROOM;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
-                    let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
+                    let mut scroll = egui::ScrollArea::both()
+                        .id_salt(("editor.canvas", self.tab_id))
+                        .auto_shrink([false, false]);
                     if let Some(offset) = anchored {
                         scroll = scroll.scroll_offset(offset);
                     }
@@ -8333,6 +8634,34 @@ impl Editor {
         {
             self.apply_template(engine, document, path);
         }
+        if let Some(resize) = asked.resize_design
+            && let Some(document) = document
+        {
+            self.resize_design(engine, document, resize);
+        }
+        // Ctrl+.: only the canvas, or the panels back (owner request).
+        if asked.toggle_panels {
+            if self.rail.open || self.font_panel || self.inspector_open {
+                self.rail.open = false;
+                self.font_panel = false;
+                self.inspector_open = false;
+            } else {
+                self.rail.open = true;
+                self.inspector_open = true;
+            }
+        }
+        if asked.toggle_inspector {
+            self.inspector_open = !self.inspector_open;
+        }
+        // The handle on the edge of the side panel (owner request).
+        if asked.toggle_side {
+            if self.font_panel {
+                self.font_panel = false;
+                self.rail.open = false;
+            } else {
+                self.rail.open = !self.rail.open;
+            }
+        }
         if let Some((style, words)) = &asked.brand_text
             && let Some(document) = document
             && let Some(page) = self.current_page(document)
@@ -9097,7 +9426,11 @@ impl Editor {
                 log("delete", engine.edit().execute(command).map(drop));
             }
         }
-        if let Some(dark) = asked.dark {
+        if let Some((path, resize)) = self.resized_copy.take() {
+            Go::CopyResized(path, resize)
+        } else if asked.about {
+            Go::About
+        } else if let Some(dark) = asked.dark {
             Go::Dark(dark)
         } else if let Some(kit) = &asked.brand {
             Go::Brand(kit.clone())
@@ -13306,18 +13639,29 @@ pub(crate) fn zoom_controls(
     let label = RichText::new(percent(scale_now)).font(theme.font("ui-label"));
     let menu = ui.menu_button((label, caret), |ui| {
         ui.set_min_width(120.0);
-        let fit = ui.selectable_label(view == Zoom::Fit, texts.t(&gafira_doc::msg!("zoom.fit")));
-        if fit
-            .on_hover_text(with_keys(
-                ui.ctx(),
-                texts,
-                texts.t(&gafira_doc::msg!("zoom.fit")),
+        for (zoom, key, shortcut, step) in [
+            (
+                Zoom::Fit,
+                gafira_doc::msg!("zoom.fit"),
                 ZOOM_FIT,
-            ))
-            .clicked()
-        {
-            ask = Some(ZoomAsk::Fit);
-            ui.close();
+                ZoomAsk::Fit,
+            ),
+            (
+                Zoom::FitWidth,
+                gafira_doc::msg!("zoom.fit_width"),
+                ZOOM_WIDTH,
+                ZoomAsk::FitWidth,
+            ),
+        ] {
+            let name = texts.t(&key);
+            if ui
+                .selectable_label(view == zoom, name.clone())
+                .on_hover_text(with_keys(ui.ctx(), texts, name, shortcut))
+                .clicked()
+            {
+                ask = Some(step);
+                ui.close();
+            }
         }
         for scale in zoom::PRESETS {
             if ui
@@ -14843,6 +15187,145 @@ fn section_title(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, key: &'static 
 }
 
 /// The rounded card of a side panel at `rect`, lighter under the pointer.
+/// The shortcuts «Atajos de teclado» lists, by group (owner request).
+fn shortcut_groups() -> Vec<crate::help::Group> {
+    vec![
+        (
+            "help.group_general",
+            vec![
+                ("editor.undo", UNDO),
+                ("editor.redo", REDO),
+                ("bottom.present", PRESENT),
+                ("view.panels", PANELS),
+                ("help.shortcuts", HELP_KEYS),
+            ],
+        ),
+        (
+            "help.group_file",
+            vec![
+                ("file.new", NEW),
+                ("file.open", OPEN),
+                ("file.save", SAVE),
+                ("file.save_as", SAVE_AS),
+                ("settings.title", SETTINGS),
+            ],
+        ),
+        (
+            "help.group_edit",
+            vec![
+                ("editor.select_all", SELECT_ALL),
+                ("editor.cut", CUT),
+                ("editor.copy", COPY),
+                ("editor.paste", PASTE),
+                ("editor.duplicate", DUPLICATE),
+                ("table.copy_style", COPY_STYLE),
+                ("table.paste_style", PASTE_STYLE),
+                ("editor.group", GROUP),
+                ("editor.ungroup", UNGROUP),
+                ("editor.flip_horizontal", FLIP_H),
+                ("editor.flip_vertical", FLIP_V),
+            ],
+        ),
+        (
+            "help.group_arrange",
+            vec![
+                ("arrange.align_left", ALIGN_LEFT),
+                ("arrange.align_center", ALIGN_CENTER),
+                ("arrange.align_right", ALIGN_RIGHT),
+                ("arrange.align_top", ALIGN_TOP),
+                ("arrange.align_middle", ALIGN_MIDDLE),
+                ("arrange.align_bottom", ALIGN_BOTTOM),
+                ("arrange.forward", FORWARD),
+                ("arrange.backward", BACKWARD),
+                ("arrange.front", FRONT),
+                ("arrange.back", BACK),
+            ],
+        ),
+        (
+            "help.group_view",
+            vec![
+                ("zoom.in", ZOOM_IN),
+                ("zoom.out", ZOOM_OUT),
+                ("zoom.fit", ZOOM_FIT),
+                ("zoom.fit_width", ZOOM_WIDTH),
+                ("view.rulers", RULERS),
+                ("view.guides", GUIDES),
+                ("view.magnet", MAGNET),
+            ],
+        ),
+    ]
+}
+
+/// A handle on the edge of a side panel (owner request): a small tab
+/// centred on `x`, `y`, over the scroll bar, with an arrow pointing `left`
+/// or right.
+struct Handle {
+    id: &'static str,
+    x: f32,
+    y: f32,
+    left: bool,
+    hint: &'static str,
+}
+
+/// Draws `handle`; whether it was clicked.
+fn collapse_handle(ctx: &egui::Context, theme: &Theme, texts: &Texts, handle: Handle) -> bool {
+    let size = Vec2::new(22.0, 56.0);
+    let at = Pos2::new(handle.x - size.x / 2.0, handle.y - size.y / 2.0);
+    egui::Area::new(egui::Id::new(handle.id))
+        .order(egui::Order::Foreground)
+        .fixed_pos(at)
+        .show(ctx, |ui| {
+            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+            let fill = if response.hovered() {
+                theme.c("surface.sunken")
+            } else {
+                theme.c("surface")
+            };
+            ui.painter().rect(
+                rect,
+                egui::CornerRadius::same(11),
+                fill,
+                Stroke::new(1.0, theme.c("border")),
+                egui::StrokeKind::Inside,
+            );
+            let icon = if handle.left {
+                Icon::CaretLeft
+            } else {
+                Icon::CaretRight
+            };
+            let image = icons::image(ui.ctx(), icon, Weight::Regular, 14.0, theme.c("text"));
+            image.paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(14.0)));
+            if response.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            response.on_hover_text(plain(texts, handle.hint)).clicked()
+        })
+        .inner
+}
+
+/// How many font pairing cards come in at a time as the list scrolls.
+const PAIRINGS_PAGE: usize = 12;
+
+/// How many font pairing samples are drawn in one frame.
+const PAIRINGS_PER_FRAME: usize = 2;
+
+/// The size, in px, a font pairing sample is drawn for.
+const PAIRING_SAMPLE_PX: f64 = 160.0;
+
+/// The paper of the font pairing cards: the page they show, whatever the
+/// theme.
+const PAIRING_PAPER: Color32 = Color32::from_rgb(0xF4, 0xF5, 0xF8);
+
+/// A font pairing drawn for its card: the wording it shows, the size of
+/// its group in px of page and each text's picture with the box it covers
+/// in the group.
+#[derive(Clone)]
+struct PairingSample {
+    words: Vec<String>,
+    size: Vec2,
+    parts: Vec<(egui::TextureHandle, Rect)>,
+}
+
 fn card_frame(ui: &egui::Ui, theme: &Theme, rect: Rect, hovered: bool) {
     let fill = if hovered {
         theme.c("surface.sunken")
@@ -15108,6 +15591,16 @@ fn effect_fields(
         ShapeEffect::Sparkle(_) | ShapeEffect::LensFlare(_) => {
             (Some("effect.rays"), "effect.ray_width", "effect.halo")
         }
+        ShapeEffect::Moon(_) => (Some("effect.craters"), "effect.phase", "effect.color"),
+        ShapeEffect::Spotlight(_) => (None, "effect.opening", "effect.color"),
+        ShapeEffect::Glow(_) => (None, "effect.softness", "effect.color"),
+        ShapeEffect::Stars(_) | ShapeEffect::Stardust(_) => {
+            (Some("effect.count"), "effect.size", "effect.color")
+        }
+        ShapeEffect::Comet(_) => (None, "effect.tail", "effect.color"),
+        ShapeEffect::Aurora(_) => (Some("effect.folds"), "effect.height", "effect.top_color"),
+        ShapeEffect::LightLeak(_) => (Some("effect.count"), "effect.size", "effect.color"),
+        ShapeEffect::Ring(_) => (None, "effect.thickness", "effect.color"),
     };
     let percent = crate::slider::percent(texts);
     if let Some(rays) = rays {
@@ -18680,7 +19173,11 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                insert_pairing: Some((1, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                insert_pairing: Some((
+                    1,
+                    vec!["Título".to_owned(), "Cuerpo".to_owned(), "Texto".to_owned()],
+                    None,
+                )),
                 ..Asked::default()
             },
         );
@@ -18690,7 +19187,7 @@ pub(crate) mod tests {
         let node = page.node(group).expect("the group");
         assert!(matches!(node.kind, gafira_doc::NodeKind::Group(_)));
         let children = node.children.clone();
-        assert_eq!(children.len(), 2);
+        assert_eq!(children.len(), pairings::PAIRINGS[1].lines.len());
         assert!(children.iter().all(|c| matches!(
             page.node(*c).map(|n| &n.kind),
             Some(gafira_doc::NodeKind::Text(_))
@@ -19678,7 +20175,11 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                insert_pairing: Some((0, ("Título".to_owned(), "Cuerpo".to_owned()), None)),
+                insert_pairing: Some((
+                    0,
+                    vec!["Título".to_owned(), "Cuerpo".to_owned(), "Texto".to_owned()],
+                    None,
+                )),
                 ..Asked::default()
             },
         );
@@ -22966,32 +23467,283 @@ pub(crate) mod tests {
         assert_eq!(editor.selected.single(), Some((page, node)));
     }
 
-    // Owner request: the cards of the pairings with effects show them, drawn
-    // as the canvas draws them.
+    // Owner request: the side panel keeps its width whatever it shows (the
+    // filters of Fotos widened it frame after frame), and the handle on its
+    // edge folds it away and brings it back.
     #[test]
-    fn pairing_cards_show_their_effects() {
+    fn the_side_panel_keeps_its_width_and_folds() {
         let mut engine = engine();
         start(&mut engine, StartFormat::Social).expect("a new document");
         let mut editor = Editor::default();
-        let tab = TABS
-            .iter()
-            .position(|(key, _)| *key == "tab.text")
-            .expect("the tab");
-        editor.rail.click_tab(tab);
         let ctx = egui::Context::default();
         theme().apply(&ctx);
-        // The panel scrolls: draw the samples straight, as the cards do.
         frame(&ctx, &mut editor, &mut engine, None);
-        let lit: Vec<usize> = pairings::PAIRINGS
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| !(p.heading.effects)().is_empty())
-            .map(|(i, _)| i)
-            .collect();
-        for index in lit {
-            let sample = editor.pairing_sample(&ctx, index, "Añade un título");
-            let (_, size) = sample.expect("drawn");
-            assert!(size.x > size.y && size.y > 0.0, "{index}: {size:?}");
+        // The room the panel takes in the window, not only what it paints.
+        let width = |editor: &Editor| editor.side_taken.get().expect("the panel").width();
+        let before = width(&editor);
+        editor.rail.enter(elements::Category::Photos);
+        for _ in 0..6 {
+            frame(&ctx, &mut editor, &mut engine, None);
+        }
+        assert!(
+            (width(&editor) - before).abs() < 0.5,
+            "{before} then {}",
+            width(&editor)
+        );
+        let fixed = px(theme().tokens.size.panel_left);
+        // The panel and its border, one px each side.
+        assert!(
+            (width(&editor) - fixed).abs() <= 2.5,
+            "{} not {fixed}",
+            width(&editor)
+        );
+        assert!(editor.rail.open);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                toggle_side: true,
+                ..Asked::default()
+            },
+        );
+        assert!(!editor.rail.open, "folded");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                toggle_side: true,
+                ..Asked::default()
+            },
+        );
+        assert!(editor.rail.open, "back");
+    }
+
+    // Owner request: Ctrl+. folds both panels away for the canvas alone
+    // and brings them back; the Inspector folds by itself; Ctrl+2 makes the
+    // page as wide as the canvas, wider than when it fits whole.
+    #[test]
+    fn panels_fold_and_the_page_fits_the_width() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Presentation).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Period));
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert!(
+            !editor.rail.open && !editor.inspector_open,
+            "only the canvas"
+        );
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Period));
+        assert!(editor.rail.open && editor.inspector_open, "both back");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                toggle_inspector: true,
+                ..Asked::default()
+            },
+        );
+        assert!(!editor.inspector_open && editor.rail.open);
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num0));
+        frame(&ctx, &mut editor, &mut engine, None);
+        let whole = editor.zoom;
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num2));
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.view, Zoom::FitWidth);
+        assert!(editor.zoom >= whole, "{} then {}", whole, editor.zoom);
+    }
+
+    // S111-08: an editor parked behind another tab keeps its view and its
+    // selection, and drops the pictures it can draw again; each editor's
+    // canvas scrolls apart.
+    #[test]
+    fn s111_08_a_parked_editor_keeps_its_view() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, vec!["Título".to_owned(), "Cuerpo".to_owned()], None)),
+                ..Asked::default()
+            },
+        );
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num2));
+        frame(&ctx, &mut editor, &mut engine, None);
+        let (view, zoom, selected) = (editor.view, editor.zoom, editor.selected.clone());
+        editor.park();
+        assert!(editor.textures.is_empty() && editor.path_textures.borrow().is_empty());
+        assert_eq!((editor.view, editor.zoom), (view, zoom));
+        assert_eq!(editor.selected, selected);
+        assert_ne!(Editor::default().tab_id, Editor::default().tab_id);
+    }
+
+    // Owner request («Ayuda»): Ctrl+/ shows the shortcuts; every one it
+    // lists is named in both languages and none is listed twice; «Acerca
+    // de» asks the shell for Ajustes on it.
+    #[test]
+    fn help_shows_the_shortcuts_and_about() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Slash));
+        assert_eq!(editor.help, Some(crate::help::Dialog::Shortcuts));
+        let mut seen = std::collections::BTreeSet::new();
+        for (title, items) in shortcut_groups() {
+            for locale in [
+                gafira_ports::i18n::Locale::Es,
+                gafira_ports::i18n::Locale::En,
+            ] {
+                let texts = Texts::new(locale);
+                assert_ne!(plain(&texts, title), title);
+                for (action, _) in &items {
+                    assert_ne!(plain(&texts, action), *action, "{action}");
+                }
+            }
+            for (_, keys) in items {
+                assert!(seen.insert(format!("{keys:?}")), "{keys:?} twice");
+            }
+        }
+        let go = ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                about: true,
+                ..Asked::default()
+            },
+        );
+        assert!(matches!(go, Go::About));
+    }
+
+    // S108-05, S108-06: «Redimensionar el diseño» puts every page, or the
+    // one in view, at the new size with its content fitted, in one undo
+    // step; undo gives the design back.
+    #[test]
+    fn s108_05_resizing_the_design_is_one_undo_step() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, vec!["Título".to_owned(), "Cuerpo".to_owned()], None)),
+                ..Asked::default()
+            },
+        );
+        let page = engine.edit().document().expect("doc").pages()[0].id;
+        assert!(
+            engine
+                .edit()
+                .execute(Box::new(gafira_edit::DuplicatePage::new(page)))
+                .is_ok()
+        );
+        let before = engine.edit().document().expect("doc");
+        let depth = undo_depth(&mut engine);
+        let size = crate::design_sizes::page_size(1920.0, 1080.0, gafira_geom::Unit::Px);
+        let one = crate::design_resize::Resize {
+            size,
+            page: Some(page),
+            copy: false,
+        };
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                resize_design: Some(one),
+                ..Asked::default()
+            },
+        );
+        let after = engine.edit().document().expect("doc");
+        assert_eq!(after.pages()[0].size, size);
+        assert_eq!(
+            after.pages()[1].size,
+            before.pages()[1].size,
+            "the other page"
+        );
+        assert_eq!(
+            after.pages()[0].nodes.keys().collect::<Vec<_>>(),
+            before.pages()[0].nodes.keys().collect::<Vec<_>>(),
+            "the same elements"
+        );
+        assert_ne!(after.pages()[0].nodes, before.pages()[0].nodes, "fitted");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("undo");
+        assert_eq!(
+            engine.edit().document().expect("doc").pages(),
+            before.pages()
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                resize_design: Some(crate::design_resize::Resize { page: None, ..one }),
+                ..Asked::default()
+            },
+        );
+        let after = engine.edit().document().expect("doc");
+        assert!(after.pages().iter().all(|p| p.size == size), "every page");
+    }
+
+    // S108-07: «Copiar y redimensionar» leaves the design as it is and asks
+    // the shell to open a copy of it, saved with what it holds now.
+    #[test]
+    fn s108_07_copy_and_resize_hands_a_copy_to_the_shell() {
+        let mut engine = engine_over(Arc::new(gafira_format::GafRepository::default()));
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let before = engine.edit().document().expect("doc");
+        let resize = crate::design_resize::Resize {
+            size: crate::design_sizes::page_size(1080.0, 1920.0, gafira_geom::Unit::Px),
+            page: None,
+            copy: true,
+        };
+        let go = ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                resize_design: Some(resize),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            engine.edit().document().expect("doc").pages(),
+            before.pages()
+        );
+        let Go::CopyResized(path, asked) = go else {
+            panic!("a copy for the shell");
+        };
+        assert_eq!(asked, resize);
+        assert!(path.exists(), "the copy is saved");
+        let _ = std::fs::remove_file(path);
+    }
+
+    // Owner request: every font pairing card shows its whole composition,
+    // each text drawn as the canvas draws it, in a group as wide as it is.
+    #[test]
+    fn pairing_cards_show_their_compositions() {
+        let editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        for (index, pairing) in pairings::PAIRINGS.iter().enumerate() {
+            let words: Vec<String> = (0..pairing.lines.len())
+                .map(|n| format!("Línea {n}"))
+                .collect();
+            let sample = editor.pairing_sample(&ctx, index, &words).expect("drawn");
+            assert_eq!(sample.parts.len(), pairing.lines.len(), "{}", pairing.key);
+            assert!(
+                sample.size.x > 0.0 && sample.size.y > 0.0,
+                "{}",
+                pairing.key
+            );
         }
     }
 

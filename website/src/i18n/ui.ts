@@ -105,7 +105,11 @@ export interface Copy {
     includes: string;
     minimum: string;
     pwyw: string;
+    /** Under the price of a fixed-price bundle. */
+    fixed: string;
     buy: string;
+    /** The button of a pack that is not on sale yet. */
+    soon: string;
     newTab: string;
     gallery: {
       open: string;
@@ -117,7 +121,8 @@ export interface Copy {
       zoomOut: string;
       slides: string;
     };
-    items: { name: string; text: string; alt: string; samples: string[] }[];
+    /** `includes` replaces the shared line for a pack that holds only part of the free version. */
+    items: { name: string; text: string; alt: string; samples: string[]; includes?: string }[];
     points: string[];
     note: string;
   };
@@ -425,6 +430,11 @@ const es: Copy = {
         text: 'Ramos de rosas, ramas florales, enredaderas, pampas y arreglos tropicales en estilo botánico realista.',
         alt: 'Un ramo de rosas de colores, una rama de peonías, hortensias azules, heliconias y una rama de eucalipto',
       },
+      {
+        name: 'Frutas botánicas',
+        text: 'Frutas tropicales, exóticas, cítricos, bayas, mitades jugosas y verduras en estilo botánico realista.',
+        alt: 'Un mango con su mitad en cubos, una pitahaya abierta, una piña, fresas y media fruta de kiwi',
+      },
     ],
     install: {
       title: 'Cómo usarlos',
@@ -445,7 +455,9 @@ const es: Copy = {
     includes: 'incluidas las 30 gratis',
     minimum: 'mínimo',
     pwyw: 'Paga lo que quieras',
+    fixed: 'Las dos partes juntas',
     buy: 'Comprar en Gumroad',
+    soon: 'Próximamente',
     newTab: '(se abre en una pestaña nueva)',
     gallery: {
       open: 'Ver en grande',
@@ -493,6 +505,26 @@ const es: Copy = {
         text: 'Ramos de rosas con lazo, ramas florales, enredaderas, hierbas, pampas y arreglos tropicales en 30 láminas botánicas.',
         alt: 'Un ramo de rosas de colores con lazo, un ramo de rosas rojas, rosas verde jade, orquídeas, bastones del emperador y peonías',
         samples: ['Jengibres rojos', 'Una rama de pasifloras', 'Una cascada de rosas', 'Salvia en flor', 'Pampas beige', 'Lirios blancos', 'Rosas verde lima', 'Un ramo de rosas burdeos y lilas'],
+      },
+      {
+        name: 'Frutas botánicas · Parte 1',
+        includes: 'incluidas 15 de las 30 gratis',
+        text: 'Frutas tropicales y exóticas: 10 mangos, chontaduros, frutas amazónicas, asiáticas y africanas, anonas, cocos y bodegones tropicales.',
+        alt: 'Un mango con su mitad en cubos, una pitahaya, una piña, un mangostino, un rambután, una sandía y una mano de Buda',
+        samples: ['Un mangostino', 'Una mazorca de cacao', 'Un durián', 'Media fruta de chontaduro', 'Un maracuyá', 'Un rambután abierto', 'Un fruto de baobab', 'Un bodegón de mangos y bananos'],
+      },
+      {
+        name: 'Frutas botánicas · Parte 2',
+        includes: 'incluidas 15 de las 30 gratis',
+        text: 'Frutas de huerto, cítricos, bayas, ramitas con hojas, mitades jugosas, uvas y verduras como tomates, pimientos y berenjenas.',
+        alt: 'Una manzana roja, cerezas, fresas, naranjas en rama, media fruta de kiwi, un limón y un pimiento rojo',
+        samples: ['Una rama de manzanas', 'Kumquats en rama', 'Grosellas rojas', 'Media granada', 'Una rama de gulupas', 'Uvas negras', 'Tomates en rama', 'Un bodegón de cítricos'],
+      },
+      {
+        name: 'Frutas botánicas · Colección completa',
+        text: 'Las dos partes en una sola compra: frutas tropicales y exóticas, de huerto, cítricos, bayas y verduras, por menos que comprarlas por separado.',
+        alt: 'Un mango con su mitad en cubos, fresas, una piña, media fruta de kiwi, una pitahaya, naranjas y cerezas',
+        samples: ['Un mangostino', 'Una rama de manzanas', 'Una mazorca de cacao', 'Kumquats en rama', 'Un fruto de baobab', 'Uvas negras', 'Un bodegón de mangos y bananos', 'Un bodegón de cítricos'],
       },
     ],
     points: ['Uso personal y comercial', 'Fondo transparente, listas para Gafira', 'Pago a través de Gumroad'],
@@ -816,6 +848,11 @@ const en: Copy = {
         text: 'Rose bouquets, flowering branches, vines, pampas grass and tropical arrangements in a realistic botanical style.',
         alt: 'A bouquet of colourful roses, a peony branch, blue hydrangeas, heliconias and a eucalyptus branch',
       },
+      {
+        name: 'Botanical fruits',
+        text: 'Tropical and exotic fruits, citrus, berries, juicy halves and vegetables in a realistic botanical style.',
+        alt: 'A mango with its cubed half, an open dragon fruit, a pineapple, strawberries and half a kiwi',
+      },
     ],
     install: {
       title: 'How to use them',
@@ -836,7 +873,9 @@ const en: Copy = {
     includes: 'including the 30 free ones',
     minimum: 'minimum',
     pwyw: 'Pay what you want',
+    fixed: 'Both parts together',
     buy: 'Buy on Gumroad',
+    soon: 'Coming soon',
     newTab: '(opens in a new tab)',
     gallery: {
       open: 'View larger',
@@ -884,6 +923,26 @@ const en: Copy = {
         text: 'Rose bouquets with ribbons, flowering branches, hanging vines, herbs, pampas grass and tropical arrangements across 30 botanical sheets.',
         alt: 'A bouquet of colourful roses with a ribbon, a bouquet of red roses, jade green roses, orchids, torch ginger and peonies',
         samples: ['Red ginger', 'A passion flower branch', 'A cascade of roses', 'Flowering sage', 'Beige pampas grass', 'White lilies', 'Lime green roses', 'A bouquet of burgundy and lilac roses'],
+      },
+      {
+        name: 'Botanical fruits · Part 1',
+        includes: 'including 15 of the 30 free ones',
+        text: 'Tropical and exotic fruits: 10 mangoes, peach palm fruits, Amazonian, Asian and African fruits, custard apples, coconuts and tropical still lifes.',
+        alt: 'A mango with its cubed half, a dragon fruit, a pineapple, a mangosteen, a rambutan, a watermelon and a Buddha\'s hand',
+        samples: ['A mangosteen', 'A cacao pod', 'A durian', 'Half a peach palm fruit', 'A passion fruit', 'An open rambutan', 'A baobab fruit', 'A still life of mangoes and bananas'],
+      },
+      {
+        name: 'Botanical fruits · Part 2',
+        includes: 'including 15 of the 30 free ones',
+        text: 'Orchard fruits, citrus, berries, leafy fruit branches, juicy halves, grapes and vegetables such as tomatoes, peppers and eggplants.',
+        alt: 'A red apple, cherries, strawberries, oranges on a branch, half a kiwi, a lemon and a red pepper',
+        samples: ['An apple branch', 'Kumquats on a branch', 'Red currants', 'Half a pomegranate', 'A purple passion fruit branch', 'Black grapes', 'Tomatoes on the vine', 'A citrus still life'],
+      },
+      {
+        name: 'Botanical fruits · Complete collection',
+        text: 'Both parts in one purchase: tropical and exotic fruits, orchard fruits, citrus, berries and vegetables, for less than buying them separately.',
+        alt: 'A mango with its cubed half, strawberries, a pineapple, half a kiwi, a dragon fruit, oranges and cherries',
+        samples: ['A mangosteen', 'An apple branch', 'A cacao pod', 'Kumquats on a branch', 'A baobab fruit', 'Black grapes', 'A still life of mangoes and bananas', 'A citrus still life'],
       },
     ],
     points: ['Personal and commercial use', 'Transparent backgrounds, ready for Gafira', 'Checkout through Gumroad'],

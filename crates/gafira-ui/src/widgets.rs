@@ -73,23 +73,6 @@ pub(crate) fn secondary(ui: &mut Ui, theme: &Theme, text: String) -> Response {
     ui.add(button)
 }
 
-/// A flat button on the graphite top bar.
-pub(crate) fn on_topbar(ui: &mut Ui, theme: &Theme, text: String, active: bool) -> Response {
-    let color = if active {
-        theme.c("topbar.fg")
-    } else {
-        theme.c("topbar.fg.muted")
-    };
-    let button = Button::new(
-        RichText::new(text)
-            .font(theme.font("ui-label"))
-            .color(color),
-    )
-    .frame(false)
-    .min_size(Vec2::new(0.0, px(theme.tokens.size.control.md)));
-    ui.add(button)
-}
-
 /// The coral button with an icon before its label («Exportar», 03 §2.2).
 pub(crate) fn primary_icon(ui: &mut Ui, theme: &Theme, icon: Icon, text: String) -> Response {
     let color = theme.c("primary.fg");
@@ -396,6 +379,22 @@ pub(crate) fn topbar_menu(
     .inner
 }
 
+/// A button of the top bar that looks like its menus (owner request:
+/// «Redimensionar» like Archivo, Edición, Ver): the same hover and, while
+/// what it opens is open, the same lit state.
+pub(crate) fn topbar_button(ui: &mut Ui, theme: &Theme, text: String, open: bool) -> Response {
+    ui.scope(|ui| {
+        topbar_menu_visuals(ui.visuals_mut(), theme);
+        if open {
+            let lit = ui.visuals().widgets.open;
+            ui.visuals_mut().widgets.inactive = lit;
+        }
+        let label = RichText::new(text).font(theme.font("ui-label"));
+        ui.button(label)
+    })
+    .inner
+}
+
 /// The widget colours of [`topbar_menu`]'s button.
 fn topbar_menu_visuals(visuals: &mut egui::Visuals, theme: &Theme) {
     // The window's text colour would win over the states' own colours.
@@ -518,6 +517,11 @@ pub(crate) fn topbar(ctx: &egui::Context, theme: &Theme, id: &str, add: impl FnO
         .show(ctx, |ui| {
             ui.horizontal_centered(add);
         });
+    // The tabs of the open projects, right under the menus (spec 111);
+    // Ajustes covers the window and shows none.
+    if id != "settings.topbar" {
+        crate::tabs::under_topbar(ctx, theme);
+    }
 }
 
 #[cfg(test)]

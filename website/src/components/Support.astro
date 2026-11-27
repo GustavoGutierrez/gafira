@@ -1,7 +1,8 @@
 ---
 // The paid full packs, sold on Gumroad. Buying one supports Gafira's
-// development. Prices are the minimums set on Gumroad ("pay what you want");
-// keep them in sync with the Gumroad listings.
+// development. Prices are the minimums set on Gumroad ("pay what you want"),
+// except bundles, which have a fixed price; keep them in sync with the
+// Gumroad listings.
 //
 // Each card shows its pack: the cover, then eight illustrations only the full
 // version has, in a swipeable carousel. Any image opens the viewer, where it
@@ -23,6 +24,9 @@ import occasionsCover from '../assets/packs/full-ornaments-for-every-occasion.we
 import plantsCover from '../assets/packs/full-plants-leaves-shrubs.webp';
 import flowersCover from '../assets/packs/full-botanical-flowers.webp';
 import branchesCover from '../assets/packs/full-branches-bouquets-arrangements.webp';
+import fruits1Cover from '../assets/packs/full-botanical-fruits-part-1.webp';
+import fruits2Cover from '../assets/packs/full-botanical-fruits-part-2.webp';
+import fruitsBundleCover from '../assets/packs/full-botanical-fruits-complete.webp';
 
 interface Props {
   locale: Locale;
@@ -30,9 +34,12 @@ interface Props {
 
 interface FullPack {
   id: string;
-  url: string;
-  /** Minimum price in USD on Gumroad. */
+  /** The Gumroad product; `null` while it is not on sale, shown as coming soon. */
+  url: string | null;
+  /** Minimum price in USD on Gumroad, or the fixed price of a bundle. */
   price: number;
+  /** A bundle sold at a fixed price instead of "pay what you want". */
+  fixed?: boolean;
   count: number;
   /** Illustrations beyond the 30 of the free version. */
   added: number;
@@ -170,6 +177,64 @@ const packs: FullPack[] = [
       'ramos-de-rosas-clasicos_04_ramo-de-rosas-burdeos-y-lilas',
     ],
   },
+  {
+    id: 'fruits-1',
+    url: 'https://gusdev.gumroad.com/l/botanical-fruits-part-1-full',
+    price: 5,
+    count: 174,
+    added: 159,
+    tint: 'var(--coral)',
+    cover: fruits1Cover,
+    samples: [
+      'frutas-tropicales_09_mangostino',
+      'frutos-exoticos_11_cacao',
+      'frutas-asiaticas_01_durian',
+      'chontaduros_09_mitad-de-chontaduro',
+      'frutas-tropicales_01_maracuya',
+      'mitades-exoticas_02_rambutan-abierto',
+      'frutas-africanas_01_baobab',
+      'bodegones-tropicales_01_bodegon-de-mangos-y-bananos',
+    ],
+  },
+  {
+    id: 'fruits-2',
+    url: 'https://gusdev.gumroad.com/l/botanical-fruits-part-2-full',
+    price: 5,
+    count: 190,
+    added: 175,
+    tint: 'var(--mint)',
+    cover: fruits2Cover,
+    samples: [
+      'ramitas-de-huerto_01_manzanas',
+      'racimos-citricos_11_kumquats',
+      'bayas_05_grosellas-rojas',
+      'mitades-de-frutas_09_mitad-de-granada',
+      'ramitas-con-hojas_04_gulupas',
+      'racimos_02_uvas-negras',
+      'verduras-en-rama_04_tomates-en-rama',
+      'bodegones-botanicos_01_bodegon-de-citricos',
+    ],
+  },
+  {
+    id: 'fruits-bundle',
+    url: 'https://gusdev.gumroad.com/l/botanical-fruits-complete',
+    price: 9,
+    fixed: true,
+    count: 364,
+    added: 334,
+    tint: 'var(--coral)',
+    cover: fruitsBundleCover,
+    samples: [
+      'frutas-tropicales_09_mangostino',
+      'ramitas-de-huerto_01_manzanas',
+      'frutos-exoticos_11_cacao',
+      'racimos-citricos_11_kumquats',
+      'frutas-africanas_01_baobab',
+      'racimos_02_uvas-negras',
+      'bodegones-tropicales_01_bodegon-de-mangos-y-bananos',
+      'bodegones-botanicos_01_bodegon-de-citricos',
+    ],
+  },
 ];
 
 interface Slide {
@@ -299,23 +364,30 @@ const g = t.gallery;
                 <strong>
                   {pack.count} {t.illustrations}
                 </strong>
-                , {t.includes}
+                , {item.includes ?? t.includes}
               </p>
               <p class="text">{item.text}</p>
               <div class="buy">
                 <p class="price">
                   <span class="price__amount">{pack.price}</span>
                   <span class="price__unit">
-                    USD {t.minimum}
-                    <span class="price__pwyw">{t.pwyw}</span>
+                    {pack.fixed ? 'USD' : `USD ${t.minimum}`}
+                    <span class="price__pwyw">{pack.fixed ? t.fixed : t.pwyw}</span>
                   </span>
                 </p>
-                <a class="button button--primary get" href={pack.url} target="_blank" rel="noopener">
-                  <Icon name="shopping-bag-open" size={20} />
-                  {t.buy}
-                  <Icon name="arrow-up-right" size={16} class="out" />
-                  <span class="sr-only">{t.newTab}</span>
-                </a>
+                {pack.url ? (
+                  <a class="button button--primary get" href={pack.url} target="_blank" rel="noopener">
+                    <Icon name="shopping-bag-open" size={20} />
+                    {t.buy}
+                    <Icon name="arrow-up-right" size={16} class="out" />
+                    <span class="sr-only">{t.newTab}</span>
+                  </a>
+                ) : (
+                  <p class="button get get--soon">
+                    <Icon name="hourglass" size={20} />
+                    {t.soon}
+                  </p>
+                )}
               </div>
             </div>
           </article>
@@ -374,7 +446,7 @@ const g = t.gallery;
 <script>
   interface Gallery {
     title: string;
-    url: string;
+    url: string | null;
     slides: { src: string; alt: string }[];
   }
 
@@ -498,7 +570,10 @@ const g = t.gallery;
     function openViewer(card: HTMLElement, gallery: Gallery, index: number) {
       open = { card, gallery, index };
       title.textContent = gallery.title;
-      buy.href = gallery.url;
+      // A pack not on sale yet has no checkout: hide the viewer's buy button.
+      if (gallery.url) buy.href = gallery.url;
+      else buy.removeAttribute('href');
+      buy.hidden = !gallery.url;
       img.src = gallery.slides[index]!.src;
       viewer.showModal();
       document.documentElement.classList.add('viewer-open');
@@ -892,6 +967,25 @@ const g = t.gallery;
 
   .get :global(.out) {
     transition: transform 180ms var(--ease);
+  }
+
+  .get--soon {
+    border: 2px dashed var(--border);
+    color: var(--text-secondary);
+    cursor: default;
+  }
+
+  .get--soon:hover {
+    transform: none;
+  }
+
+  .get--soon::after {
+    content: none;
+  }
+
+  /* `.button` sets a display, so the hidden attribute needs help. */
+  [data-buy][hidden] {
+    display: none;
   }
 
   .get:hover :global(.out),

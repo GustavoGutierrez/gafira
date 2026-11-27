@@ -307,7 +307,7 @@ impl Sight {
         if self.view == Zoom::Fit {
             let room = (room - Vec2::splat(AROUND)).max(Vec2::splat(1.0));
             let fit = (room.x / size.x.max(1.0)).min(room.y / size.y.max(1.0));
-            self.zoom = self.view.resolve(fit);
+            self.zoom = self.view.resolve(fit, fit);
             self.offset = Vec2::ZERO;
         }
     }
