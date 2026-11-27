@@ -209,7 +209,12 @@ const es: Copy = {
       {
         icon: 'text-aa',
         title: 'Texto con estilo',
-        text: '33 familias tipográficas incluidas, combinaciones de fuentes, texto curvo, texto dentro de las formas y efectos de texto.',
+        text: '48 familias tipográficas incluidas, también de firma y góticas para diplomas; combinaciones de fuentes con efectos, texto curvo y efectos de texto.',
+      },
+      {
+        icon: 'text-b',
+        title: 'Estilo en parte del texto',
+        text: 'Elige unas palabras y cámbiales el color, el degradado, la fuente, el tamaño, la negrita o la cursiva sin tocar el resto de la caja.',
       },
       {
         icon: 'eyedropper',
@@ -232,6 +237,11 @@ const es: Copy = {
         text: 'Tablas editables (importa Excel o CSV), gráficos con su editor de datos y códigos QR con colores y logotipo.',
       },
       {
+        icon: 'table',
+        title: 'Crear en lote',
+        text: 'Conecta un Excel o CSV a tu diseño y genera un diseño por fila: certificados, tarjetas o invitaciones en PDF, imágenes o un .gaf editable.',
+      },
+      {
         icon: 'palette',
         title: 'Kits de marca',
         text: 'Guarda logotipos, colores, estilos de texto y fuentes en un kit y aplícalos a cualquier diseño. Compártelo en un archivo .gafkit.',
@@ -245,6 +255,11 @@ const es: Copy = {
         icon: 'stack',
         title: 'Capas y precisión',
         text: 'Capas que se arrastran, bloquean y ocultan; guías, imán, reglas, alinear y distribuir.',
+      },
+      {
+        icon: 'cursor-click',
+        title: 'Clic derecho y copiar estilo',
+        text: 'Un menú con las acciones comunes en cada elemento, y un pincel para copiar el estilo, los efectos o las propiedades de uno y pegarlos en otro.',
       },
       {
         icon: 'export',
@@ -585,7 +600,12 @@ const en: Copy = {
       {
         icon: 'text-aa',
         title: 'Text with style',
-        text: '33 bundled font families, font pairings, curved text, text inside shapes and text effects.',
+        text: '48 bundled font families, signature and blackletter ones for diplomas included; font pairings with effects, curved text and text effects.',
+      },
+      {
+        icon: 'text-b',
+        title: 'Style part of a text',
+        text: 'Pick some words and change their colour, gradient, font, size, bold or italic without touching the rest of the box.',
       },
       {
         icon: 'eyedropper',
@@ -608,6 +628,11 @@ const en: Copy = {
         text: 'Editable tables (import Excel or CSV), charts with their data editor, and QR codes with colours and a logo.',
       },
       {
+        icon: 'table',
+        title: 'Bulk create',
+        text: 'Connect an Excel or CSV file to your design and make one design per row: certificates, cards or invitations as PDF, images or an editable .gaf.',
+      },
+      {
         icon: 'palette',
         title: 'Brand kits',
         text: 'Keep logos, colours, text styles and fonts in a kit and apply them to any design. Share it as a .gafkit file.',
@@ -621,6 +646,11 @@ const en: Copy = {
         icon: 'stack',
         title: 'Layers and precision',
         text: 'Layers you drag, lock and hide; guides, snapping, rulers, align and distribute.',
+      },
+      {
+        icon: 'cursor-click',
+        title: 'Right-click and copy style',
+        text: 'A menu with the usual actions on every element, and a painter to copy the style, effects or properties of one and paste them on another.',
       },
       {
         icon: 'export',
