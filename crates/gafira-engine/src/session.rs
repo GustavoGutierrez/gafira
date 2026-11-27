@@ -47,6 +47,10 @@ pub(crate) struct Session {
     pub(crate) read_only: bool,
     /// The version of the last `new`, `open` or `save` (P15, "modified").
     pub(crate) clean_version: DocVersion,
+    /// The version of this session's latest state (spec 111): the engine's
+    /// counter moves with every session, so whether this one is modified is
+    /// measured against its own.
+    pub(crate) version: DocVersion,
     /// Names this session among every session of the engine, so a save that
     /// finishes after the session was replaced touches nothing (P13, P18).
     pub(crate) session_key: String,
@@ -78,10 +82,12 @@ pub(crate) struct Autosave {
 pub(crate) type SessionCell = Arc<Mutex<Option<Session>>>;
 
 /// What every service that changes the document holds: the session, the
-/// engine's version counter and the bus the change is published on.
+/// sessions parked behind it (spec 111), the engine's version counter and
+/// the bus the change is published on.
 #[derive(Clone)]
 pub(crate) struct Shared {
     session: SessionCell,
+    parked: Arc<Mutex<Vec<Session>>>,
     version: Arc<AtomicU64>,
     bus: EventBus,
 }
@@ -91,6 +97,7 @@ impl Shared {
     pub(crate) fn new(bus: EventBus) -> Self {
         Self {
             session: Arc::new(Mutex::new(None)),
+            parked: Arc::new(Mutex::new(Vec::new())),
             version: Arc::new(AtomicU64::new(0)),
             bus,
         }
@@ -105,14 +112,18 @@ impl Shared {
         }
     }
 
+    /// The sessions open behind the active one (spec 111). Taken after
+    /// [`Self::lock`] when both are held, never before it.
+    pub(crate) fn parked(&self) -> MutexGuard<'_, Vec<Session>> {
+        match self.parked.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
     /// The bus the session's events go to.
     pub(crate) fn bus(&self) -> &EventBus {
         &self.bus
-    }
-
-    /// The version of the newest published state.
-    pub(crate) fn version(&self) -> DocVersion {
-        DocVersion(self.version.load(Ordering::SeqCst))
     }
 
     /// Bump the version by one and publish exactly one `DocumentChanged` with
