@@ -1,7 +1,8 @@
 ---
 // The paid full packs, sold on Gumroad. Buying one supports Gafira's
-// development. Prices are the minimums set on Gumroad ("pay what you want");
-// keep them in sync with the Gumroad listings.
+// development. Prices are the minimums set on Gumroad ("pay what you want"),
+// except bundles, which have a fixed price; keep them in sync with the
+// Gumroad listings.
 //
 // Each card shows its pack: the cover, then eight illustrations only the full
 // version has, in a swipeable carousel. Any image opens the viewer, where it
@@ -25,6 +26,7 @@ import flowersCover from '../assets/packs/full-botanical-flowers.webp';
 import branchesCover from '../assets/packs/full-branches-bouquets-arrangements.webp';
 import fruits1Cover from '../assets/packs/full-botanical-fruits-part-1.webp';
 import fruits2Cover from '../assets/packs/full-botanical-fruits-part-2.webp';
+import fruitsBundleCover from '../assets/packs/full-botanical-fruits-complete.webp';
 
 interface Props {
   locale: Locale;
@@ -34,8 +36,10 @@ interface FullPack {
   id: string;
   /** The Gumroad product; `null` while it is not on sale, shown as coming soon. */
   url: string | null;
-  /** Minimum price in USD on Gumroad. */
+  /** Minimum price in USD on Gumroad, or the fixed price of a bundle. */
   price: number;
+  /** A bundle sold at a fixed price instead of "pay what you want". */
+  fixed?: boolean;
   count: number;
   /** Illustrations beyond the 30 of the free version. */
   added: number;
@@ -211,6 +215,26 @@ const packs: FullPack[] = [
       'bodegones-botanicos_01_bodegon-de-citricos',
     ],
   },
+  {
+    id: 'fruits-bundle',
+    url: 'https://gusdev.gumroad.com/l/botanical-fruits-complete',
+    price: 9,
+    fixed: true,
+    count: 364,
+    added: 334,
+    tint: 'var(--coral)',
+    cover: fruitsBundleCover,
+    samples: [
+      'frutas-tropicales_09_mangostino',
+      'ramitas-de-huerto_01_manzanas',
+      'frutos-exoticos_11_cacao',
+      'racimos-citricos_11_kumquats',
+      'frutas-africanas_01_baobab',
+      'racimos_02_uvas-negras',
+      'bodegones-tropicales_01_bodegon-de-mangos-y-bananos',
+      'bodegones-botanicos_01_bodegon-de-citricos',
+    ],
+  },
 ];
 
 interface Slide {
@@ -347,8 +371,8 @@ const g = t.gallery;
                 <p class="price">
                   <span class="price__amount">{pack.price}</span>
                   <span class="price__unit">
-                    USD {t.minimum}
-                    <span class="price__pwyw">{t.pwyw}</span>
+                    {pack.fixed ? 'USD' : `USD ${t.minimum}`}
+                    <span class="price__pwyw">{pack.fixed ? t.fixed : t.pwyw}</span>
                   </span>
                 </p>
                 {pack.url ? (

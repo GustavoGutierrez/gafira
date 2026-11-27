@@ -105,6 +105,8 @@ export interface Copy {
     includes: string;
     minimum: string;
     pwyw: string;
+    /** Under the price of a fixed-price bundle. */
+    fixed: string;
     buy: string;
     /** The button of a pack that is not on sale yet. */
     soon: string;
@@ -453,6 +455,7 @@ const es: Copy = {
     includes: 'incluidas las 30 gratis',
     minimum: 'mínimo',
     pwyw: 'Paga lo que quieras',
+    fixed: 'Las dos partes juntas',
     buy: 'Comprar en Gumroad',
     soon: 'Próximamente',
     newTab: '(se abre en una pestaña nueva)',
@@ -516,6 +519,12 @@ const es: Copy = {
         text: 'Frutas de huerto, cítricos, bayas, ramitas con hojas, mitades jugosas, uvas y verduras como tomates, pimientos y berenjenas.',
         alt: 'Una manzana roja, cerezas, fresas, naranjas en rama, media fruta de kiwi, un limón y un pimiento rojo',
         samples: ['Una rama de manzanas', 'Kumquats en rama', 'Grosellas rojas', 'Media granada', 'Una rama de gulupas', 'Uvas negras', 'Tomates en rama', 'Un bodegón de cítricos'],
+      },
+      {
+        name: 'Frutas botánicas · Colección completa',
+        text: 'Las dos partes en una sola compra: frutas tropicales y exóticas, de huerto, cítricos, bayas y verduras, por menos que comprarlas por separado.',
+        alt: 'Un mango con su mitad en cubos, fresas, una piña, media fruta de kiwi, una pitahaya, naranjas y cerezas',
+        samples: ['Un mangostino', 'Una rama de manzanas', 'Una mazorca de cacao', 'Kumquats en rama', 'Un fruto de baobab', 'Uvas negras', 'Un bodegón de mangos y bananos', 'Un bodegón de cítricos'],
       },
     ],
     points: ['Uso personal y comercial', 'Fondo transparente, listas para Gafira', 'Pago a través de Gumroad'],
@@ -864,6 +873,7 @@ const en: Copy = {
     includes: 'including the 30 free ones',
     minimum: 'minimum',
     pwyw: 'Pay what you want',
+    fixed: 'Both parts together',
     buy: 'Buy on Gumroad',
     soon: 'Coming soon',
     newTab: '(opens in a new tab)',
@@ -927,6 +937,12 @@ const en: Copy = {
         text: 'Orchard fruits, citrus, berries, leafy fruit branches, juicy halves, grapes and vegetables such as tomatoes, peppers and eggplants.',
         alt: 'A red apple, cherries, strawberries, oranges on a branch, half a kiwi, a lemon and a red pepper',
         samples: ['An apple branch', 'Kumquats on a branch', 'Red currants', 'Half a pomegranate', 'A purple passion fruit branch', 'Black grapes', 'Tomatoes on the vine', 'A citrus still life'],
+      },
+      {
+        name: 'Botanical fruits · Complete collection',
+        text: 'Both parts in one purchase: tropical and exotic fruits, orchard fruits, citrus, berries and vegetables, for less than buying them separately.',
+        alt: 'A mango with its cubed half, strawberries, a pineapple, half a kiwi, a dragon fruit, oranges and cherries',
+        samples: ['A mangosteen', 'An apple branch', 'A cacao pod', 'Kumquats on a branch', 'A baobab fruit', 'Black grapes', 'A still life of mangoes and bananas', 'A citrus still life'],
       },
     ],
     points: ['Personal and commercial use', 'Transparent backgrounds, ready for Gafira', 'Checkout through Gumroad'],
