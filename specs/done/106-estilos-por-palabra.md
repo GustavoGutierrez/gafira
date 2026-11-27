@@ -1,6 +1,6 @@
 # 106 — Estilos por palabra dentro de un texto
 
-> **Estado:** in-progress — 2026-11-26 — implementado y probado (S106-01 a 07); falta la revisión del titular en la app.
+> **Estado:** done — 2026-11-26 — aceptada por el titular en la app; pruebas S106-01 a 12 (`git grep s106_`); fuera de alcance: fuente distinta para unas letras desde la barra, subrayado y tachado.
 
 ## Objetivo
 
