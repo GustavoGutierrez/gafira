@@ -10,6 +10,7 @@ fn style(bold: bool, italic: bool) -> SpanStyle {
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
         bold,
         italic,
+        gradient: None,
     }
 }
 

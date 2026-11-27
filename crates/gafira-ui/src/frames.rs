@@ -778,6 +778,7 @@ fn glyph(c: char) -> Option<(ShapePath, f64)> {
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
         bold: false,
         italic: false,
+        gradient: None,
     };
     let text = gafira_doc::TextNode::plain(&c.to_string(), &style);
     let outline = gafira_render::text_outline(&text, (1000.0, 1000.0), crate::canvas::text_fonts())

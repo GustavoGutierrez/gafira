@@ -1572,6 +1572,7 @@ pub(crate) fn span_style(style: &BrandTextStyle) -> gafira_doc::SpanStyle {
         color: crate::colors::hex(0x18243B),
         bold: style.bold,
         italic: style.italic,
+        gradient: None,
     }
 }
 

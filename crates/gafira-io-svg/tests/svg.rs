@@ -106,6 +106,7 @@ fn document() -> Document {
         color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
         bold: false,
         italic: false,
+        gradient: None,
     };
     let text = NodeId::new(3);
     page.nodes.insert(

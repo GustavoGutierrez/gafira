@@ -1735,6 +1735,7 @@ pub(crate) mod tests {
             color: crate::colors::hex(0x18_24_3B),
             bold: true,
             italic: false,
+            gradient: None,
         };
         for kind in TextEffectKind::ALL {
             let mut engine = document_engine(1);

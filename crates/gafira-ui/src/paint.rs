@@ -137,6 +137,7 @@ mod tests {
             color: Color::Srgb(Rgba::new(0.2, 0.3, 0.4, 1.0)),
             bold,
             italic: false,
+            gradient: None,
         }
     }
 

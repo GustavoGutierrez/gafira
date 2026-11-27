@@ -384,6 +384,7 @@ fn sample(
         color,
         bold: font == "Inter",
         italic: false,
+        gradient: None,
     };
     let mut text = TextNode::plain(words, &style);
     text.align = gafira_doc::TextAlign::Center;

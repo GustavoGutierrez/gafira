@@ -259,6 +259,7 @@ fn text_document() -> Document {
         color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
         bold: false,
         italic: false,
+        gradient: None,
     };
     let id = NodeId::new(4);
     let base = ElementBase::new(id, Placement::new(10.0, 40.0, 280.0, 60.0));

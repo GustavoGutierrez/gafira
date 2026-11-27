@@ -20,6 +20,7 @@ fn style(size: f64) -> SpanStyle {
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
         bold: false,
         italic: false,
+        gradient: None,
     }
 }
 

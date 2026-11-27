@@ -239,6 +239,7 @@ fn s30_01_a_text_paints_inside_its_box_and_nowhere_else() {
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
         bold: false,
         italic: false,
+        gradient: None,
     };
     let text = node(
         2,
