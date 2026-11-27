@@ -11,7 +11,7 @@ use gafira_doc::{
 use gafira_edit::{
     Applied, ApplyTemplate, Command, CommandError, DirtySet, DuplicatePage, GestureId, InsertAsset,
     InsertNodes, InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder, ReorderPage,
-    Reparent, RestoreVersion, SetData, SetProperty, Transaction,
+    Reparent, ResizePages, RestoreVersion, SetData, SetProperty, Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -427,6 +427,34 @@ fn apply_template(doc: &Document) -> BoxedStrategy<ApplyTemplate> {
 #[test]
 fn apply_template_obeys_the_command_laws() {
     prop_command(apply_template);
+}
+
+/// Up to every page of the document at a new size, now and then with a page
+/// the document lacks or none at all, so the refusals run too (spec 108).
+fn resize_pages(doc: &Document) -> BoxedStrategy<ResizePages> {
+    let pages: Vec<Page> = doc.pages().iter().map(|p| (**p).clone()).collect();
+    let most = pages.len();
+    (0..=most, page_size(), prop::bool::weighted(0.15))
+        .prop_map(move |(n, size, stranger)| {
+            let mut chosen: Vec<Page> = pages[..n]
+                .iter()
+                .cloned()
+                .map(|mut page| {
+                    page.size = size;
+                    page
+                })
+                .collect();
+            if stranger {
+                chosen.push(Page::new(PageId::new(u64::MAX), String::new(), size));
+            }
+            ResizePages::new(chosen)
+        })
+        .boxed()
+}
+
+#[test]
+fn resize_pages_obeys_the_command_laws() {
+    prop_command(resize_pages);
 }
 
 /// A reference the document already has now and then, so the `Unchanged`
