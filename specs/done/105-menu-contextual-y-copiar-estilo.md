@@ -1,6 +1,6 @@
 # 105 — Menú contextual de los elementos y copiar estilo
 
-> **Estado:** in-progress — 2026-11-26 — implementada y probada (S105-01 a 07); pendiente la revisión del titular en la app.
+> **Estado:** done — 2026-11-26 — aceptada por el titular en la app; S105-01 a 08 con pruebas (`git grep s105_`).
 
 ## Objetivo
 

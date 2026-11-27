@@ -1,6 +1,6 @@
 # 104 — Creación en lote con datos conectados
 
-> **Estado:** in-progress — 2026-11-26 — primera entrega implementada y probada (§19); pendientes las partes de §19.4.
+> **Estado:** done — 2026-11-26 — aceptada por el titular en la app; evidencia en §19; lo pendiente de §19.4 sigue en la spec 107.
 
 **Especificación funcional y técnica propuesta · v1.2 · 26 de noviembre de 2026**
 
@@ -577,7 +577,7 @@ Consulta: **26 de noviembre de 2026**. Se enlazan documentos públicos; sus inte
 - Gates (2026-11-26): `cargo fmt --check` OK; `cargo clippy --workspace --all-targets --locked -- -D warnings` OK; `cargo test --workspace --locked --no-fail-fast` 3805 pasadas, 0 fallidas en 301 binarios; pasos de política de `ci.yml` V5, V12, ARQ-107 (dos), V13 y V14 OK en local; `python3 tools/sync_agents.py --check` OK. Sin dependencias nuevas de terceros (`gafira-bulk` usa `serde_json` del workspace).
 - No verificado: uso manual en la app de escritorio (diálogos del sistema y arrastre reales); las pruebas dibujan frames completos del editor y escriben los archivos, pero no abren ventanas.
 
-### 19.4 Pendiente
+### 19.4 Pendiente (movido a la spec 107)
 
 - Imágenes conectadas a columnas (§8) y reglas de visibilidad.
 - Políticas «Reducir hasta», «Ampliar caja» y «Recortar con puntos suspensivos» (§9).
