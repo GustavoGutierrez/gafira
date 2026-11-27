@@ -465,6 +465,10 @@ pub(crate) struct Editor {
     /// usual controls act on them, and the writing comes back with them.
     last_range: Option<(PageId, NodeId, std::ops::Range<usize>)>,
     back_to: Option<(PageId, NodeId, std::ops::Range<usize>)>,
+    /// The frames the letters chosen outlive the writing: the click on a
+    /// control ends the writing when pressed and acts when let go (owner
+    /// report: later changes went to letters no longer chosen).
+    range_life: u8,
     /// What «Copiar estilo» took, and whether the next click pastes it.
     painter: Option<crate::paint::Copied>,
     painting: bool,
@@ -671,6 +675,7 @@ impl Default for Editor {
             element_menu_new: false,
             last_range: None,
             back_to: None,
+            range_life: 0,
             painter: None,
             painting: false,
             side_rect: std::cell::Cell::new(None),
@@ -5913,6 +5918,7 @@ impl Editor {
         if asked.end_edit
             && let Some(editing) = self.editing.take()
         {
+            self.range_life = 2;
             // A curved text is fitted to its arc once written (spec 095).
             self.fit_pending = Some((editing.page, editing.node));
             if editing.gesture.is_some()
@@ -7923,6 +7929,15 @@ impl Editor {
                 eprintln!("{what}: {error}");
             }
         };
+        // Letters chosen in a writing that ended are forgotten after the
+        // click that ended it (spec 106).
+        if self.editing.is_none() && self.last_range.is_some() {
+            if self.range_life == 0 {
+                self.last_range = None;
+            } else {
+                self.range_life -= 1;
+            }
+        }
         // A stroke of what is marked to be erased comes first (spec 086).
         let (mut undo, mut redo) = (asked.undo, asked.redo);
         if let Some(edit) = &mut self.image_edit {
@@ -23119,5 +23134,101 @@ pub(crate) mod tests {
             content(&mut engine).style_at(2).expect("a style").color,
             red
         );
+    }
+
+    // S106-11 (owner report): the writing ended, the letters chosen are
+    // forgotten; a later change of the font goes to the whole text, and
+    // the writing does not come back by itself.
+    #[test]
+    fn s106_11_ended_writing_forgets_the_letters() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "Agregar algo de texto".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (page, node) = editor.selected.single().expect("the text");
+        let document = engine.edit().document();
+        let asked = Asked {
+            begin_edit: Some((page, node)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        editor.editing.as_mut().expect("writing").selection = Some(8..12);
+        editor.last_range = Some((page, node, 8..12));
+        // A click on the canvas ends the writing; the text stays selected.
+        let document = engine.edit().document();
+        let asked = Asked {
+            end_edit: true,
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        for _ in 0..3 {
+            let document = engine.edit().document();
+            editor.apply(&mut engine, &document, &Asked::default(), &theme(), None);
+        }
+        // Later, «Fuente»: the whole text, no writing again.
+        let document = engine.edit().document();
+        let asked = Asked {
+            font: Some(("Lora".to_owned(), false, false)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        assert!(editor.editing.is_none(), "the writing does not come back");
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) = &document.pages()[0].nodes[&node].kind else {
+            panic!("a text")
+        };
+        assert!(
+            text.content.spans().all(|s| s.style.font == "Lora"),
+            "every letter"
+        );
+    }
+
+    // S106-12: a control pressed ends the writing and acts when let go, a
+    // frame later: it still changes the letters chosen.
+    #[test]
+    fn s106_12_a_control_acts_a_frame_after_the_press() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Body, "Agregar algo de texto".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let (page, node) = editor.selected.single().expect("the text");
+        let document = engine.edit().document();
+        let asked = Asked {
+            begin_edit: Some((page, node)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        editor.editing.as_mut().expect("writing").selection = Some(8..12);
+        editor.last_range = Some((page, node, 8..12));
+        let document = engine.edit().document();
+        let asked = Asked {
+            end_edit: true,
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let red = gafira_color::Color::Srgb(gafira_color::Rgba::new(0.9, 0.1, 0.1, 1.0));
+        let document = engine.edit().document();
+        let asked = Asked {
+            text_fill: Some(TextFill::Solid(red)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) = &document.pages()[0].nodes[&node].kind else {
+            panic!("a text")
+        };
+        assert_eq!(text.content.style_at(9).expect("a style").color, red);
+        assert_ne!(text.content.style_at(2).expect("a style").color, red);
+        assert!(editor.editing.is_some(), "the writing comes back");
     }
 }
