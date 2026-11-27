@@ -464,7 +464,6 @@ pub(crate) struct Editor {
     /// The letters chosen last in the text being written (spec 106): the
     /// usual controls act on them, and the writing comes back with them.
     last_range: Option<(PageId, NodeId, std::ops::Range<usize>)>,
-    back_to: Option<(PageId, NodeId, std::ops::Range<usize>)>,
     /// The frames the letters chosen outlive the writing: the click on a
     /// control ends the writing when pressed and acts when let go (owner
     /// report: later changes went to letters no longer chosen).
@@ -674,7 +673,6 @@ impl Default for Editor {
             element_menu: None,
             element_menu_new: false,
             last_range: None,
-            back_to: None,
             range_life: 0,
             painter: None,
             painting: false,
@@ -9049,9 +9047,6 @@ impl Editor {
         if let Some(open) = asked.font_panel {
             self.font_panel = open;
         }
-        if let Some((page, node, range)) = self.back_to.take() {
-            self.write_again(engine, (page, node, range));
-        }
         if let (false, Some((family, bold, italic))) = (ranged, &asked.font) {
             self.apply_font(engine, (family, *bold, *italic));
             // Another face may change the height of the words (spec 061).
@@ -16474,8 +16469,7 @@ impl Editor {
 impl Editor {
     /// The change of the usual controls (Propiedades: size, bold, italic,
     /// colour; «Fuente») on the letters chosen last in the selected text,
-    /// if there are any; the writing then comes back with them. Whether it
-    /// was so.
+    /// if there are any; they are forgotten then. Whether it was so.
     fn ranged_change(&mut self, engine: &mut Gafira, asked: &Asked) -> bool {
         let Some((page, node, range)) = self
             .last_range
@@ -16526,45 +16520,11 @@ impl Editor {
         let Some(patch) = patch.filter(|p| *p != StylePatch::default()) else {
             return false;
         };
-        Self::style_range_at(engine, (page, node, range.clone()), &RangeStyle::Set(patch));
-        self.back_to = Some((page, node, range));
+        Self::style_range_at(engine, (page, node, range), &RangeStyle::Set(patch));
+        // Done with those letters (owner report): the next change goes to
+        // the whole text unless letters are chosen again.
+        self.last_range = None;
         true
-    }
-
-    /// Write again in `node` of `page` with `range` chosen (spec 106).
-    fn write_again(
-        &mut self,
-        engine: &mut Gafira,
-        (page, node, range): (PageId, NodeId, std::ops::Range<usize>),
-    ) {
-        let Some(document) = engine.edit().document() else {
-            return;
-        };
-        let words = match document
-            .page(page)
-            .and_then(|p| p.node(node))
-            .map(|n| &n.kind)
-        {
-            Some(gafira_doc::NodeKind::Text(text)) => text.content.plain_text(),
-            Some(gafira_doc::NodeKind::Shape(shape)) => shape
-                .text
-                .as_ref()
-                .map(|t| t.content.plain_text())
-                .unwrap_or_default(),
-            _ => return,
-        };
-        if self.editing.take().is_some_and(|e| e.gesture.is_some()) {
-            let _ = engine.edit().end_gesture();
-        }
-        let gesture = engine.edit().begin_gesture().ok();
-        self.editing = Some(Editing {
-            page,
-            node,
-            words,
-            selection: Some(range),
-            gesture,
-            focused: false,
-        });
     }
 
     /// `change` on the letters `range` of the text `node` of `page`, one
@@ -23082,9 +23042,11 @@ pub(crate) mod tests {
         let after = content(&mut engine);
         assert!(after.style_at(9).expect("a style").bold, "«algo» bold");
         assert!(!after.style_at(2).expect("a style").bold, "the rest is not");
-        let back = editor.editing.as_ref().expect("writing again");
-        assert_eq!((back.node, back.selection.clone()), (node, Some(8..12)));
-        // A colour of Propiedades: «algo» red, the rest as it was.
+        // Owner report: once applied, the letters are no longer chosen.
+        assert!(editor.last_range.is_none(), "the letters are forgotten");
+        // «algo» chosen again, then a colour of Propiedades: «algo» red,
+        // the rest as it was.
+        editor.last_range = Some((page, node, 8..12));
         let red = gafira_color::Color::Srgb(gafira_color::Rgba::new(0.9, 0.1, 0.1, 1.0));
         let document = engine.edit().document();
         let asked = Asked {
@@ -23098,7 +23060,8 @@ pub(crate) mod tests {
         assert!(algo.bold && algo.color == red);
         assert_ne!(after.style_at(2).expect("a style").color, red);
         assert_eq!(after.plain_text(), "Agregar algo de texto");
-        // A gradient of Propiedades: on «algo» only (owner request).
+        // «algo» chosen again; a gradient of Propiedades: on «algo» only.
+        editor.last_range = Some((page, node, 8..12));
         let stop = |offset, r| gafira_doc::GradientStop {
             offset,
             color: gafira_color::Color::Srgb(gafira_color::Rgba::new(r, 0.3, 0.8, 1.0)),
@@ -23229,6 +23192,26 @@ pub(crate) mod tests {
         };
         assert_eq!(text.content.style_at(9).expect("a style").color, red);
         assert_ne!(text.content.style_at(2).expect("a style").color, red);
-        assert!(editor.editing.is_some(), "the writing comes back");
+        assert!(editor.last_range.is_none(), "the letters are forgotten");
+        // Owner report: then «Fuente» for the whole box changes every letter.
+        let document = engine.edit().document();
+        let asked = Asked {
+            font: Some(("Lora".to_owned(), false, false)),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &document, &asked, &theme(), None);
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) = &document.pages()[0].nodes[&node].kind else {
+            panic!("a text")
+        };
+        assert!(
+            text.content.spans().all(|s| s.style.font == "Lora"),
+            "every letter"
+        );
+        assert_eq!(
+            text.content.style_at(9).expect("a style").color,
+            red,
+            "colour kept"
+        );
     }
 }
