@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-27
+
+Document tabs, resizing the whole design, grunge shapes, fourteen light effects, artistic font pairings, foldable panels and a Help menu.
+
 ### Added
 
 - Document tabs (spec 111): several projects open at once, each in a tab with its file name and a mark when it has unsaved changes. Opening, creating or «Copiar y redimensionar» open a new tab; a file already open shows its tab; Inicio keeps the tabs; closing a tab with changes asks first. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+W closes one; each tab keeps its zoom, scroll and selection.
