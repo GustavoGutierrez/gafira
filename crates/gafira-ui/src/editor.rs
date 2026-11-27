@@ -414,6 +414,10 @@ pub(crate) struct Editor {
     model3d_note: Option<(&'static str, f64, bool)>,
     /// The box each curved text texture covers, by its key (FD-44).
     curved_covers: std::cell::RefCell<std::collections::BTreeMap<u64, Placement>>,
+    /// The headings with effects of the font pairings, drawn once for
+    /// their cards: the picture and its size on the card.
+    pairing_samples:
+        std::cell::RefCell<std::collections::BTreeMap<usize, Option<(egui::TextureHandle, Vec2)>>>,
     /// The text being written on the canvas (spec 055).
     editing: Option<Editing>,
     /// Crop mode of a frame (S66-07): the photo moves inside it, the whole
@@ -646,6 +650,7 @@ impl Default for Editor {
             model3d_gesture: None,
             model3d_note: None,
             curved_covers: std::cell::RefCell::default(),
+            pairing_samples: std::cell::RefCell::default(),
             editing: None,
             cropping: None,
             paste_seen: false,
@@ -3979,10 +3984,24 @@ impl Editor {
                 theme.font("body-sm"),
                 theme.c("text.secondary"),
             );
+            // A heading with effects is drawn as the canvas draws it.
+            let sample = (!(pairing.heading.effects)().is_empty())
+                .then(|| self.pairing_sample(ui.ctx(), index, &heading_words))
+                .flatten();
+            if let Some((texture, size)) = &sample {
+                let room = Vec2::new(rect.width() - 28.0, 36.0);
+                let k = (room.x / size.x).min(room.y / size.y).min(1.0);
+                let place = Rect::from_min_size(Pos2::new(left, rect.top() + 28.0), *size * k);
+                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                clip.image(texture.id(), place, uv, Color32::WHITE);
+            }
             for (face, words, y, size) in [
                 (pairing.heading, &heading_words, rect.top() + 30.0, 24.0),
                 (pairing.body, &body_words, rect.top() + 66.0, 12.0),
             ] {
+                if sample.is_some() && y < rect.top() + 60.0 {
+                    continue;
+                }
                 let style = pairings::style(face);
                 let family = text_family(ui.ctx(), theme, &style);
                 clip.text(
@@ -4008,6 +4027,43 @@ impl Editor {
             );
             ui.add_space(8.0);
         }
+    }
+
+    /// The heading with effects of pairing `index`, drawn once at the size
+    /// of a card (owner request: pairings with effects).
+    fn pairing_sample(
+        &self,
+        ctx: &egui::Context,
+        index: usize,
+        words: &str,
+    ) -> Option<(egui::TextureHandle, Vec2)> {
+        let mut samples = self.pairing_samples.borrow_mut();
+        samples
+            .entry(index)
+            .or_insert_with(|| {
+                let pairing = pairings::PAIRINGS.get(index)?;
+                let face = pairing.heading;
+                let mut text = gafira_doc::TextNode::plain(
+                    &pairings::words(face, words),
+                    &pairings::style(face),
+                );
+                text.sizing = gafira_doc::TextSizing::AutoWidth;
+                text.effects = (face.effects)();
+                let w = canvas::natural_width(&text)?;
+                let h = face.size * 1.3;
+                // Twice the size it is shown at, for sharp edges.
+                let shown = 36.0 / h;
+                let placement = Placement::new(0.0, 0.0, w, h);
+                let (image, cover) =
+                    canvas::curved_text_image(&text, &placement, (shown * 2.0) as f32)?;
+                let size = Vec2::new((cover.w * shown) as f32, (cover.h * shown) as f32);
+                let options = egui::TextureOptions::LINEAR;
+                Some((
+                    ctx.load_texture(format!("pairing-{index}"), image, options),
+                    size,
+                ))
+            })
+            .clone()
     }
 
     /// A card of a side panel being dragged: a ghost under the pointer and,
@@ -22572,5 +22628,34 @@ pub(crate) mod tests {
         assert_eq!(editor.bulk.get_mut().row, 1, "the next row");
         assert_eq!(placements(&mut engine, &[node]), before, "nothing moved");
         assert_eq!(editor.selected.single(), Some((page, node)));
+    }
+
+    // Owner request: the cards of the pairings with effects show them, drawn
+    // as the canvas draws them.
+    #[test]
+    fn pairing_cards_show_their_effects() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let tab = TABS
+            .iter()
+            .position(|(key, _)| *key == "tab.text")
+            .expect("the tab");
+        editor.rail.click_tab(tab);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        // The panel scrolls: draw the samples straight, as the cards do.
+        frame(&ctx, &mut editor, &mut engine, None);
+        let lit: Vec<usize> = pairings::PAIRINGS
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !(p.heading.effects)().is_empty())
+            .map(|(i, _)| i)
+            .collect();
+        for index in lit {
+            let sample = editor.pairing_sample(&ctx, index, "Añade un título");
+            let (_, size) = sample.expect("drawn");
+            assert!(size.x > size.y && size.y > 0.0, "{index}: {size:?}");
+        }
     }
 }
