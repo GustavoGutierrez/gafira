@@ -1,6 +1,6 @@
 # 109 — Formas grunge: pinceladas, salpicaduras y rasgaduras
 
-> **Estado:** in-progress — 2026-11-27 — pedida por el titular con una pincelada de referencia; en implementación.
+> **Estado:** done — 2026-11-27 — aceptada por el titular en la app; 26 pinceladas (simuladas cerda a cerda y vectorizadas), 13 salpicaduras y 11 rasgaduras, 10 de ellas dibujadas por el titular (GPL, en `assets/LICENSES.toml`); S109-02/03 con pruebas.
 
 ## Objetivo
 

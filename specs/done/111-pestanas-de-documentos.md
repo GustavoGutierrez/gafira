@@ -1,6 +1,6 @@
 # 111 — Pestañas de documentos
 
-> **Estado:** in-progress — 2026-11-27 — pedida por el titular, con photocraft como referencia; en implementación.
+> **Estado:** done — 2026-11-27 — aceptada por el titular en la app; Varias sesiones en el motor (activa y aparcadas, modificado por sesión, guardado y autoguardado por clave, recuperación y archivo duplicado); tira bajo los menús con nombre, marca, ✕, reordenar, clic derecho y Ctrl+Tab/Ctrl+W; S111-01..09 con pruebas.
 
 ## Objetivo
 

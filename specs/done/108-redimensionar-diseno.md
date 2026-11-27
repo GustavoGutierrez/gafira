@@ -1,6 +1,6 @@
 # 108 — Redimensionar el diseño
 
-> **Estado:** in-progress — 2026-11-27 — pedida por el titular con capturas de referencia; en implementación.
+> **Estado:** done — 2026-11-27 — aceptada por el titular en la app; «Redimensionar» en la barra superior con búsqueda, sugerencias, categorías con chips y tarjetas, y tamaño a medida; `ResizePages` en un paso de deshacer y encaje escalado y centrado; copia redimensionada en pestaña nueva; S108-04/05/07 con pruebas (`git grep s108_`).
 
 ## Objetivo
 
