@@ -80,8 +80,6 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 101 | [Presentar en pantalla completa](101-presentar-en-pantalla-completa.md) | in-progress: botón en la barra inferior y Ctrl+Alt+P; páginas a pantalla completa con teclado, clic, transiciones, barra que se oculta, dibujo y puntero láser; pendiente del titular |
 | 102 | [Vista de cuadrícula de las páginas](102-vista-de-cuadricula.md) | in-progress: botón en la barra inferior; miniaturas, selección, reordenar arrastrando, «+» entre páginas, duplicar, eliminar y ocultar; pendiente del titular |
 | 103 | [Biblioteca de iconos en Elementos → Iconos](103-biblioteca-de-iconos.md) | in-progress: Tabler (MIT) integrado, 40 categorías, Línea y Relleno, búsqueda, insertar y arrastrar como formas; pendientes los paquetes de Fluent Emoji |
-| 104 | [Creación en lote con datos conectados](104-creacion-en-lote.md) | in-progress: primera entrega (pestaña «Crear en lote», CSV/XLSX/pegar/tabla, campos `{{clave}}`, vista previa, PDF combinado o por fila, PNG/JPEG y `.gaf` editable con progreso y cancelación); pendientes imágenes conectadas, ajuste «Reducir hasta», reanudación y mediciones |
-| 105 | [Menú contextual de los elementos y copiar estilo](105-menu-contextual-y-copiar-estilo.md) | in-progress: clic derecho con acciones comunes, copiar y pegar estilo, efectos y propiedades con pincel; pendiente revisión del titular |
 | 106 | [Estilos por palabra dentro de un texto](106-estilos-por-palabra.md) | in-progress: negrita, cursiva, tamaño y color por letras elegidas, dibujado y exportado; pendiente revisión del titular |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
@@ -133,6 +131,8 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 050 | [Borde de la página activa](done/050-active-page-border.md) | Un clic en una página la activa y la bordea con 2 px `canvas.selection`; fuera de las páginas se quita; la página actual es la de la selección, si no la activa, si no la primera; 2 tests nuevos |
 | 051 | [Mover elementos entre páginas](done/051-move-between-pages.md) | Soltar un arrastre sobre otra página pasa los elementos a ella en un paso de deshacer; cada página recorta lo suyo y la selección va encima (D-92); se toma también en el espacio entre páginas; lo que se suelta totalmente fuera se elimina (D-93); 7 tests nuevos |
 | 052 | [Formas: el nombre y arrastrar desde el panel](done/052-shapes-drag-from-panel.md) | «Piezas» pasa a «Formas» (D-94); arrastrar una forma del panel con vista previa semitransparente y soltarla centrada donde se suelta; 3 tests nuevos, 3192 tests |
+| 104 | [Creación en lote con datos conectados](done/104-creacion-en-lote.md) | Pestaña «Crear en lote» (Datos, Conectar, Revisar), CSV/XLSX/pegar/tabla guardada en el `.gaf`, campos `{{clave}}` con arrastre, menú y autocompletado, vista ampliada, diálogo «Exportar en lote» con los formatos de «Exportar», tarjeta de progreso y `.gaf` editable; pruebas `s104_*`; aceptada por el titular; lo pendiente en la 107 |
+| 105 | [Menú contextual de los elementos y copiar estilo](done/105-menu-contextual-y-copiar-estilo.md) | Clic derecho con las acciones comunes, copiar y pegar estilo, efectos y propiedades con pincel y Ctrl+Mayús+C/V; pruebas `s105_*`; aceptada por el titular |
 
 ### Historial del flujo anterior
 
@@ -149,5 +149,6 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
+| 107 | [Creación en lote: ampliaciones](backlog/107-creacion-en-lote-ampliaciones.md) | Lo que quedó fuera de la 104: imágenes conectadas, texto que no cabe, formatos, pausar y reanudar, filtros, mediciones; falta priorizar |
 
-Siguiente ID libre: **107**.
+Siguiente ID libre: **108**.
