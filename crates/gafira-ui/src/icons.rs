@@ -96,6 +96,18 @@ pub(crate) enum Icon {
     Streak,
     SunRays,
     Bokeh,
+    /// «Luz de luna», «Foco», «Resplandor» and «Estrellas» (spec 110).
+    MoonLight,
+    Spotlight,
+    GlowLight,
+    Stars,
+    /// «Polvo de estrellas», «Estela de cometa», «Aurora boreal», «Fuga de
+    /// luz» and «Anillo luminoso» (spec 110).
+    Stardust,
+    Comet,
+    Aurora,
+    LightLeak,
+    LightRing,
     /// Ajustes and its sections (spec 092).
     Settings,
     Language,
@@ -131,6 +143,7 @@ pub(crate) enum Icon {
     Camera,
     /// Spec 101: presenting.
     CaretLeft,
+    CaretRight,
     CornersIn,
     PenTool,
     MarkerTool,
@@ -142,7 +155,7 @@ pub(crate) enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 88] = [
+    pub(crate) const ALL: [Self; 98] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -199,6 +212,15 @@ impl Icon {
         Self::SunRays,
         Self::Crop,
         Self::Bokeh,
+        Self::MoonLight,
+        Self::Spotlight,
+        Self::GlowLight,
+        Self::Stars,
+        Self::Stardust,
+        Self::Comet,
+        Self::Aurora,
+        Self::LightLeak,
+        Self::LightRing,
         Self::Settings,
         Self::Language,
         Self::Privacy,
@@ -224,6 +246,7 @@ impl Icon {
         Self::FitView,
         Self::Camera,
         Self::CaretLeft,
+        Self::CaretRight,
         Self::CornersIn,
         Self::PenTool,
         Self::MarkerTool,
@@ -292,6 +315,15 @@ impl Icon {
             Self::SunRays => "sun-horizon",
             Self::Crop => "crop",
             Self::Bokeh => "circles-three",
+            Self::MoonLight => "moon",
+            Self::Spotlight => "flashlight",
+            Self::GlowLight => "sun-dim",
+            Self::Stars => "star-four",
+            Self::Stardust => "dots-nine",
+            Self::Comet => "shooting-star",
+            Self::Aurora => "waves",
+            Self::LightLeak => "flame",
+            Self::LightRing => "circle-notch",
             Self::Settings => "gear-six",
             Self::Language => "globe",
             Self::Privacy => "shield-check",
@@ -317,6 +349,7 @@ impl Icon {
             Self::FitView => "corners-out",
             Self::Camera => "camera",
             Self::CaretLeft => "caret-left",
+            Self::CaretRight => "caret-right",
             Self::CornersIn => "corners-in",
             Self::PenTool => "pen",
             Self::MarkerTool => "marker-circle",

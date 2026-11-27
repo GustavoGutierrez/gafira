@@ -80,6 +80,9 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 101 | [Presentar en pantalla completa](101-presentar-en-pantalla-completa.md) | in-progress: botón en la barra inferior y Ctrl+Alt+P; páginas a pantalla completa con teclado, clic, transiciones, barra que se oculta, dibujo y puntero láser; pendiente del titular |
 | 102 | [Vista de cuadrícula de las páginas](102-vista-de-cuadricula.md) | in-progress: botón en la barra inferior; miniaturas, selección, reordenar arrastrando, «+» entre páginas, duplicar, eliminar y ocultar; pendiente del titular |
 | 103 | [Biblioteca de iconos en Elementos → Iconos](103-biblioteca-de-iconos.md) | in-progress: Tabler (MIT) integrado, 40 categorías, Línea y Relleno, búsqueda, insertar y arrastrar como formas; pendientes los paquetes de Fluent Emoji |
+| 108 | [Redimensionar el diseño](108-redimensionar-diseno.md) | in-progress: botón «Redimensionar» en la barra superior; buscar, sugerencias, categorías y «Elegir el tamaño»; encaje escalado y centrado del contenido; redimensionar en un paso o en una copia |
+| 109 | [Formas grunge: pinceladas, salpicaduras y rasgaduras](109-formas-grunge.md) | in-progress: pinceladas de pincel seco, salpicaduras y rasgaduras de garra en Formas: 40 generadas con semilla fija y 10 dibujadas por el titular |
+| 110 | [«Efectos de luz»: nueve luces nuevas y tarjetas planas](110-efectos-de-luz.md) | in-progress: la categoría «Luces y efectos» pasa a «Efectos de luz»; tarjetas planas; Luz de luna, Foco, Resplandor, Estrellas, Polvo de estrellas, Estela de cometa, Aurora boreal, Fuga de luz y Anillo luminoso |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -151,4 +154,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | 066 | [Marcos y Foto collage](066-marcos-y-cuadriculas.md) | in-progress: fase 1 hecha, marcos con una foto recortada (FD-18, D-107); fases 2 (reencuadre, Foto collage) y 3 (SVG, PDF) pendientes |
 | 107 | [Creación en lote: ampliaciones](backlog/107-creacion-en-lote-ampliaciones.md) | Lo que quedó fuera de la 104: imágenes conectadas, texto que no cabe, formatos, pausar y reanudar, filtros, mediciones; falta priorizar |
 
-Siguiente ID libre: **108**.
+Siguiente ID libre: **111**.

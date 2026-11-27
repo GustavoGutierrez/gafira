@@ -48,6 +48,12 @@ pub(crate) fn fit_zoom(page: (f32, f32), area: (f32, f32), margin: f32) -> f32 {
     (room_w / page.0).min(room_h / page.1).clamp(0.05, 1.0)
 }
 
+/// The zoom at which a page `page` px wide fills the width of `area` less
+/// `margin` on each side (owner request: «Ajustar al ancho»).
+pub(crate) fn fit_width(page: f32, area: f32, margin: f32) -> f32 {
+    (area - 2.0 * margin).max(1.0) / page.max(1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +95,7 @@ mod tests {
         assert_eq!(fit_zoom((100.0, 100.0), (4000.0, 4000.0), 0.0), 1.0);
         assert_eq!(fit_zoom((100_000.0, 100_000.0), (100.0, 100.0), 0.0), 0.05);
         assert_eq!(fit_zoom((100.0, 100.0), (10.0, 10.0), 40.0), 0.05);
+        // «Ajustar al ancho»: the width less the margins, past 100 % too.
+        assert_eq!(fit_width(500.0, 1080.0, 40.0), 2.0);
     }
 }

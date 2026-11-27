@@ -24,7 +24,7 @@ use crate::charts;
 use crate::clipboard::{self, Clip};
 use crate::elements::{self, Category, Move, Rail};
 use crate::files::{FileAction, project_name};
-use crate::format::fit_zoom;
+use crate::format::{fit_width, fit_zoom};
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
 use crate::layers::{self, Flag};
@@ -78,6 +78,11 @@ const REDO: KeyboardShortcut =
 const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals);
 const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
 const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
+const ZOOM_WIDTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num2);
+/// «Atajos de teclado» of «Ayuda» (owner request).
+const HELP_KEYS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Slash);
+/// Fold both side panels away, or bring them back (owner request).
+const PANELS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Period);
 const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
 const FLIP_H: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::H);
 const FLIP_V: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::V);
@@ -420,6 +425,11 @@ pub(crate) struct Editor {
     /// How many font pairing cards the Texto panel lists: more come in as
     /// the list is scrolled to its end (owner request).
     pairings_shown: std::cell::Cell<usize>,
+    /// «Redimensionar» of the top bar (spec 108).
+    resize: crate::design_resize::Panel,
+    /// A copy of the design saved for «Copiar y redimensionar», for the
+    /// shell to open and resize (spec 108).
+    resized_copy: Option<(std::path::PathBuf, crate::design_resize::Resize)>,
     /// The text being written on the canvas (spec 055).
     editing: Option<Editing>,
     /// Crop mode of a frame (S66-07): the photo moves inside it, the whole
@@ -475,6 +485,8 @@ pub(crate) struct Editor {
     painting: bool,
     /// The box of the side panel, for files dropped on it.
     side_rect: std::cell::Cell<Option<Rect>>,
+    /// The room the side panel took in the window last frame.
+    side_taken: std::cell::Cell<Option<Rect>>,
     /// The frame an image dragged on the canvas would drop into (spec 066):
     /// lit, with the photo previewed in it.
     frame_target: Option<FrameTarget>,
@@ -495,6 +507,10 @@ pub(crate) struct Editor {
     /// the selected text and the families the document uses, as the
     /// Inspector last saw them.
     font_panel: bool,
+    /// Whether the Inspector shows (owner request: it folds away).
+    inspector_open: bool,
+    /// The dialog of «Ayuda» on display, if any.
+    help: Option<crate::help::Dialog>,
     selection_font: Option<(String, bool, bool)>,
     document_fonts: Vec<String>,
     /// The families of the system already installed in egui.
@@ -663,6 +679,8 @@ impl Default for Editor {
             curved_covers: std::cell::RefCell::default(),
             pairing_samples: std::cell::RefCell::default(),
             pairings_shown: std::cell::Cell::new(PAIRINGS_PAGE),
+            resize: crate::design_resize::Panel::default(),
+            resized_copy: None,
             editing: None,
             cropping: None,
             paste_seen: false,
@@ -680,6 +698,7 @@ impl Default for Editor {
             painter: None,
             painting: false,
             side_rect: std::cell::Cell::new(None),
+            side_taken: std::cell::Cell::new(None),
             studio: crate::vision::Studio::default(),
             eraser: None,
             chart_panel: std::cell::RefCell::default(),
@@ -698,6 +717,8 @@ impl Default for Editor {
             piece_rows: std::cell::RefCell::new(HashMap::new()),
             piece_section: std::cell::Cell::new(None),
             font_panel: false,
+            inspector_open: true,
+            help: None,
             selection_font: None,
             document_fonts: Vec::new(),
             loaded_fonts: std::cell::RefCell::default(),
@@ -754,6 +775,17 @@ struct Asked {
     brand_template: Option<(String, String)>,
     /// A template to put on the page in view (spec 091).
     apply_template: Option<std::path::PathBuf>,
+    /// «Redimensionar el diseño» or «Copiar y redimensionar» (spec 108).
+    resize_design: Option<crate::design_resize::Resize>,
+    /// The handle on the edge of the side panel: fold it away or bring it
+    /// back.
+    toggle_side: bool,
+    /// The handle on the edge of the Inspector.
+    toggle_inspector: bool,
+    /// Ctrl+.: both panels away, or back.
+    toggle_panels: bool,
+    /// «Acerca de Gafira» of «Ayuda».
+    about: bool,
     /// A freehand stroke to add to its page (spec 079).
     draw_stroke: Option<(PageId, gafira_edit::NodeSpec)>,
     /// Strokes the eraser went over, to remove in one step (spec 079).
@@ -1507,6 +1539,40 @@ impl Editor {
         }
     }
 
+    /// «Redimensionar el diseño» (S108-05, S108-06): the pages at their new
+    /// size with their content fitted, in one undo step; or, for «Copiar y
+    /// redimensionar» (S108-07), a copy of the design kept for the shell
+    /// to open and resize, the design itself unchanged.
+    fn resize_design(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        resize: crate::design_resize::Resize,
+    ) {
+        if resize.copy {
+            let tmp = std::env::temp_dir().join(format!(
+                "gafira-resized-copy-{}-{}.gaf",
+                std::process::id(),
+                document.next_id()
+            ));
+            match engine.projects().save_copy(&tmp) {
+                Ok(()) => self.resized_copy = Some((tmp, resize)),
+                Err(error) => eprintln!("copy to resize: {error}"),
+            }
+            return;
+        }
+        let Some(command) = crate::design_resize::command(document, resize) else {
+            return;
+        };
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::default();
+                self.scope = None;
+            }
+            Err(error) => eprintln!("resize design: {error}"),
+        }
+    }
+
     /// The page of the selection, or the first page.
     fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
         let ids: Vec<PageId> = document.pages().iter().map(|page| page.id).collect();
@@ -1665,6 +1731,7 @@ impl Editor {
                 egui::Key::Minus,
                 egui::Key::Num0,
                 egui::Key::Num1,
+                egui::Key::Num2,
             ] {
                 if i.key_pressed(key) {
                     asked.zoom = ZoomAsk::from_shortcut(i.modifiers.command, key).or(asked.zoom);
@@ -1674,6 +1741,10 @@ impl Editor {
         // Presentar en pantalla completa (spec 101): the event's own modifiers count, so a
         // quick Ctrl+Alt+P is not lost.
         asked.present |= ctx.input_mut(|i| i.consume_shortcut(&PRESENT));
+        asked.toggle_panels |= ctx.input_mut(|i| i.consume_shortcut(&PANELS));
+        if ctx.input_mut(|i| i.consume_shortcut(&HELP_KEYS)) {
+            self.help = Some(crate::help::Dialog::Shortcuts);
+        }
         // A turned text maps its glyphs with the atlas size of the last
         // frame; if the atlas grew after that, draw once more (spec 041).
         if let Some(used) = self.font_atlas.take()
@@ -1917,6 +1988,7 @@ impl Editor {
         self.studio.models_panel(ctx, theme, texts);
         self.can = CanArrange::of(document.as_deref(), &self.selected);
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
+        crate::help::show(ctx, theme, texts, &mut self.help, &shortcut_groups());
         if let Some(ask) = asked.zoom {
             self.view = ask.apply(self.zoom);
         }
@@ -2268,6 +2340,24 @@ impl Editor {
                     }
                 }
                 ui.separator();
+                // Only the canvas, and the page as wide as it (owner request).
+                let panels = self.rail.open || self.font_panel || self.inspector_open;
+                let shortcut = keys_text(ui.ctx(), &PANELS);
+                if widgets::check_item(ui, panels, plain(texts, "view.panels"), Some(shortcut))
+                    .clicked()
+                {
+                    asked.toggle_panels = true;
+                    ui.close();
+                }
+                let width = self.view == Zoom::FitWidth;
+                let shortcut = keys_text(ui.ctx(), &ZOOM_WIDTH);
+                if widgets::check_item(ui, width, plain(texts, "zoom.fit_width"), Some(shortcut))
+                    .clicked()
+                {
+                    asked.zoom = Some(ZoomAsk::FitWidth);
+                    ui.close();
+                }
+                ui.separator();
                 let dark = theme.dark;
                 let text = texts.t(&gafira_doc::msg!("view.dark_mode"));
                 if widgets::check_item(ui, dark, text, None).clicked() {
@@ -2275,9 +2365,55 @@ impl Editor {
                     ui.close();
                 }
             });
-            // «Tamaño» stays hidden until it does something (spec 098).
-            if SHOW_UNFINISHED {
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.size")), false);
+            // «Ayuda» (owner request).
+            widgets::topbar_menu(ui, theme, plain(texts, "menu.help"), |ui| {
+                ui.set_min_width(220.0);
+                let shortcut = keys_text(ui.ctx(), &HELP_KEYS);
+                let keys =
+                    egui::Button::new(plain(texts, "help.shortcuts")).shortcut_text(shortcut);
+                if ui.add(keys).clicked() {
+                    self.help = Some(crate::help::Dialog::Shortcuts);
+                    ui.close();
+                }
+                if ui.button(plain(texts, "help.notices")).clicked() {
+                    self.help = Some(crate::help::Dialog::Notices);
+                    ui.close();
+                }
+                ui.separator();
+                for (key, url) in [
+                    ("help.website", crate::help::WEBSITE),
+                    ("help.report", crate::help::ISSUES),
+                ] {
+                    if ui.button(plain(texts, key)).clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                if ui.button(plain(texts, "help.about")).clicked() {
+                    asked.about = true;
+                    ui.close();
+                }
+            });
+            // «Redimensionar» (spec 108): its panel under the button.
+            let popup = egui::Id::new("editor.resize");
+            let open = egui::Popup::is_id_open(ui.ctx(), popup);
+            let button =
+                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.resize")), open);
+            let place = document.as_deref().and_then(|document| {
+                let page = self.current_page(document)?;
+                Some((page.id, page.size, document.pages().len()))
+            });
+            if let Some(place) = place {
+                egui::Popup::menu(&button)
+                    .id(popup)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        if let Some(resize) = self.resize.show(ui, theme, texts, place) {
+                            asked.resize_design = Some(resize);
+                            ui.close();
+                        }
+                    });
             }
             ui.add_space(24.0);
             ui.label(
@@ -2464,21 +2600,46 @@ impl Editor {
         document: Option<&Document>,
         asked: &mut Asked,
     ) -> Option<Move> {
-        // Hidden from the rail (S64-06); «Fuente» shows all the same.
+        // Hidden from the rail (S64-06); «Fuente» shows all the same. Folded
+        // away, a handle by the rail brings it back.
         if !self.rail.open && !self.font_panel {
+            let screen = ctx.content_rect();
+            let handle = Handle {
+                id: "editor.side.handle",
+                x: px(theme.tokens.size.rail) + 12.0,
+                y: screen.center().y,
+                left: false,
+                hint: "editor.unfold_panel",
+            };
+            if collapse_handle(ctx, theme, texts, handle) {
+                asked.toggle_side = true;
+            }
             return None;
         }
         let mut go = None;
-        egui::SidePanel::left("editor.side")
-            .default_width(px(theme.tokens.size.panel_left))
-            .width_range(280.0..=480.0)
+        // As wide as it is, whatever it shows (owner request): its content
+        // fits it and never widens it.
+        let shown = egui::SidePanel::left("editor.side")
+            .exact_width(px(theme.tokens.size.panel_left))
+            .resizable(false)
             .frame(
                 egui::Frame::NONE
                     .fill(theme.c("bg"))
                     .stroke(Stroke::new(1.0, theme.c("border")))
                     .inner_margin(egui::Margin::same(16)),
             )
-            .show(ctx, |ui| {
+            .show(ctx, |outer| {
+                // Whatever a panel draws, it takes this room and no more: it
+                // is cut to it and never widens the panel (owner request).
+                let room = outer.max_rect();
+                outer.advance_cursor_after_rect(room);
+                let mut inside = outer.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(room)
+                        .layout(*outer.layout()),
+                );
+                inside.set_clip_rect(room.expand(1.0).intersect(outer.clip_rect()));
+                let ui = &mut inside;
                 self.side_rect.set(Some(ui.max_rect()));
                 if self.font_panel {
                     self.fonts_panel(ui, theme, texts, asked);
@@ -3072,6 +3233,19 @@ impl Editor {
                     }
                 });
             });
+        // The handle on its edge that folds it away (owner request).
+        let edge = shown.response.rect;
+        self.side_taken.set(Some(edge));
+        let handle = Handle {
+            id: "editor.side.handle",
+            x: edge.right(),
+            y: edge.center().y,
+            left: true,
+            hint: "editor.fold_panel",
+        };
+        if collapse_handle(ctx, theme, texts, handle) {
+            asked.toggle_side = true;
+        }
         go
     }
 
@@ -3113,7 +3287,22 @@ impl Editor {
         });
         self.document_fonts = document.map(document_fonts).unwrap_or_default();
         self.load_system_fonts(ctx);
-        egui::SidePanel::right("editor.inspector")
+        // Folded away, a handle by the right edge brings it back.
+        if !self.inspector_open {
+            let screen = ctx.content_rect();
+            let handle = Handle {
+                id: "editor.inspector.handle",
+                x: screen.right() - 12.0,
+                y: screen.center().y,
+                left: true,
+                hint: "editor.unfold_panel",
+            };
+            if collapse_handle(ctx, theme, texts, handle) {
+                asked.toggle_inspector = true;
+            }
+            return;
+        }
+        let shown = egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
             .frame(
@@ -3431,6 +3620,18 @@ impl Editor {
                         ui.add_space(16.0);
                     });
             });
+        // The handle on its edge that folds it away (owner request).
+        let edge = shown.response.rect;
+        let handle = Handle {
+            id: "editor.inspector.handle",
+            x: edge.left(),
+            y: edge.center().y,
+            left: false,
+            hint: "editor.fold_panel",
+        };
+        if collapse_handle(ctx, theme, texts, handle) {
+            asked.toggle_inspector = true;
+        }
     }
 
     /// Propiedades of an image (S88-05).
@@ -6345,11 +6546,14 @@ impl Editor {
                 let Some(first) = sizes.first().copied() else {
                     return;
                 };
-                self.zoom = self.view.resolve(fit_zoom(
-                    (first.x, first.y),
-                    (area.width(), area.height()),
-                    CANVAS_MARGIN,
-                ));
+                self.zoom = self.view.resolve(
+                    fit_zoom(
+                        (first.x, first.y),
+                        (area.width(), area.height()),
+                        CANVAS_MARGIN,
+                    ),
+                    fit_width(first.x, area.width(), CANVAS_MARGIN),
+                );
                 let zoom = self.zoom;
                 // Back from the grid: the page chosen at the top of the view (spec 102).
                 if let Some(page) = self.scroll_to.take()
@@ -8390,6 +8594,34 @@ impl Editor {
         {
             self.apply_template(engine, document, path);
         }
+        if let Some(resize) = asked.resize_design
+            && let Some(document) = document
+        {
+            self.resize_design(engine, document, resize);
+        }
+        // Ctrl+.: only the canvas, or the panels back (owner request).
+        if asked.toggle_panels {
+            if self.rail.open || self.font_panel || self.inspector_open {
+                self.rail.open = false;
+                self.font_panel = false;
+                self.inspector_open = false;
+            } else {
+                self.rail.open = true;
+                self.inspector_open = true;
+            }
+        }
+        if asked.toggle_inspector {
+            self.inspector_open = !self.inspector_open;
+        }
+        // The handle on the edge of the side panel (owner request).
+        if asked.toggle_side {
+            if self.font_panel {
+                self.font_panel = false;
+                self.rail.open = false;
+            } else {
+                self.rail.open = !self.rail.open;
+            }
+        }
         if let Some((style, words)) = &asked.brand_text
             && let Some(document) = document
             && let Some(page) = self.current_page(document)
@@ -9154,7 +9386,11 @@ impl Editor {
                 log("delete", engine.edit().execute(command).map(drop));
             }
         }
-        if let Some(dark) = asked.dark {
+        if let Some((path, resize)) = self.resized_copy.take() {
+            Go::CopyResized(path, resize)
+        } else if asked.about {
+            Go::About
+        } else if let Some(dark) = asked.dark {
             Go::Dark(dark)
         } else if let Some(kit) = &asked.brand {
             Go::Brand(kit.clone())
@@ -13363,18 +13599,29 @@ pub(crate) fn zoom_controls(
     let label = RichText::new(percent(scale_now)).font(theme.font("ui-label"));
     let menu = ui.menu_button((label, caret), |ui| {
         ui.set_min_width(120.0);
-        let fit = ui.selectable_label(view == Zoom::Fit, texts.t(&gafira_doc::msg!("zoom.fit")));
-        if fit
-            .on_hover_text(with_keys(
-                ui.ctx(),
-                texts,
-                texts.t(&gafira_doc::msg!("zoom.fit")),
+        for (zoom, key, shortcut, step) in [
+            (
+                Zoom::Fit,
+                gafira_doc::msg!("zoom.fit"),
                 ZOOM_FIT,
-            ))
-            .clicked()
-        {
-            ask = Some(ZoomAsk::Fit);
-            ui.close();
+                ZoomAsk::Fit,
+            ),
+            (
+                Zoom::FitWidth,
+                gafira_doc::msg!("zoom.fit_width"),
+                ZOOM_WIDTH,
+                ZoomAsk::FitWidth,
+            ),
+        ] {
+            let name = texts.t(&key);
+            if ui
+                .selectable_label(view == zoom, name.clone())
+                .on_hover_text(with_keys(ui.ctx(), texts, name, shortcut))
+                .clicked()
+            {
+                ask = Some(step);
+                ui.close();
+            }
         }
         for scale in zoom::PRESETS {
             if ui
@@ -14900,6 +15147,112 @@ fn section_title(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, key: &'static 
 }
 
 /// The rounded card of a side panel at `rect`, lighter under the pointer.
+/// The shortcuts «Atajos de teclado» lists, by group (owner request).
+fn shortcut_groups() -> Vec<crate::help::Group> {
+    vec![
+        (
+            "help.group_general",
+            vec![
+                ("editor.undo", UNDO),
+                ("editor.redo", REDO),
+                ("bottom.present", PRESENT),
+                ("view.panels", PANELS),
+                ("help.shortcuts", HELP_KEYS),
+            ],
+        ),
+        (
+            "help.group_edit",
+            vec![
+                ("editor.select_all", SELECT_ALL),
+                ("editor.cut", CUT),
+                ("editor.copy", COPY),
+                ("editor.paste", PASTE),
+                ("editor.duplicate", DUPLICATE),
+                ("table.copy_style", COPY_STYLE),
+                ("table.paste_style", PASTE_STYLE),
+                ("editor.group", GROUP),
+                ("editor.ungroup", UNGROUP),
+                ("editor.flip_horizontal", FLIP_H),
+                ("editor.flip_vertical", FLIP_V),
+            ],
+        ),
+        (
+            "help.group_arrange",
+            vec![
+                ("arrange.align_left", ALIGN_LEFT),
+                ("arrange.align_center", ALIGN_CENTER),
+                ("arrange.align_right", ALIGN_RIGHT),
+                ("arrange.align_top", ALIGN_TOP),
+                ("arrange.align_middle", ALIGN_MIDDLE),
+                ("arrange.align_bottom", ALIGN_BOTTOM),
+                ("arrange.forward", FORWARD),
+                ("arrange.backward", BACKWARD),
+                ("arrange.front", FRONT),
+                ("arrange.back", BACK),
+            ],
+        ),
+        (
+            "help.group_view",
+            vec![
+                ("zoom.in", ZOOM_IN),
+                ("zoom.out", ZOOM_OUT),
+                ("zoom.fit", ZOOM_FIT),
+                ("zoom.fit_width", ZOOM_WIDTH),
+                ("view.rulers", RULERS),
+                ("view.guides", GUIDES),
+                ("view.magnet", MAGNET),
+            ],
+        ),
+    ]
+}
+
+/// A handle on the edge of a side panel (owner request): a small tab
+/// centred on `x`, `y`, over the scroll bar, with an arrow pointing `left`
+/// or right.
+struct Handle {
+    id: &'static str,
+    x: f32,
+    y: f32,
+    left: bool,
+    hint: &'static str,
+}
+
+/// Draws `handle`; whether it was clicked.
+fn collapse_handle(ctx: &egui::Context, theme: &Theme, texts: &Texts, handle: Handle) -> bool {
+    let size = Vec2::new(22.0, 56.0);
+    let at = Pos2::new(handle.x - size.x / 2.0, handle.y - size.y / 2.0);
+    egui::Area::new(egui::Id::new(handle.id))
+        .order(egui::Order::Foreground)
+        .fixed_pos(at)
+        .show(ctx, |ui| {
+            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+            let fill = if response.hovered() {
+                theme.c("surface.sunken")
+            } else {
+                theme.c("surface")
+            };
+            ui.painter().rect(
+                rect,
+                egui::CornerRadius::same(11),
+                fill,
+                Stroke::new(1.0, theme.c("border")),
+                egui::StrokeKind::Inside,
+            );
+            let icon = if handle.left {
+                Icon::CaretLeft
+            } else {
+                Icon::CaretRight
+            };
+            let image = icons::image(ui.ctx(), icon, Weight::Regular, 14.0, theme.c("text"));
+            image.paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(14.0)));
+            if response.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            response.on_hover_text(plain(texts, handle.hint)).clicked()
+        })
+        .inner
+}
+
 /// How many font pairing cards come in at a time as the list scrolls.
 const PAIRINGS_PAGE: usize = 12;
 
@@ -15188,6 +15541,16 @@ fn effect_fields(
         ShapeEffect::Sparkle(_) | ShapeEffect::LensFlare(_) => {
             (Some("effect.rays"), "effect.ray_width", "effect.halo")
         }
+        ShapeEffect::Moon(_) => (Some("effect.craters"), "effect.phase", "effect.color"),
+        ShapeEffect::Spotlight(_) => (None, "effect.opening", "effect.color"),
+        ShapeEffect::Glow(_) => (None, "effect.softness", "effect.color"),
+        ShapeEffect::Stars(_) | ShapeEffect::Stardust(_) => {
+            (Some("effect.count"), "effect.size", "effect.color")
+        }
+        ShapeEffect::Comet(_) => (None, "effect.tail", "effect.color"),
+        ShapeEffect::Aurora(_) => (Some("effect.folds"), "effect.height", "effect.top_color"),
+        ShapeEffect::LightLeak(_) => (Some("effect.count"), "effect.size", "effect.color"),
+        ShapeEffect::Ring(_) => (None, "effect.thickness", "effect.color"),
     };
     let percent = crate::slider::percent(texts);
     if let Some(rays) = rays {
@@ -23052,6 +23415,237 @@ pub(crate) mod tests {
         assert_eq!(editor.bulk.get_mut().row, 1, "the next row");
         assert_eq!(placements(&mut engine, &[node]), before, "nothing moved");
         assert_eq!(editor.selected.single(), Some((page, node)));
+    }
+
+    // Owner request: the side panel keeps its width whatever it shows (the
+    // filters of Fotos widened it frame after frame), and the handle on its
+    // edge folds it away and brings it back.
+    #[test]
+    fn the_side_panel_keeps_its_width_and_folds() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        // The room the panel takes in the window, not only what it paints.
+        let width = |editor: &Editor| editor.side_taken.get().expect("the panel").width();
+        let before = width(&editor);
+        editor.rail.enter(elements::Category::Photos);
+        for _ in 0..6 {
+            frame(&ctx, &mut editor, &mut engine, None);
+        }
+        assert!(
+            (width(&editor) - before).abs() < 0.5,
+            "{before} then {}",
+            width(&editor)
+        );
+        let fixed = px(theme().tokens.size.panel_left);
+        // The panel and its border, one px each side.
+        assert!(
+            (width(&editor) - fixed).abs() <= 2.5,
+            "{} not {fixed}",
+            width(&editor)
+        );
+        assert!(editor.rail.open);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                toggle_side: true,
+                ..Asked::default()
+            },
+        );
+        assert!(!editor.rail.open, "folded");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                toggle_side: true,
+                ..Asked::default()
+            },
+        );
+        assert!(editor.rail.open, "back");
+    }
+
+    // Owner request: Ctrl+. folds both panels away for the canvas alone
+    // and brings them back; the Inspector folds by itself; Ctrl+2 makes the
+    // page as wide as the canvas, wider than when it fits whole.
+    #[test]
+    fn panels_fold_and_the_page_fits_the_width() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Presentation).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Period));
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert!(
+            !editor.rail.open && !editor.inspector_open,
+            "only the canvas"
+        );
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Period));
+        assert!(editor.rail.open && editor.inspector_open, "both back");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                toggle_inspector: true,
+                ..Asked::default()
+            },
+        );
+        assert!(!editor.inspector_open && editor.rail.open);
+        frame(&ctx, &mut editor, &mut engine, None);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num0));
+        frame(&ctx, &mut editor, &mut engine, None);
+        let whole = editor.zoom;
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num2));
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.view, Zoom::FitWidth);
+        assert!(editor.zoom >= whole, "{} then {}", whole, editor.zoom);
+    }
+
+    // Owner request («Ayuda»): Ctrl+/ shows the shortcuts; every one it
+    // lists is named in both languages and none is listed twice; «Acerca
+    // de» asks the shell for Ajustes on it.
+    #[test]
+    fn help_shows_the_shortcuts_and_about() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Slash));
+        assert_eq!(editor.help, Some(crate::help::Dialog::Shortcuts));
+        let mut seen = std::collections::BTreeSet::new();
+        for (title, items) in shortcut_groups() {
+            for locale in [
+                gafira_ports::i18n::Locale::Es,
+                gafira_ports::i18n::Locale::En,
+            ] {
+                let texts = Texts::new(locale);
+                assert_ne!(plain(&texts, title), title);
+                for (action, _) in &items {
+                    assert_ne!(plain(&texts, action), *action, "{action}");
+                }
+            }
+            for (_, keys) in items {
+                assert!(seen.insert(format!("{keys:?}")), "{keys:?} twice");
+            }
+        }
+        let go = ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                about: true,
+                ..Asked::default()
+            },
+        );
+        assert!(matches!(go, Go::About));
+    }
+
+    // S108-05, S108-06: «Redimensionar el diseño» puts every page, or the
+    // one in view, at the new size with its content fitted, in one undo
+    // step; undo gives the design back.
+    #[test]
+    fn s108_05_resizing_the_design_is_one_undo_step() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_pairing: Some((0, vec!["Título".to_owned(), "Cuerpo".to_owned()], None)),
+                ..Asked::default()
+            },
+        );
+        let page = engine.edit().document().expect("doc").pages()[0].id;
+        assert!(
+            engine
+                .edit()
+                .execute(Box::new(gafira_edit::DuplicatePage::new(page)))
+                .is_ok()
+        );
+        let before = engine.edit().document().expect("doc");
+        let depth = undo_depth(&mut engine);
+        let size = crate::design_sizes::page_size(1920.0, 1080.0, gafira_geom::Unit::Px);
+        let one = crate::design_resize::Resize {
+            size,
+            page: Some(page),
+            copy: false,
+        };
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                resize_design: Some(one),
+                ..Asked::default()
+            },
+        );
+        let after = engine.edit().document().expect("doc");
+        assert_eq!(after.pages()[0].size, size);
+        assert_eq!(
+            after.pages()[1].size,
+            before.pages()[1].size,
+            "the other page"
+        );
+        assert_eq!(
+            after.pages()[0].nodes.keys().collect::<Vec<_>>(),
+            before.pages()[0].nodes.keys().collect::<Vec<_>>(),
+            "the same elements"
+        );
+        assert_ne!(after.pages()[0].nodes, before.pages()[0].nodes, "fitted");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("undo");
+        assert_eq!(
+            engine.edit().document().expect("doc").pages(),
+            before.pages()
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                resize_design: Some(crate::design_resize::Resize { page: None, ..one }),
+                ..Asked::default()
+            },
+        );
+        let after = engine.edit().document().expect("doc");
+        assert!(after.pages().iter().all(|p| p.size == size), "every page");
+    }
+
+    // S108-07: «Copiar y redimensionar» leaves the design as it is and asks
+    // the shell to open a copy of it, saved with what it holds now.
+    #[test]
+    fn s108_07_copy_and_resize_hands_a_copy_to_the_shell() {
+        let mut engine = engine_over(Arc::new(gafira_format::GafRepository::default()));
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let mut editor = Editor::default();
+        let before = engine.edit().document().expect("doc");
+        let resize = crate::design_resize::Resize {
+            size: crate::design_sizes::page_size(1080.0, 1920.0, gafira_geom::Unit::Px),
+            page: None,
+            copy: true,
+        };
+        let go = ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                resize_design: Some(resize),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            engine.edit().document().expect("doc").pages(),
+            before.pages()
+        );
+        let Go::CopyResized(path, asked) = go else {
+            panic!("a copy for the shell");
+        };
+        assert_eq!(asked, resize);
+        assert!(path.exists(), "the copy is saved");
+        let _ = std::fs::remove_file(path);
     }
 
     // Owner request: every font pairing card shows its whole composition,

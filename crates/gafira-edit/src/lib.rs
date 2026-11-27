@@ -19,6 +19,7 @@ mod pages;
 mod remove_nodes;
 mod reorder;
 mod reparent;
+mod resize_pages;
 mod restore;
 mod set_property;
 mod transaction;
@@ -34,6 +35,7 @@ pub use pages::{ApplyTemplate, DuplicatePage, InsertPage, RemovePage, ReorderPag
 pub use remove_nodes::RemoveNodes;
 pub use reorder::Reorder;
 pub use reparent::Reparent;
+pub use resize_pages::ResizePages;
 pub use restore::RestoreVersion;
 pub use set_property::{Property, SetProperty};
 pub use transaction::Transaction;

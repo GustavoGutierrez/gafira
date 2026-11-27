@@ -26,6 +26,34 @@ pub enum ShapeEffect {
     /// over the box of the shape; the width sets their size and the angle
     /// turns the arrangement.
     Bokeh(Light),
+    /// «Luz de luna»: a glowing moon over the box of the shape, its craters
+    /// as many as the rays; the width is its phase (0 full, 1 a thin
+    /// crescent), the angle where its dark side lies, the halo its glow.
+    Moon(Light),
+    /// «Foco»: a stage spotlight, a cone of light from the light across the
+    /// page along the angle; the width opens the cone.
+    Spotlight(Light),
+    /// «Resplandor»: a soft round glow over the box of the shape, in the
+    /// halo colour; the width makes it softer.
+    Glow(Light),
+    /// «Estrellas»: small four-pointed stars scattered over the box of the
+    /// shape, three times as many as the rays; the width sets their size.
+    Stars(Light),
+    /// «Polvo de estrellas»: tiny specks of light, twelve times the rays,
+    /// gathered along a band through the box along the angle.
+    Stardust(Light),
+    /// «Estela de cometa»: a bright head towards the angle with a tail of
+    /// light streaming back; the width opens the tail.
+    Comet(Light),
+    /// «Aurora boreal»: waving curtains of green, blue and violet light
+    /// across the page; the width makes them taller, the angle tilts them.
+    Aurora(Light),
+    /// «Fuga de luz»: warm patches of light coming in from the edge of the
+    /// page the angle points to.
+    LightLeak(Light),
+    /// «Anillo luminoso»: a thin ring of light like an eclipse, with a
+    /// corona and a bright bead where the angle points.
+    Ring(Light),
 }
 
 /// The settings of a light (spec 065): the box of the shape gives its
@@ -97,6 +125,87 @@ impl Light {
         halo: Some(Color::Srgb(Rgba::new(1.0, 0.75, 0.4, 1.0))),
     };
 
+    /// The light «Luz de luna» is inserted with: a waxing moon, cold glow.
+    pub const MOON: Self = Self {
+        rays: 6,
+        ray_width: 0.55,
+        intensity: 0.7,
+        angle_deg: 200.0,
+        halo: Some(Color::Srgb(Rgba::new(0.55, 0.7, 1.0, 1.0))),
+    };
+
+    /// The light «Foco» is inserted with: a warm white cone downwards.
+    pub const SPOTLIGHT: Self = Self {
+        rays: 6,
+        ray_width: 0.35,
+        intensity: 0.75,
+        angle_deg: 90.0,
+        halo: Some(Color::Srgb(Rgba::new(1.0, 0.92, 0.75, 1.0))),
+    };
+
+    /// The light «Resplandor» is inserted with: a soft pink glow.
+    pub const GLOW: Self = Self {
+        rays: 6,
+        ray_width: 0.5,
+        intensity: 0.8,
+        angle_deg: 0.0,
+        halo: Some(Color::Srgb(Rgba::new(1.0, 0.45, 0.75, 1.0))),
+    };
+
+    /// The light «Estrellas» is inserted with: a sky of cold white stars.
+    pub const STARS: Self = Self {
+        rays: 10,
+        ray_width: 0.4,
+        intensity: 0.85,
+        angle_deg: 0.0,
+        halo: Some(Color::Srgb(Rgba::new(0.8, 0.88, 1.0, 1.0))),
+    };
+
+    /// The light «Polvo de estrellas» is inserted with: cold white specks.
+    pub const STARDUST: Self = Self {
+        rays: 12,
+        ray_width: 0.4,
+        intensity: 0.85,
+        angle_deg: -25.0,
+        halo: Some(Color::Srgb(Rgba::new(0.85, 0.85, 1.0, 1.0))),
+    };
+
+    /// The light «Estela de cometa» is inserted with: a blue tail.
+    pub const COMET: Self = Self {
+        rays: 6,
+        ray_width: 0.4,
+        intensity: 0.85,
+        angle_deg: -30.0,
+        halo: Some(Color::Srgb(Rgba::new(0.5, 0.75, 1.0, 1.0))),
+    };
+
+    /// The light «Aurora boreal» is inserted with: violet at the top.
+    pub const AURORA: Self = Self {
+        rays: 6,
+        ray_width: 0.5,
+        intensity: 0.75,
+        angle_deg: 0.0,
+        halo: Some(Color::Srgb(Rgba::new(0.6, 0.3, 0.9, 1.0))),
+    };
+
+    /// The light «Fuga de luz» is inserted with: warm orange from the right.
+    pub const LIGHT_LEAK: Self = Self {
+        rays: 6,
+        ray_width: 0.5,
+        intensity: 0.8,
+        angle_deg: -20.0,
+        halo: Some(Color::Srgb(Rgba::new(1.0, 0.45, 0.15, 1.0))),
+    };
+
+    /// The light «Anillo luminoso» is inserted with: a warm ring.
+    pub const RING: Self = Self {
+        rays: 6,
+        ray_width: 0.35,
+        intensity: 0.9,
+        angle_deg: -45.0,
+        halo: Some(Color::Srgb(Rgba::new(1.0, 0.85, 0.6, 1.0))),
+    };
+
     /// The light «Destello de lente» is inserted with: a warm red halo.
     pub const LENS_FLARE: Self = Self {
         rays: 6,
@@ -134,7 +243,16 @@ impl ShapeEffect {
             | Self::LensFlare(light)
             | Self::Streak(light)
             | Self::SunRays(light)
-            | Self::Bokeh(light) => light.problem(),
+            | Self::Bokeh(light)
+            | Self::Moon(light)
+            | Self::Spotlight(light)
+            | Self::Glow(light)
+            | Self::Stars(light)
+            | Self::Stardust(light)
+            | Self::Comet(light)
+            | Self::Aurora(light)
+            | Self::LightLeak(light)
+            | Self::Ring(light) => light.problem(),
         }
     }
 
@@ -147,6 +265,15 @@ impl ShapeEffect {
             Self::Streak(_) => Self::Streak(light),
             Self::SunRays(_) => Self::SunRays(light),
             Self::Bokeh(_) => Self::Bokeh(light),
+            Self::Moon(_) => Self::Moon(light),
+            Self::Spotlight(_) => Self::Spotlight(light),
+            Self::Glow(_) => Self::Glow(light),
+            Self::Stars(_) => Self::Stars(light),
+            Self::Stardust(_) => Self::Stardust(light),
+            Self::Comet(_) => Self::Comet(light),
+            Self::Aurora(_) => Self::Aurora(light),
+            Self::LightLeak(_) => Self::LightLeak(light),
+            Self::Ring(_) => Self::Ring(light),
         }
     }
 
@@ -158,7 +285,16 @@ impl ShapeEffect {
             | Self::LensFlare(light)
             | Self::Streak(light)
             | Self::SunRays(light)
-            | Self::Bokeh(light) => light,
+            | Self::Bokeh(light)
+            | Self::Moon(light)
+            | Self::Spotlight(light)
+            | Self::Glow(light)
+            | Self::Stars(light)
+            | Self::Stardust(light)
+            | Self::Comet(light)
+            | Self::Aurora(light)
+            | Self::LightLeak(light)
+            | Self::Ring(light) => light,
         }
     }
 }

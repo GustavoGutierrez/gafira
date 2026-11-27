@@ -232,11 +232,18 @@ pub(crate) enum Piece {
     QuoteCutWide,
     QuoteCutSlim,
     QuoteCutDeep,
+    /// Grunge shapes (spec 109): dry brush strokes, splatters and claw
+    /// marks, by their number.
+    Brush(u8),
+    Splatter(u8),
+    Claw(u8),
+    /// The grunge shapes the owner drew (spec 109), by their number.
+    Traced(u8),
 }
 
 impl Piece {
     /// Every shape, in the order of the panel.
-    pub(crate) const ALL: [Self; 215] = [
+    pub(crate) const ALL: [Self; 265] = [
         Self::LineCircles,
         Self::LineDiamonds,
         Self::LineDiamondsFilled,
@@ -452,6 +459,56 @@ impl Piece {
         Self::QuoteCutWide,
         Self::QuoteCutSlim,
         Self::QuoteCutDeep,
+        Self::Traced(0),
+        Self::Traced(1),
+        Self::Brush(0),
+        Self::Brush(1),
+        Self::Brush(2),
+        Self::Brush(3),
+        Self::Brush(4),
+        Self::Brush(5),
+        Self::Brush(6),
+        Self::Brush(7),
+        Self::Brush(8),
+        Self::Brush(9),
+        Self::Brush(10),
+        Self::Brush(11),
+        Self::Brush(12),
+        Self::Brush(13),
+        Self::Brush(14),
+        Self::Brush(15),
+        Self::Brush(16),
+        Self::Brush(17),
+        Self::Brush(18),
+        Self::Brush(19),
+        Self::Brush(20),
+        Self::Brush(21),
+        Self::Brush(22),
+        Self::Brush(23),
+        Self::Traced(2),
+        Self::Traced(3),
+        Self::Traced(7),
+        Self::Traced(8),
+        Self::Traced(9),
+        Self::Splatter(0),
+        Self::Splatter(1),
+        Self::Splatter(2),
+        Self::Splatter(3),
+        Self::Splatter(4),
+        Self::Splatter(5),
+        Self::Splatter(6),
+        Self::Splatter(7),
+        Self::Traced(4),
+        Self::Traced(5),
+        Self::Traced(6),
+        Self::Claw(0),
+        Self::Claw(1),
+        Self::Claw(2),
+        Self::Claw(3),
+        Self::Claw(4),
+        Self::Claw(5),
+        Self::Claw(6),
+        Self::Claw(7),
     ];
 
     /// Its geometry in the document: a rectangle, an ellipse or a path.
@@ -725,6 +782,10 @@ impl Piece {
             Self::QuoteCutWide => "pieces.quote_cut_wide",
             Self::QuoteCutSlim => "pieces.quote_cut_slim",
             Self::QuoteCutDeep => "pieces.quote_cut_deep",
+            Self::Brush(i) => BRUSH_KEYS[usize::from(i) % BRUSH_KEYS.len()],
+            Self::Splatter(i) => SPLATTER_KEYS[usize::from(i) % SPLATTER_KEYS.len()],
+            Self::Claw(i) => CLAW_KEYS[usize::from(i) % CLAW_KEYS.len()],
+            Self::Traced(i) => TRACED_KEYS[usize::from(i) % TRACED_KEYS.len()],
         }
     }
 }
@@ -1032,6 +1093,131 @@ pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[
             Piece::QuoteCutDeep,
         ],
     ),
+    (
+        "pieces.brushes",
+        &[
+            Piece::Traced(0),
+            Piece::Traced(1),
+            Piece::Brush(0),
+            Piece::Brush(1),
+            Piece::Brush(2),
+            Piece::Brush(3),
+            Piece::Brush(4),
+            Piece::Brush(5),
+            Piece::Brush(6),
+            Piece::Brush(7),
+            Piece::Brush(8),
+            Piece::Brush(9),
+            Piece::Brush(10),
+            Piece::Brush(11),
+            Piece::Brush(12),
+            Piece::Brush(13),
+            Piece::Brush(14),
+            Piece::Brush(15),
+            Piece::Brush(16),
+            Piece::Brush(17),
+            Piece::Brush(18),
+            Piece::Brush(19),
+            Piece::Brush(20),
+            Piece::Brush(21),
+            Piece::Brush(22),
+            Piece::Brush(23),
+        ],
+    ),
+    (
+        "pieces.splatters",
+        &[
+            Piece::Traced(2),
+            Piece::Traced(3),
+            Piece::Traced(7),
+            Piece::Traced(8),
+            Piece::Traced(9),
+            Piece::Splatter(0),
+            Piece::Splatter(1),
+            Piece::Splatter(2),
+            Piece::Splatter(3),
+            Piece::Splatter(4),
+            Piece::Splatter(5),
+            Piece::Splatter(6),
+            Piece::Splatter(7),
+        ],
+    ),
+    (
+        "pieces.claws",
+        &[
+            Piece::Traced(4),
+            Piece::Traced(5),
+            Piece::Traced(6),
+            Piece::Claw(0),
+            Piece::Claw(1),
+            Piece::Claw(2),
+            Piece::Claw(3),
+            Piece::Claw(4),
+            Piece::Claw(5),
+            Piece::Claw(6),
+            Piece::Claw(7),
+        ],
+    ),
+];
+
+/// The names of the dry brush strokes, splatters and claw marks.
+const BRUSH_KEYS: [&str; crate::brushes::STROKES] = [
+    "pieces.brush_1",
+    "pieces.brush_2",
+    "pieces.brush_3",
+    "pieces.brush_4",
+    "pieces.brush_5",
+    "pieces.brush_6",
+    "pieces.brush_7",
+    "pieces.brush_8",
+    "pieces.brush_9",
+    "pieces.brush_10",
+    "pieces.brush_11",
+    "pieces.brush_12",
+    "pieces.brush_13",
+    "pieces.brush_14",
+    "pieces.brush_15",
+    "pieces.brush_16",
+    "pieces.brush_17",
+    "pieces.brush_18",
+    "pieces.brush_19",
+    "pieces.brush_20",
+    "pieces.brush_21",
+    "pieces.brush_22",
+    "pieces.brush_23",
+    "pieces.brush_24",
+];
+const SPLATTER_KEYS: [&str; crate::brushes::SPLATTERS] = [
+    "pieces.splatter_1",
+    "pieces.splatter_2",
+    "pieces.splatter_3",
+    "pieces.splatter_4",
+    "pieces.splatter_5",
+    "pieces.splatter_6",
+    "pieces.splatter_7",
+    "pieces.splatter_8",
+];
+const TRACED_KEYS: [&str; crate::brushes::TRACED] = [
+    "pieces.traced_brush_curved",
+    "pieces.traced_brush_wide",
+    "pieces.traced_splatter_heavy",
+    "pieces.traced_splatter",
+    "pieces.traced_claws",
+    "pieces.traced_claws_with_claws",
+    "pieces.traced_claws_thin",
+    "pieces.traced_splatter_burst",
+    "pieces.traced_splatter_round",
+    "pieces.traced_splatter_drips",
+];
+const CLAW_KEYS: [&str; crate::brushes::CLAWS] = [
+    "pieces.claw_1",
+    "pieces.claw_2",
+    "pieces.claw_3",
+    "pieces.claw_4",
+    "pieces.claw_5",
+    "pieces.claw_6",
+    "pieces.claw_7",
+    "pieces.claw_8",
 ];
 
 /// How many shapes a section shows in its row (spec 096).
@@ -1771,6 +1957,10 @@ pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
         Piece::QuoteCutWide => pair(|x| cut_mark(x, 0.54, 0.42, true)),
         Piece::QuoteCutSlim => pair(|x| cut_mark(x, 0.32, 0.5, false)),
         Piece::QuoteCutDeep => pair(|x| cut_mark(x, 0.42, 0.62, true)),
+        Piece::Brush(i) => crate::brushes::stroke_path(usize::from(i)),
+        Piece::Splatter(i) => crate::brushes::splatter_path(usize::from(i)),
+        Piece::Claw(i) => crate::brushes::claw_path(usize::from(i)),
+        Piece::Traced(i) => crate::brushes::traced_path(usize::from(i)),
         Piece::LabelClassic => label(1.6, 1.0),
         Piece::LabelTall => label(1.0, 1.4),
         Piece::LabelScalloped => {
@@ -2776,7 +2966,13 @@ mod tests {
             for (got, want) in [(b.x0, 0.0), (b.y0, 0.0), (b.x1, 1.0), (b.y1, 1.0)] {
                 assert!((got - want).abs() < 1e-9, "{piece:?}: {b:?}");
             }
-            assert!(shape.area().abs() > 0.1, "{piece:?} has area");
+            // A spray of drops (spec 109) covers little of its box.
+            let least = if matches!(piece, Piece::Splatter(_) | Piece::Traced(_)) {
+                0.02
+            } else {
+                0.1
+            };
+            assert!(shape.area().abs() > least, "{piece:?} has area");
             assert!((0.25..=4.0).contains(&piece.aspect()), "{piece:?}");
         }
         let titles: Vec<&str> = PIECE_SECTIONS.iter().map(|(title, _)| *title).collect();

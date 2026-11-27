@@ -25,7 +25,8 @@ pub use blend::{blend_f32, blend_u8};
 pub use dhash::{SIMILAR_DISTANCE, dhash, hamming_distance, is_similar};
 pub use error::{BufferError, EffectError};
 pub use light::{
-    LightSpot, bokeh, lens_flare, light_picture, spans_page, sparkle, streak, sun_rays,
+    LightSpot, aurora, bokeh, comet, glow, lens_flare, light_leak, light_picture, moon, ring,
+    spans_page, sparkle, spotlight, stardust, stars, streak, sun_rays,
 };
 pub use mip::{build_mips, mip_level_count, mip_size};
 pub use palette::{PALETTE_SIZE, PaletteEntry, dominant_colors};
