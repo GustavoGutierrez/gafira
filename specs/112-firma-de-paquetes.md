@@ -1,6 +1,6 @@
 # 112 — Firma de paquetes `.gafpack`
 
-> **Estado:** in-progress — 2026-11-28 — firma Ed25519, verificación al inspeccionar e instalar, autor verificado en la ventana del paquete y en Ajustes → Paquetes; `gafpack.py` genera claves y firma.
+> **Estado:** in-progress — 2026-11-28 — implementada y con todas las puertas en verde (3872 tests); pendiente solo la comprobación visual del titular en la ventana del paquete y en Ajustes → Paquetes.
 
 ## Problema y resultado esperado
 
@@ -67,12 +67,12 @@ publisher:<publisher>
 
 ## Criterios de aceptación
 
-- [ ] Las reglas FIR-01 a FIR-05 están en una función pura de `gafira-ui` con tests.
-- [ ] Un vector de prueba firmado con Python se verifica en Rust (mismo mensaje canónico).
-- [ ] `apps/gafira`: un paquete firmado se inspecciona e instala como verificado; uno alterado tras firmar se rechaza; uno sin firma se instala como antes.
+- [x] Las reglas FIR-01 a FIR-05 están en una función pura de `gafira-ui` con tests.
+- [x] Un vector de prueba firmado con Python se verifica en Rust (mismo mensaje canónico).
+- [x] `apps/gafira`: un paquete firmado se inspecciona e instala como verificado; uno alterado tras firmar se rechaza; uno sin firma se instala como antes.
 - [ ] La ventana del paquete y Ajustes → Paquetes muestran el autor verificado.
-- [ ] `gafpack.py sign` + `check` sobre un paquete real lo dan por válido y verificado.
-- [ ] Puertas de `AGENTS.md` en verde.
+- [x] `gafpack.py sign` + `check` sobre un paquete real lo dan por válido y verificado.
+- [x] Puertas de `AGENTS.md` en verde.
 
 ## Casos TDD (fallan primero)
 
@@ -95,4 +95,9 @@ Comandos de las puertas y su resultado; salida de `gafpack.py check` de un paque
 
 ## Evidencia
 
-Pendiente.
+- `cargo test -p gafira-ui --locked --lib pack_signature`: 8 tests (FIR-01 a FIR-07 y las claves incluidas); en rojo antes de implementar (7 fallaban), en verde después.
+- `cargo test -p gafira --locked packs::`: `fir_06_a_signed_package_installs_verified` y `fir_03_a_changed_signed_package_is_refused` junto con los de la 097.
+- Cruce Python → Rust: un paquete real (`Clip-art-navideno-Free.gafpack`) firmado con `gafpack.py sign` se inspecciona en Rust como `Verified { publisher: "Gafira", key_id: "gafira-2026" }`; alterado tras firmar, `packs.signature_mismatch`; firmado con otra clave, `Unknown`.
+- `gafpack.py check` de los 7 paquetes free firmados: `Valid.` y `Signature: verified: signed by Gafira (key gafira-2026)`.
+- Puertas: `cargo fmt --check` OK; `cargo clippy --workspace --all-targets --locked -- -D warnings` OK; `cargo test --workspace --locked` 3872 passed, 0 failed; `cargo deny check` advisories, bans, licenses y sources OK; `python3 tools/sync_agents.py --check` OK.
+- Pendiente: comprobación visual del titular (criterio de la UI).
