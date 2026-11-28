@@ -27,6 +27,9 @@ import branchesCover from '../assets/packs/full-branches-bouquets-arrangements.w
 import fruits1Cover from '../assets/packs/full-botanical-fruits-part-1.webp';
 import fruits2Cover from '../assets/packs/full-botanical-fruits-part-2.webp';
 import fruitsBundleCover from '../assets/packs/full-botanical-fruits-complete.webp';
+import food1Cover from '../assets/packs/full-world-food-part-1.webp';
+import food2Cover from '../assets/packs/full-world-food-part-2.webp';
+import foodBundleCover from '../assets/packs/full-world-food-complete.webp';
 
 interface Props {
   locale: Locale;
@@ -233,6 +236,64 @@ const packs: FullPack[] = [
       'racimos_02_uvas-negras',
       'bodegones-tropicales_01_bodegon-de-mangos-y-bananos',
       'bodegones-botanicos_01_bodegon-de-citricos',
+    ],
+  },
+  {
+    id: 'food-1',
+    url: 'https://gusdev.gumroad.com/l/world-food-part-1-full',
+    price: 5,
+    count: 128,
+    added: 112,
+    tint: 'var(--coral)',
+    cover: food1Cover,
+    samples: [
+      'coleccion-gastronomica_16',
+      'comida-asiatica_06',
+      'comida-rapida_09',
+      'comida-estadounidense_01',
+      'delicias-marinas_12',
+      'comida-asiatica_09',
+      'comida-rapida_15',
+      'delicias-marinas_01',
+    ],
+  },
+  {
+    id: 'food-2',
+    url: 'https://gusdev.gumroad.com/l/world-food-part-2-full',
+    price: 5,
+    count: 118,
+    added: 104,
+    tint: 'var(--mint)',
+    cover: food2Cover,
+    samples: [
+      'pizzas_01',
+      'pizzas_15',
+      'desayunos-ilustrados_06',
+      'mariscos-caribenos_06',
+      'lechona-pollo-papas_01',
+      'platos-norteamericanos_01',
+      'sabores-europeos_15',
+      'vegetarianos_05',
+    ],
+  },
+  {
+    id: 'food-bundle',
+    url: 'https://gusdev.gumroad.com/l/world-food-complete',
+    price: 9,
+    fixed: true,
+    count: 246,
+    added: 216,
+    tint: 'var(--coral)',
+    cover: foodBundleCover,
+    samples: [
+      'coleccion-gastronomica_16',
+      'pizzas_01',
+      'comida-asiatica_06',
+      'lechona-pollo-papas_01',
+      'delicias-marinas_12',
+      'sabores-europeos_15',
+      'comida-rapida_09',
+      'desayunos-ilustrados_06',
     ],
   },
 ];
