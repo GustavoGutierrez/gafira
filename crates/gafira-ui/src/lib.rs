@@ -60,6 +60,7 @@ mod magnet;
 mod model3d;
 mod pack_dialog;
 mod pack_panel;
+mod pack_signature;
 mod packs;
 mod page_grid;
 mod paint;
@@ -106,12 +107,17 @@ pub use brand::{
 };
 pub use export::{ExportPresets, PresetValue};
 pub use library::{LibraryEntry, LibraryStore};
+pub use pack_signature::{
+    PackSigner, SIGNATURE_PATH as PACK_SIGNATURE_PATH, TRUSTED_KEYS as PACK_TRUSTED_KEYS,
+    TrustedKey as PackTrustedKey, signed_message as pack_signed_message,
+    signed_path as pack_signed_path, signer as pack_signer,
+};
 pub use packs::{
     ContentFit as PackContentFit, InstalledPack, PACK_EXTENSION, PACK_THUMBNAIL, PackInspection,
     PackManifest, PackProblem, PackProgress, PackStore, PackUse, Version as PackVersion,
     asset_problems as pack_asset_problems, file_problems as pack_file_problems,
     manifest_problems as pack_manifest_problems, safe_path as pack_safe_path,
-    thumbnail_problems as pack_thumbnail_problems,
+    sha256 as pack_sha256, thumbnail_problems as pack_thumbnail_problems,
 };
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, ShowInFolder, UiConfig, run};

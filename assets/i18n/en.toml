@@ -2067,6 +2067,7 @@ failed = "We couldn't open this template. Try again."
 [packs]
 all_packs = "All packages"
 author = "{name} · declared author, not verified"
+author_verified = "{name} · verified author"
 bad_asset_format = "Asset format not supported (PNG, WebP or SVG)"
 bad_asset_id = "Asset without a valid identifier"
 bad_asset_type = "Unknown asset type"
@@ -2181,6 +2182,10 @@ bad_template = "The template is not a template .gaf file"
 checking = "Checking {file}…"
 installing = "Installing {file}…"
 reading = "Reading the package…"
+bad_signature = "The package signature is not valid. Do not install it."
+signature_author = "The package author is not who signed it"
+signature_mismatch = "The package changed after it was signed"
+verified = "Signed by {name}. Gafira checked the signature and that the contents have not changed."
 
 [eyedropper]
 name = "Pick a colour from the screen"

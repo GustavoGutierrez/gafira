@@ -18,8 +18,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use gafira_ui::{
-    InstalledPack, PackInspection, PackManifest, PackProblem, PackProgress, PackStore as _,
-    PackVersion,
+    InstalledPack, PackInspection, PackManifest, PackProblem, PackProgress, PackSigner,
+    PackStore as _, PackVersion,
 };
 
 /// The most entries a package may have.
@@ -42,6 +42,8 @@ const MOST_WORKERS: usize = 4;
 pub(crate) struct Packs {
     dir: PathBuf,
     app: PackVersion,
+    /// The publisher keys signatures are checked against (spec 112).
+    trusted: &'static [gafira_ui::PackTrustedKey],
 }
 
 /// A reader of a package file.
@@ -160,14 +162,47 @@ fn template_ok(bytes: &[u8]) -> bool {
     )
 }
 
-/// The manifest and thumbnail of the package at `path`, and every problem
-/// of it: its index, its manifest, then each asset's files, checked by a
-/// few threads at once while `progress` hears how far they are.
+/// Who signed the package (spec 112): without `META-INF/signature.json`
+/// nothing more is read; with it, every file it covers is hashed, one at a
+/// time, and checked against it.
+fn signer_of(
+    archive: &mut Archive,
+    index: &Index,
+    author: &str,
+    trusted: &[gafira_ui::PackTrustedKey],
+) -> Result<PackSigner, Vec<PackProblem>> {
+    let Some(&entry) = index.get(gafira_ui::PACK_SIGNATURE_PATH) else {
+        return Ok(PackSigner::Unsigned);
+    };
+    if entry.size > MOST_MANIFEST {
+        return Err(problem(
+            "packs.bad_signature",
+            gafira_ui::PACK_SIGNATURE_PATH,
+        ));
+    }
+    let signature = read_entry(archive, entry)
+        .ok_or_else(|| problem("packs.bad_signature", gafira_ui::PACK_SIGNATURE_PATH))?;
+    let mut files = BTreeMap::new();
+    for (name, &entry) in index {
+        if gafira_ui::pack_signed_path(name) {
+            let bytes = read_entry(archive, entry)
+                .ok_or_else(|| problem("packs.unreadable", name.clone()))?;
+            files.insert(name.clone(), gafira_ui::pack_sha256(&bytes));
+        }
+    }
+    gafira_ui::pack_signer(Some(&signature), &files, author, trusted).map_err(|p| vec![p])
+}
+
+/// The manifest, thumbnail and signer of the package at `path`, and every
+/// problem of it: its index, its manifest, then each asset's files,
+/// checked by a few threads at once while `progress` hears how far they
+/// are, then its signature.
 fn check(
     path: &Path,
     app: &PackVersion,
+    trusted: &[gafira_ui::PackTrustedKey],
     progress: &dyn Fn(PackProgress),
-) -> Result<(PackManifest, Vec<u8>), Vec<PackProblem>> {
+) -> Result<(PackManifest, Vec<u8>, PackSigner), Vec<PackProblem>> {
     let mut archive = open(path)?;
     let index = index(&mut archive)?;
     let Some(&entry) = index.get("manifest.json") else {
@@ -240,10 +275,31 @@ fn check(
         }
     });
     problems.extend(found.into_inner().unwrap_or_default());
-    if problems.is_empty() {
-        Ok((manifest, thumbnail))
-    } else {
-        Err(problems)
+    if !problems.is_empty() {
+        return Err(problems);
+    }
+    let signer = signer_of(&mut archive, &index, &manifest.author.name, trusted)?;
+    Ok((manifest, thumbnail, signer))
+}
+
+/// How `install.json` keeps a verified signer.
+fn signer_note(signer: &PackSigner) -> serde_json::Value {
+    match signer {
+        PackSigner::Verified { publisher, key_id } => {
+            serde_json::json!({ "publisher": publisher, "keyId": key_id })
+        }
+        _ => serde_json::Value::Null,
+    }
+}
+
+/// The verified signer kept in `install.json`, if any.
+fn signer_from(note: &serde_json::Value) -> PackSigner {
+    match (note["publisher"].as_str(), note["keyId"].as_str()) {
+        (Some(publisher), Some(key_id)) => PackSigner::Verified {
+            publisher: publisher.to_owned(),
+            key_id: key_id.to_owned(),
+        },
+        _ => PackSigner::Unsigned,
     }
 }
 
@@ -279,7 +335,17 @@ impl Packs {
         let app = PackVersion::parse(app)
             .or_else(|| PackVersion::parse("0.0.0"))
             .expect("a version");
-        Self { dir, app }
+        Self {
+            dir,
+            app,
+            trusted: gafira_ui::PACK_TRUSTED_KEYS,
+        }
+    }
+
+    /// The same store, checking signatures against `trusted` instead.
+    #[cfg(test)]
+    fn trusting(self, trusted: &'static [gafira_ui::PackTrustedKey]) -> Self {
+        Self { trusted, ..self }
     }
 
     /// The installed version of `id`, if any.
@@ -294,16 +360,16 @@ impl Packs {
     fn read_installed(dir: &Path) -> Option<InstalledPack> {
         let bytes = std::fs::read(dir.join("manifest.json")).ok()?;
         let manifest: PackManifest = serde_json::from_slice(&bytes).ok()?;
-        let installed_at = std::fs::read(dir.join(INSTALL_FILE))
+        let note = std::fs::read(dir.join(INSTALL_FILE))
             .ok()
             .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-            .and_then(|v| v["installedAt"].as_u64())
-            .unwrap_or(0);
+            .unwrap_or_default();
         Some(InstalledPack {
             manifest,
             dir: dir.to_path_buf(),
-            installed_at,
+            installed_at: note["installedAt"].as_u64().unwrap_or(0),
             size: size_of(dir),
+            signer: signer_from(&note["signer"]),
         })
     }
 
@@ -351,7 +417,7 @@ impl gafira_ui::PackStore for Packs {
         progress: &dyn Fn(PackProgress),
     ) -> Result<PackInspection, Vec<PackProblem>> {
         let print = fingerprint(path);
-        let (manifest, thumbnail) = check(path, &self.app, progress)?;
+        let (manifest, thumbnail, signer) = check(path, &self.app, self.trusted, progress)?;
         let installed = self.version_of(&manifest.id);
         Ok(PackInspection {
             manifest,
@@ -359,6 +425,7 @@ impl gafira_ui::PackStore for Packs {
             size: print.0,
             installed,
             fingerprint: print,
+            signer,
         })
     }
 
@@ -370,9 +437,12 @@ impl gafira_ui::PackStore for Packs {
     ) -> Result<InstalledPack, Vec<PackProblem>> {
         // The file checked a moment ago and unchanged since is not checked
         // twice; any other is checked first.
-        let manifest = match checked.filter(|c| c.fingerprint == fingerprint(path)) {
-            Some(c) => c.manifest.clone(),
-            None => check(path, &self.app, progress)?.0,
+        let (manifest, signer) = match checked.filter(|c| c.fingerprint == fingerprint(path)) {
+            Some(c) => (c.manifest.clone(), c.signer.clone()),
+            None => {
+                let (manifest, _, signer) = check(path, &self.app, self.trusted, progress)?;
+                (manifest, signer)
+            }
         };
         std::fs::create_dir_all(&self.dir).map_err(disk)?;
         let staging = self.dir.join(format!(".staging-{}", std::process::id()));
@@ -382,7 +452,11 @@ impl gafira_ui::PackStore for Packs {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let note = serde_json::json!({ "installedAt": now(), "source": source });
+            let note = serde_json::json!({
+                "installedAt": now(),
+                "source": source,
+                "signer": signer_note(&signer),
+            });
             std::fs::write(staging.join(INSTALL_FILE), note.to_string()).map_err(disk)
         });
         if let Err(problems) = written {
@@ -524,6 +598,121 @@ mod tests {
             add(name, bytes);
         }
         zip.finish().expect("finishes");
+    }
+
+    const TEST_KEYS: &[gafira_ui::PackTrustedKey] = &[gafira_ui::PackTrustedKey {
+        id: "test-key",
+        publisher: "Gafira Studio",
+        public: "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+    }];
+
+    /// `from` copied to `to` with a signature of every file, by the test
+    /// key, as `publisher`; `change` then replaces one file's bytes.
+    fn signed_copy(from: &Path, to: &Path, publisher: &str, change: Option<(&str, &[u8])>) {
+        use ed25519_dalek::Signer as _;
+        let mut archive = open(from).expect("opens");
+        let mut files = BTreeMap::new();
+        let mut entries = Vec::new();
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).expect("entry");
+            let name = file.name().expect("name").into_owned();
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).expect("reads");
+            files.insert(name.clone(), gafira_ui::pack_sha256(&bytes));
+            entries.push((name, bytes));
+        }
+        let seed: [u8; 32] = std::array::from_fn(|i| i as u8);
+        let key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let message = gafira_ui::pack_signed_message("test-key", publisher, &files);
+        let signature: String = key
+            .sign(&message)
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let note = serde_json::json!({
+            "format": "gafpack-signature", "version": 1, "algorithm": "ed25519",
+            "keyId": "test-key", "publisher": publisher, "files": files, "signature": signature,
+        });
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(to).expect("creates"));
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, bytes) in entries {
+            let bytes = match change {
+                Some((changed, new)) if changed == name => new.to_vec(),
+                _ => bytes,
+            };
+            zip.start_file(name, options).expect("entry");
+            zip.write_all(&bytes).expect("writes");
+        }
+        zip.start_file(gafira_ui::PACK_SIGNATURE_PATH, options)
+            .expect("entry");
+        zip.write_all(note.to_string().as_bytes()).expect("writes");
+        zip.finish().expect("finishes");
+    }
+
+    // FIR-06: a package signed by a trusted key is verified when it is
+    // inspected and installed, and stays verified in the installed list.
+    #[test]
+    fn fir_06_a_signed_package_installs_verified() {
+        let dir = temp("signed");
+        let store = Packs::new(dir.join("packages"), "0.1.0-beta.4").trusting(TEST_KEYS);
+        let plain = dir.join("plain.gafpack");
+        package(&plain, &manifest("1.0.0"), &[]);
+        let file = dir.join("signed.gafpack");
+        signed_copy(&plain, &file, "Gafira Studio", None);
+        let seen = store.inspect(&file, &|_| {}).expect("valid");
+        assert_eq!(seen.signer.verified(), Some("Gafira Studio"));
+        let pack = store
+            .install(&file, Some(&seen), &|_| {})
+            .expect("installs");
+        assert_eq!(pack.signer.verified(), Some("Gafira Studio"));
+        assert_eq!(
+            store.installed()[0].signer.verified(),
+            Some("Gafira Studio")
+        );
+        // The same package against Gafira's own keys is signed by a key it
+        // does not know: it installs, not verified (FIR-05).
+        let shipped = Packs::new(dir.join("other"), "0.1.0-beta.4");
+        assert_eq!(
+            shipped.inspect(&file, &|_| {}).expect("valid").signer,
+            PackSigner::Unknown {
+                key_id: "test-key".to_owned()
+            }
+        );
+        // FIR-01: without a signature nothing changes.
+        assert_eq!(
+            store.inspect(&plain, &|_| {}).expect("valid").signer,
+            PackSigner::Unsigned
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // FIR-03, FIR-04: a file changed after signing, or an author other
+    // than the signer, refuses the package and installs nothing.
+    #[test]
+    fn fir_03_a_changed_signed_package_is_refused() {
+        let dir = temp("tampered");
+        let store = Packs::new(dir.join("packages"), "0.1.0-beta.4").trusting(TEST_KEYS);
+        let plain = dir.join("plain.gafpack");
+        package(&plain, &manifest("1.0.0"), &[]);
+        let changed = dir.join("changed.gafpack");
+        let svg: &[u8] =
+            br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><circle r="2"/></svg>"#;
+        signed_copy(
+            &plain,
+            &changed,
+            "Gafira Studio",
+            Some(("assets/gift.svg", svg)),
+        );
+        let problems = store.inspect(&changed, &|_| {}).expect_err("refused");
+        assert_eq!(problems[0].key, "packs.signature_mismatch");
+        assert!(store.install(&changed, None, &|_| {}).is_err());
+        assert!(store.installed().is_empty());
+        let other = dir.join("other.gafpack");
+        signed_copy(&plain, &other, "Other Studio", None);
+        let problems = store.inspect(&other, &|_| {}).expect_err("refused");
+        assert_eq!(problems[0].key, "packs.bad_signature");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // S97-08: a valid package is inspected without installing it, then

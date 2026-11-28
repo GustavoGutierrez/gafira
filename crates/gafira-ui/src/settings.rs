@@ -670,9 +670,13 @@ fn packages(
                         .color(theme.c("text.secondary")),
                     );
                     ui.label(
-                        RichText::new(t("packs.author").replace("{name}", &m.author.name))
-                            .font(theme.font("caption"))
-                            .color(theme.c("text.secondary")),
+                        RichText::new(crate::pack_dialog::author_line(
+                            texts,
+                            &m.author.name,
+                            &pack.signer,
+                        ))
+                        .font(theme.font("caption"))
+                        .color(theme.c("text.secondary")),
                     );
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {

@@ -2067,6 +2067,7 @@ failed = "No pudimos abrir esta plantilla. Inténtalo de nuevo."
 [packs]
 all_packs = "Todos los paquetes"
 author = "{name} · autor declarado, no verificado"
+author_verified = "{name} · autor verificado"
 bad_asset_format = "Formato de recurso no admitido (PNG, WebP o SVG)"
 bad_asset_id = "Recurso sin identificador válido"
 bad_asset_type = "Tipo de recurso desconocido"
@@ -2181,6 +2182,10 @@ bad_template = "La plantilla no es un archivo .gaf de plantilla"
 checking = "Comprobando {file}…"
 installing = "Instalando {file}…"
 reading = "Leyendo el paquete…"
+bad_signature = "La firma del paquete no es válida. No lo instales."
+signature_author = "El autor del paquete no es quien lo firmó"
+signature_mismatch = "El paquete cambió después de firmarse"
+verified = "Firmado por {name}. Gafira comprobó la firma y que el contenido no cambió."
 
 [eyedropper]
 name = "Tomar un color de la pantalla"

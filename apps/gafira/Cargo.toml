@@ -35,6 +35,8 @@ zip.workspace = true
 [dev-dependencies]
 # Spec 097: the test packages carry a WebP thumbnail and a PNG.
 image.workspace = true
+# Spec 112: the test packages are signed with a test key.
+ed25519-dalek.workspace = true
 # Spec 091: `examples/make_templates.rs` builds and draws the templates.
 gafira-doc.workspace = true
 gafira-geom.workspace = true

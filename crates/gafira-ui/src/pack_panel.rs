@@ -502,6 +502,7 @@ mod tests {
             dir: PathBuf::from("/packs").join(id),
             installed_at: 0,
             size: 0,
+            signer: crate::PackSigner::Unsigned,
         }
     }
 
