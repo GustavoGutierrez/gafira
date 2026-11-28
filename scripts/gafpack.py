@@ -15,6 +15,18 @@ Usage:
 
     python3 scripts/gafpack.py check PACKAGE.gafpack
 
+Signatures (spec 112): a package signed with a publisher key Gafira trusts
+shows as "verified author" in Gafira. The private key never goes in a
+repository; keep a backup of it.
+
+    python3 scripts/gafpack.py keygen KEYS_DIR/studio-2026.ed25519
+    python3 scripts/gafpack.py sign PACKAGE.gafpack --key KEY --publisher "Studio"
+    python3 scripts/gafpack.py build ... --sign-key KEY     # build and sign
+
+The key id is the key file's name without `.ed25519` unless --key-id says
+otherwise; --key can also come from the GAFPACK_SIGN_KEY variable. Signing
+and checking signatures need the `cryptography` package.
+
 The package type decides what each file becomes:
 
     clipart, illustrations, icons, shapes   PNG, WebP and SVG files.
@@ -60,6 +72,15 @@ try:
 except ImportError:  # pragma: no cover - checked at start
     Image = None
     features = None
+
+SIGNATURE_PATH = "META-INF/signature.json"
+SIGNATURE_FORMAT = "gafpack-signature"
+SIGNATURE_VERSION = 1
+# The publisher keys Gafira trusts: key id -> (publisher, Ed25519 public key).
+# Keep in step with TRUSTED_KEYS in crates/gafira-ui/src/pack_signature.rs.
+TRUSTED_KEYS = {
+    "gafira-2026": ("Gafira", "92d2192dad58b85572600dd5c540e07fef79787d063f73bc84f2e57aad5aff48"),
+}
 
 FORMAT = "gafpack"
 FORMAT_VERSION = "1.1"
@@ -523,13 +544,140 @@ def build(args) -> None:
     print(f"Wrote {output} ({output.stat().st_size / 2**20:.1f} MB)")
     for section, n in sorted(counts.items()):
         print(f"  {n} {section}")
-    problems = check(output)
+    if args.sign_key:
+        sign(str(output), args.sign_key, args.author, args.key_id)
+    states: list[str] = []
+    problems = check(output, states)
     if problems:
         raise PackError("the written package fails its own check: " + "; ".join(problems))
     print("Valid: it installs in Gafira.")
+    print(f"Signature: {states[0]}")
 
 
-def check(path: Path) -> list[str]:
+def _ed25519():
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+    except ImportError as error:
+        raise PackError("signatures need the cryptography package: pip install cryptography") from error
+    return ed25519
+
+
+def signed_message(key_id: str, publisher: str, files: dict[str, str]) -> bytes:
+    """The text a signature signs: the same bytes Gafira rebuilds."""
+    text = f"{SIGNATURE_FORMAT}/{SIGNATURE_VERSION}\nkey:{key_id}\npublisher:{publisher}\n"
+    for path in sorted(files, key=lambda p: p.encode()):
+        text += f"{files[path]}  {path}\n"
+    return text.encode()
+
+
+def signed_path(path: str) -> bool:
+    return not path.startswith("META-INF/")
+
+
+def load_key(path: str):
+    seed = bytes.fromhex(Path(path).read_text(encoding="utf-8").strip())
+    if len(seed) != 32:
+        raise PackError(f"{path} is not an Ed25519 key (64 hex digits)")
+    return _ed25519().Ed25519PrivateKey.from_private_bytes(seed)
+
+
+def key_id_of(path: str) -> str:
+    name = Path(path).name
+    return name[: -len(".ed25519")] if name.endswith(".ed25519") else Path(path).stem
+
+
+def keygen(path: str) -> None:
+    from cryptography.hazmat.primitives import serialization as ser
+
+    target = Path(path)
+    if target.exists():
+        raise PackError(f"{target} already exists; never overwrite a signing key")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    key = _ed25519().Ed25519PrivateKey.generate()
+    seed = key.private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption()).hex()
+    public = key.public_key().public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw).hex()
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as out:
+        out.write(seed + "\n")
+    Path(str(target) + ".pub").write_text(public + "\n", encoding="utf-8")
+    print(f"Wrote {target} (private, keep a backup) and {target}.pub")
+    print(f"key id: {key_id_of(path)}\npublic: {public}")
+    print("Gafira verifies it once the key is in TRUSTED_KEYS (Rust and this script).")
+
+
+def sign(package: str, key_path: str, publisher: str | None, key_id: str | None = None) -> None:
+    """Signs `package` in place: every file but META-INF/ is hashed and the
+    signature is written to META-INF/signature.json (an old one is replaced)."""
+    key = load_key(key_path)
+    key_id = key_id or key_id_of(key_path)
+    path = Path(package)
+    partial = path.with_name(path.name + ".part")
+    files: dict[str, str] = {}
+    with zipfile.ZipFile(path) as source:
+        manifest = json.loads(source.read("manifest.json"))
+        author = manifest.get("author", {}).get("name", "").strip()
+        publisher = (publisher or author).strip()
+        if author != publisher:
+            raise PackError(f"the manifest author is {author!r}, not the publisher {publisher!r}")
+        trusted = TRUSTED_KEYS.get(key_id)
+        if trusted and trusted[0] != publisher:
+            raise PackError(f"key {key_id} belongs to {trusted[0]!r}, not {publisher!r}")
+        with zipfile.ZipFile(partial, "w") as out:
+            for info in source.infolist():
+                if info.is_dir() or not signed_path(info.filename):
+                    continue
+                data = source.read(info)
+                files[info.filename] = hashlib.sha256(data).hexdigest()
+                out.writestr(info.filename, data, compress_type=info.compress_type)
+            signature = key.sign(signed_message(key_id, publisher, files)).hex()
+            note = {
+                "format": SIGNATURE_FORMAT,
+                "version": SIGNATURE_VERSION,
+                "algorithm": "ed25519",
+                "keyId": key_id,
+                "publisher": publisher,
+                "files": files,
+                "signature": signature,
+            }
+            out.writestr(SIGNATURE_PATH, json.dumps(note, ensure_ascii=False, indent=1), compress_type=zipfile.ZIP_DEFLATED)
+    os.replace(partial, path)
+    print(f"Signed {path} as {publisher} (key {key_id}, {len(files)} files)")
+
+
+def signature_state(archive: zipfile.ZipFile, names: set[str], author: str) -> tuple[str, list[str]]:
+    """Who signed the package, as Gafira decides it (spec 112): the state
+    ("unsigned", "unknown key ...", "verified ...") and its problems."""
+    if SIGNATURE_PATH not in names:
+        return "unsigned: Gafira shows the author as declared, not verified", []
+    try:
+        note = json.loads(archive.read(SIGNATURE_PATH))
+    except ValueError:
+        return "invalid", ["the signature does not read"]
+    if (note.get("format"), note.get("version"), note.get("algorithm")) != (SIGNATURE_FORMAT, SIGNATURE_VERSION, "ed25519"):
+        return "invalid", ["unknown signature format, version or algorithm"]
+    files = {n: hashlib.sha256(archive.read(n)).hexdigest() for n in names if signed_path(n)}
+    if note.get("files") != files:
+        return "invalid", ["the package changed after it was signed"]
+    key_id = note.get("keyId", "")
+    if key_id not in TRUSTED_KEYS:
+        return f"signed with key {key_id!r}, which Gafira does not know: not verified", []
+    publisher, public = TRUSTED_KEYS[key_id]
+    ed25519 = _ed25519()
+    try:
+        ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(public)).verify(
+            bytes.fromhex(note.get("signature", "")),
+            signed_message(key_id, note.get("publisher", ""), note.get("files", {})),
+        )
+    except Exception:  # noqa: BLE001 - any failure is a bad signature
+        return "invalid", ["the signature does not verify"]
+    if note.get("publisher") != publisher:
+        return "invalid", ["the signed publisher is not the key's"]
+    if author.strip() != publisher:
+        return "invalid", [f"author {author!r} is not the signer {publisher!r}"]
+    return f"verified: signed by {publisher} (key {key_id})", []
+
+
+def check(path: Path, report: list[str] | None = None) -> list[str]:
     """The problems of an existing package, as Gafira would see them (the
     template contents excepted: Gafira reads those itself)."""
     problems: list[str] = []
@@ -588,7 +736,22 @@ def check(path: Path) -> list[str]:
                     problems.append(f"{asset.get('id')}: hash does not match")
         if set(manifest.get("categories", [])) != sections:
             problems.append("categories do not match the assets")
+        state, signed = signature_state(archive, names, manifest.get("author", {}).get("name", ""))
+        problems.extend(signed)
+        if report is not None:
+            report.append(state)
     return problems
+
+
+def report(path: Path) -> int:
+    states: list[str] = []
+    problems = check(path, states)
+    for p in problems:
+        print(f"  - {p}")
+    print("Valid." if not problems else f"{len(problems)} problems.")
+    if states:
+        print(f"Signature: {states[0]}")
+    return 0 if not problems else 1
 
 
 def main() -> int:
@@ -617,21 +780,38 @@ def main() -> int:
     b.add_argument("--frame-slots", action="store_true", help="frames: each SVG takes a photo")
     b.add_argument("--content-fit", default="cover", choices=["cover", "contain"], help="powerclips")
     b.add_argument("--workers", type=int, help="processes that check files; default the cores less one")
-    c = sub.add_parser("check", help="check an existing .gafpack")
+    b.add_argument("--sign-key", help="sign the package with this Ed25519 key file")
+    b.add_argument("--key-id", help="the key id; default the key file name without .ed25519")
+    c = sub.add_parser("check", help="check an existing .gafpack, its signature included")
     c.add_argument("package")
+    k = sub.add_parser("keygen", help="make an Ed25519 signing key (never overwrites)")
+    k.add_argument("key", help="where to write the private key, like KEYS_DIR/studio-2026.ed25519")
+    s = sub.add_parser("sign", help="sign an existing .gafpack in place")
+    s.add_argument("package")
+    s.add_argument("--key", default=os.environ.get("GAFPACK_SIGN_KEY"), help="the Ed25519 key file (or GAFPACK_SIGN_KEY)")
+    s.add_argument("--key-id", help="the key id; default the key file name without .ed25519")
+    s.add_argument("--publisher", help="who signs; must be the manifest author (default: it)")
     args = parser.parse_args()
+    if args.command == "keygen":
+        try:
+            keygen(args.key)
+        except PackError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        return 0
     if Image is None or not features.check("webp"):
         print("Pillow with WebP support is needed: pip install pillow", file=sys.stderr)
         return 2
     try:
         if args.command == "build":
             build(args)
+        elif args.command == "sign":
+            if not args.key:
+                raise PackError("--key (or GAFPACK_SIGN_KEY) is required")
+            sign(args.package, args.key, args.publisher, args.key_id)
+            return report(Path(args.package))
         else:
-            problems = check(Path(args.package))
-            for p in problems:
-                print(f"  - {p}")
-            print("Valid." if not problems else f"{len(problems)} problems.")
-            return 0 if not problems else 1
+            return report(Path(args.package))
     except PackError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
