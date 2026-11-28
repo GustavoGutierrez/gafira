@@ -117,7 +117,7 @@ pub use packs::{
     PackManifest, PackProblem, PackProgress, PackStore, PackUse, Version as PackVersion,
     asset_problems as pack_asset_problems, file_problems as pack_file_problems,
     manifest_problems as pack_manifest_problems, safe_path as pack_safe_path,
-    thumbnail_problems as pack_thumbnail_problems,
+    sha256 as pack_sha256, thumbnail_problems as pack_thumbnail_problems,
 };
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, ShowInFolder, UiConfig, run};

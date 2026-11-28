@@ -1027,6 +1027,8 @@ pub struct PackInspection {
     /// The size and change time of the package file when it was checked:
     /// installing the same, unchanged file needs no second check.
     pub fingerprint: (u64, u128),
+    /// Who signed it (spec 112).
+    pub signer: crate::pack_signature::PackSigner,
 }
 
 /// How far a long task on a package has come.
@@ -1061,6 +1063,8 @@ pub struct InstalledPack {
     pub installed_at: u64,
     /// The size of its files, in bytes.
     pub size: u64,
+    /// Who signed it, as checked when it was installed (spec 112).
+    pub signer: crate::pack_signature::PackSigner,
 }
 
 /// What an installed asset becomes when it is used (§5, §6).

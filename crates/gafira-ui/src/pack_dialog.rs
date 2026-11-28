@@ -311,11 +311,7 @@ impl PackDialog {
                                     .color(theme.c("text")),
                             );
                             ui.add_space(6.0);
-                            muted(
-                                ui,
-                                theme,
-                                &t(texts, "packs.author").replace("{name}", &m.author.name),
-                            );
+                            muted(ui, theme, &author_line(texts, &m.author.name, &seen.signer));
                         });
                     });
                     ui.add_space(14.0);
@@ -355,7 +351,15 @@ impl PackDialog {
                             .font(theme.font("body-sm"))
                             .color(theme.c("success.fg")),
                     );
-                    muted(ui, theme, &t(texts, "packs.unverified"));
+                    if let Some(publisher) = seen.signer.verified() {
+                        ui.label(
+                            RichText::new(t(texts, "packs.verified").replace("{name}", publisher))
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("success.fg")),
+                        );
+                    } else {
+                        muted(ui, theme, &t(texts, "packs.unverified"));
+                    }
                     if let Some(Err(problems)) = &self.outcome {
                         ui.add_space(8.0);
                         problem_list(ui, theme, texts, problems);
@@ -435,6 +439,15 @@ fn section_counts(
 }
 
 /// The problems, each on its line, the first ones only.
+/// Who made the package: the verified publisher when its signature holds
+/// (spec 112), else the declared author, said to be unverified.
+pub(crate) fn author_line(texts: &Texts, declared: &str, signer: &crate::PackSigner) -> String {
+    match signer.verified() {
+        Some(publisher) => t(texts, "packs.author_verified").replace("{name}", publisher),
+        None => t(texts, "packs.author").replace("{name}", declared),
+    }
+}
+
 fn problem_list(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, problems: &[PackProblem]) {
     egui::Frame::NONE
         .fill(theme.c("error.bg"))
