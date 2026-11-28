@@ -45,6 +45,8 @@ serde_json.workspace = true
 # Spec 103: the icon set ships gzipped.
 flate2.workspace = true
 sha2.workspace = true
+# Spec 112: package signatures.
+ed25519-dalek.workspace = true
 arboard.workspace = true
 # Spec 066, S66-10: custom frames from SVG and PDF outlines.
 gafira-io-vector.workspace = true

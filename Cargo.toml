@@ -79,6 +79,7 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "a
 x11rb = { version = "0.13", default-features = false, features = ["randr"] }
 roxmltree = "0.20"
 sha2 = "0.11"
+ed25519-dalek = "3"
 # D-115: inference for the image models (spec 084).
 # Spec 100: 3D math for the model pose and camera; glTF and OBJ readers (D-130).
 glam = { version = "0.34", default-features = false, features = ["std"] }
